@@ -1,8 +1,13 @@
 import { pool } from './connection'
+import { runMigrations } from './migrate'
 
 /**
  * Idempotente Migrationen, die bei jedem Start laufen.
  * Nötig, weil schema.sql nur beim ersten Anlegen des DB-Volumes ausgeführt wird.
+ *
+ * Die folgenden Inline-ALTERs sind Altbestand. Neue Schemaänderungen bitte als
+ * nummerierte .sql-Datei unter migrations/ ablegen – sie werden am Ende von
+ * runMigrations() angewandt und in schema_migrations protokolliert.
  */
 export async function initDb(): Promise<void> {
   await pool.query(`
@@ -71,4 +76,7 @@ export async function initDb(): Promise<void> {
   await pool.query(
     'CREATE INDEX IF NOT EXISTS idx_report_images_report ON report_images(report_id)'
   )
+
+  // Datei-basierte Migrationen (migrations/*.sql) anwenden.
+  await runMigrations()
 }

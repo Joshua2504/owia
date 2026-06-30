@@ -31,14 +31,16 @@ export function buildReportMail(
     : 'unbekannt'
   const von = report.tatzeit_von ? String(report.tatzeit_von).slice(0, 5) : ''
   const bis = report.tatzeit_bis ? String(report.tatzeit_bis).slice(0, 5) : ''
-  const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `ab ${von} Uhr` : ''
+  const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `${von} Uhr` : bis ? `${bis} Uhr` : ''
 
-  const subject = `Anzeige Ordnungswidrigkeit – Kfz ${report.kennzeichen}`
+  const az = report.aktenzeichen ? ` (${report.aktenzeichen})` : ''
+  const subject = `Anzeige Ordnungswidrigkeit – Kfz ${report.kennzeichen}${az}`
   const text = [
     'Sehr geehrte Damen und Herren,',
     '',
     'hiermit erstatte ich Anzeige wegen folgender Ordnungswidrigkeit:',
     '',
+    report.aktenzeichen ? `Aktenzeichen: ${report.aktenzeichen}` : '',
     `Kennzeichen:  ${report.kennzeichen}`,
     `Fahrzeug:     ${report.fahrzeug_marke || '—'}`,
     `Tattag:       ${tattag}`,

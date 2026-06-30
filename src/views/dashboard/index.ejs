@@ -20,6 +20,7 @@
       <table class="table table-hover mb-0">
         <thead class="table-light">
           <tr>
+            <th>Aktenzeichen</th>
             <th>Kennzeichen</th>
             <th>Tattag</th>
             <th>Tatort</th>
@@ -31,6 +32,7 @@
         <tbody>
           <% for (const r of reports) { %>
             <tr>
+              <td class="text-nowrap"><code class="small"><%= r.aktenzeichen || '—' %></code></td>
               <td><code><%= r.kennzeichen %></code></td>
               <td class="text-nowrap">
                 <%= r.tattag ? new Date(r.tattag).toLocaleDateString('de-DE') : '—' %>

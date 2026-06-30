@@ -43,6 +43,20 @@ type PreparedImage = {
 /** Buffer, den der PDF-Service einbettet. */
 export type ReportImage = { mimetype: string; buffer: Buffer }
 
+// Aktenzeichen-Alphabet ohne leicht verwechselbare Zeichen (0/O, 1/I).
+// 32 Zeichen → 256 % 32 == 0, daher kein Modulo-Bias bei randomBytes.
+const AKTENZEICHEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+/** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiAA#7K3QF2". */
+function generateAktenzeichen(): string {
+  const bytes = crypto.randomBytes(6)
+  let code = ''
+  for (let i = 0; i < bytes.length; i++) {
+    code += AKTENZEICHEN_ALPHABET[bytes[i] % AKTENZEICHEN_ALPHABET.length]
+  }
+  return `OWiAA#${code}`
+}
+
 function extFromMime(mime: string): string {
   return mime === 'image/png' ? 'png' : 'jpg'
 }
@@ -249,11 +263,23 @@ export default async function reportsRoutes(app: FastifyInstance) {
   app.post('/report/new', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
     // Tattag/Tatzeit mit dem aktuellen Zeitpunkt vorbelegen (häufigster Fall: Vorfall jetzt).
-    const [result] = await pool.execute<mysql.ResultSetHeader>(
-      "INSERT INTO reports (user_id, status, tattag, tatzeit_von) VALUES (?, 'entwurf', CURDATE(), CURTIME())",
-      [userId]
-    )
-    return reply.redirect(`/report/${result.insertId}/edit`)
+    // Aktenzeichen ist zufällig + eindeutig; bei (extrem seltener) Kollision neu würfeln.
+    let insertId: number | undefined
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const [result] = await pool.execute<mysql.ResultSetHeader>(
+          `INSERT INTO reports (user_id, status, tattag, tatzeit_von, aktenzeichen)
+           VALUES (?, 'entwurf', CURDATE(), CURTIME(), ?)`,
+          [userId, generateAktenzeichen()]
+        )
+        insertId = result.insertId
+        break
+      } catch (err) {
+        if ((err as { code?: string }).code === 'ER_DUP_ENTRY' && attempt < 4) continue
+        throw err
+      }
+    }
+    return reply.redirect(`/report/${insertId}/edit`)
   })
 
   app.get('/report/:id/edit', { preHandler: requireAuth }, async (request, reply) => {

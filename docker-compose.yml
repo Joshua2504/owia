@@ -33,6 +33,7 @@ services:
       - ./src:/app/src
       - ./public:/app/public
       - ./resources:/app/resources
+      - ./migrations:/app/migrations
       - ./data/pdfs:/app/data/pdfs
       - ./data/uploads:/app/data/uploads
     depends_on:
