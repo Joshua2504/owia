@@ -24,22 +24,27 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
       <div class="alert alert-danger"><%= error %></div>
     <% } %>
 
-    <% if (locals.city) { %>
-      <div class="alert alert-info d-flex align-items-start gap-2" role="status">
-        <span aria-hidden="true">🏛️</span>
-        <div>
-          Zuständiges Ordnungsamt: <strong><%= city.ordnungsamt %></strong><br>
-          <span class="small text-muted">
-            Die Anzeige wird an <%= city.email %> gerichtet.
-          </span>
-        </div>
-      </div>
-    <% } %>
-
     <div class="card shadow-sm">
       <div class="card-body p-4">
         <form id="report-form" method="post" action="/report/<%= r.id %>/save"
               data-report-id="<%= r.id %>">
+
+          <h5 class="mb-3">Beweisfotos</h5>
+          <div class="mb-4">
+            <label class="form-label">Bilder hinzufügen</label>
+            <input type="file" id="bilder-input" class="form-control"
+                   accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
+            <div class="form-text">
+              JPG, PNG oder HEIC, bis 20 MB pro Bild (max. 10 Bilder). Ausgewählte Bilder
+              werden sofort zum Entwurf hinzugefügt. Anschließend kannst du Bereiche
+              (z.&nbsp;B. Personen) schwärzen – die Schwärzung wird automatisch gespeichert
+              und ersetzt die ursprüngliche Fassung. Bereits gespeicherte Bilder lassen sich
+              auch nach dem Neuladen weiter bearbeiten.
+            </div>
+            <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
+            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.id}/image/${img.id}` }))) %></script>
+            <div id="image-editor" class="row g-3 mt-1"></div>
+          </div>
 
           <h5 class="mb-3">Fahrzeug</h5>
           <div class="row g-3 mb-4">
@@ -89,14 +94,24 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               </div>
               <div class="form-text">
                 Adresse tippen und einen Vorschlag wählen, den aktuellen Standort verwenden
-                oder unten den Standort aus einem Foto übernehmen.
+                oder den Standort aus einem oben hochgeladenen Foto übernehmen.
               </div>
+              <% if (locals.city) { %>
+                <!-- Zuständige Behörde direkt beim Tatort, da sie sich aus dem Ort ergibt. -->
+                <div class="alert alert-info d-flex align-items-start gap-2 py-2 px-3 mt-2 mb-0" role="status">
+                  <span aria-hidden="true">🏛️</span>
+                  <div>
+                    Diese Anzeige geht an das <strong><%= city.ordnungsamt %></strong>
+                    (<%= city.email %>).
+                  </div>
+                </div>
+              <% } %>
               <!-- Karte zum Tatort. Marker lässt sich verschieben; die Adresse wird dann
                    per Reverse-Geocoding aktualisiert. Koordinaten gehen in die Hidden-Felder. -->
               <div id="tatort-map" class="rounded border mt-2"
                    style="height:320px"
                    data-lat="<%= r.tatort_lat || '' %>" data-lon="<%= r.tatort_lon || '' %>"
-                   data-center-lat="<%= city.geo.biasLat %>" data-center-lon="<%= city.geo.biasLon %>"></div>
+                   data-center-lat="<%= city.geo.mapLat %>" data-center-lon="<%= city.geo.mapLon %>"></div>
               <div class="form-text">
                 Den Marker kannst du zur genauen Stelle ziehen – die Adresse wird dann übernommen.
               </div>
@@ -134,23 +149,6 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
                           placeholder="z.B. Rollstuhlfahrer musste auf die Straße ausweichen"><%= r.behinderung_text || '' %></textarea>
               </div>
             </div>
-          </div>
-
-          <h5 class="mb-3">Beweisfotos</h5>
-          <div class="mb-4">
-            <label class="form-label">Bilder hinzufügen</label>
-            <input type="file" id="bilder-input" class="form-control"
-                   accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
-            <div class="form-text">
-              JPG, PNG oder HEIC, bis 20 MB pro Bild (max. 10 Bilder). Ausgewählte Bilder
-              werden sofort zum Entwurf hinzugefügt. Anschließend kannst du Bereiche
-              (z.&nbsp;B. Personen) schwärzen – die Schwärzung wird automatisch gespeichert
-              und ersetzt die ursprüngliche Fassung. Bereits gespeicherte Bilder lassen sich
-              auch nach dem Neuladen weiter bearbeiten.
-            </div>
-            <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
-            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.id}/image/${img.id}` }))) %></script>
-            <div id="image-editor" class="row g-3 mt-1"></div>
           </div>
 
           <div class="d-flex justify-content-between align-items-center">

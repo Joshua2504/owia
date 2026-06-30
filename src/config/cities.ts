@@ -17,6 +17,9 @@ export interface CityGeo {
   /** Kartenschwerpunkt der Suche. */
   biasLat: number
   biasLon: number
+  /** Default-Mittelpunkt der Tatort-Karte im Formular, solange kein Marker gesetzt ist. */
+  mapLat: number
+  mapLon: number
 }
 
 export interface City {
@@ -52,6 +55,9 @@ export const CITIES: Record<string, City> = {
       cityMatch: 'frankfurt am main',
       biasLat: 50.1109,
       biasLon: 8.6821,
+      // Frankfurt (Main) Hauptbahnhof – Default-Kartenmittelpunkt im Formular.
+      mapLat: 50.1072,
+      mapLon: 8.6638,
     },
   },
 }

@@ -6,7 +6,7 @@
 // anonymisiert). Es werden keine personenbezogenen Daten angezeigt.
 (function () {
   if (window.L && L.Icon && L.Icon.Default) {
-    const base = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/'
+    const base = '/public/vendor/leaflet/images/'
     L.Icon.Default.mergeOptions({
       iconRetinaUrl: base + 'marker-icon-2x.png',
       iconUrl: base + 'marker-icon.png',

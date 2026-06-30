@@ -100,7 +100,13 @@ services:
       - |
         set -e
         if [ ! -f /data/database/planet-import-complete ]; then
-          echo "Tile-DB noch nicht importiert – starte einmaligen Hessen-Import ..."
+          # Kein Abschluss-Marker => evtl. abgebrochener Import. Ein halb
+          # angelegtes Cluster (Rolle "renderer"/DB "gis" existieren bereits)
+          # ließe den Re-Import an `createuser renderer` scheitern
+          # ("role already exists" -> Crash-Schleife). Daher das unvollständige
+          # Postgres-Verzeichnis verwerfen und sauber von vorn importieren.
+          echo "Kein Import-Marker – räume evtl. unvollständigen Import-Stand und importiere neu ..."
+          rm -rf /data/database/postgres
           /run.sh import
         fi
         exec /run.sh run

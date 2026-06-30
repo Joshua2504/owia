@@ -9,10 +9,10 @@
 // ({ lat, lon, label }), das Autocomplete/Standort/Foto dispatchen. So bleibt
 // dieses Skript die einzige Stelle, die Leaflet kennt.
 (function () {
-  // Standard-Marker-Icons explizit auf die Leaflet-CDN-Bilder setzen – sonst
-  // sucht Leaflet sie relativ zum eigenen Pfad und liefert 404 (graues Icon).
+  // Standard-Marker-Icons explizit auf die lokal mitgelieferten Bilder setzen –
+  // sonst sucht Leaflet sie relativ zum eigenen Pfad und liefert 404 (graues Icon).
   if (window.L && L.Icon && L.Icon.Default) {
-    const base = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/'
+    const base = '/public/vendor/leaflet/images/'
     L.Icon.Default.mergeOptions({
       iconRetinaUrl: base + 'marker-icon-2x.png',
       iconUrl: base + 'marker-icon.png',
