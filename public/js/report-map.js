@@ -116,7 +116,13 @@
         marker.on('dragend', () => {
           const p = marker.getLatLng()
           writeInputs(p.lat, p.lng)
-          reverseFill(p.lat, p.lng)
+          // Adresse nur automatisch ermitteln, wenn das Feld noch leer ist. Sonst
+          // würde das Feinjustieren des Markers (Hausnummer-Koordinate liegt oft
+          // etwas neben der Straße) eine bereits gewählte Adresse mit Hausnummer
+          // überschreiben. Position/Koordinaten werden trotzdem aktualisiert.
+          if (tatortInput && !tatortInput.value.trim()) {
+            reverseFill(p.lat, p.lng)
+          }
         })
       }
     }

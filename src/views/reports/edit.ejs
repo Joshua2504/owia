@@ -26,8 +26,8 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 
     <div class="card shadow-sm">
       <div class="card-body p-4">
-        <form id="report-form" method="post" action="/report/<%= r.id %>/save"
-              data-report-id="<%= r.id %>">
+        <form id="report-form" method="post" action="/report/<%= r.aktenzeichen %>/save"
+              data-report-id="<%= r.aktenzeichen %>">
 
           <h5 class="mb-3">Beweisfotos</h5>
           <div class="mb-4">
@@ -42,7 +42,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               auch nach dem Neuladen weiter bearbeiten.
             </div>
             <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
-            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.id}/image/${img.id}` }))) %></script>
+            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.aktenzeichen}/image/${img.id}` }))) %></script>
             <div id="image-editor" class="row g-3 mt-1"></div>
           </div>
 
@@ -173,7 +173,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
   </div>
 </div>
 
-<form id="discard-form" method="post" action="/report/<%= r.id %>/discard" class="d-none"></form>
+<form id="discard-form" method="post" action="/report/<%= r.aktenzeichen %>/discard" class="d-none"></form>
 
 <!-- Leaflet für die Tatort-Karte (Tiles kommen same-origin über /tiles/...). -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">

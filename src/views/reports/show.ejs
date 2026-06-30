@@ -25,7 +25,7 @@ const versandLabel = {
       <h2 class="mb-0">Anzeige <code><%= report.aktenzeichen || `#${report.id}` %></code></h2>
       <div class="d-flex gap-2">
         <% if (isEntwurf) { %>
-          <a href="/report/<%= report.id %>/edit" class="btn btn-outline-primary btn-sm">✎ Bearbeiten</a>
+          <a href="/report/<%= report.aktenzeichen %>/edit" class="btn btn-outline-primary btn-sm">✎ Bearbeiten</a>
         <% } %>
         <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
       </div>
@@ -94,12 +94,12 @@ const versandLabel = {
           <div class="row g-3">
             <% for (const img of images) { %>
               <div class="col-6 col-md-4">
-                <a href="/report/<%= report.id %>/image/<%= img.id %>" target="_blank">
-                  <img src="/report/<%= report.id %>/image/<%= img.id %>"
+                <a href="/report/<%= report.aktenzeichen %>/image/<%= img.id %>" target="_blank">
+                  <img src="/report/<%= report.aktenzeichen %>/image/<%= img.id %>"
                        class="img-fluid rounded border" alt="Beweisfoto">
                 </a>
                 <% if (img.original_filename && img.original_filename !== img.filename) { %>
-                  <a href="/report/<%= report.id %>/image/<%= img.id %>?original=1"
+                  <a href="/report/<%= report.aktenzeichen %>/image/<%= img.id %>?original=1"
                      class="d-block small text-muted mt-1">Original herunterladen</a>
                 <% } %>
               </div>
@@ -113,7 +113,7 @@ const versandLabel = {
       <% if (!complete) { %>
         <div class="alert alert-warning">
           Es fehlen noch Pflichtangaben. Bitte zuerst
-          <a href="/report/<%= report.id %>/edit" class="alert-link">den Entwurf vervollständigen</a>,
+          <a href="/report/<%= report.aktenzeichen %>/edit" class="alert-link">den Entwurf vervollständigen</a>,
           dann kann die Anzeige versendet werden.
         </div>
       <% } %>
@@ -128,11 +128,11 @@ const versandLabel = {
               <p class="card-text small text-muted flex-grow-1">
                 PDF herunterladen, ausdrucken und per Post an das Ordnungsamt schicken.
               </p>
-              <a href="/report/<%= report.id %>/pdf"
+              <a href="/report/<%= report.aktenzeichen %>/pdf"
                  class="btn btn-outline-primary btn-sm mb-2 <%= complete ? '' : 'disabled' %>">
                 ⬇ PDF herunterladen
               </a>
-              <form method="post" action="/report/<%= report.id %>/complete"
+              <form method="post" action="/report/<%= report.aktenzeichen %>/complete"
                     onsubmit="return confirm('Anzeige als versendet markieren?')">
                 <input type="hidden" name="art" value="gedruckt">
                 <button type="submit" class="btn btn-success btn-sm w-100" <%= complete ? '' : 'disabled' %>>
@@ -156,7 +156,7 @@ const versandLabel = {
                       <%= complete ? '' : 'disabled' %>>
                 E-Mail-Vorlage anzeigen
               </button>
-              <form method="post" action="/report/<%= report.id %>/complete"
+              <form method="post" action="/report/<%= report.aktenzeichen %>/complete"
                     onsubmit="return confirm('Anzeige als versendet markieren?')">
                 <input type="hidden" name="art" value="selbst_email">
                 <button type="submit" class="btn btn-success btn-sm w-100" <%= complete ? '' : 'disabled' %>>
@@ -175,7 +175,7 @@ const versandLabel = {
               <p class="card-text small text-muted flex-grow-1">
                 Wir senden die Anzeige inkl. PDF per E-Mail an das Ordnungsamt (du in Kopie).
               </p>
-              <form method="post" action="/report/<%= report.id %>/send"
+              <form method="post" action="/report/<%= report.aktenzeichen %>/send"
                     onsubmit="return confirm('Anzeige jetzt durch uns versenden lassen?')">
                 <button type="submit" class="btn btn-success btn-sm w-100 mt-auto" <%= complete ? '' : 'disabled' %>>
                   📧 Jetzt versenden lassen
@@ -211,20 +211,20 @@ const versandLabel = {
             <button class="btn btn-outline-secondary btn-sm mt-2" type="button" data-copy="#copy-body">Text kopieren</button>
           </div>
           <p class="small text-muted mb-0">
-            Bitte das <a href="/report/<%= report.id %>/pdf">PDF</a> als Anhang hinzufügen.
+            Bitte das <a href="/report/<%= report.aktenzeichen %>/pdf">PDF</a> als Anhang hinzufügen.
           </p>
         </div>
       </div>
     <% } else { %>
       <div class="d-flex gap-2 flex-wrap mb-4">
-        <a href="/report/<%= report.id %>/pdf" class="btn btn-outline-primary">⬇ PDF herunterladen</a>
+        <a href="/report/<%= report.aktenzeichen %>/pdf" class="btn btn-outline-primary">⬇ PDF herunterladen</a>
       </div>
     <% } %>
 
     <!-- PDF-Vorschau ganz unten -->
     <% if (report.pdf_filename) { %>
       <h4 class="mb-3">PDF-Vorschau</h4>
-      <iframe src="/report/<%= report.id %>/pdf?inline=1"
+      <iframe src="/report/<%= report.aktenzeichen %>/pdf?inline=1"
               class="w-100 border rounded" style="height: 600px;"
               title="PDF-Vorschau"></iframe>
     <% } else { %>

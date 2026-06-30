@@ -8,11 +8,12 @@
 <!-- Anonyme Übersichtskarte aller versendeter Anzeigen (gleiche Daten wie die Startseite). -->
 <div class="card shadow-sm mb-4">
   <div class="card-body">
-    <h5 class="card-title mb-1">Öffentliche Übersicht</h5>
+    <h5 class="card-title mb-1">Übersicht</h5>
     <p class="text-muted small mb-3">
       Alle versendeter Anzeigen – anonymisiert, Fotos stark verpixelt.
+      <span class="text-warning-emphasis">Deine eigenen Entwürfe sind orange markiert.</span>
     </p>
-    <div id="overview-map" class="rounded border" style="height:380px"></div>
+    <div id="overview-map" class="rounded border" style="height:380px" data-include-own="1"></div>
   </div>
 </div>
 
@@ -64,9 +65,9 @@
               </td>
               <td>
                 <% if (r.status === 'entwurf') { %>
-                  <a href="/report/<%= r.id %>/edit" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+                  <a href="/report/<%= r.aktenzeichen %>/edit" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
                 <% } else { %>
-                  <a href="/report/<%= r.id %>" class="btn btn-sm btn-outline-secondary">Details</a>
+                  <a href="/report/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
                 <% } %>
               </td>
             </tr>

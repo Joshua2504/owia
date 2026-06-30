@@ -15,13 +15,12 @@ export const VERSTOSS_ARTEN = [
   'Parken im absoluten Halteverbot (Zeichen 283)',
   'Parken im eingeschränkten Halteverbot (Zeichen 286)',
   'Parken in der zweiten Reihe',
+  'Halten und Parken auf einem Radweg',
   'Parken auf einem Sonderfahrstreifen (Busspur/Radweg)',
   'Parken vor einer abgesenkten Bordsteinkante',
   'Parken in einer Feuerwehrzufahrt',
   'Parken auf einem Behindertenparkplatz ohne Ausweis',
   'Parken an einer Kreuzung oder Einmündung',
-  'Fahren auf dem Gehweg oder Radweg',
-  'Rotlichtverstoß',
   'Sonstiges',
 ]
 
@@ -48,14 +47,15 @@ export type ReportImage = { mimetype: string; buffer: Buffer }
 // 32 Zeichen → 256 % 32 == 0, daher kein Modulo-Bias bei randomBytes.
 const AKTENZEICHEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
-/** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiAA#7K3QF2". */
+/** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiAA-7K3QF2".
+ *  Bindestrich statt '#', damit es direkt in URLs/Links verwendbar ist. */
 function generateAktenzeichen(): string {
   const bytes = crypto.randomBytes(6)
   let code = ''
   for (let i = 0; i < bytes.length; i++) {
     code += AKTENZEICHEN_ALPHABET[bytes[i] % AKTENZEICHEN_ALPHABET.length]
   }
-  return `OWiAA#${code}`
+  return `OWiAA-${code}`
 }
 
 function extFromMime(mime: string): string {
@@ -177,6 +177,18 @@ async function loadReport(
   return rows[0]
 }
 
+/** Wie loadReport, aber per Aktenzeichen (wird in den URLs/Links verwendet). */
+async function loadReportByAktenzeichen(
+  aktenzeichen: string,
+  userId: number
+): Promise<mysql.RowDataPacket | undefined> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT * FROM reports WHERE aktenzeichen = ? AND user_id = ?',
+    [aktenzeichen, userId]
+  )
+  return rows[0]
+}
+
 /** Felder eines Entwurfs persistieren (leere Strings -> NULL). */
 async function persistFields(
   reportId: string | number,
@@ -265,6 +277,32 @@ async function regeneratePdf(reportId: string | number, userId: number): Promise
 }
 
 export default async function reportsRoutes(app: FastifyInstance) {
+  // Eigene, noch nicht versendete Anzeigen (Entwürfe) mit Koordinaten – für die
+  // Karte im Dashboard. Versendete erscheinen bereits (anonym) über die
+  // öffentliche Übersicht, daher hier ausgenommen.
+  app.get('/api/my/reports', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = request.session.userId as number
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT aktenzeichen, status, tattag, verstoss_art, tatort, tatort_lat, tatort_lon
+         FROM reports
+        WHERE user_id = ? AND status <> 'versendet'
+          AND tatort_lat IS NOT NULL AND tatort_lon IS NOT NULL
+        ORDER BY created_at DESC`,
+      [userId]
+    )
+    const reports = rows.map((r) => ({
+      lat: Number(r.tatort_lat),
+      lon: Number(r.tatort_lon),
+      aktenzeichen: r.aktenzeichen,
+      status: r.status,
+      verstossArt: r.verstoss_art || null,
+      tattag: r.tattag || null,
+      tatort: r.tatort || null,
+      url: `/report/${r.aktenzeichen}/edit`,
+    }))
+    return reply.send({ reports })
+  })
+
   // ---------------------------------------------------------------------------
   // Entwurf anlegen + bearbeiten
   // ---------------------------------------------------------------------------
@@ -273,34 +311,35 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
     // Tattag/Tatzeit mit dem aktuellen Zeitpunkt vorbelegen (häufigster Fall: Vorfall jetzt).
     // Aktenzeichen ist zufällig + eindeutig; bei (extrem seltener) Kollision neu würfeln.
-    let insertId: number | undefined
+    let aktenzeichen: string | undefined
     for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = generateAktenzeichen()
       try {
-        const [result] = await pool.execute<mysql.ResultSetHeader>(
+        await pool.execute<mysql.ResultSetHeader>(
           `INSERT INTO reports (user_id, status, tattag, tatzeit_von, aktenzeichen, city)
            VALUES (?, 'entwurf', CURDATE(), CURTIME(), ?, ?)`,
-          [userId, generateAktenzeichen(), DEFAULT_CITY_ID]
+          [userId, candidate, DEFAULT_CITY_ID]
         )
-        insertId = result.insertId
+        aktenzeichen = candidate
         break
       } catch (err) {
         if ((err as { code?: string }).code === 'ER_DUP_ENTRY' && attempt < 4) continue
         throw err
       }
     }
-    return reply.redirect(`/report/${insertId}/edit`)
+    return reply.redirect(`/report/${aktenzeichen}/edit`)
   })
 
-  app.get('/report/:id/edit', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.get('/report/:az/edit', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
-    const report = await loadReport(id, userId)
+    const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'entwurf') return reply.redirect(`/report/${id}`)
+    if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY id',
-      [id]
+      [report.id]
     )
     return reply.view('/reports/edit.ejs', viewData(request, {
       title: 'Entwurf bearbeiten',
@@ -312,28 +351,29 @@ export default async function reportsRoutes(app: FastifyInstance) {
   })
 
   // Hintergrund-Autosave der Textfelder (JSON).
-  app.patch('/report/:id', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.patch('/report/:az', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
-    const report = await loadReport(id, userId)
+    const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send({ error: 'not found' })
     if (report.status !== 'entwurf') return reply.status(409).send({ error: 'not a draft' })
 
-    await persistFields(id, userId, (request.body || {}) as Record<string, string>)
+    await persistFields(report.id, userId, (request.body || {}) as Record<string, string>)
     return reply.send({ ok: true })
   })
 
   // Einzelnes (ggf. bereits geschwärztes) Bild sofort zum Entwurf hochladen.
-  app.post('/report/:id/images', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.post('/report/:az/images', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
-    const report = await loadReport(id, userId)
+    const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send({ error: 'not found' })
     if (report.status !== 'entwurf') return reply.status(409).send({ error: 'not a draft' })
+    const reportId = report.id
 
     const [cntRows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
-      [id]
+      [reportId]
     )
     let count = Number(cntRows[0].c)
 
@@ -351,8 +391,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
         }
         try {
           const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
-          const row = await saveImageToReport(userId, Number(id), prepared)
-          saved.push({ id: row.id, url: `/report/${id}/image/${row.id}` })
+          const row = await saveImageToReport(userId, reportId, prepared)
+          saved.push({ id: row.id, url: `/report/${az}/image/${row.id}` })
           count++
         } catch {
           errors.push('Nur JPG-, PNG- und HEIC/HEIF-Bilder werden unterstützt.')
@@ -365,37 +405,37 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({ images: saved, errors })
   })
 
-  app.delete('/report/:id/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
-    const { id, imageId } = request.params as { id: string; imageId: string }
+  app.delete('/report/:az/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.original_filename
+      `SELECT ri.filename, ri.original_filename, r.id AS report_id
        FROM report_images ri
        JOIN reports r ON r.id = ri.report_id
-       WHERE ri.id = ? AND r.id = ? AND r.user_id = ? AND r.status = 'entwurf'`,
-      [imageId, id, userId]
+       WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
+      [imageId, az, userId]
     )
     const img = rows[0]
     if (!img) return reply.status(404).send({ error: 'not found' })
 
     await pool.execute('DELETE FROM report_images WHERE id = ?', [imageId])
-    await removeImageFiles(userId, id, img.filename, img.original_filename)
+    await removeImageFiles(userId, img.report_id, img.filename, img.original_filename)
     return reply.send({ ok: true })
   })
 
   // Bestehendes Bild durch eine neue (z.B. geschwärzte) Fassung ersetzen.
   // Die Bild-ID bleibt erhalten, das Bilder-Limit wird nicht berührt.
-  app.put('/report/:id/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
-    const { id, imageId } = request.params as { id: string; imageId: string }
+  app.put('/report/:az/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.original_filename
+      `SELECT ri.filename, ri.original_filename, r.id AS report_id
        FROM report_images ri
        JOIN reports r ON r.id = ri.report_id
-       WHERE ri.id = ? AND r.id = ? AND r.user_id = ? AND r.status = 'entwurf'`,
-      [imageId, id, userId]
+       WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
+      [imageId, az, userId]
     )
     const old = rows[0]
     if (!old) return reply.status(404).send({ error: 'not found' })
@@ -416,44 +456,45 @@ export default async function reportsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Kein gültiges Bild übermittelt.' })
     }
 
-    const { filename, originalFilename } = await writeImageFiles(userId, Number(id), prepared)
+    const { filename, originalFilename } = await writeImageFiles(userId, old.report_id, prepared)
     await pool.execute(
       `UPDATE report_images
          SET filename=?, mimetype=?, original_filename=?, original_mimetype=?
        WHERE id=?`,
       [filename, prepared.mimetype, originalFilename, prepared.originalMimetype, imageId]
     )
-    await removeImageFiles(userId, id, old.filename, old.original_filename)
+    await removeImageFiles(userId, old.report_id, old.filename, old.original_filename)
 
-    return reply.send({ image: { id: Number(imageId), url: `/report/${id}/image/${imageId}` } })
+    return reply.send({ image: { id: Number(imageId), url: `/report/${az}/image/${imageId}` } })
   })
 
   // „Entwurf speichern": finale Werte sichern, PDF erzeugen, zur Detailseite.
-  app.post('/report/:id/save', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.post('/report/:az/save', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
-    const report = await loadReport(id, userId)
+    const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'entwurf') return reply.redirect(`/report/${id}`)
+    if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
 
-    await persistFields(id, userId, (request.body || {}) as Record<string, string>)
-    await regeneratePdf(id, userId)
+    await persistFields(report.id, userId, (request.body || {}) as Record<string, string>)
+    await regeneratePdf(report.id, userId)
 
     request.session.flash = { type: 'success', message: 'Entwurf gespeichert.' }
     await request.session.save()
-    return reply.redirect(`/report/${id}`)
+    return reply.redirect(`/report/${az}`)
   })
 
-  app.post('/report/:id/discard', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.post('/report/:az/discard', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
-    const report = await loadReport(id, userId)
+    const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'entwurf') return reply.redirect(`/report/${id}`)
+    if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
+    const reportId = report.id
 
-    await pool.execute('DELETE FROM reports WHERE id = ? AND user_id = ?', [id, userId])
+    await pool.execute('DELETE FROM reports WHERE id = ? AND user_id = ?', [reportId, userId])
     try {
-      await fs.rm(path.join(UPLOAD_DIR, String(userId), String(id)), { recursive: true, force: true })
+      await fs.rm(path.join(UPLOAD_DIR, String(userId), String(reportId)), { recursive: true, force: true })
     } catch {
       /* egal */
     }
@@ -474,15 +515,15 @@ export default async function reportsRoutes(app: FastifyInstance) {
   // Detail / Versand
   // ---------------------------------------------------------------------------
 
-  app.get('/report/:id', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.get('/report/:az', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
-    const report = await loadReport(id, userId)
+    const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY id',
-      [id]
+      [report.id]
     )
     const [uRows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT * FROM users WHERE id = ?',
@@ -492,7 +533,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
     const city = getCity(report.city)
     return reply.view('/reports/show.ejs', viewData(request, {
-      title: `Anzeige #${id}`,
+      title: `Anzeige ${report.aktenzeichen || ''}`,
       report,
       images,
       complete: isComplete(report),
@@ -502,17 +543,17 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }))
   })
 
-  app.get('/report/:id/image/:imageId', { preHandler: requireAuth }, async (request, reply) => {
-    const { id, imageId } = request.params as { id: string; imageId: string }
+  app.get('/report/:az/image/:imageId', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
     const wantOriginal = (request.query as { original?: string }).original === '1'
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.mimetype, ri.original_filename, ri.original_mimetype
+      `SELECT ri.filename, ri.mimetype, ri.original_filename, ri.original_mimetype, r.id AS report_id
        FROM report_images ri
        JOIN reports r ON r.id = ri.report_id
-       WHERE ri.id = ? AND r.id = ? AND r.user_id = ?`,
-      [imageId, id, userId]
+       WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
+      [imageId, az, userId]
     )
     const image = rows[0]
     if (!image) return reply.status(404).send('Bild nicht gefunden.')
@@ -520,7 +561,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const filename = wantOriginal ? image.original_filename : image.filename
     const mimetype = wantOriginal ? image.original_mimetype : image.mimetype
 
-    const imagePath = path.join(UPLOAD_DIR, String(userId), String(id), filename)
+    const imagePath = path.join(UPLOAD_DIR, String(userId), String(image.report_id), filename)
     try {
       const buffer = await fs.readFile(imagePath)
       const reply2 = reply.header('Content-Type', mimetype || 'application/octet-stream')
@@ -533,13 +574,13 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
   })
 
-  app.get('/report/:id/pdf', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.get('/report/:az/pdf', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const inline = (request.query as { inline?: string }).inline === '1'
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT pdf_filename FROM reports WHERE id = ? AND user_id = ?',
-      [id, userId]
+      'SELECT pdf_filename FROM reports WHERE aktenzeichen = ? AND user_id = ?',
+      [az, userId]
     )
     const report = rows[0]
     if (!report?.pdf_filename) return reply.status(404).send('PDF nicht verfügbar.')
@@ -550,7 +591,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       const disposition = inline ? 'inline' : 'attachment'
       return reply
         .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `${disposition}; filename="anzeige-${id}.pdf"`)
+        .header('Content-Disposition', `${disposition}; filename="anzeige-${az}.pdf"`)
         .send(buffer)
     } catch {
       return reply.status(404).send('PDF-Datei nicht gefunden.')
@@ -558,21 +599,22 @@ export default async function reportsRoutes(app: FastifyInstance) {
   })
 
   // Wir versenden die Anzeige per E-Mail ans Ordnungsamt.
-  app.post('/report/:id/send', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.post('/report/:az/send', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
-    const report = await loadReport(id, userId)
+    const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status === 'versendet') return reply.redirect(`/report/${id}`)
+    if (report.status === 'versendet') return reply.redirect(`/report/${az}`)
+    const reportId = report.id
 
     if (!isComplete(report)) {
       request.session.flash = { type: 'error', message: 'Bitte zuerst alle Pflichtfelder ausfüllen.' }
       await request.session.save()
-      return reply.redirect(`/report/${id}/edit`)
+      return reply.redirect(`/report/${az}/edit`)
     }
 
-    await regeneratePdf(id, userId)
-    const fresh = await loadReport(id, userId)
+    await regeneratePdf(reportId, userId)
+    const fresh = await loadReport(reportId, userId)
     const [userRows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT * FROM users WHERE id = ?',
       [userId]
@@ -582,7 +624,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       await MailService.sendReport(fresh as mysql.RowDataPacket, userRows[0])
       await pool.execute(
         "UPDATE reports SET status='versendet', versand_art='system_email' WHERE id=?",
-        [id]
+        [reportId]
       )
       request.session.flash = { type: 'success', message: 'Anzeige wurde per E-Mail versendet.' }
     } catch (err) {
@@ -591,33 +633,34 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
 
     await request.session.save()
-    return reply.redirect(`/report/${id}`)
+    return reply.redirect(`/report/${az}`)
   })
 
   // Nutzer hat selbst versendet (gedruckt/Post oder eigene E-Mail) -> als erledigt markieren.
-  app.post('/report/:id/complete', { preHandler: requireAuth }, async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.post('/report/:az/complete', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const { art } = (request.body || {}) as { art?: string }
     if (art !== 'gedruckt' && art !== 'selbst_email') {
       return reply.status(400).send('Ungültige Versandart.')
     }
 
-    const report = await loadReport(id, userId)
+    const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status === 'versendet') return reply.redirect(`/report/${id}`)
+    if (report.status === 'versendet') return reply.redirect(`/report/${az}`)
+    const reportId = report.id
 
     if (!isComplete(report)) {
       request.session.flash = { type: 'error', message: 'Bitte zuerst alle Pflichtfelder ausfüllen.' }
       await request.session.save()
-      return reply.redirect(`/report/${id}/edit`)
+      return reply.redirect(`/report/${az}/edit`)
     }
 
-    if (!report.pdf_filename) await regeneratePdf(id, userId)
-    await pool.execute("UPDATE reports SET status='versendet', versand_art=? WHERE id=?", [art, id])
+    if (!report.pdf_filename) await regeneratePdf(reportId, userId)
+    await pool.execute("UPDATE reports SET status='versendet', versand_art=? WHERE id=?", [art, reportId])
 
     request.session.flash = { type: 'success', message: 'Anzeige als versendet markiert.' }
     await request.session.save()
-    return reply.redirect(`/report/${id}`)
+    return reply.redirect(`/report/${az}`)
   })
 }

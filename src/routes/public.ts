@@ -31,7 +31,7 @@ export default async function publicRoutes(app: FastifyInstance) {
   // Anonyme Marker-Daten für die Karte.
   app.get('/api/public/reports', async (_request, reply) => {
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT r.id, r.tattag, r.verstoss_art, r.tatort_lat, r.tatort_lon,
+      `SELECT r.aktenzeichen, r.tattag, r.verstoss_art, r.tatort_lat, r.tatort_lon,
               (SELECT ri.id FROM report_images ri
                 WHERE ri.report_id = r.id ORDER BY ri.id LIMIT 1) AS image_id
          FROM reports r
@@ -44,28 +44,28 @@ export default async function publicRoutes(app: FastifyInstance) {
       lon: Number(r.tatort_lon),
       verstossArt: r.verstoss_art || null,
       tattag: r.tattag || null,
-      imageUrl: r.image_id ? `/api/public/reports/${r.id}/pixel.jpg` : null,
+      imageUrl: r.image_id ? `/api/public/reports/${r.aktenzeichen}/pixel.jpg` : null,
     }))
     return reply.send({ reports })
   })
 
   // Stark verpixeltes erstes Foto einer versendeter Anzeige. Das Original
   // verlässt den Server nie – pixelate() rechnet es serverseitig herunter.
-  app.get('/api/public/reports/:id/pixel.jpg', async (request, reply) => {
-    const { id } = request.params as { id: string }
+  app.get('/api/public/reports/:az/pixel.jpg', async (request, reply) => {
+    const { az } = request.params as { az: string }
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.user_id, ri.filename, ri.mimetype
+      `SELECT r.user_id, r.id AS report_id, ri.filename, ri.mimetype
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
-        WHERE r.id = ? AND r.status='versendet'
+        WHERE r.aktenzeichen = ? AND r.status='versendet'
         ORDER BY ri.id LIMIT 1`,
-      [id]
+      [az]
     )
     const img = rows[0]
     if (!img) return reply.status(404).send('Nicht gefunden.')
 
-    const imagePath = path.join(UPLOAD_DIR, String(img.user_id), String(id), img.filename)
+    const imagePath = path.join(UPLOAD_DIR, String(img.user_id), String(img.report_id), img.filename)
     try {
       const buffer = await fs.readFile(imagePath)
       const pixelated = pixelate(buffer, img.mimetype || 'image/jpeg')

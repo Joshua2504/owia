@@ -73,6 +73,17 @@
     return parts.join('') || 'Anzeige'
   }
 
+  // Popup für eigene Entwürfe (nicht anonym – mit Adresse und Bearbeiten-Link).
+  function ownPopupHtml(r) {
+    const parts = ['<div class="fw-semibold">Eigener Entwurf</div>']
+    if (r.tatort) parts.push('<div class="small">' + escapeHtml(r.tatort) + '</div>')
+    if (r.verstossArt) parts.push('<div class="small text-muted">' + escapeHtml(r.verstossArt) + '</div>')
+    const date = formatDate(r.tattag)
+    if (date) parts.push('<div class="small text-muted">' + date + '</div>')
+    if (r.url) parts.push('<a class="small" href="' + encodeURI(r.url) + '">Bearbeiten</a>')
+    return parts.join('')
+  }
+
   document.addEventListener('DOMContentLoaded', async () => {
     const el = document.getElementById('overview-map')
     if (!el || !window.L) return
@@ -104,6 +115,34 @@
       L.marker([lat, lon]).addTo(map).bindPopup(popupHtml(r))
       bounds.push([lat, lon])
     })
+
+    // Eigene Entwürfe (nur Dashboard, data-include-own) zusätzlich einzeichnen –
+    // andersfarbig (orange) und mit Bearbeiten-Link, klar von den anonymen
+    // versendeten Anzeigen unterscheidbar.
+    if (el.dataset.includeOwn) {
+      let own = []
+      try {
+        const res = await fetch('/api/my/reports', { headers: { Accept: 'application/json' } })
+        if (res.ok) own = (await res.json()).reports || []
+      } catch (_) {
+        /* eigene Daten nicht erreichbar */
+      }
+      own.forEach((r) => {
+        const lat = num(r.lat)
+        const lon = num(r.lon)
+        if (lat === null || lon === null) return
+        L.circleMarker([lat, lon], {
+          radius: 8,
+          color: '#fff',
+          weight: 2,
+          fillColor: '#fd7e14',
+          fillOpacity: 0.95,
+        })
+          .addTo(map)
+          .bindPopup(ownPopupHtml(r))
+        bounds.push([lat, lon])
+      })
+    }
 
     // Auf die vorhandenen Marker zoomen, sonst beim Stadt-Zentrum bleiben.
     if (bounds.length > 1) {
