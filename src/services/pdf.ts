@@ -43,7 +43,9 @@ export const PdfService = {
       : ''
     const von = hhmm(report.tatzeit_von)
     const bis = hhmm(report.tatzeit_bis)
-    const tattime = von && bis ? `${von} – ${bis} Uhr` : von ? `ab ${von} Uhr` : ''
+    // Kein "ab ..." zulässig: entweder Zeitraum oder feste Uhrzeit.
+    const tattime =
+      von && bis ? `${von} – ${bis} Uhr` : von ? `${von} Uhr` : bis ? `${bis} Uhr` : ''
 
     const heute = new Date().toLocaleDateString('de-DE', {
       day: '2-digit',
@@ -51,11 +53,16 @@ export const PdfService = {
       year: 'numeric',
     })
 
+    // Tatvorwurf und Beschreibung gehören in EIN Feld (die Sachverhalts-
+    // schilderung). Das davorliegende Feld "Angaben zum Tatvorwurf" ist
+    // unbrauchbar und bleibt leer.
+    const sachverhalt = [report.verstoss_art, report.beschreibung]
+      .filter((v) => v && String(v).trim())
+      .join('\n\n')
+
     // Schlüssel = exakte AcroForm-Feldnamen des Frankfurt-Formulars
     // (ermittelt via PdfService.listFields() bzw. GET /debug/pdf-fields).
-    // Die beiden namenlosen PDFCheckBox-Felder ("behindert ja/nein") sowie
-    // "Weitere Zeugen" und das Behinderungs-Textfeld bleiben ungenutzt,
-    // da hierfür keine Daten erfasst werden.
+    // "Weitere Zeugen" bleibt ungenutzt, da hierfür keine Daten erfasst werden.
     const fieldMap: Record<string, string> = {
       // Anzeigeerstatter
       Name: user.nachname || '',
@@ -65,15 +72,17 @@ export const PdfService = {
       Ort: user.ort || '',
       Telefon: user.telefon || '',
       EMail: user.email || '',
-      // Tat
-      'Angaben zum Tatvorwurf': report.verstoss_art || '',
-      'Tatvorwurf  Sachverhaltsschilderung ggf vorhandene Beschilderung':
-        report.beschreibung || '',
+      // Tat — Tatvorwurf + Beschreibung gemeinsam in der Sachverhaltsschilderung,
+      // das Feld "Angaben zum Tatvorwurf" bleibt ungenutzt (unbrauchbar).
+      'Tatvorwurf  Sachverhaltsschilderung ggf vorhandene Beschilderung': sachverhalt,
       'Tatort Straße Hausnummer': report.tatort || '',
       'Tattag Datum': tatwdate,
       'Tatzeit Uhrzeit von wann bis wann': tattime,
       'Kennzeichen des betroffenen Fahrzeuges': report.kennzeichen || '',
       'Marke und Farbe des betroffenen Fahrzeuges': report.fahrzeug_marke || '',
+      // Behinderung: Beschreibung "wer wurde wie behindert" (nur bei „Ja")
+      'Wurde jemand behindert ja wer wurde wie behindert nein':
+        report.behinderung === 1 ? report.behinderung_text || '' : '',
       // Unterschriftszeile
       'Ort Datum': user.ort ? `${user.ort}, ${heute}` : heute,
     }
@@ -87,7 +96,29 @@ export const PdfService = {
       }
     }
 
-    form.flatten()
+    // "Wurde jemand behindert?" – ja/nein-Ankreuzfelder. Die beiden Checkboxen
+    // heißen im Formular "undefined" (ja, links) und "undefined_2" (nein, rechts).
+    // behinderung: 1=ja, 0=nein, null=keine Angabe (dann bleibt nichts angekreuzt).
+    try {
+      if (report.behinderung === 1) form.getCheckBox('undefined').check()
+      else if (report.behinderung === 0) form.getCheckBox('undefined_2').check()
+    } catch {
+      // Checkbox nicht gefunden — ignorieren
+    }
+
+    // Felder „einbrennen", damit sie nicht mehr veränderbar sind. Manche
+    // Formulare (verwaiste Widget-Annotationen) lassen sich von pdf-lib nicht
+    // flatten ("Could not find page for PDFRef"). Dann bleiben die Felder
+    // ausfüllbar, zeigen aber die gesetzten Werte – PDF wird trotzdem erzeugt.
+    try {
+      form.flatten()
+    } catch {
+      try {
+        form.updateFieldAppearances()
+      } catch {
+        /* Appearances konnten nicht aktualisiert werden – egal */
+      }
+    }
 
     // Hochgeladene Bilder als zusätzliche Seiten anhängen
     const A4 = { width: 595.28, height: 841.89 }

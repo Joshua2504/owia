@@ -1,0 +1,159 @@
+<%
+const r = locals.report || {}
+const images = locals.images || []
+const pad = (n) => String(n).padStart(2, '0')
+const toDateInput = (d) => {
+  if (!d) return ''
+  const dt = new Date(d)
+  return isNaN(dt) ? '' : `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+}
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '')
+const now = new Date()
+const today = toDateInput(now)
+const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
+%>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 class="mb-0">Anzeige bearbeiten</h2>
+      <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+    </div>
+
+    <% if (locals.error) { %>
+      <div class="alert alert-danger"><%= error %></div>
+    <% } %>
+
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <form id="report-form" method="post" action="/report/<%= r.id %>/save"
+              data-report-id="<%= r.id %>">
+
+          <h5 class="mb-3">Fahrzeug</h5>
+          <div class="row g-3 mb-4">
+            <div class="col-sm-6">
+              <label class="form-label">Kennzeichen <span class="text-danger">*</span></label>
+              <input type="text" name="kennzeichen" class="form-control text-uppercase"
+                     value="<%= r.kennzeichen || '' %>"
+                     placeholder="z.B. F-AB 1234">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label">Fahrzeugmarke / -farbe</label>
+              <input type="text" name="fahrzeug_marke" class="form-control"
+                     value="<%= r.fahrzeug_marke || '' %>"
+                     placeholder="z.B. VW Golf, grau">
+            </div>
+          </div>
+
+          <h5 class="mb-3">Tat</h5>
+          <div class="row g-3 mb-4">
+            <div class="col-sm-4">
+              <label class="form-label">Tattag <span class="text-danger">*</span></label>
+              <input type="date" name="tattag" class="form-control"
+                     value="<%= toDateInput(r.tattag) || today %>">
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label">Uhrzeit von <span class="text-danger">*</span></label>
+              <input type="time" name="tatzeit_von" class="form-control"
+                     value="<%= hhmm(r.tatzeit_von) || nowTime %>">
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label">Uhrzeit bis</label>
+              <input type="time" name="tatzeit_bis" class="form-control"
+                     value="<%= hhmm(r.tatzeit_bis) %>">
+            </div>
+            <div class="col-sm-12">
+              <label class="form-label">Tatort <span class="text-danger">*</span></label>
+              <input type="text" name="tatort" id="tatort" class="form-control"
+                     value="<%= r.tatort || '' %>"
+                     data-address-autocomplete data-fill="full" data-geo-scope="ffm"
+                     placeholder="Adresse in Frankfurt eingeben und aus der Liste wählen …">
+              <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-current-location">
+                  📍 Aktuellen Standort verwenden
+                </button>
+                <span id="geo-status" class="form-text m-0"></span>
+              </div>
+              <div class="form-text">
+                Adresse tippen und einen Vorschlag wählen, den aktuellen Standort verwenden
+                oder unten den Standort aus einem Foto übernehmen.
+              </div>
+            </div>
+            <div class="col-sm-12">
+              <label class="form-label">Verstoßart <span class="text-danger">*</span></label>
+              <select name="verstoss_art" class="form-select">
+                <option value="">– bitte wählen –</option>
+                <% for (const art of verstossArten) { %>
+                  <option value="<%= art %>" <%= r.verstoss_art === art ? 'selected' : '' %>><%= art %></option>
+                <% } %>
+              </select>
+            </div>
+            <div class="col-sm-12">
+              <label class="form-label">Beschreibung</label>
+              <textarea name="beschreibung" class="form-control" rows="3"
+                        placeholder="Optionale Schilderung des Vorfalls"><%= r.beschreibung || '' %></textarea>
+            </div>
+            <div class="col-sm-12">
+              <label class="form-label d-block">Wurde jemand behindert?</label>
+              <div class="btn-group" role="group" aria-label="Wurde jemand behindert?">
+                <input type="radio" class="btn-check" name="behinderung" id="behinderung-ja"
+                       value="ja" <%= r.behinderung === 1 ? 'checked' : '' %>>
+                <label class="btn btn-outline-secondary" for="behinderung-ja">Ja</label>
+                <input type="radio" class="btn-check" name="behinderung" id="behinderung-nein"
+                       value="nein" <%= r.behinderung === 0 ? 'checked' : '' %>>
+                <label class="btn btn-outline-secondary" for="behinderung-nein">Nein</label>
+              </div>
+              <!-- Nur bei „Ja" relevant: wer wurde wie behindert. -->
+              <div class="mt-2 <%= r.behinderung === 1 ? '' : 'd-none' %>" id="behinderung-detail">
+                <label class="form-label">Wer wurde wie behindert?</label>
+                <textarea name="behinderung_text" class="form-control" rows="2"
+                          placeholder="z.B. Rollstuhlfahrer musste auf die Straße ausweichen"><%= r.behinderung_text || '' %></textarea>
+              </div>
+            </div>
+          </div>
+
+          <h5 class="mb-3">Beweisfotos</h5>
+          <div class="mb-4">
+            <label class="form-label">Bilder hinzufügen</label>
+            <input type="file" id="bilder-input" class="form-control"
+                   accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
+            <div class="form-text">
+              JPG, PNG oder HEIC, bis 20 MB pro Bild (max. 10 Bilder). Ausgewählte Bilder
+              werden sofort zum Entwurf hinzugefügt. Anschließend können Sie Bereiche
+              (z.&nbsp;B. Personen) schwärzen – die Schwärzung wird automatisch gespeichert
+              und ersetzt die ursprüngliche Fassung. Bereits gespeicherte Bilder lassen sich
+              auch nach dem Neuladen weiter bearbeiten.
+            </div>
+            <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
+            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.id}/image/${img.id}` }))) %></script>
+            <div id="image-editor" class="row g-3 mt-1"></div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center">
+            <span id="save-status" class="text-muted small"></span>
+            <div class="d-flex gap-2">
+              <button type="submit" form="discard-form" class="btn btn-outline-danger"
+                      onclick="return confirm('Entwurf wirklich verwerfen?')">Verwerfen</button>
+              <button type="submit" class="btn btn-primary">Entwurf speichern</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <p class="text-muted small mt-3">
+      * Für den Versand erforderlich. Als Entwurf können Sie jederzeit speichern – auch mit
+      nur einem ausgefüllten Feld oder nur einem Foto, etwa um unterwegs Fotos und Standort
+      festzuhalten und die Anzeige später zu vervollständigen. Eingaben werden zudem
+      automatisch gespeichert. Ihre persönlichen Daten (Name, Adresse) werden aus den
+      <a href="/settings">Einstellungen</a> übernommen.
+    </p>
+  </div>
+</div>
+
+<form id="discard-form" method="post" action="/report/<%= r.id %>/discard" class="d-none"></form>
+
+<!-- Optionale Hilfen: EXIF-GPS aus Fotos lesen, HEIC im Browser für die Vorschau wandeln. -->
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+<script src="/public/js/report-form.js"></script>

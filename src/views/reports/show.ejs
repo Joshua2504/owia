@@ -5,23 +5,37 @@ const tattag = report.tattag
   : '—'
 const von = hhmm(report.tatzeit_von)
 const bis = hhmm(report.tatzeit_bis)
-const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `ab ${von} Uhr` : '—'
+const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `${von} Uhr` : bis ? `${bis} Uhr` : '—'
 const isVersendet = report.status === 'versendet'
+const isEntwurf = report.status === 'entwurf'
 const images = locals.images || []
+const complete = locals.complete
+const mail = locals.mailExample || { subject: '', text: '' }
+const empfaenger = locals.empfaenger || ''
+const versandLabel = {
+  gedruckt: 'selbst gedruckt / per Post',
+  selbst_email: 'selbst per E-Mail',
+  system_email: 'von uns per E-Mail',
+}[report.versand_art] || ''
 %>
 
 <div class="row justify-content-center">
   <div class="col-lg-7">
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h2 class="mb-0">Anzeige #<%= report.id %></h2>
-      <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+      <div class="d-flex gap-2">
+        <% if (isEntwurf) { %>
+          <a href="/report/<%= report.id %>/edit" class="btn btn-outline-primary btn-sm">✎ Bearbeiten</a>
+        <% } %>
+        <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+      </div>
     </div>
 
     <div class="card shadow-sm mb-4">
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-4">Kennzeichen</dt>
-          <dd class="col-sm-8"><code><%= report.kennzeichen %></code></dd>
+          <dd class="col-sm-8"><code><%= report.kennzeichen || '—' %></code></dd>
 
           <% if (report.fahrzeug_marke) { %>
             <dt class="col-sm-4">Fahrzeug</dt>
@@ -35,22 +49,35 @@ const images = locals.images || []
           <dd class="col-sm-8"><%= tatzeit %></dd>
 
           <dt class="col-sm-4">Tatort</dt>
-          <dd class="col-sm-8"><%= report.tatort %></dd>
+          <dd class="col-sm-8"><%= report.tatort || '—' %></dd>
 
           <dt class="col-sm-4">Verstoßart</dt>
-          <dd class="col-sm-8"><%= report.verstoss_art %></dd>
+          <dd class="col-sm-8"><%= report.verstoss_art || '—' %></dd>
 
           <% if (report.beschreibung) { %>
             <dt class="col-sm-4">Beschreibung</dt>
             <dd class="col-sm-8"><%= report.beschreibung %></dd>
           <% } %>
 
+          <% if (report.behinderung === 1 || report.behinderung === 0) { %>
+            <dt class="col-sm-4">Jemand behindert?</dt>
+            <dd class="col-sm-8">
+              <%= report.behinderung === 1 ? 'Ja' : 'Nein' %>
+              <% if (report.behinderung === 1 && report.behinderung_text) { %>
+                <span class="text-muted">– <%= report.behinderung_text %></span>
+              <% } %>
+            </dd>
+          <% } %>
+
           <dt class="col-sm-4">Status</dt>
           <dd class="col-sm-8">
             <% if (isVersendet) { %>
               <span class="badge bg-success">Versendet</span>
+              <% if (versandLabel) { %><span class="text-muted small ms-1">(<%= versandLabel %>)</span><% } %>
+            <% } else if (isEntwurf) { %>
+              <span class="badge bg-secondary">Entwurf</span>
             <% } else { %>
-              <span class="badge bg-secondary">Eingereicht</span>
+              <span class="badge bg-info">Eingereicht</span>
             <% } %>
           </dd>
         </dl>
@@ -79,21 +106,141 @@ const images = locals.images || []
       </div>
     <% } %>
 
-    <div class="d-flex gap-2 flex-wrap">
-      <% if (report.pdf_filename) { %>
-        <a href="/report/<%= report.id %>/pdf" class="btn btn-outline-primary">
-          ⬇ PDF herunterladen
-        </a>
-      <% } else { %>
-        <button class="btn btn-outline-secondary" disabled>PDF wird generiert…</button>
+    <% if (!isVersendet) { %>
+      <% if (!complete) { %>
+        <div class="alert alert-warning">
+          Es fehlen noch Pflichtangaben. Bitte zuerst
+          <a href="/report/<%= report.id %>/edit" class="alert-link">den Entwurf vervollständigen</a>,
+          dann kann die Anzeige versendet werden.
+        </div>
       <% } %>
 
-      <% if (!isVersendet && report.pdf_filename) { %>
-        <form method="post" action="/report/<%= report.id %>/send"
-              onsubmit="return confirm('Anzeige jetzt per E-Mail an das Ordnungsamt senden?')">
-          <button type="submit" class="btn btn-success">📧 Per E-Mail versenden</button>
-        </form>
-      <% } %>
-    </div>
+      <h4 class="mb-3">Versand</h4>
+      <div class="row g-3 mb-4">
+        <!-- 1) Selbst drucken / Post -->
+        <div class="col-md-4">
+          <div class="card shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+              <h6 class="card-title">Selbst drucken / per Post</h6>
+              <p class="card-text small text-muted flex-grow-1">
+                PDF herunterladen, ausdrucken und per Post an das Ordnungsamt schicken.
+              </p>
+              <a href="/report/<%= report.id %>/pdf"
+                 class="btn btn-outline-primary btn-sm mb-2 <%= complete ? '' : 'disabled' %>">
+                ⬇ PDF herunterladen
+              </a>
+              <form method="post" action="/report/<%= report.id %>/complete"
+                    onsubmit="return confirm('Anzeige als versendet markieren?')">
+                <input type="hidden" name="art" value="gedruckt">
+                <button type="submit" class="btn btn-success btn-sm w-100" <%= complete ? '' : 'disabled' %>>
+                  Als versendet markieren
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2) Selbst per E-Mail -->
+        <div class="col-md-4">
+          <div class="card shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+              <h6 class="card-title">Selbst per E-Mail</h6>
+              <p class="card-text small text-muted flex-grow-1">
+                Empfänger, Betreff und Beispieltext kopieren, PDF anhängen und selbst versenden.
+              </p>
+              <button type="button" class="btn btn-outline-secondary btn-sm mb-2"
+                      data-bs-toggle="collapse" data-bs-target="#self-email"
+                      <%= complete ? '' : 'disabled' %>>
+                E-Mail-Vorlage anzeigen
+              </button>
+              <form method="post" action="/report/<%= report.id %>/complete"
+                    onsubmit="return confirm('Anzeige als versendet markieren?')">
+                <input type="hidden" name="art" value="selbst_email">
+                <button type="submit" class="btn btn-success btn-sm w-100" <%= complete ? '' : 'disabled' %>>
+                  Als versendet markieren
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3) Wir verschicken -->
+        <div class="col-md-4">
+          <div class="card shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+              <h6 class="card-title">Wir verschicken</h6>
+              <p class="card-text small text-muted flex-grow-1">
+                Wir senden die Anzeige inkl. PDF per E-Mail an das Ordnungsamt (Sie in Kopie).
+              </p>
+              <form method="post" action="/report/<%= report.id %>/send"
+                    onsubmit="return confirm('Anzeige jetzt durch uns versenden lassen?')">
+                <button type="submit" class="btn btn-success btn-sm w-100 mt-auto" <%= complete ? '' : 'disabled' %>>
+                  📧 Jetzt versenden lassen
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ausklappbare E-Mail-Vorlage für den Selbst-Versand -->
+      <div class="collapse mb-4" id="self-email">
+        <div class="card card-body">
+          <div class="mb-2">
+            <label class="form-label small mb-1">Empfänger</label>
+            <div class="input-group input-group-sm">
+              <input type="text" class="form-control" id="copy-to" value="<%= empfaenger %>" readonly>
+              <button class="btn btn-outline-secondary" type="button" data-copy="#copy-to">Kopieren</button>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Betreff</label>
+            <div class="input-group input-group-sm">
+              <input type="text" class="form-control" id="copy-subject" value="<%= mail.subject %>" readonly>
+              <button class="btn btn-outline-secondary" type="button" data-copy="#copy-subject">Kopieren</button>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small mb-1">Text</label>
+            <textarea class="form-control form-control-sm" id="copy-body" rows="12" readonly><%= mail.text %></textarea>
+            <button class="btn btn-outline-secondary btn-sm mt-2" type="button" data-copy="#copy-body">Text kopieren</button>
+          </div>
+          <p class="small text-muted mb-0">
+            Bitte das <a href="/report/<%= report.id %>/pdf">PDF</a> als Anhang hinzufügen.
+          </p>
+        </div>
+      </div>
+    <% } else { %>
+      <div class="d-flex gap-2 flex-wrap mb-4">
+        <a href="/report/<%= report.id %>/pdf" class="btn btn-outline-primary">⬇ PDF herunterladen</a>
+      </div>
+    <% } %>
+
+    <!-- PDF-Vorschau ganz unten -->
+    <% if (report.pdf_filename) { %>
+      <h4 class="mb-3">PDF-Vorschau</h4>
+      <iframe src="/report/<%= report.id %>/pdf?inline=1"
+              class="w-100 border rounded" style="height: 600px;"
+              title="PDF-Vorschau"></iframe>
+    <% } else { %>
+      <p class="text-muted">Die PDF-Vorschau erscheint, sobald der Entwurf gespeichert wurde.</p>
+    <% } %>
   </div>
 </div>
+
+<script>
+  document.querySelectorAll('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const el = document.querySelector(btn.getAttribute('data-copy'))
+      if (!el) return
+      try {
+        await navigator.clipboard.writeText(el.value)
+      } catch (_) {
+        el.focus(); el.select(); document.execCommand('copy')
+      }
+      const old = btn.textContent
+      btn.textContent = 'Kopiert ✓'
+      setTimeout(() => { btn.textContent = old }, 1500)
+    })
+  })
+</script>

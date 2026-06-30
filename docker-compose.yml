@@ -1,4 +1,27 @@
 services:
+  # Reverse-Proxy mit automatischem HTTPS (Let's Encrypt).
+  # Läuft nur in Produktion: aktiviert über COMPOSE_PROFILES=production
+  # (siehe .env). Terminiert TLS für ${APP_DOMAIN} und reicht den Traffic
+  # intern an die Node-App auf Port 3000 weiter. Die Zertifikate liegen im
+  # Volume caddy_data, damit Let's Encrypt sie nicht bei jedem Neustart neu
+  # ausstellt (Rate-Limits!).
+  caddy:
+    image: caddy:2-alpine
+    profiles: [production]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    depends_on:
+      - app
+    restart: unless-stopped
+
   app:
     build:
       context: .
@@ -58,3 +81,7 @@ services:
     # ports:
     #   - "2322:2322"
     restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,12 +1,13 @@
-import { FastifyInstance } from 'fastify'
+import { FastifyInstance, FastifyRequest } from 'fastify'
 import mysql from 'mysql2/promise'
+import crypto from 'crypto'
 import path from 'path'
 import fs from 'fs/promises'
 import heicConvert from 'heic-convert'
 import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
-import { MailService } from '../services/mail'
+import { MailService, buildReportMail } from '../services/mail'
 
 export const VERSTOSS_ARTEN = [
   'Parken auf dem Gehweg',
@@ -24,7 +25,9 @@ export const VERSTOSS_ARTEN = [
 ]
 
 const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
+const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 const DIRECT_IMAGE_TYPES = ['image/jpeg', 'image/png']
+const MAX_IMAGES = 10
 
 /** Direkt für PDF/Web verwendbares Bild plus aufbewahrtes Original. */
 type PreparedImage = {
@@ -60,187 +63,410 @@ function isHeic(filename: string, mimetype: string): boolean {
   )
 }
 
+/** Hochgeladenes Bild in ein nutzbares JPG/PNG (+ ggf. HEIC-Original) überführen. */
+async function prepareImage(
+  buffer: Buffer,
+  filename: string,
+  mimetype: string
+): Promise<PreparedImage> {
+  if (DIRECT_IMAGE_TYPES.includes(mimetype)) {
+    const ext = extFromMime(mimetype)
+    return {
+      buffer,
+      mimetype,
+      ext,
+      originalBuffer: buffer,
+      originalMimetype: mimetype,
+      originalExt: ext,
+      converted: false,
+    }
+  }
+  if (isHeic(filename, mimetype)) {
+    const jpeg = Buffer.from(await heicConvert({ buffer, format: 'JPEG', quality: 0.85 }))
+    return {
+      buffer: jpeg,
+      mimetype: 'image/jpeg',
+      ext: 'jpg',
+      originalBuffer: buffer,
+      originalMimetype: mimetype || 'image/heic',
+      originalExt: extFromName(filename, 'heic'),
+      converted: true,
+    }
+  }
+  throw new Error('unsupported')
+}
+
+/** Vorbereitetes Bild (+ ggf. Original) auf Platte schreiben; gibt die Dateinamen zurück. */
+async function writeImageFiles(
+  userId: number,
+  reportId: number,
+  p: PreparedImage
+): Promise<{ filename: string; originalFilename: string }> {
+  const dir = path.join(UPLOAD_DIR, String(userId), String(reportId))
+  await fs.mkdir(dir, { recursive: true })
+
+  const base = `bild-${crypto.randomBytes(6).toString('hex')}`
+  const filename = `${base}.${p.ext}`
+  await fs.writeFile(path.join(dir, filename), p.buffer)
+
+  let originalFilename = filename
+  if (p.converted) {
+    originalFilename = `${base}-original.${p.originalExt}`
+    await fs.writeFile(path.join(dir, originalFilename), p.originalBuffer)
+  }
+  return { filename, originalFilename }
+}
+
+/** Alte Bilddateien (nutzbare Fassung + Original) entfernen. */
+async function removeImageFiles(
+  userId: number,
+  reportId: number | string,
+  filename: string,
+  originalFilename: string
+): Promise<void> {
+  const dir = path.join(UPLOAD_DIR, String(userId), String(reportId))
+  try {
+    await fs.rm(path.join(dir, filename), { force: true })
+    if (originalFilename && originalFilename !== filename) {
+      await fs.rm(path.join(dir, originalFilename), { force: true })
+    }
+  } catch {
+    /* Dateien evtl. schon weg */
+  }
+}
+
+/** Bild zum Entwurf auf Platte + in der DB speichern; gibt die neue Bild-ID zurück. */
+async function saveImageToReport(
+  userId: number,
+  reportId: number,
+  p: PreparedImage
+): Promise<{ id: number; filename: string }> {
+  const { filename, originalFilename } = await writeImageFiles(userId, reportId, p)
+
+  const [result] = await pool.execute<mysql.ResultSetHeader>(
+    `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype)
+     VALUES (?, ?, ?, ?, ?)`,
+    [reportId, filename, p.mimetype, originalFilename, p.originalMimetype]
+  )
+  return { id: result.insertId, filename }
+}
+
+async function loadReport(
+  reportId: string | number,
+  userId: number
+): Promise<mysql.RowDataPacket | undefined> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT * FROM reports WHERE id = ? AND user_id = ?',
+    [reportId, userId]
+  )
+  return rows[0]
+}
+
+/** Felder eines Entwurfs persistieren (leere Strings -> NULL). */
+async function persistFields(
+  reportId: string | number,
+  userId: number,
+  v: Record<string, string | undefined>
+): Promise<void> {
+  const behinderung = v.behinderung === 'ja' ? 1 : v.behinderung === 'nein' ? 0 : null
+  // Text immer aufbewahren (falls später doch wieder „Ja"); im PDF wird er nur
+  // bei behinderung=1 angezeigt.
+  const behinderungText = v.behinderung_text || null
+  await pool.execute(
+    `UPDATE reports
+       SET kennzeichen=?, fahrzeug_marke=?, tattag=?, tatzeit_von=?, tatzeit_bis=?,
+           tatort=?, verstoss_art=?, beschreibung=?, behinderung=?, behinderung_text=?
+     WHERE id=? AND user_id=? AND status='entwurf'`,
+    [
+      v.kennzeichen ? v.kennzeichen.toUpperCase().trim() : null,
+      v.fahrzeug_marke || null,
+      v.tattag || null,
+      v.tatzeit_von || null,
+      v.tatzeit_bis || null,
+      v.tatort || null,
+      v.verstoss_art || null,
+      v.beschreibung || null,
+      behinderung,
+      behinderungText,
+      reportId,
+      userId,
+    ]
+  )
+}
+
+function isComplete(r: mysql.RowDataPacket): boolean {
+  return !!(r.kennzeichen && r.tattag && r.tatzeit_von && r.tatort && r.verstoss_art)
+}
+
+/** PDF aus dem aktuellen Stand (inkl. gespeicherter Bilder) neu erzeugen. */
+async function regeneratePdf(reportId: string | number, userId: number): Promise<void> {
+  const report = await loadReport(reportId, userId)
+  if (!report) return
+  const [uRows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT * FROM users WHERE id = ?',
+    [userId]
+  )
+  const user = uRows[0]
+  const [imgRows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT filename, mimetype FROM report_images WHERE report_id = ? ORDER BY id',
+    [reportId]
+  )
+
+  const dir = path.join(UPLOAD_DIR, String(userId), String(reportId))
+  const images: ReportImage[] = []
+  for (const row of imgRows) {
+    try {
+      const buffer = await fs.readFile(path.join(dir, row.filename))
+      images.push({ mimetype: row.mimetype, buffer })
+    } catch {
+      // Datei fehlt – überspringen
+    }
+  }
+
+  // Altes PDF entfernen, damit keine verwaisten Dateien liegen bleiben.
+  if (report.pdf_filename) {
+    try {
+      await fs.rm(path.join(PDF_DIR, String(userId), report.pdf_filename), { force: true })
+    } catch {
+      /* egal */
+    }
+  }
+
+  try {
+    const filename = await PdfService.generate(report, user, images)
+    await pool.execute('UPDATE reports SET pdf_filename=? WHERE id=?', [filename, reportId])
+  } catch (err) {
+    // PDF-Erzeugung darf den Workflow nicht blockieren; Vorschau bleibt dann leer.
+    console.error('PDF-Generierung fehlgeschlagen', err)
+  }
+}
+
 export default async function reportsRoutes(app: FastifyInstance) {
-  app.get('/report/new', { preHandler: requireAuth }, async (request, reply) => {
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT vorname, nachname, strasse, plz, ort, telefon, email FROM users WHERE id = ?',
-      [request.session.userId]
-    )
-    return reply.view('/reports/new.ejs', viewData(request, {
-      title: 'Neue Anzeige',
-      verstossArten: VERSTOSS_ARTEN,
-      user: rows[0],
-    }))
-  })
+  // ---------------------------------------------------------------------------
+  // Entwurf anlegen + bearbeiten
+  // ---------------------------------------------------------------------------
 
-  app.post('/report', { preHandler: requireAuth }, async (request, reply) => {
-    const fields: Record<string, string> = {}
-    const prepared: PreparedImage[] = []
-    let imageError: string | null = null
-
-    async function renderForm(error: string) {
-      const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-        'SELECT vorname, nachname, strasse, plz, ort, telefon, email FROM users WHERE id = ?',
-        [request.session.userId]
-      )
-      return reply.view('/reports/new.ejs', viewData(request, {
-        title: 'Neue Anzeige',
-        verstossArten: VERSTOSS_ARTEN,
-        user: rows[0],
-        error,
-        values: fields,
-      }))
-    }
-
-    try {
-      for await (const part of request.parts()) {
-        if (part.type !== 'file') {
-          fields[part.fieldname] = String(part.value)
-          continue
-        }
-
-        const buffer = await part.toBuffer()
-        if (part.fieldname !== 'bilder' || !part.filename || buffer.length === 0) {
-          continue
-        }
-        const mimetype = part.mimetype || ''
-
-        if (DIRECT_IMAGE_TYPES.includes(mimetype)) {
-          const ext = extFromMime(mimetype)
-          prepared.push({
-            buffer,
-            mimetype,
-            ext,
-            originalBuffer: buffer,
-            originalMimetype: mimetype,
-            originalExt: ext,
-            converted: false,
-          })
-        } else if (isHeic(part.filename, mimetype)) {
-          try {
-            const jpeg = Buffer.from(
-              await heicConvert({ buffer, format: 'JPEG', quality: 0.85 })
-            )
-            prepared.push({
-              buffer: jpeg,
-              mimetype: 'image/jpeg',
-              ext: 'jpg',
-              originalBuffer: buffer,
-              originalMimetype: mimetype || 'image/heic',
-              originalExt: extFromName(part.filename, 'heic'),
-              converted: true,
-            })
-          } catch (err) {
-            app.log.error({ err }, 'HEIC-Konvertierung fehlgeschlagen')
-            imageError = 'Ein HEIC-Bild konnte nicht umgewandelt werden. Bitte als JPG/PNG hochladen.'
-          }
-        } else {
-          imageError = 'Es werden nur JPG-, PNG- und HEIC/HEIF-Bilder unterstützt.'
-        }
-      }
-    } catch (err) {
-      app.log.warn({ err }, 'Upload abgebrochen')
-      return renderForm(
-        'Mindestens ein Bild ist zu groß (max. 20 MB) oder es wurden zu viele Bilder hochgeladen (max. 10).'
-      )
-    }
-
-    const { kennzeichen, fahrzeug_marke, tattag, tatzeit_von, tatzeit_bis, tatort, verstoss_art, beschreibung } =
-      fields
-
-    if (!kennzeichen || !tattag || !tatzeit_von || !tatort || !verstoss_art) {
-      return renderForm('Bitte alle Pflichtfelder ausfüllen.')
-    }
-    if (imageError) {
-      return renderForm(imageError)
-    }
-
+  app.post('/report/new', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = request.session.userId as number
+    // Tattag/Tatzeit mit dem aktuellen Zeitpunkt vorbelegen (häufigster Fall: Vorfall jetzt).
     const [result] = await pool.execute<mysql.ResultSetHeader>(
-      `INSERT INTO reports
-         (user_id, kennzeichen, fahrzeug_marke, tattag, tatzeit_von, tatzeit_bis, tatort, verstoss_art, beschreibung)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        request.session.userId,
-        kennzeichen.toUpperCase().trim(),
-        fahrzeug_marke || null,
-        tattag,
-        tatzeit_von,
-        tatzeit_bis || null,
-        tatort,
-        verstoss_art,
-        beschreibung || null,
-      ]
+      "INSERT INTO reports (user_id, status, tattag, tatzeit_von) VALUES (?, 'entwurf', CURDATE(), CURTIME())",
+      [userId]
     )
-    const reportId = result.insertId
-
-    // Bilder für den Nutzer speichern (nutzbares JPG/PNG + ggf. HEIC-Original)
-    if (prepared.length > 0) {
-      const dir = path.join(UPLOAD_DIR, String(request.session.userId), String(reportId))
-      await fs.mkdir(dir, { recursive: true })
-      for (let i = 0; i < prepared.length; i++) {
-        const p = prepared[i]
-        const filename = `bild-${i + 1}.${p.ext}`
-        await fs.writeFile(path.join(dir, filename), p.buffer)
-
-        let originalFilename = filename
-        if (p.converted) {
-          originalFilename = `bild-${i + 1}-original.${p.originalExt}`
-          await fs.writeFile(path.join(dir, originalFilename), p.originalBuffer)
-        }
-
-        await pool.execute(
-          `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype)
-           VALUES (?, ?, ?, ?, ?)`,
-          [reportId, filename, p.mimetype, originalFilename, p.originalMimetype]
-        )
-      }
-    }
-
-    try {
-      const [userRows] = await pool.execute<mysql.RowDataPacket[]>(
-        'SELECT * FROM users WHERE id = ?',
-        [request.session.userId]
-      )
-      const [reportRows] = await pool.execute<mysql.RowDataPacket[]>(
-        'SELECT * FROM reports WHERE id = ?',
-        [reportId]
-      )
-      const pdfImages: ReportImage[] = prepared.map((p) => ({
-        mimetype: p.mimetype,
-        buffer: p.buffer,
-      }))
-      const pdfFilename = await PdfService.generate(reportRows[0], userRows[0], pdfImages)
-      await pool.execute('UPDATE reports SET pdf_filename=? WHERE id=?', [pdfFilename, reportId])
-    } catch (err) {
-      app.log.error({ err }, 'PDF-Generierung fehlgeschlagen')
-    }
-
-    request.session.flash = { type: 'success', message: 'Anzeige erfolgreich eingereicht.' }
-    await request.session.save()
-    return reply.redirect(`/report/${reportId}`)
+    return reply.redirect(`/report/${result.insertId}/edit`)
   })
 
-  app.get('/report/:id', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/report/:id/edit', { preHandler: requireAuth }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT * FROM reports WHERE id = ? AND user_id = ?',
-      [id, request.session.userId]
-    )
-    if (!rows[0]) return reply.status(404).send('Anzeige nicht gefunden.')
+    const userId = request.session.userId as number
+    const report = await loadReport(id, userId)
+    if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
+    if (report.status !== 'entwurf') return reply.redirect(`/report/${id}`)
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY id',
       [id]
     )
+    return reply.view('/reports/edit.ejs', viewData(request, {
+      title: 'Entwurf bearbeiten',
+      verstossArten: VERSTOSS_ARTEN,
+      report,
+      images,
+    }))
+  })
+
+  // Hintergrund-Autosave der Textfelder (JSON).
+  app.patch('/report/:id', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.session.userId as number
+    const report = await loadReport(id, userId)
+    if (!report) return reply.status(404).send({ error: 'not found' })
+    if (report.status !== 'entwurf') return reply.status(409).send({ error: 'not a draft' })
+
+    await persistFields(id, userId, (request.body || {}) as Record<string, string>)
+    return reply.send({ ok: true })
+  })
+
+  // Einzelnes (ggf. bereits geschwärztes) Bild sofort zum Entwurf hochladen.
+  app.post('/report/:id/images', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.session.userId as number
+    const report = await loadReport(id, userId)
+    if (!report) return reply.status(404).send({ error: 'not found' })
+    if (report.status !== 'entwurf') return reply.status(409).send({ error: 'not a draft' })
+
+    const [cntRows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
+      [id]
+    )
+    let count = Number(cntRows[0].c)
+
+    const saved: { id: number; url: string }[] = []
+    const errors: string[] = []
+    try {
+      for await (const part of request.parts()) {
+        if (part.type !== 'file') continue
+        if (part.fieldname !== 'bilder' || !part.filename) continue
+        const buffer = await part.toBuffer()
+        if (buffer.length === 0) continue
+        if (count >= MAX_IMAGES) {
+          errors.push(`Maximal ${MAX_IMAGES} Bilder pro Anzeige.`)
+          continue
+        }
+        try {
+          const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
+          const row = await saveImageToReport(userId, Number(id), prepared)
+          saved.push({ id: row.id, url: `/report/${id}/image/${row.id}` })
+          count++
+        } catch {
+          errors.push('Nur JPG-, PNG- und HEIC/HEIF-Bilder werden unterstützt.')
+        }
+      }
+    } catch {
+      return reply.status(413).send({ error: 'Bild zu groß (max. 20 MB).', images: saved })
+    }
+
+    return reply.send({ images: saved, errors })
+  })
+
+  app.delete('/report/:id/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
+    const { id, imageId } = request.params as { id: string; imageId: string }
+    const userId = request.session.userId as number
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.filename, ri.original_filename
+       FROM report_images ri
+       JOIN reports r ON r.id = ri.report_id
+       WHERE ri.id = ? AND r.id = ? AND r.user_id = ? AND r.status = 'entwurf'`,
+      [imageId, id, userId]
+    )
+    const img = rows[0]
+    if (!img) return reply.status(404).send({ error: 'not found' })
+
+    await pool.execute('DELETE FROM report_images WHERE id = ?', [imageId])
+    await removeImageFiles(userId, id, img.filename, img.original_filename)
+    return reply.send({ ok: true })
+  })
+
+  // Bestehendes Bild durch eine neue (z.B. geschwärzte) Fassung ersetzen.
+  // Die Bild-ID bleibt erhalten, das Bilder-Limit wird nicht berührt.
+  app.put('/report/:id/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
+    const { id, imageId } = request.params as { id: string; imageId: string }
+    const userId = request.session.userId as number
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.filename, ri.original_filename
+       FROM report_images ri
+       JOIN reports r ON r.id = ri.report_id
+       WHERE ri.id = ? AND r.id = ? AND r.user_id = ? AND r.status = 'entwurf'`,
+      [imageId, id, userId]
+    )
+    const old = rows[0]
+    if (!old) return reply.status(404).send({ error: 'not found' })
+
+    let prepared: PreparedImage | null = null
+    try {
+      for await (const part of request.parts()) {
+        if (part.type !== 'file' || part.fieldname !== 'bilder' || !part.filename) continue
+        const buffer = await part.toBuffer()
+        if (buffer.length === 0) continue
+        prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
+        break // nur das erste Bild ersetzt die bestehende Fassung
+      }
+    } catch {
+      return reply.status(413).send({ error: 'Bild zu groß (max. 20 MB).' })
+    }
+    if (!prepared) {
+      return reply.status(400).send({ error: 'Kein gültiges Bild übermittelt.' })
+    }
+
+    const { filename, originalFilename } = await writeImageFiles(userId, Number(id), prepared)
+    await pool.execute(
+      `UPDATE report_images
+         SET filename=?, mimetype=?, original_filename=?, original_mimetype=?
+       WHERE id=?`,
+      [filename, prepared.mimetype, originalFilename, prepared.originalMimetype, imageId]
+    )
+    await removeImageFiles(userId, id, old.filename, old.original_filename)
+
+    return reply.send({ image: { id: Number(imageId), url: `/report/${id}/image/${imageId}` } })
+  })
+
+  // „Entwurf speichern": finale Werte sichern, PDF erzeugen, zur Detailseite.
+  app.post('/report/:id/save', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.session.userId as number
+    const report = await loadReport(id, userId)
+    if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
+    if (report.status !== 'entwurf') return reply.redirect(`/report/${id}`)
+
+    await persistFields(id, userId, (request.body || {}) as Record<string, string>)
+    await regeneratePdf(id, userId)
+
+    request.session.flash = { type: 'success', message: 'Entwurf gespeichert.' }
+    await request.session.save()
+    return reply.redirect(`/report/${id}`)
+  })
+
+  app.post('/report/:id/discard', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.session.userId as number
+    const report = await loadReport(id, userId)
+    if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
+    if (report.status !== 'entwurf') return reply.redirect(`/report/${id}`)
+
+    await pool.execute('DELETE FROM reports WHERE id = ? AND user_id = ?', [id, userId])
+    try {
+      await fs.rm(path.join(UPLOAD_DIR, String(userId), String(id)), { recursive: true, force: true })
+    } catch {
+      /* egal */
+    }
+    if (report.pdf_filename) {
+      try {
+        await fs.rm(path.join(PDF_DIR, String(userId), report.pdf_filename), { force: true })
+      } catch {
+        /* egal */
+      }
+    }
+
+    request.session.flash = { type: 'success', message: 'Entwurf verworfen.' }
+    await request.session.save()
+    return reply.redirect('/dashboard')
+  })
+
+  // ---------------------------------------------------------------------------
+  // Detail / Versand
+  // ---------------------------------------------------------------------------
+
+  app.get('/report/:id', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.session.userId as number
+    const report = await loadReport(id, userId)
+    if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
+
+    const [images] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY id',
+      [id]
+    )
+    const [uRows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    )
+    const mailExample = buildReportMail(report, uRows[0])
+
     return reply.view('/reports/show.ejs', viewData(request, {
       title: `Anzeige #${id}`,
-      report: rows[0],
+      report,
       images,
+      complete: isComplete(report),
+      mailExample,
+      empfaenger: process.env.MAIL_TO_FRANKFURT || '',
     }))
   })
 
   app.get('/report/:id/image/:imageId', { preHandler: requireAuth }, async (request, reply) => {
     const { id, imageId } = request.params as { id: string; imageId: string }
+    const userId = request.session.userId as number
     const wantOriginal = (request.query as { original?: string }).original === '1'
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -248,7 +474,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
        FROM report_images ri
        JOIN reports r ON r.id = ri.report_id
        WHERE ri.id = ? AND r.id = ? AND r.user_id = ?`,
-      [imageId, id, request.session.userId]
+      [imageId, id, userId]
     )
     const image = rows[0]
     if (!image) return reply.status(404).send('Bild nicht gefunden.')
@@ -256,12 +482,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const filename = wantOriginal ? image.original_filename : image.filename
     const mimetype = wantOriginal ? image.original_mimetype : image.mimetype
 
-    const imagePath = path.join(
-      UPLOAD_DIR,
-      String(request.session.userId),
-      String(id),
-      filename
-    )
+    const imagePath = path.join(UPLOAD_DIR, String(userId), String(id), filename)
     try {
       const buffer = await fs.readFile(imagePath)
       const reply2 = reply.header('Content-Type', mimetype || 'application/octet-stream')
@@ -276,58 +497,88 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
   app.get('/report/:id/pdf', { preHandler: requireAuth }, async (request, reply) => {
     const { id } = request.params as { id: string }
+    const userId = request.session.userId as number
+    const inline = (request.query as { inline?: string }).inline === '1'
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT pdf_filename FROM reports WHERE id = ? AND user_id = ?',
-      [id, request.session.userId]
+      [id, userId]
     )
     const report = rows[0]
     if (!report?.pdf_filename) return reply.status(404).send('PDF nicht verfügbar.')
 
-    const pdfPath = path.join(
-      process.cwd(),
-      'data/pdfs',
-      String(request.session.userId),
-      report.pdf_filename
-    )
+    const pdfPath = path.join(PDF_DIR, String(userId), report.pdf_filename)
     try {
       const buffer = await fs.readFile(pdfPath)
+      const disposition = inline ? 'inline' : 'attachment'
       return reply
         .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `attachment; filename="anzeige-${id}.pdf"`)
+        .header('Content-Disposition', `${disposition}; filename="anzeige-${id}.pdf"`)
         .send(buffer)
     } catch {
       return reply.status(404).send('PDF-Datei nicht gefunden.')
     }
   })
 
+  // Wir versenden die Anzeige per E-Mail ans Ordnungsamt.
   app.post('/report/:id/send', { preHandler: requireAuth }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT * FROM reports WHERE id = ? AND user_id = ?',
-      [id, request.session.userId]
-    )
-    const report = rows[0]
+    const userId = request.session.userId as number
+    const report = await loadReport(id, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (!report.pdf_filename) {
-      request.session.flash = { type: 'error', message: 'PDF konnte nicht gefunden werden.' }
+    if (report.status === 'versendet') return reply.redirect(`/report/${id}`)
+
+    if (!isComplete(report)) {
+      request.session.flash = { type: 'error', message: 'Bitte zuerst alle Pflichtfelder ausfüllen.' }
       await request.session.save()
-      return reply.redirect(`/report/${id}`)
+      return reply.redirect(`/report/${id}/edit`)
     }
 
+    await regeneratePdf(id, userId)
+    const fresh = await loadReport(id, userId)
     const [userRows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT * FROM users WHERE id = ?',
-      [request.session.userId]
+      [userId]
     )
 
     try {
-      await MailService.sendReport(report, userRows[0])
-      await pool.execute('UPDATE reports SET status=? WHERE id=?', ['versendet', id])
+      await MailService.sendReport(fresh as mysql.RowDataPacket, userRows[0])
+      await pool.execute(
+        "UPDATE reports SET status='versendet', versand_art='system_email' WHERE id=?",
+        [id]
+      )
       request.session.flash = { type: 'success', message: 'Anzeige wurde per E-Mail versendet.' }
     } catch (err) {
       app.log.error({ err }, 'E-Mail-Versand fehlgeschlagen')
       request.session.flash = { type: 'error', message: 'E-Mail-Versand fehlgeschlagen.' }
     }
 
+    await request.session.save()
+    return reply.redirect(`/report/${id}`)
+  })
+
+  // Nutzer hat selbst versendet (gedruckt/Post oder eigene E-Mail) -> als erledigt markieren.
+  app.post('/report/:id/complete', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId = request.session.userId as number
+    const { art } = (request.body || {}) as { art?: string }
+    if (art !== 'gedruckt' && art !== 'selbst_email') {
+      return reply.status(400).send('Ungültige Versandart.')
+    }
+
+    const report = await loadReport(id, userId)
+    if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
+    if (report.status === 'versendet') return reply.redirect(`/report/${id}`)
+
+    if (!isComplete(report)) {
+      request.session.flash = { type: 'error', message: 'Bitte zuerst alle Pflichtfelder ausfüllen.' }
+      await request.session.save()
+      return reply.redirect(`/report/${id}/edit`)
+    }
+
+    if (!report.pdf_filename) await regeneratePdf(id, userId)
+    await pool.execute("UPDATE reports SET status='versendet', versand_art=? WHERE id=?", [art, id])
+
+    request.session.flash = { type: 'success', message: 'Anzeige als versendet markiert.' }
     await request.session.save()
     return reply.redirect(`/report/${id}`)
   })

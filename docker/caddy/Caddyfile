@@ -1,0 +1,10 @@
+{
+	# E-Mail für die Let's-Encrypt-Registrierung (Ablauf-Warnungen etc.).
+	email {$ACME_EMAIL}
+}
+
+# Caddy holt für diese Domain automatisch ein Let's-Encrypt-Zertifikat
+# und leitet den Traffic intern an die Node-App auf Port 3000 weiter.
+{$APP_DOMAIN} {
+	reverse_proxy app:3000
+}

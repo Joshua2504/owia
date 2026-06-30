@@ -1,16 +1,29 @@
-// Zusatzfunktionen für das Anzeige-Formular (/report/new):
+// Zusatzfunktionen für das Entwurfs-Formular (/report/:id/edit):
 //
 //   1. Tatort aus dem aktuellen Standort des Geräts übernehmen (Geolocation API).
 //   2. Tatort aus den GPS-Daten (EXIF) eines hochgeladenen Fotos übernehmen.
-//   3. Live-Vorschau der Bilder mit der Möglichkeit, Bereiche zu schwärzen.
+//   3. Live-Vorschau der Bilder mit der Möglichkeit, Bereiche zu schwärzen, und
+//      Sofort-Upload (geschwärzte Fassung) in den Entwurf.
+//   4. Hintergrund-Autosave der Textfelder.
 //
-// Progressive Enhancement: Ohne JavaScript (oder ohne die optionalen CDN-Libs
-// exifr/heic2any) funktioniert der normale Datei-Upload unverändert weiter.
-// Wichtig: Geschwärzte Bilder werden im Browser neu gerendert und ersetzen die
-// Originaldatei – die ungeschwärzten Pixel verlassen das Gerät nicht.
+// Progressive Enhancement: Ohne die optionalen CDN-Libs (exifr/heic2any) bleiben
+// GPS- und HEIC-Vorschau einfach aus. Wichtig: Geschwärzte Bilder werden im
+// Browser neu gerendert; nur die geschwärzte Fassung verlässt das Gerät.
 (function () {
-  const MAX_DIM = 2560 // Längste Kante geschwärzter Bilder (Dateigröße/Qualität)
-  const MIN_BOX = 6 // Kleinere Markierungen werden ignoriert (versehentliche Klicks)
+  const MAX_DIM = 2560 // Längste Kante geschwärzter Bilder
+  const MIN_BOX = 6 // Kleinere Markierungen werden ignoriert
+  const SAVE_DEBOUNCE_MS = 800
+
+  let reportId = null
+
+  function debounce(fn, ms) {
+    let t
+    return function () {
+      const args = arguments
+      clearTimeout(t)
+      t = setTimeout(() => fn.apply(this, args), ms)
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Gemeinsame Helfer
@@ -29,6 +42,7 @@
     const t = document.querySelector('#tatort')
     if (t && label) {
       t.value = label
+      t.dispatchEvent(new Event('input'))
       t.dispatchEvent(new Event('change'))
     }
   }
@@ -56,6 +70,14 @@
       }
       img.src = url
     })
+  }
+
+  function mkBtn(label, variant) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = 'btn btn-sm ' + variant
+    b.textContent = label
+    return b
   }
 
   // ---------------------------------------------------------------------------
@@ -103,12 +125,11 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 2. + 3. Bild-Vorschau, GPS aus Foto und Schwärzen
+  // 2. + 3. Bild-Vorschau, GPS aus Foto, Schwärzen und Upload
   // ---------------------------------------------------------------------------
 
   const items = [] // { file, kind, base, canvas, ctx, redactions, gps, els }
 
-  /** Liefert ein im Browser darstellbares Blob (JPEG/PNG) oder null. */
   async function toRasterBlob(file) {
     if (/^image\/(jpeg|png)$/.test(file.type) || /\.(jpe?g|png)$/i.test(file.name)) {
       return file
@@ -194,6 +215,7 @@
       if (w >= MIN_BOX && h >= MIN_BOX) {
         item.redactions.push({ x, y, w, h })
         updateToolbar(item)
+        item.saveDebounced()
       }
       redraw(item)
     }
@@ -207,9 +229,7 @@
     const has = item.redactions.length > 0
     item.els.undo.disabled = !has
     item.els.clear.disabled = !has
-    item.els.count.textContent = has
-      ? item.redactions.length + ' Bereich(e) geschwärzt'
-      : ''
+    item.els.count.textContent = has ? item.redactions.length + ' Bereich(e) geschwärzt' : ''
   }
 
   function buildCard(item) {
@@ -225,7 +245,7 @@
 
     const name = document.createElement('div')
     name.className = 'small text-muted text-truncate mb-1'
-    name.textContent = item.file.name || 'Bild'
+    name.textContent = (item.file && item.file.name) || 'Bild'
     body.appendChild(name)
 
     const stage = document.createElement('div')
@@ -237,6 +257,10 @@
     count.className = 'small text-muted mt-1'
     body.appendChild(count)
 
+    const status = document.createElement('div')
+    status.className = 'small text-muted mt-1'
+    body.appendChild(status)
+
     const toolbar = document.createElement('div')
     toolbar.className = 'd-flex flex-wrap gap-2 mt-2'
     body.appendChild(toolbar)
@@ -247,6 +271,7 @@
       item.redactions.pop()
       redraw(item)
       updateToolbar(item)
+      item.saveDebounced()
     })
 
     const clear = mkBtn('Alle entfernen', 'btn-outline-secondary')
@@ -255,14 +280,11 @@
       item.redactions = []
       redraw(item)
       updateToolbar(item)
+      item.saveDebounced()
     })
 
-    const remove = mkBtn('🗑 Bild entfernen', 'btn-outline-danger')
-    remove.addEventListener('click', () => {
-      const i = items.indexOf(item)
-      if (i >= 0) items.splice(i, 1)
-      col.remove()
-    })
+    const remove = mkBtn('🗑 Entfernen', 'btn-outline-danger')
+    remove.addEventListener('click', () => removeItem(item))
 
     const gpsBtn = mkBtn('📍 Standort aus Foto', 'btn-outline-primary')
     gpsBtn.style.display = 'none'
@@ -289,28 +311,30 @@
     toolbar.appendChild(clear)
     toolbar.appendChild(remove)
 
-    item.els = { col, stage, count, undo, clear, gpsBtn }
+    item.els = { col, stage, count, status, undo, clear, gpsBtn }
     return col
   }
 
-  function mkBtn(label, variant) {
-    const b = document.createElement('button')
-    b.type = 'button'
-    b.className = 'btn btn-sm ' + variant
-    b.textContent = label
-    return b
+  function newItem(file, serverImageId) {
+    const item = {
+      file,
+      kind: 'passthrough',
+      redactions: [],
+      gps: null,
+      els: null,
+      serverImageId: serverImageId || null, // ID der gespeicherten Fassung im Entwurf
+      saving: false,
+      dirty: false,
+    }
+    item.saveDebounced = debounce(() => saveItem(item), SAVE_DEBOUNCE_MS)
+    return item
   }
 
-  async function addItem(file, container) {
-    const item = { file, kind: 'passthrough', redactions: [], gps: null, els: null }
-    items.push(item)
-    const card = buildCard(item)
-    container.appendChild(card)
-
-    // GPS aus EXIF (funktioniert auch für HEIC), unabhängig von der Vorschau.
+  // GPS aus dem Foto lesen und die Schwärzungs-Leinwand aufbauen.
+  async function renderItemMedia(item) {
     if (window.exifr) {
       try {
-        const g = await window.exifr.gps(file)
+        const g = await window.exifr.gps(item.file)
         if (g && Number.isFinite(g.latitude) && Number.isFinite(g.longitude)) {
           item.gps = g
           item.els.gpsBtn.style.display = ''
@@ -320,12 +344,11 @@
       }
     }
 
-    // Raster-Vorschau + Schwärzen aufbauen.
     try {
-      const blob = await toRasterBlob(file)
+      const blob = await toRasterBlob(item.file)
       if (!blob) {
         item.els.stage.textContent =
-          'Vorschau/Schwärzen für dieses Format nicht möglich – das Bild wird unverändert hochgeladen.'
+          'Vorschau/Schwärzen für dieses Format nicht möglich – das Bild bleibt unverändert.'
         return
       }
       const img = await loadImage(blob)
@@ -337,9 +360,43 @@
       hint.textContent = 'Zum Schwärzen mit Maus oder Finger über die Bereiche ziehen.'
       item.els.stage.appendChild(hint)
     } catch (_) {
-      item.els.stage.textContent =
-        'Vorschau nicht möglich – das Bild wird unverändert hochgeladen.'
+      item.els.stage.textContent = 'Vorschau nicht möglich – das Bild bleibt unverändert.'
     }
+  }
+
+  // Neu ausgewähltes Bild: Karte anlegen, sofort zum Entwurf hochladen.
+  async function addItem(file, container) {
+    const item = newItem(file, null)
+    items.push(item)
+    container.appendChild(buildCard(item))
+    saveItem(item) // sofort hinzufügen; Schwärzungen werden danach automatisch gespeichert
+    await renderItemMedia(item)
+  }
+
+  // Bereits gespeichertes Bild (nach Neuladen) als bearbeitbare Karte laden.
+  async function addExistingItem(image, container) {
+    const item = newItem(null, image.id)
+    items.push(item)
+    container.appendChild(buildCard(item))
+    item.els.stage.textContent = 'lädt …'
+
+    let blob
+    try {
+      const res = await fetch(image.url)
+      if (!res.ok) throw new Error('load failed')
+      blob = await res.blob()
+    } catch (_) {
+      // Datei nicht ladbar – Karte bleibt (zum Entfernen), aber ohne Bearbeitung.
+      item.els.stage.textContent = 'Bild konnte nicht geladen werden.'
+      setItemStatus(item, 'Gespeichert ✓')
+      return
+    }
+
+    const type = blob.type || 'image/jpeg'
+    const ext = type.indexOf('png') >= 0 ? 'png' : 'jpg'
+    item.file = new File([blob], 'bild-' + image.id + '.' + ext, { type })
+    setItemStatus(item, 'Gespeichert ✓') // bereits im Entwurf, nichts hochzuladen
+    await renderItemMedia(item)
   }
 
   function toBlob(canvas) {
@@ -351,45 +408,175 @@
       const blob = await toBlob(item.canvas)
       if (blob) return new File([blob], baseName(item.file.name) + '.jpg', { type: 'image/jpeg' })
     }
-    return item.file // unverändertes Original (inkl. HEIC/Pass-through)
+    return item.file
+  }
+
+  function setItemStatus(item, text, isError) {
+    if (!item.els || !item.els.status) return
+    item.els.status.textContent = text
+    item.els.status.className = 'small mt-1 ' + (isError ? 'text-danger' : 'text-muted')
+  }
+
+  // Aktuellen Stand des Bildes (ggf. mit Schwärzungen) zum Entwurf speichern.
+  // Erste Speicherung legt das Bild an (POST); spätere ersetzen die Fassung in
+  // place (PUT) – so bleibt die Bild-ID stabil und das Limit wird nicht berührt.
+  async function saveItem(item) {
+    if (item.removed) return
+    if (item.saving) {
+      item.dirty = true // während des Speicherns kam eine weitere Änderung
+      return
+    }
+    item.saving = true
+    setItemStatus(item, 'Speichert …')
+    try {
+      const file = await exportItem(item)
+      const fd = new FormData()
+      fd.append('bilder', file, file.name)
+
+      let savedId
+      if (item.serverImageId) {
+        const res = await fetch('/report/' + reportId + '/images/' + item.serverImageId, {
+          method: 'PUT',
+          body: fd,
+        })
+        if (!res.ok) throw new Error('replace failed')
+        const data = await res.json()
+        savedId = data.image && data.image.id
+      } else {
+        const res = await fetch('/report/' + reportId + '/images', { method: 'POST', body: fd })
+        if (!res.ok) throw new Error('upload failed')
+        const data = await res.json()
+        if (data.errors && data.errors.length) alert(data.errors[0])
+        const newImg = (data.images || [])[0]
+        savedId = newImg && newImg.id
+      }
+      if (!savedId) throw new Error('not saved')
+      item.serverImageId = savedId
+      setItemStatus(item, 'Gespeichert ✓')
+    } catch (_) {
+      setItemStatus(item, 'Nicht gespeichert – erneut versuchen.', true)
+    } finally {
+      item.saving = false
+      if (item.dirty && !item.removed) {
+        item.dirty = false
+        saveItem(item)
+      }
+    }
+  }
+
+  // Bild aus dem Entwurf entfernen (Karte + serverseitig gespeicherte Fassung).
+  async function removeItem(item) {
+    if (!confirm('Bild aus dem Entwurf entfernen?')) return
+    item.removed = true
+    const i = items.indexOf(item)
+    if (i >= 0) items.splice(i, 1)
+    if (item.els && item.els.col) item.els.col.remove()
+    if (item.serverImageId) {
+      fetch('/report/' + reportId + '/images/' + item.serverImageId, { method: 'DELETE' }).catch(
+        () => {}
+      )
+    }
   }
 
   function initImageEditor() {
     const input = document.querySelector('#bilder-input')
     const container = document.querySelector('#image-editor')
-    const form = input && input.closest('form')
-    if (!input || !container || !form) return
+    if (!input || !container) return
 
     input.addEventListener('change', async () => {
       const files = Array.from(input.files || [])
-      // Auswahl übernehmen und das native Feld leeren, damit dieselben Dateien
-      // nicht zusätzlich roh mitgesendet werden. Vor dem Absenden bauen wir
-      // input.files aus unserer Liste neu auf.
       input.value = ''
       for (const file of files) await addItem(file, container)
     })
 
-    form.addEventListener('submit', async (e) => {
-      if (!items.length) return // nichts angehängt: normaler Ablauf
-      e.preventDefault()
+    // Bereits gespeicherte Bilder (nach Neuladen) als bearbeitbare Karten laden,
+    // damit sie weiter geschwärzt werden können – nicht nur löschbar.
+    const dataEl = document.querySelector('#existing-images-data')
+    if (dataEl) {
+      let existing = []
       try {
-        const dt = new DataTransfer()
-        for (const item of items) {
-          const file = await exportItem(item)
-          if (file) dt.items.add(file)
-        }
-        input.files = dt.files
-      } catch (err) {
-        console.error('Bild-Aufbereitung fehlgeschlagen', err)
-        alert('Die Bilder konnten nicht aufbereitet werden. Bitte erneut versuchen.')
-        return
+        existing = JSON.parse(dataEl.textContent || '[]')
+      } catch (_) {
+        existing = []
       }
-      form.submit() // löst dieses submit-Event nicht erneut aus
+      existing.forEach((image) => addExistingItem(image, container))
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4. Autosave der Textfelder
+  // ---------------------------------------------------------------------------
+
+  const SAVE_FIELDS = [
+    'kennzeichen',
+    'fahrzeug_marke',
+    'tattag',
+    'tatzeit_von',
+    'tatzeit_bis',
+    'tatort',
+    'verstoss_art',
+    'beschreibung',
+    'behinderung',
+    'behinderung_text',
+  ]
+
+  function initAutosave(form) {
+    const status = document.querySelector('#save-status')
+
+    const save = debounce(async () => {
+      const body = {}
+      SAVE_FIELDS.forEach((n) => {
+        const el = form.elements[n]
+        if (el) body[n] = el.value
+      })
+      if (status) status.textContent = 'Speichert …'
+      try {
+        const res = await fetch('/report/' + reportId, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        if (status) status.textContent = res.ok ? 'Gespeichert ✓' : 'Nicht gespeichert'
+      } catch (_) {
+        if (status) status.textContent = 'Nicht gespeichert'
+      }
+    }, SAVE_DEBOUNCE_MS)
+
+    SAVE_FIELDS.forEach((n) => {
+      const el = form.elements[n]
+      if (!el) return
+      // Radio-Gruppen (z.B. behinderung) liefern eine RadioNodeList ohne
+      // addEventListener – dann an jedem einzelnen Radio lauschen.
+      const nodes = typeof el.addEventListener === 'function' ? [el] : Array.from(el)
+      nodes.forEach((node) => {
+        node.addEventListener('input', save)
+        node.addEventListener('change', save)
+      })
     })
   }
 
+  // „Wer wurde wie behindert?" nur einblenden, wenn „Ja" gewählt ist.
+  function initBehinderung(form) {
+    const detail = document.querySelector('#behinderung-detail')
+    if (!detail) return
+    const radios = form.elements['behinderung']
+    if (!radios) return
+    const nodes = typeof radios.addEventListener === 'function' ? [radios] : Array.from(radios)
+    const update = () => {
+      detail.classList.toggle('d-none', form.elements['behinderung'].value !== 'ja')
+    }
+    nodes.forEach((node) => node.addEventListener('change', update))
+    update()
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    const form = document.querySelector('#report-form[data-report-id]')
+    if (!form) return
+    reportId = form.dataset.reportId
+
     initCurrentLocation()
     initImageEditor()
+    initAutosave(form)
+    initBehinderung(form)
   })
 })()

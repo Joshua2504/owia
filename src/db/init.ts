@@ -29,11 +29,24 @@ export async function initDb(): Promise<void> {
     'ALTER TABLE users ADD COLUMN IF NOT EXISTS datenschutz_akzeptiert_at DATETIME NULL'
   )
 
+  // Entwurfs-Workflow: Anzeigen starten als Entwurf und werden später versendet.
+  await pool.query(
+    "ALTER TABLE reports MODIFY status ENUM('entwurf','eingereicht','versendet') NOT NULL DEFAULT 'entwurf'"
+  )
+  // Art des Versands (selbst gedruckt/Post, selbst per E-Mail, von uns versendet).
+  await pool.query(
+    'ALTER TABLE reports ADD COLUMN IF NOT EXISTS versand_art VARCHAR(20) NULL'
+  )
+
   // Tatzeit als Zeitspanne (Datum + von/bis) statt einzelnem Zeitstempel.
   await pool.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS tattag DATE')
   await pool.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS tatzeit_von TIME')
   await pool.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS tatzeit_bis TIME')
   await pool.query('ALTER TABLE reports DROP COLUMN IF EXISTS tatzeit')
+
+  // Wurde durch den Verstoß jemand behindert? (1=ja, 0=nein, NULL=keine Angabe)
+  await pool.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS behinderung TINYINT(1) NULL')
+  await pool.query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS behinderung_text TEXT')
 
   // Hochgeladene Bilder zu einer Anzeige.
   await pool.query(`

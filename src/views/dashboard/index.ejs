@@ -1,13 +1,17 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h2 class="mb-0">Meine Anzeigen</h2>
-  <a href="/report/new" class="btn btn-primary">+ Neue Anzeige</a>
+  <form method="post" action="/report/new" class="m-0">
+    <button type="submit" class="btn btn-primary">+ Neue Anzeige</button>
+  </form>
 </div>
 
 <% if (reports.length === 0) { %>
   <div class="card shadow-sm">
     <div class="card-body text-center py-5 text-muted">
       <p class="mb-3">Noch keine Anzeigen vorhanden.</p>
-      <a href="/report/new" class="btn btn-primary">Erste Anzeige erstatten</a>
+      <form method="post" action="/report/new" class="m-0">
+        <button type="submit" class="btn btn-primary">Erste Anzeige erstatten</button>
+      </form>
     </div>
   </div>
 <% } else { %>
@@ -39,12 +43,18 @@
               <td>
                 <% if (r.status === 'versendet') { %>
                   <span class="badge bg-success">Versendet</span>
+                <% } else if (r.status === 'entwurf') { %>
+                  <span class="badge bg-secondary">Entwurf</span>
                 <% } else { %>
-                  <span class="badge bg-secondary">Eingereicht</span>
+                  <span class="badge bg-info">Eingereicht</span>
                 <% } %>
               </td>
               <td>
-                <a href="/report/<%= r.id %>" class="btn btn-sm btn-outline-secondary">Details</a>
+                <% if (r.status === 'entwurf') { %>
+                  <a href="/report/<%= r.id %>/edit" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+                <% } else { %>
+                  <a href="/report/<%= r.id %>" class="btn btn-sm btn-outline-secondary">Details</a>
+                <% } %>
               </td>
             </tr>
           <% } %>

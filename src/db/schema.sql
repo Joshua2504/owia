@@ -22,7 +22,10 @@ CREATE TABLE IF NOT EXISTS reports (
   tatort        TEXT,
   verstoss_art  VARCHAR(255),
   beschreibung  TEXT,
-  status        ENUM('eingereicht','versendet') DEFAULT 'eingereicht',
+  behinderung      TINYINT(1) NULL,   -- wurde jemand behindert? 1=ja, 0=nein, NULL=keine Angabe
+  behinderung_text TEXT,              -- wer wurde wie behindert
+  status        ENUM('entwurf','eingereicht','versendet') NOT NULL DEFAULT 'entwurf',
+  versand_art   VARCHAR(20) NULL,
   pdf_filename  VARCHAR(255),
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
