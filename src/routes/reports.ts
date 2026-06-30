@@ -8,6 +8,7 @@ import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
 import { MailService, buildReportMail } from '../services/mail'
+import { getCity, DEFAULT_CITY_ID } from '../config/cities'
 
 export const VERSTOSS_ARTEN = [
   'Parken auf dem Gehweg',
@@ -268,9 +269,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         const [result] = await pool.execute<mysql.ResultSetHeader>(
-          `INSERT INTO reports (user_id, status, tattag, tatzeit_von, aktenzeichen)
-           VALUES (?, 'entwurf', CURDATE(), CURTIME(), ?)`,
-          [userId, generateAktenzeichen()]
+          `INSERT INTO reports (user_id, status, tattag, tatzeit_von, aktenzeichen, city)
+           VALUES (?, 'entwurf', CURDATE(), CURTIME(), ?, ?)`,
+          [userId, generateAktenzeichen(), DEFAULT_CITY_ID]
         )
         insertId = result.insertId
         break
@@ -298,6 +299,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       verstossArten: VERSTOSS_ARTEN,
       report,
       images,
+      city: getCity(report.city),
     }))
   })
 
@@ -480,13 +482,15 @@ export default async function reportsRoutes(app: FastifyInstance) {
     )
     const mailExample = buildReportMail(report, uRows[0])
 
+    const city = getCity(report.city)
     return reply.view('/reports/show.ejs', viewData(request, {
       title: `Anzeige #${id}`,
       report,
       images,
       complete: isComplete(report),
       mailExample,
-      empfaenger: process.env.MAIL_TO_FRANKFURT || '',
+      city,
+      empfaenger: city.email,
     }))
   })
 

@@ -190,7 +190,9 @@ const versandLabel = {
       <div class="collapse mb-4" id="self-email">
         <div class="card card-body">
           <div class="mb-2">
-            <label class="form-label small mb-1">Empfänger</label>
+            <label class="form-label small mb-1">
+              Empfänger<% if (locals.city) { %> (<%= city.ordnungsamt %>)<% } %>
+            </label>
             <div class="input-group input-group-sm">
               <input type="text" class="form-control" id="copy-to" value="<%= empfaenger %>" readonly>
               <button class="btn btn-outline-secondary" type="button" data-copy="#copy-to">Kopieren</button>

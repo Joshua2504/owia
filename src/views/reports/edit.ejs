@@ -24,6 +24,18 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
       <div class="alert alert-danger"><%= error %></div>
     <% } %>
 
+    <% if (locals.city) { %>
+      <div class="alert alert-info d-flex align-items-start gap-2" role="status">
+        <span aria-hidden="true">🏛️</span>
+        <div>
+          Zuständiges Ordnungsamt: <strong><%= city.ordnungsamt %></strong><br>
+          <span class="small text-muted">
+            Die Anzeige wird an <%= city.email %> gerichtet.
+          </span>
+        </div>
+      </div>
+    <% } %>
+
     <div class="card shadow-sm">
       <div class="card-body p-4">
         <form id="report-form" method="post" action="/report/<%= r.id %>/save"
@@ -66,8 +78,9 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               <label class="form-label">Tatort <span class="text-danger">*</span></label>
               <input type="text" name="tatort" id="tatort" class="form-control"
                      value="<%= r.tatort || '' %>"
-                     data-address-autocomplete data-fill="full" data-geo-scope="ffm"
-                     placeholder="Adresse in Frankfurt eingeben und aus der Liste wählen …">
+                     data-address-autocomplete data-fill="full"
+                     data-geo-scope="<%= locals.city ? city.geo.scope : 'ffm' %>"
+                     placeholder="Adresse in <%= locals.city ? city.name : 'Frankfurt' %> eingeben und aus der Liste wählen …">
               <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-current-location">
                   📍 Aktuellen Standort verwenden

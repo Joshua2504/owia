@@ -3,6 +3,7 @@ import path from 'path'
 import { PDFDocument } from 'pdf-lib'
 import mysql from 'mysql2/promise'
 import type { ReportImage } from '../routes/reports'
+import { getCity, DEFAULT_CITY_ID } from '../config/cities'
 
 /** "14:30:00" / "14:30" -> "14:30" */
 function hhmm(time: unknown): string {
@@ -10,16 +11,21 @@ function hhmm(time: unknown): string {
   return String(time).slice(0, 5)
 }
 
-const FORM_PATH = path.join(process.cwd(), 'resources', 'formular.pdf')
+const RESOURCES_DIR = path.join(process.cwd(), 'resources')
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
+
+/** Pfad zum amtlichen Formular der jeweiligen Stadt. */
+function formPath(cityId?: string | null): string {
+  return path.join(RESOURCES_DIR, getCity(cityId).pdfForm)
+}
 
 export const PdfService = {
   /**
    * Gibt alle AcroForm-Feldnamen des Frankfurt-Formulars aus.
    * Einmalig aufrufen um die Feldnamen zu ermitteln.
    */
-  async listFields(): Promise<string[]> {
-    const bytes = await fs.readFile(FORM_PATH)
+  async listFields(cityId: string = DEFAULT_CITY_ID): Promise<string[]> {
+    const bytes = await fs.readFile(formPath(cityId))
     const doc = await PDFDocument.load(bytes)
     const form = doc.getForm()
     return form.getFields().map((f) => `${f.constructor.name}: ${f.getName()}`)
@@ -33,7 +39,7 @@ export const PdfService = {
     const userDir = path.join(PDF_DIR, String(user.id))
     await fs.mkdir(userDir, { recursive: true })
 
-    const bytes = await fs.readFile(FORM_PATH)
+    const bytes = await fs.readFile(formPath(report.city))
     const doc = await PDFDocument.load(bytes)
     const form = doc.getForm()
 

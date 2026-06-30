@@ -1,6 +1,7 @@
 import path from 'path'
 import nodemailer from 'nodemailer'
 import mysql from 'mysql2/promise'
+import { getCity } from '../config/cities'
 
 function createTransport() {
   if (process.env.MAIL_DRIVER === 'smtp') {
@@ -116,7 +117,7 @@ export const MailService = {
 
     await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
-      to: process.env.MAIL_TO_FRANKFURT,
+      to: getCity(report.city).email,
       cc: user.email,
       subject,
       text,

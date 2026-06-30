@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS reports (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   user_id       INT NOT NULL,
   aktenzeichen  VARCHAR(20),   -- zufälliges Aktenzeichen, z.B. "OWiAA#7K3QF2" (Unique-Index via migrations/)
+  city          VARCHAR(50) NOT NULL DEFAULT 'frankfurt',  -- zuständige Stadt/Behörde (src/config/cities.ts)
   kennzeichen   VARCHAR(20),
   fahrzeug_marke VARCHAR(100),
   tattag        DATE,

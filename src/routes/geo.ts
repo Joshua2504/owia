@@ -1,17 +1,12 @@
 import { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth'
+import { getCity, getCityByScope } from '../config/cities'
 
 const PHOTON_URL = (process.env.PHOTON_URL || 'http://photon:2322').replace(/\/$/, '')
 
-// Schwerpunkt der Suche: Frankfurt am Main
-const BIAS_LAT = 50.1109
-const BIAS_LON = 8.6821
-
-// Begrenzung auf Frankfurt am Main (für Tatorte): Bounding-Box als
-// Vorfilter + Abgleich des Ortsnamens, um Nachbarorte (Offenbach,
-// Neu-Isenburg …), die in der Box liegen, auszuschließen.
-const FFM_BBOX = '8.45,50.00,8.81,50.24' // minLon,minLat,maxLon,maxLat
-const FFM_CITY = 'frankfurt am main'
+// Allgemeiner Kartenschwerpunkt (Deutschland-Mitte), falls kein Stadt-Scope greift.
+const DEFAULT_BIAS_LAT = 51.16
+const DEFAULT_BIAS_LON = 10.45
 
 type PhotonFeature = {
   properties: {
@@ -45,9 +40,9 @@ function isAddress(p: PhotonFeature['properties']): boolean {
   return false
 }
 
-function isInFrankfurt(p: PhotonFeature['properties']): boolean {
+function matchesCity(p: PhotonFeature['properties'], cityMatch: string): boolean {
   return [p.city, p.town, p.village, p.district, p.county].some((v) =>
-    (v || '').toLowerCase().includes(FFM_CITY)
+    (v || '').toLowerCase().includes(cityMatch)
   )
 }
 
@@ -93,16 +88,19 @@ export default async function geoRoutes(app: FastifyInstance) {
     if (!q || q.trim().length < 3) {
       return reply.send({ results: [] })
     }
-    const onlyFrankfurt = scope === 'ffm'
+    // Scope grenzt die Suche auf eine konkrete Stadt ein (z.B. "ffm").
+    const city = getCityByScope(scope)
+    const biasLat = city ? city.geo.biasLat : DEFAULT_BIAS_LAT
+    const biasLon = city ? city.geo.biasLon : DEFAULT_BIAS_LON
 
-    // Mehr Treffer anfragen, da der Adress- (und ggf. Frankfurt-)Filter
+    // Mehr Treffer anfragen, da der Adress- (und ggf. Stadt-)Filter
     // anschließend noch POIs/Nachbarorte herausnimmt.
-    const limit = onlyFrankfurt ? 25 : 15
+    const limit = city ? 25 : 15
     let url =
       `${PHOTON_URL}/api?q=${encodeURIComponent(q.trim())}` +
-      `&lang=de&limit=${limit}&lat=${BIAS_LAT}&lon=${BIAS_LON}&location_bias_scale=0.3`
-    if (onlyFrankfurt) {
-      url += `&bbox=${FFM_BBOX}`
+      `&lang=de&limit=${limit}&lat=${biasLat}&lon=${biasLon}&location_bias_scale=0.3`
+    if (city) {
+      url += `&bbox=${city.geo.bbox}`
     }
 
     try {
@@ -118,8 +116,8 @@ export default async function geoRoutes(app: FastifyInstance) {
 
       const data = (await res.json()) as { features?: PhotonFeature[] }
       let features = (data.features || []).filter((f) => isAddress(f.properties))
-      if (onlyFrankfurt) {
-        features = features.filter((f) => isInFrankfurt(f.properties))
+      if (city) {
+        features = features.filter((f) => matchesCity(f.properties, city.geo.cityMatch))
       }
       const results = features
         .map(toSuggestion)
