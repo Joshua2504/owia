@@ -1,28 +1,36 @@
 <div class="row justify-content-center">
   <div class="col-lg-10">
-    <div class="text-center mb-4">
-      <h1 class="h3 mb-2">Falschparken in Frankfurt – öffentliche Übersicht</h1>
-      <p class="text-muted mb-0">
-        Anonymisierte Karte aller versendeter Anzeigen. Es werden keine personenbezogenen
-        Daten angezeigt – Kennzeichen und Personen sind nicht erkennbar, Fotos stark verpixelt.
+    <!-- Prominenter Call-to-Action ganz oben -->
+    <div class="text-center py-5">
+      <h1 class="display-5 fw-bold mb-3">Falschparken in Frankfurt melden</h1>
+      <p class="lead text-muted mb-4 mx-auto" style="max-width:640px">
+        Schnell und einfach eine Ordnungswidrigkeit anzeigen – mit Fotos, Standort
+        und fertigem PDF fürs Ordnungsamt.
       </p>
+      <% if (currentUser) { %>
+        <div class="d-flex justify-content-center gap-3 flex-wrap">
+          <form method="post" action="/report/new" class="m-0">
+            <button type="submit" class="btn btn-primary btn-lg px-4">+ Neue Anzeige erstatten</button>
+          </form>
+          <a href="/dashboard" class="btn btn-outline-secondary btn-lg px-4">Meine Anzeigen</a>
+        </div>
+      <% } else { %>
+        <a href="/login" class="btn btn-primary btn-lg px-5 py-3 fw-semibold shadow-sm">
+          Anmelden &amp; Anzeige erstatten
+        </a>
+      <% } %>
     </div>
 
+    <!-- Karte darunter -->
+    <h2 class="h5 mb-1">Öffentliche Übersicht</h2>
+    <p class="text-muted small mb-3">
+      Anonymisierte Karte aller versendeter Anzeigen – keine personenbezogenen Daten,
+      Fotos stark verpixelt.
+    </p>
     <!-- Übersichtskarte: lädt Marker aus /api/public/reports, Kacheln aus /tiles/... -->
     <div id="overview-map" class="rounded border shadow-sm"
          style="height:520px"
          data-center-lat="<%= centerLat %>" data-center-lon="<%= centerLon %>"></div>
-
-    <div class="d-flex justify-content-center gap-2 mt-4">
-      <% if (currentUser) { %>
-        <a href="/dashboard" class="btn btn-outline-secondary">Meine Anzeigen</a>
-        <form method="post" action="/report/new" class="m-0">
-          <button type="submit" class="btn btn-primary">+ Neue Anzeige</button>
-        </form>
-      <% } else { %>
-        <a href="/login" class="btn btn-primary">Anmelden &amp; Anzeige erstatten</a>
-      <% } %>
-    </div>
   </div>
 </div>
 

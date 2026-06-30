@@ -167,7 +167,8 @@ const versandLabel = {
           </div>
         </div>
 
-        <!-- 3) Wir verschicken -->
+        <!-- 3) Wir verschicken (in Produktion derzeit deaktiviert) -->
+        <% if (locals.systemSendEnabled) { %>
         <div class="col-md-4">
           <div class="card shadow-sm h-100">
             <div class="card-body d-flex flex-column">
@@ -184,6 +185,7 @@ const versandLabel = {
             </div>
           </div>
         </div>
+        <% } %>
       </div>
 
       <!-- Ausklappbare E-Mail-Vorlage für den Selbst-Versand -->

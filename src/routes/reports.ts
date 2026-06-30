@@ -29,6 +29,18 @@ const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 const DIRECT_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const MAX_IMAGES = 10
 
+/**
+ * Ob die Anzeige über unser System per E-Mail ans Ordnungsamt versendet werden
+ * darf ("Wir verschicken"). In Produktion vorerst deaktiviert; per Umgebungs-
+ * variable SYSTEM_EMAIL_SENDING=on (bzw. =off) gezielt überschreibbar.
+ */
+function isSystemEmailEnabled(): boolean {
+  const v = (process.env.SYSTEM_EMAIL_SENDING || '').toLowerCase()
+  if (['on', '1', 'true', 'yes'].includes(v)) return true
+  if (['off', '0', 'false', 'no'].includes(v)) return false
+  return process.env.NODE_ENV !== 'production'
+}
+
 /** Direkt für PDF/Web verwendbares Bild plus aufbewahrtes Original. */
 type PreparedImage = {
   buffer: Buffer // JPG/PNG, wird ins PDF eingebettet und im Web angezeigt
@@ -540,6 +552,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       mailExample,
       city,
       empfaenger: city.email,
+      systemSendEnabled: isSystemEmailEnabled(),
     }))
   })
 
@@ -602,6 +615,17 @@ export default async function reportsRoutes(app: FastifyInstance) {
   app.post('/report/:az/send', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
+    // „Wir verschicken" ist derzeit (Produktion) deaktiviert – abweisen, auch wenn
+    // jemand das Formular direkt ansteuert.
+    if (!isSystemEmailEnabled()) {
+      request.session.flash = {
+        type: 'error',
+        message: 'Der Versand über uns ist derzeit deaktiviert. Bitte selbst per Post oder E-Mail versenden.',
+      }
+      await request.session.save()
+      return reply.redirect(`/report/${az}`)
+    }
+
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
     if (report.status === 'versendet') return reply.redirect(`/report/${az}`)
