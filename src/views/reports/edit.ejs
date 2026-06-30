@@ -47,6 +47,8 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
           </div>
 
           <h5 class="mb-3">Fahrzeug</h5>
+          <!-- Status/Hinweis der automatischen Foto-Analyse (Kennzeichen + Verstoßart). -->
+          <div id="ai-status" class="form-text mb-2" role="status"></div>
           <div class="row g-3 mb-4">
             <div class="col-sm-6">
               <label class="form-label">Kennzeichen <span class="text-danger">*</span></label>
@@ -78,6 +80,15 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               <label class="form-label">Uhrzeit bis</label>
               <input type="time" name="tatzeit_bis" class="form-control"
                      value="<%= hhmm(r.tatzeit_bis) %>">
+            </div>
+            <!-- Uhrzeit (von = frühestes, bis = spätestes Foto) aus den EXIF-Daten der
+                 hochgeladenen Fotos übernehmen. Erscheint nur, wenn mindestens ein Foto
+                 eine Aufnahmezeit enthält (Befüllung in public/js/report-form.js). -->
+            <div class="col-sm-12 d-none mt-0" id="photo-time-row">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-photo-times">
+                🕒 Uhrzeit aus Fotos übernehmen
+              </button>
+              <span id="photo-time-status" class="form-text ms-2"></span>
             </div>
             <div class="col-sm-12">
               <label class="form-label">Tatort <span class="text-danger">*</span></label>
@@ -175,10 +186,19 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 
 <form id="discard-form" method="post" action="/report/<%= r.aktenzeichen %>/discard" class="d-none"></form>
 
+<!-- Kurzes Aufleuchten von Feldern, die per KI-Foto-Analyse vorbelegt wurden. -->
+<style>
+  .ai-filled { animation: ai-flash 2.4s ease-out; }
+  @keyframes ai-flash {
+    0%   { background-color: #fff3cd; }
+    100% { background-color: transparent; }
+  }
+</style>
+
 <!-- Leaflet für die Tatort-Karte (Tiles kommen same-origin über /tiles/...). -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<!-- Optionale Hilfen: EXIF-GPS aus Fotos lesen, HEIC im Browser für die Vorschau wandeln. -->
+<!-- Optionale Hilfen: EXIF-GPS und Aufnahmezeit aus Fotos lesen, HEIC im Browser für die Vorschau wandeln. -->
 <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>

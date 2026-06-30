@@ -9,20 +9,11 @@ import { requireAuth, viewData } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
 import { MailService, buildReportMail } from '../services/mail'
 import { getCity, DEFAULT_CITY_ID } from '../config/cities'
+import { VERSTOSS_ARTEN } from '../config/verstoss'
+import { analyzeImageInBackground, isPhotoAiEnabled } from '../services/imageAnalysis'
 
-export const VERSTOSS_ARTEN = [
-  'Parken auf dem Gehweg',
-  'Parken im absoluten Halteverbot (Zeichen 283)',
-  'Parken im eingeschränkten Halteverbot (Zeichen 286)',
-  'Parken in der zweiten Reihe',
-  'Halten und Parken auf einem Radweg',
-  'Parken auf einem Sonderfahrstreifen (Busspur/Radweg)',
-  'Parken vor einer abgesenkten Bordsteinkante',
-  'Parken in einer Feuerwehrzufahrt',
-  'Parken auf einem Behindertenparkplatz ohne Ausweis',
-  'Parken an einer Kreuzung oder Einmündung',
-  'Sonstiges',
-]
+// Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
+export { VERSTOSS_ARTEN }
 
 const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
@@ -374,6 +365,61 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({ ok: true })
   })
 
+  // Vorschläge aus der Hintergrund-Foto-Analyse (Kennzeichen + Verstoßart). Das
+  // Formular pollt diesen Endpoint und füllt damit leere Felder vor.
+  app.get('/report/:az/analysis', { preHandler: requireAuth }, async (request, reply) => {
+    // KI-Analyse aus (z.B. Entwicklung) -> sofort „fertig" ohne Vorschläge, damit
+    // das Formular nicht ins Leere pollt.
+    if (!isPhotoAiEnabled()) {
+      return reply.send({
+        status: 'done',
+        suggestions: { kennzeichen: null, verstoss_art: null, fahrzeug_marke: null, beschreibung: null },
+      })
+    }
+
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send({ error: 'not found' })
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT analysis_status, detected_plate, plate_confidence,
+              vlm_verstoss_art, vlm_marke, vlm_beschreibung
+         FROM report_images WHERE report_id = ? ORDER BY id`,
+      [report.id]
+    )
+
+    // „pending", solange ein Bild noch nicht fertig ist (NULL = frisch hochgeladen).
+    const pending = rows.some(
+      (r) => r.analysis_status !== 'done' && r.analysis_status !== 'error'
+    )
+
+    // Bestes Kennzeichen nach OCR-Konfidenz über alle Bilder.
+    let kennzeichen: string | null = null
+    let bestConf = -1
+    for (const r of rows) {
+      const conf = Number(r.plate_confidence)
+      if (r.detected_plate && Number.isFinite(conf) && conf > bestConf) {
+        bestConf = conf
+        kennzeichen = r.detected_plate
+      }
+    }
+    const firstOf = (key: string): string | null => {
+      for (const r of rows) if (r[key]) return r[key] as string
+      return null
+    }
+
+    return reply.send({
+      status: pending ? 'pending' : 'done',
+      suggestions: {
+        kennzeichen,
+        verstoss_art: firstOf('vlm_verstoss_art'),
+        fahrzeug_marke: firstOf('vlm_marke'),
+        beschreibung: firstOf('vlm_beschreibung'),
+      },
+    })
+  })
+
   // Einzelnes (ggf. bereits geschwärztes) Bild sofort zum Entwurf hochladen.
   app.post('/report/:az/images', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
@@ -404,6 +450,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
         try {
           const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
           const row = await saveImageToReport(userId, reportId, prepared)
+          // Kennzeichen-/Verstoßart-Erkennung im Hintergrund anstoßen (nicht awaiten);
+          // das Formular holt die Vorschläge per GET /report/:az/analysis ab.
+          analyzeImageInBackground(userId, reportId, row.id, row.filename, prepared.mimetype)
           saved.push({ id: row.id, url: `/report/${az}/image/${row.id}` })
           count++
         } catch {
@@ -469,13 +518,17 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
 
     const { filename, originalFilename } = await writeImageFiles(userId, old.report_id, prepared)
+    // Neue Bildfassung -> bisherige Analyse verwerfen und neu anstoßen.
     await pool.execute(
       `UPDATE report_images
-         SET filename=?, mimetype=?, original_filename=?, original_mimetype=?
+         SET filename=?, mimetype=?, original_filename=?, original_mimetype=?,
+             detected_plate=NULL, plate_confidence=NULL, vlm_verstoss_art=NULL,
+             vlm_marke=NULL, vlm_beschreibung=NULL, analysis_status=NULL, analyzed_at=NULL
        WHERE id=?`,
       [filename, prepared.mimetype, originalFilename, prepared.originalMimetype, imageId]
     )
     await removeImageFiles(userId, old.report_id, old.filename, old.original_filename)
+    analyzeImageInBackground(userId, old.report_id, Number(imageId), filename, prepared.mimetype)
 
     return reply.send({ image: { id: Number(imageId), url: `/report/${az}/image/${imageId}` } })
   })

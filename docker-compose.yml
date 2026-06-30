@@ -119,8 +119,50 @@ services:
     shm_size: 512m
     restart: unless-stopped
 
+  # Selbst-gehostete Kennzeichen-Erkennung (ALPR, fast-alpr in einem schlanken
+  # FastAPI-Wrapper, siehe docker/alpr). Die App ruft den Dienst intern über
+  # "alpr:8000" auf; Beweisfotos verlassen den Host also nicht. Die ONNX-Modelle
+  # werden beim Build ins Image gebacken – kein Download/Volume zur Laufzeit.
+  alpr:
+    build: ./docker/alpr
+    # Nur in Produktion starten (schwergewichtig); in der Entwicklung bleibt die
+    # KI-Analyse aus. Aktiviert über COMPOSE_PROFILES=production (wie caddy).
+    profiles: [production]
+    # Port nur bei Bedarf zum Debuggen freigeben:
+    # ports:
+    #   - "8000:8000"
+    restart: unless-stopped
+
+  # Selbst-gehostetes Vision-Language-Modell (Ollama) für die Verstoßart-Erkennung.
+  # Die App spricht es intern über "ollama:11434" an. Das Modell wird beim Start
+  # automatisch geladen (idempotent: liegt es schon im Volume, ist der Pull ein
+  # schneller No-Op). Modellname kommt aus .env (VLM_MODEL), damit App und Ollama
+  # dasselbe Modell verwenden. CPU-Betrieb; bei Engpass VLM_MODEL=moondream.
+  ollama:
+    image: ollama/ollama:latest
+    # Nur in Produktion starten (schwergewichtig, lädt das VLM-Modell). In der
+    # Entwicklung bleibt die KI-Analyse aus.
+    profiles: [production]
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        # Server im Hintergrund starten, auf Bereitschaft warten, Modell laden,
+        # dann den Server im Vordergrund weiterlaufen lassen.
+        ollama serve &
+        pid=$$!
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        echo "Lade VLM-Modell ${VLM_MODEL:-qwen2.5vl:3b} (einmalig beim Start) ..."
+        ollama pull "${VLM_MODEL:-qwen2.5vl:3b}" || echo "Modell-Pull fehlgeschlagen – Dienst läuft weiter, Analyse bleibt vorerst leer."
+        wait $$pid
+    volumes:
+      - ollama-models:/root/.ollama
+    # ports:
+    #   - "11434:11434"
+    restart: unless-stopped
+
 volumes:
   caddy_data:
   caddy_config:
   osm-tile-data:
   osm-tile-cache:
+  ollama-models:

@@ -2,9 +2,11 @@
 //
 //   1. Tatort aus dem aktuellen Standort des Geräts übernehmen (Geolocation API).
 //   2. Tatort aus den GPS-Daten (EXIF) eines hochgeladenen Fotos übernehmen.
-//   3. Live-Vorschau der Bilder mit der Möglichkeit, Bereiche zu schwärzen, und
+//   3. Uhrzeit von/bis aus den EXIF-Aufnahmezeiten der Fotos übernehmen
+//      (von = frühestes, bis = spätestes Foto).
+//   4. Live-Vorschau der Bilder mit der Möglichkeit, Bereiche zu schwärzen, und
 //      Sofort-Upload (geschwärzte Fassung) in den Entwurf.
-//   4. Hintergrund-Autosave der Textfelder.
+//   5. Hintergrund-Autosave der Textfelder.
 //
 // Progressive Enhancement: Ohne die optionalen CDN-Libs (exifr/heic2any) bleiben
 // GPS- und HEIC-Vorschau einfach aus. Wichtig: Geschwärzte Bilder werden im
@@ -353,6 +355,24 @@
       } catch (_) {
         /* keine GPS-Daten */
       }
+
+      // Aufnahmezeit (EXIF) lesen – speist die Uhrzeit von/bis aus den Fotos.
+      try {
+        const meta = await window.exifr.parse(item.file, [
+          'DateTimeOriginal',
+          'CreateDate',
+          'ModifyDate',
+        ])
+        const dt = meta && (meta.DateTimeOriginal || meta.CreateDate || meta.ModifyDate)
+        if (dt instanceof Date && !isNaN(dt.getTime())) {
+          item.takenAt = dt
+          // Frisch hochgeladene Fotos dürfen die (noch unberührten) Zeitfelder füllen;
+          // beim Nachladen bestehender Entwürfe nur den Button anbieten.
+          refreshPhotoTimes(!item.isExisting)
+        }
+      } catch (_) {
+        /* keine Zeit-Metadaten */
+      }
     }
 
     try {
@@ -387,6 +407,7 @@
   // Bereits gespeichertes Bild (nach Neuladen) als bearbeitbare Karte laden.
   async function addExistingItem(image, container) {
     const item = newItem(null, image.id)
+    item.isExisting = true // bereits gespeicherter Entwurf: Zeiten nicht automatisch überschreiben
     items.push(item)
     container.appendChild(buildCard(item))
     item.els.stage.textContent = 'lädt …'
@@ -464,6 +485,8 @@
       if (!savedId) throw new Error('not saved')
       item.serverImageId = savedId
       setItemStatus(item, 'Gespeichert ✓')
+      // Server analysiert das (neue/ersetzte) Bild im Hintergrund – Vorschläge abholen.
+      bumpAnalysisPolling()
     } catch (_) {
       setItemStatus(item, 'Nicht gespeichert – erneut versuchen.', true)
     } finally {
@@ -482,6 +505,7 @@
     const i = items.indexOf(item)
     if (i >= 0) items.splice(i, 1)
     if (item.els && item.els.col) item.els.col.remove()
+    if (item.takenAt) refreshPhotoTimes(false) // Zeitspanne ohne dieses Foto neu anzeigen
     if (item.serverImageId) {
       fetch('/report/' + reportId + '/images/' + item.serverImageId, { method: 'DELETE' }).catch(
         () => {}
@@ -512,6 +536,208 @@
       }
       existing.forEach((image) => addExistingItem(image, container))
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Uhrzeit (von–bis) aus den EXIF-Aufnahmezeiten der Fotos übernehmen
+  // ---------------------------------------------------------------------------
+
+  // Wird true, sobald der Nutzer eines der Zeitfelder selbst anfasst – danach
+  // wird nicht mehr automatisch aus den Fotos befüllt (nur noch per Button).
+  let userEditedTimes = false
+
+  function pad2(n) {
+    return String(n).padStart(2, '0')
+  }
+  function toHHMM(d) {
+    return pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+  }
+  function toDateValue(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
+  }
+
+  // Wert setzen und Autosave/Behörden-Logik wie bei echter Eingabe auslösen.
+  function setFieldValue(el, value) {
+    if (!el || !value) return
+    el.value = value
+    el.dispatchEvent(new Event('input'))
+    el.dispatchEvent(new Event('change'))
+  }
+
+  // Früheste/späteste Aufnahmezeit über alle Fotos mit Zeit-Metadaten.
+  function getPhotoTimeRange() {
+    let min = null
+    let max = null
+    for (const it of items) {
+      const d = it.takenAt
+      if (!(d instanceof Date) || isNaN(d.getTime())) continue
+      if (!min || d < min) min = d
+      if (!max || d > max) max = d
+    }
+    return min ? { min: min, max: max } : null
+  }
+
+  // Tattag/Uhrzeit aus den Fotos setzen: von = frühestes, bis = spätestes Foto.
+  // bis bleibt leer, wenn alle Fotos in dieselbe Minute fallen.
+  function applyPhotoTimes() {
+    const range = getPhotoTimeRange()
+    const form = document.querySelector('#report-form')
+    if (!range || !form) return
+    const von = toHHMM(range.min)
+    const bis = toHHMM(range.max)
+    setFieldValue(form.elements['tattag'], toDateValue(range.min))
+    setFieldValue(form.elements['tatzeit_von'], von)
+    if (bis !== von) setFieldValue(form.elements['tatzeit_bis'], bis)
+  }
+
+  // Button/Hinweis aktualisieren; bei allowAuto zusätzlich automatisch befüllen,
+  // solange der Nutzer die Zeitfelder nicht selbst bearbeitet hat.
+  function refreshPhotoTimes(allowAuto) {
+    const row = document.querySelector('#photo-time-row')
+    const status = document.querySelector('#photo-time-status')
+    const range = getPhotoTimeRange()
+    if (!range) {
+      if (row) row.classList.add('d-none')
+      if (status) status.textContent = ''
+      return
+    }
+    if (row) row.classList.remove('d-none')
+    const von = toHHMM(range.min)
+    const bis = toHHMM(range.max)
+    const span = bis !== von ? von + ' – ' + bis : von
+    if (allowAuto && !userEditedTimes) {
+      applyPhotoTimes()
+      if (status) status.textContent = 'Aus den Fotos übernommen (' + span + ') – bitte prüfen.'
+    } else if (status) {
+      status.textContent = 'Aus den Fotos: ' + span
+    }
+  }
+
+  function initPhotoTimes(form) {
+    // Echte Nutzereingaben (isTrusted) markieren die Felder als manuell gepflegt;
+    // programmatische input-Events aus setFieldValue lösen das nicht aus.
+    ;['tattag', 'tatzeit_von', 'tatzeit_bis'].forEach((name) => {
+      const el = form.elements[name]
+      if (!el) return
+      el.addEventListener('input', (e) => {
+        if (e.isTrusted) userEditedTimes = true
+      })
+    })
+    const btn = document.querySelector('#btn-photo-times')
+    if (!btn) return
+    btn.addEventListener('click', () => {
+      applyPhotoTimes()
+      const status = document.querySelector('#photo-time-status')
+      const range = getPhotoTimeRange()
+      if (status && range) {
+        const von = toHHMM(range.min)
+        const bis = toHHMM(range.max)
+        const span = bis !== von ? von + ' – ' + bis : von
+        status.textContent = 'Übernommen: ' + span + ' – bitte prüfen.'
+      }
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3b. KI-Foto-Analyse: Vorschläge (Kennzeichen + Verstoßart) abholen
+  // ---------------------------------------------------------------------------
+  // Nach dem Upload analysiert der Server die Fotos im Hintergrund. Hier holen wir
+  // die Befunde per Poll ab und füllen damit nur LEERE, vom Nutzer noch nicht
+  // angefasste Felder vor – der Nutzer prüft und speichert wie gewohnt.
+
+  const AI_FIELDS = ['kennzeichen', 'fahrzeug_marke', 'verstoss_art', 'beschreibung']
+  const aiTouched = {} // vom Nutzer manuell geänderte Felder (nur echte Events)
+  let aiForm = null
+  let aiTimer = null
+  let aiStopAt = 0
+
+  function setAiStatus(text) {
+    const box = document.querySelector('#ai-status')
+    if (box) box.textContent = text || ''
+  }
+
+  function aiFieldEmpty(el) {
+    return !el || !String(el.value || '').trim()
+  }
+
+  function markAiSuggested(el) {
+    if (!el) return
+    el.classList.remove('ai-filled')
+    // Reflow erzwingen, damit die Animation bei erneutem Setzen wieder startet.
+    void el.offsetWidth
+    el.classList.add('ai-filled')
+  }
+
+  // Manuelle Eingaben merken (isTrusted nur bei echten Nutzer-Events), damit die
+  // KI später nichts überschreibt, was der Nutzer selbst getippt/gewählt hat.
+  function initAiTouchTracking(form) {
+    AI_FIELDS.forEach((n) => {
+      const el = form.elements[n]
+      if (!el || typeof el.addEventListener !== 'function') return
+      const mark = (e) => {
+        if (e.isTrusted) aiTouched[n] = true
+      }
+      el.addEventListener('input', mark)
+      el.addEventListener('change', mark)
+    })
+  }
+
+  function applyAiSuggestions(form, suggestions) {
+    let filledAny = false
+    AI_FIELDS.forEach((n) => {
+      const el = form.elements[n]
+      const val = suggestions[n]
+      if (!el || !val || aiTouched[n] || !aiFieldEmpty(el)) return
+      el.value = val
+      // Programmatische Events lösen das Autosave aus; isTrusted=false, daher wird
+      // das Feld nicht fälschlich als „vom Nutzer angefasst" markiert.
+      el.dispatchEvent(new Event('input'))
+      el.dispatchEvent(new Event('change'))
+      markAiSuggested(el)
+      filledAny = true
+    })
+    return filledAny
+  }
+
+  async function pollAnalysisOnce(form) {
+    try {
+      const res = await fetch('/report/' + reportId + '/analysis', {
+        headers: { Accept: 'application/json' },
+      })
+      if (!res.ok) return { status: 'done' }
+      const data = await res.json()
+      if (data && data.suggestions && applyAiSuggestions(form, data.suggestions)) {
+        setAiStatus('KI-Vorschläge aus den Fotos übernommen – bitte prüfen.')
+      }
+      return data || { status: 'done' }
+    } catch (_) {
+      return { status: 'done' }
+    }
+  }
+
+  // Polling starten bzw. „verlängern" (z.B. nach einem weiteren Upload).
+  function bumpAnalysisPolling() {
+    const form = aiForm || document.querySelector('#report-form[data-report-id]')
+    if (!form || !reportId) return
+    aiForm = form
+    aiStopAt = Date.now() + 120000 // höchstens 2 Minuten pollen
+    if (aiTimer) return // läuft bereits
+    const statusBox = document.querySelector('#ai-status')
+    if (statusBox && !statusBox.textContent) {
+      setAiStatus('🔍 Fotos werden analysiert …')
+    }
+    const tick = async () => {
+      const data = await pollAnalysisOnce(form)
+      if (data.status === 'done' || Date.now() > aiStopAt) {
+        clearInterval(aiTimer)
+        aiTimer = null
+        const box = document.querySelector('#ai-status')
+        if (box && box.textContent.indexOf('übernommen') < 0) setAiStatus('')
+
+      }
+    }
+    aiTimer = setInterval(tick, 3000)
+    tick()
   }
 
   // ---------------------------------------------------------------------------
@@ -591,5 +817,10 @@
     initImageEditor()
     initAutosave(form)
     initBehinderung(form)
+    initPhotoTimes(form)
+    initAiTouchTracking(form)
+    // Beim Laden einmal pollen: Ergebnisse können seit dem letzten Besuch fertig
+    // sein, oder ein gerade hochgeladenes Bild wird noch analysiert.
+    bumpAnalysisPolling()
   })
 })()
