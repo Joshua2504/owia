@@ -96,6 +96,14 @@
       maxZoom: 19,
       attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map)
+    // Amtliche Luftbilder (Land Hessen, same-origin geproxt – siehe sat.ts).
+    const satellite = L.tileLayer('/sat/{z}/{x}/{y}.jpg', {
+      maxZoom: 19,
+      attribution: '© Land Hessen (HVBG), dl-de/zero-2.0',
+    })
+    L.control
+      .layers({ Straße: tiles, Satellit: satellite }, null, { position: 'topright' })
+      .addTo(map)
     attachTileStatus(el, tiles)
     setTimeout(() => map.invalidateSize(), 200)
 
