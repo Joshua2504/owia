@@ -64,11 +64,17 @@
                 <% } %>
               </td>
               <td>
-                <% if (r.status === 'entwurf') { %>
-                  <a href="/report/<%= r.aktenzeichen %>/edit" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
-                <% } else { %>
-                  <a href="/report/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
-                <% } %>
+                <div class="d-flex gap-2 justify-content-end">
+                  <% if (r.status === 'entwurf') { %>
+                    <a href="/report/<%= r.aktenzeichen %>/edit" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+                    <form method="post" action="/report/<%= r.aktenzeichen %>/discard" class="m-0"
+                          onsubmit="return confirm('Entwurf wirklich löschen?')">
+                      <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+                    </form>
+                  <% } else { %>
+                    <a href="/report/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
+                  <% } %>
+                </div>
               </td>
             </tr>
           <% } %>
