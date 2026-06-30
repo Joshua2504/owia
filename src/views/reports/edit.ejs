@@ -98,7 +98,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               </div>
               <% if (locals.city) { %>
                 <!-- Zuständige Behörde direkt beim Tatort, da sie sich aus dem Ort ergibt. -->
-                <div class="alert alert-info d-flex align-items-start gap-2 py-2 px-3 mt-2 mb-0" role="status">
+                <div class="form-text d-flex align-items-start gap-2 mt-2 mb-0" role="status">
                   <span aria-hidden="true">🏛️</span>
                   <div>
                     Diese Anzeige geht an das <strong><%= city.ordnungsamt %></strong>

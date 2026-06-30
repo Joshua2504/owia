@@ -27,6 +27,13 @@
               gelesen und akzeptiere sie.
             </label>
           </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="remember" value="1"
+                   id="remember" <%= locals.remember ? 'checked' : '' %>>
+            <label class="form-check-label small" for="remember">
+              Angemeldet bleiben (30 Tage)
+            </label>
+          </div>
           <button type="submit" class="btn btn-primary w-100">Code anfordern</button>
         </form>
       </div>

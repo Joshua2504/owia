@@ -57,9 +57,19 @@ CREATE TABLE IF NOT EXISTS login_tokens (
   code        VARCHAR(6) NOT NULL,
   token       VARCHAR(64) NOT NULL UNIQUE,
   attempts    INT NOT NULL DEFAULT 0,
+  remember    TINYINT(1) NOT NULL DEFAULT 0,   -- "Angemeldet bleiben (30 Tage)"
   expires_at  DATETIME NOT NULL,
   used_at     DATETIME NULL,
   created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_login_tokens_email ON login_tokens(email);
+
+-- Persistenter Session-Store (statt In-Memory), übersteht App-/Stack-Neustarts.
+CREATE TABLE IF NOT EXISTS sessions (
+  sid        VARCHAR(128) PRIMARY KEY,
+  data       TEXT NOT NULL,
+  expires_at DATETIME NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);

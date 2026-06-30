@@ -19,6 +19,7 @@ import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
 import { PdfService } from './services/pdf'
 import { initDb } from './db/init'
+import { MySQLSessionStore } from './db/session-store'
 
 const app = Fastify({ logger: { level: 'info' } })
 
@@ -35,10 +36,14 @@ async function main() {
   await app.register(cookie)
   await app.register(session, {
     secret: process.env.SESSION_SECRET || 'fallback-dev-secret-replace-in-production',
+    // Sessions in der DB ablegen, damit ein App-/Stack-Neustart die Anmeldung
+    // nicht verwirft (Default wäre ein flüchtiger In-Memory-Store).
+    store: new MySQLSessionStore(),
     cookie: {
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
       sameSite: 'lax',
+      // Default-Lebensdauer; bei „Angemeldet bleiben" auf 30 Tage erhöht (auth.ts).
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
     saveUninitialized: false,

@@ -7,6 +7,8 @@ import { MailService } from '../services/mail'
 
 const CODE_TTL_MINUTES = 15
 const MAX_ATTEMPTS = 5
+// „Angemeldet bleiben": Cookie-Lebensdauer, sonst gilt der Default aus server.ts.
+const REMEMBER_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
 function normalizeEmail(email: string): string {
   return email.toLowerCase().trim()
@@ -24,7 +26,8 @@ function baseUrl(request: FastifyRequest): string {
 /** Findet den Nutzer (oder legt ihn an) und meldet die Session an. */
 async function loginUserByEmail(
   request: FastifyRequest,
-  email: string
+  email: string,
+  remember = false
 ): Promise<void> {
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(
     'SELECT id, email, vorname, nachname FROM users WHERE email = ?',
@@ -56,6 +59,11 @@ async function loginUserByEmail(
   request.session.userEmail = user.email
   request.session.userName =
     [user.vorname, user.nachname].filter(Boolean).join(' ') || user.email
+  // „Angemeldet bleiben": Cookie (und damit DB-Session) auf 30 Tage verlängern.
+  if (remember) {
+    request.session.cookie.maxAge = REMEMBER_MAX_AGE_MS
+    request.session.cookie.expires = new Date(Date.now() + REMEMBER_MAX_AGE_MS)
+  }
   await request.session.save()
 }
 
@@ -67,16 +75,19 @@ export default async function authRoutes(app: FastifyInstance) {
   })
 
   app.post('/login', async (request, reply) => {
-    const { email, datenschutz } = request.body as {
+    const { email, datenschutz, remember } = request.body as {
       email?: string
       datenschutz?: string
+      remember?: string
     }
+    const rememberFlag = remember ? 1 : 0
 
     if (!email || !isValidEmail(email)) {
       return reply.view('/auth/login.ejs', viewData(request, {
         title: 'Anmelden',
         error: 'Bitte gib eine gültige E-Mail-Adresse ein.',
         email,
+        remember: rememberFlag,
       }))
     }
 
@@ -85,6 +96,7 @@ export default async function authRoutes(app: FastifyInstance) {
         title: 'Anmelden',
         error: 'Bitte stimme der Datenschutzerklärung zu.',
         email,
+        remember: rememberFlag,
       }))
     }
 
@@ -99,9 +111,9 @@ export default async function authRoutes(app: FastifyInstance) {
     )
 
     await pool.execute(
-      `INSERT INTO login_tokens (email, code, token, expires_at)
-       VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
-      [normalizedEmail, code, token, CODE_TTL_MINUTES]
+      `INSERT INTO login_tokens (email, code, token, remember, expires_at)
+       VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [normalizedEmail, code, token, rememberFlag, CODE_TTL_MINUTES]
     )
 
     const magicLink = `${baseUrl(request)}/login/link/${token}`
@@ -113,6 +125,7 @@ export default async function authRoutes(app: FastifyInstance) {
         title: 'Anmelden',
         error: 'E-Mail konnte nicht versendet werden. Bitte später erneut versuchen.',
         email,
+        remember: rememberFlag,
       }))
     }
 
@@ -161,7 +174,7 @@ export default async function authRoutes(app: FastifyInstance) {
     await pool.execute('UPDATE login_tokens SET used_at = NOW() WHERE id = ?', [
       tokenRow.id,
     ])
-    await loginUserByEmail(request, normalizedEmail)
+    await loginUserByEmail(request, normalizedEmail, tokenRow.remember === 1)
     return reply.redirect('/dashboard')
   })
 
@@ -187,7 +200,7 @@ export default async function authRoutes(app: FastifyInstance) {
     await pool.execute('UPDATE login_tokens SET used_at = NOW() WHERE id = ?', [
       tokenRow.id,
     ])
-    await loginUserByEmail(request, tokenRow.email)
+    await loginUserByEmail(request, tokenRow.email, tokenRow.remember === 1)
     return reply.redirect('/dashboard')
   })
 
