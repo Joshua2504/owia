@@ -6,6 +6,10 @@ import { VERSTOSS_ARTEN } from '../config/verstoss'
 
 const VLM_URL = (process.env.VLM_URL || 'http://ollama:11434').replace(/\/$/, '')
 const VLM_MODEL = process.env.VLM_MODEL || 'qwen2.5vl:3b'
+// Ollama-Default ist nur 4096 Tokens – System-Prompt + Bild-Tokens sprengen das.
+// Deutlich höher setzen (überschreibbar via VLM_NUM_CTX). Größerer Kontext kostet
+// auf CPU mehr RAM/Zeit, ist für die Bildanalyse aber nötig.
+const VLM_NUM_CTX = Number(process.env.VLM_NUM_CTX) || 16384
 
 export type ViolationResult = {
   verstossArt: string | null
@@ -54,7 +58,7 @@ export async function analyzeViolation(filePath: string): Promise<ViolationResul
     model: VLM_MODEL,
     stream: false,
     format: 'json',
-    options: { temperature: 0 },
+    options: { temperature: 0, num_ctx: VLM_NUM_CTX },
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: 'Analysiere dieses Foto.', images: [base64] },
