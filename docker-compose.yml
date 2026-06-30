@@ -1,0 +1,60 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/node/Dockerfile
+    command: tsx watch src/server.ts
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./resources:/app/resources
+      - ./data/pdfs:/app/data/pdfs
+      - ./data/uploads:/app/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    restart: unless-stopped
+
+  db:
+    image: mariadb:11
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  mail:
+    image: axllent/mailpit
+    ports:
+      - "8025:8025"
+    restart: unless-stopped
+
+  # OpenStreetMap-Geocoder für die Adresssuche (Autovervollständigung).
+  # Lädt beim ersten Start automatisch den fertigen Deutschland-Index
+  # (mehrere GB) herunter und entpackt ihn nach ./data/photon. Das dauert
+  # einige Minuten; solange liefert /api/geo/search einfach keine Treffer.
+  # REGION akzeptiert "germany"/"de" oder z.B. "planet" bzw. mehrere Länder.
+  photon:
+    image: rtuszik/photon-docker:latest
+    environment:
+      - REGION=germany
+      - UPDATE_STRATEGY=PARALLEL
+    volumes:
+      - ./data/photon:/photon/data
+    # Port nur bei Bedarf zum Debuggen freigeben – die App spricht Photon
+    # intern über den Namen "photon:2322" an.
+    # ports:
+    #   - "2322:2322"
+    restart: unless-stopped

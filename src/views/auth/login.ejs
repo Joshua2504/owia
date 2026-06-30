@@ -1,0 +1,35 @@
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h2 class="card-title mb-3">Anmelden</h2>
+        <p class="text-muted small mb-4">
+          Geben Sie Ihre E-Mail-Adresse ein. Wir senden Ihnen einen Anmeldecode
+          und einen Link zum direkten Einloggen.
+        </p>
+
+        <% if (locals.error) { %>
+          <div class="alert alert-danger"><%= error %></div>
+        <% } %>
+
+        <form method="post" action="/login">
+          <div class="mb-3">
+            <label class="form-label">E-Mail</label>
+            <input type="email" name="email" class="form-control"
+                   value="<%= locals.email || '' %>" required autofocus>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="datenschutz" value="1"
+                   id="datenschutz" required>
+            <label class="form-check-label small" for="datenschutz">
+              Ich habe die
+              <a href="/datenschutz" target="_blank" rel="noopener">Datenschutzerklärung</a>
+              gelesen und akzeptiere sie.
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">Code anfordern</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

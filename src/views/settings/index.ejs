@@ -1,0 +1,57 @@
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <h2 class="mb-4">Einstellungen</h2>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header">Persönliche Daten</div>
+      <div class="card-body p-4">
+        <p class="text-muted small mb-3">
+          Diese Daten werden automatisch in das Frankfurt-Formular eingetragen.
+        </p>
+        <form method="post" action="/settings">
+          <div class="row g-3">
+            <div class="col-sm-6">
+              <label class="form-label">Vorname</label>
+              <input type="text" name="vorname" class="form-control"
+                     value="<%= user.vorname || '' %>">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label">Nachname</label>
+              <input type="text" name="nachname" class="form-control"
+                     value="<%= user.nachname || '' %>">
+            </div>
+            <div class="col-sm-8">
+              <label class="form-label">Straße und Hausnummer</label>
+              <input type="text" name="strasse" class="form-control"
+                     value="<%= user.strasse || '' %>"
+                     data-address-autocomplete data-fill="street"
+                     data-target-plz="#plz" data-target-ort="#ort"
+                     placeholder="Adresse suchen – PLZ und Ort werden ergänzt">
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label">PLZ</label>
+              <input type="text" name="plz" id="plz" class="form-control" maxlength="10"
+                     value="<%= user.plz || '' %>">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label">Ort</label>
+              <input type="text" name="ort" id="ort" class="form-control"
+                     value="<%= user.ort || '' %>">
+            </div>
+            <div class="col-sm-6">
+              <label class="form-label">Telefon</label>
+              <input type="tel" name="telefon" class="form-control"
+                     value="<%= user.telefon || '' %>">
+            </div>
+            <div class="col-sm-12">
+              <label class="form-label">E-Mail</label>
+              <input type="email" class="form-control" value="<%= user.email %>" disabled>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary mt-4">Speichern</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

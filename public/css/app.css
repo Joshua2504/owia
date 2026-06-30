@@ -1,0 +1,42 @@
+code {
+  font-size: 1em;
+  background: #f8f9fa;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.table td {
+  vertical-align: middle;
+}
+
+/* Adress-Autovervollständigung */
+.address-ac-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.address-ac-menu .list-group-item {
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Bild-Vorschau mit Schwärzen */
+.redact-stage {
+  font-size: 0.875rem;
+  color: #6c757d;
+}
+
+.img-redact {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  cursor: crosshair;
+  touch-action: none; /* Wischgesten nicht scrollen, sondern zum Schwärzen nutzen */
+}

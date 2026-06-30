@@ -1,0 +1,55 @@
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0">Meine Anzeigen</h2>
+  <a href="/report/new" class="btn btn-primary">+ Neue Anzeige</a>
+</div>
+
+<% if (reports.length === 0) { %>
+  <div class="card shadow-sm">
+    <div class="card-body text-center py-5 text-muted">
+      <p class="mb-3">Noch keine Anzeigen vorhanden.</p>
+      <a href="/report/new" class="btn btn-primary">Erste Anzeige erstatten</a>
+    </div>
+  </div>
+<% } else { %>
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Kennzeichen</th>
+            <th>Tattag</th>
+            <th>Tatort</th>
+            <th>Verstoß</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (const r of reports) { %>
+            <tr>
+              <td><code><%= r.kennzeichen %></code></td>
+              <td class="text-nowrap">
+                <%= r.tattag ? new Date(r.tattag).toLocaleDateString('de-DE') : '—' %>
+                <% if (r.tatzeit_von) { %>
+                  <span class="text-muted"><%= String(r.tatzeit_von).slice(0,5) %></span>
+                <% } %>
+              </td>
+              <td class="text-truncate" style="max-width:180px"><%= r.tatort %></td>
+              <td class="text-truncate" style="max-width:180px"><%= r.verstoss_art %></td>
+              <td>
+                <% if (r.status === 'versendet') { %>
+                  <span class="badge bg-success">Versendet</span>
+                <% } else { %>
+                  <span class="badge bg-secondary">Eingereicht</span>
+                <% } %>
+              </td>
+              <td>
+                <a href="/report/<%= r.id %>" class="btn btn-sm btn-outline-secondary">Details</a>
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<% } %>

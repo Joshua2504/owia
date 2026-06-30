@@ -1,0 +1,99 @@
+<%
+const hhmm = (t) => t ? String(t).slice(0, 5) : ''
+const tattag = report.tattag
+  ? new Date(report.tattag).toLocaleDateString('de-DE', { dateStyle: 'long' })
+  : '—'
+const von = hhmm(report.tatzeit_von)
+const bis = hhmm(report.tatzeit_bis)
+const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `ab ${von} Uhr` : '—'
+const isVersendet = report.status === 'versendet'
+const images = locals.images || []
+%>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 class="mb-0">Anzeige #<%= report.id %></h2>
+      <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4">Kennzeichen</dt>
+          <dd class="col-sm-8"><code><%= report.kennzeichen %></code></dd>
+
+          <% if (report.fahrzeug_marke) { %>
+            <dt class="col-sm-4">Fahrzeug</dt>
+            <dd class="col-sm-8"><%= report.fahrzeug_marke %></dd>
+          <% } %>
+
+          <dt class="col-sm-4">Tattag</dt>
+          <dd class="col-sm-8"><%= tattag %></dd>
+
+          <dt class="col-sm-4">Tatzeit</dt>
+          <dd class="col-sm-8"><%= tatzeit %></dd>
+
+          <dt class="col-sm-4">Tatort</dt>
+          <dd class="col-sm-8"><%= report.tatort %></dd>
+
+          <dt class="col-sm-4">Verstoßart</dt>
+          <dd class="col-sm-8"><%= report.verstoss_art %></dd>
+
+          <% if (report.beschreibung) { %>
+            <dt class="col-sm-4">Beschreibung</dt>
+            <dd class="col-sm-8"><%= report.beschreibung %></dd>
+          <% } %>
+
+          <dt class="col-sm-4">Status</dt>
+          <dd class="col-sm-8">
+            <% if (isVersendet) { %>
+              <span class="badge bg-success">Versendet</span>
+            <% } else { %>
+              <span class="badge bg-secondary">Eingereicht</span>
+            <% } %>
+          </dd>
+        </dl>
+      </div>
+    </div>
+
+    <% if (images.length > 0) { %>
+      <div class="card shadow-sm mb-4">
+        <div class="card-header">Beweisfotos (<%= images.length %>)</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <% for (const img of images) { %>
+              <div class="col-6 col-md-4">
+                <a href="/report/<%= report.id %>/image/<%= img.id %>" target="_blank">
+                  <img src="/report/<%= report.id %>/image/<%= img.id %>"
+                       class="img-fluid rounded border" alt="Beweisfoto">
+                </a>
+                <% if (img.original_filename && img.original_filename !== img.filename) { %>
+                  <a href="/report/<%= report.id %>/image/<%= img.id %>?original=1"
+                     class="d-block small text-muted mt-1">Original herunterladen</a>
+                <% } %>
+              </div>
+            <% } %>
+          </div>
+        </div>
+      </div>
+    <% } %>
+
+    <div class="d-flex gap-2 flex-wrap">
+      <% if (report.pdf_filename) { %>
+        <a href="/report/<%= report.id %>/pdf" class="btn btn-outline-primary">
+          ⬇ PDF herunterladen
+        </a>
+      <% } else { %>
+        <button class="btn btn-outline-secondary" disabled>PDF wird generiert…</button>
+      <% } %>
+
+      <% if (!isVersendet && report.pdf_filename) { %>
+        <form method="post" action="/report/<%= report.id %>/send"
+              onsubmit="return confirm('Anzeige jetzt per E-Mail an das Ordnungsamt senden?')">
+          <button type="submit" class="btn btn-success">📧 Per E-Mail versenden</button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+</div>
