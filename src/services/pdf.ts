@@ -1,9 +1,10 @@
 import fs from 'fs/promises'
 import path from 'path'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, StandardFonts } from 'pdf-lib'
 import mysql from 'mysql2/promise'
 import type { ReportImage } from '../routes/reports'
 import { getCity, DEFAULT_CITY_ID } from '../config/cities'
+import { renderTatortMap } from './staticmap'
 
 /** "14:30:00" / "14:30" -> "14:30" */
 function hhmm(time: unknown): string {
@@ -126,9 +127,46 @@ export const PdfService = {
       }
     }
 
-    // Hochgeladene Bilder als zusätzliche Seiten anhängen
     const A4 = { width: 595.28, height: 841.89 }
     const margin = 40
+
+    // Tatort-Karte mit Marker als eigene Seite (vor den Beweisfotos), sofern
+    // Koordinaten vorliegen und der Tileserver die Kacheln liefern kann.
+    if (report.tatort_lat != null && report.tatort_lon != null) {
+      try {
+        const mapPng = await renderTatortMap(Number(report.tatort_lat), Number(report.tatort_lon))
+        if (mapPng) {
+          const embedded = await doc.embedPng(mapPng)
+          const font = await doc.embedFont(StandardFonts.Helvetica)
+          const page = doc.addPage([A4.width, A4.height])
+          let cursorY = A4.height - margin
+
+          page.drawText('Tatort auf der Karte', { x: margin, y: cursorY - 14, size: 14, font })
+          cursorY -= 32
+          if (report.tatort) {
+            // Adresse als Bildunterschrift; WinAnsi kann keine Emojis o.Ä. – daher absichern.
+            try {
+              page.drawText(String(report.tatort), { x: margin, y: cursorY - 10, size: 10, font })
+              cursorY -= 26
+            } catch {
+              /* Sonderzeichen in der Adresse – Unterschrift weglassen */
+            }
+          }
+
+          const scaled = embedded.scaleToFit(A4.width - margin * 2, cursorY - margin)
+          page.drawImage(embedded, {
+            x: (A4.width - scaled.width) / 2,
+            y: cursorY - scaled.height,
+            width: scaled.width,
+            height: scaled.height,
+          })
+        }
+      } catch {
+        // Karte konnte nicht erzeugt werden — PDF ohne Kartenseite weiter.
+      }
+    }
+
+    // Hochgeladene Bilder als zusätzliche Seiten anhängen
     for (const image of images) {
       try {
         const embedded =
