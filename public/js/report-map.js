@@ -25,6 +25,29 @@
     return Number.isFinite(n) ? n : null
   }
 
+  // Hinweis-Banner oben auf der Karte, falls die Kacheln (noch) nicht verfügbar
+  // sind – z.B. weil der Tileserver nach einem Update neu importiert. Blendet
+  // sich aus, sobald die erste Kachel erfolgreich lädt.
+  function attachTileStatus(el, tileLayer) {
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative'
+    const banner = document.createElement('div')
+    banner.className = 'alert alert-warning small shadow-sm'
+    banner.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;z-index:1000;margin:0'
+    banner.textContent =
+      'Wir haben ein Update durchgeführt und die Karte wird serverseitig neu ' +
+      'verarbeitet. Bitte komm in ein paar Minuten wieder.'
+    banner.style.display = 'none'
+    el.appendChild(banner)
+    let ok = false
+    tileLayer.on('tileload', () => {
+      ok = true
+      banner.style.display = 'none'
+    })
+    tileLayer.on('tileerror', () => {
+      if (!ok) banner.style.display = 'block'
+    })
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('tatort-map')
     if (!el || !window.L) return
@@ -43,10 +66,11 @@
       [hasPoint ? startLat : centerLat, hasPoint ? startLon : centerLon],
       hasPoint ? 16 : 13
     )
-    L.tileLayer('/tiles/{z}/{x}/{y}.png', {
+    const tiles = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map)
+    attachTileStatus(el, tiles)
 
     // Leaflet rendert in Containern, die beim Init evtl. noch kein finales
     // Layout haben, sonst grau – nach kurzem Tick neu vermessen.

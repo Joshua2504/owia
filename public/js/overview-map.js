@@ -19,6 +19,29 @@
     return Number.isFinite(n) ? n : null
   }
 
+  // Hinweis-Banner oben auf der Karte, falls die Kacheln (noch) nicht verfügbar
+  // sind – z.B. weil der Tileserver nach einem Update neu importiert. Blendet
+  // sich aus, sobald die erste Kachel erfolgreich lädt.
+  function attachTileStatus(el, tileLayer) {
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative'
+    const banner = document.createElement('div')
+    banner.className = 'alert alert-warning small shadow-sm'
+    banner.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;z-index:1000;margin:0'
+    banner.textContent =
+      'Wir haben ein Update durchgeführt und die Karte wird serverseitig neu ' +
+      'verarbeitet. Bitte komm in ein paar Minuten wieder.'
+    banner.style.display = 'none'
+    el.appendChild(banner)
+    let ok = false
+    tileLayer.on('tileload', () => {
+      ok = true
+      banner.style.display = 'none'
+    })
+    tileLayer.on('tileerror', () => {
+      if (!ok) banner.style.display = 'block'
+    })
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -58,10 +81,11 @@
     const centerLon = num(el.dataset.centerLon) || 8.6821
 
     const map = L.map(el).setView([centerLat, centerLon], 12)
-    L.tileLayer('/tiles/{z}/{x}/{y}.png', {
+    const tiles = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map)
+    attachTileStatus(el, tiles)
     setTimeout(() => map.invalidateSize(), 200)
 
     let reports = []
