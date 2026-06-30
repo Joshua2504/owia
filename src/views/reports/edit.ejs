@@ -91,6 +91,17 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
                 Adresse tippen und einen Vorschlag wählen, den aktuellen Standort verwenden
                 oder unten den Standort aus einem Foto übernehmen.
               </div>
+              <!-- Karte zum Tatort. Marker lässt sich verschieben; die Adresse wird dann
+                   per Reverse-Geocoding aktualisiert. Koordinaten gehen in die Hidden-Felder. -->
+              <div id="tatort-map" class="rounded border mt-2"
+                   style="height:320px"
+                   data-lat="<%= r.tatort_lat || '' %>" data-lon="<%= r.tatort_lon || '' %>"
+                   data-center-lat="<%= city.geo.biasLat %>" data-center-lon="<%= city.geo.biasLon %>"></div>
+              <div class="form-text">
+                Den Marker kannst du zur genauen Stelle ziehen – die Adresse wird dann übernommen.
+              </div>
+              <input type="hidden" name="tatort_lat" value="<%= r.tatort_lat || '' %>">
+              <input type="hidden" name="tatort_lon" value="<%= r.tatort_lon || '' %>">
             </div>
             <div class="col-sm-12">
               <label class="form-label">Verstoßart <span class="text-danger">*</span></label>
@@ -132,7 +143,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
                    accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
             <div class="form-text">
               JPG, PNG oder HEIC, bis 20 MB pro Bild (max. 10 Bilder). Ausgewählte Bilder
-              werden sofort zum Entwurf hinzugefügt. Anschließend können Sie Bereiche
+              werden sofort zum Entwurf hinzugefügt. Anschließend kannst du Bereiche
               (z.&nbsp;B. Personen) schwärzen – die Schwärzung wird automatisch gespeichert
               und ersetzt die ursprüngliche Fassung. Bereits gespeicherte Bilder lassen sich
               auch nach dem Neuladen weiter bearbeiten.
@@ -155,10 +166,10 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
     </div>
 
     <p class="text-muted small mt-3">
-      * Für den Versand erforderlich. Als Entwurf können Sie jederzeit speichern – auch mit
+      * Für den Versand erforderlich. Als Entwurf kannst du jederzeit speichern – auch mit
       nur einem ausgefüllten Feld oder nur einem Foto, etwa um unterwegs Fotos und Standort
       festzuhalten und die Anzeige später zu vervollständigen. Eingaben werden zudem
-      automatisch gespeichert. Ihre persönlichen Daten (Name, Adresse) werden aus den
+      automatisch gespeichert. Deine persönlichen Daten (Name, Adresse) werden aus den
       <a href="/settings">Einstellungen</a> übernommen.
     </p>
   </div>
@@ -166,7 +177,12 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 
 <form id="discard-form" method="post" action="/report/<%= r.id %>/discard" class="d-none"></form>
 
+<!-- Leaflet für die Tatort-Karte (Tiles kommen same-origin über /tiles/...). -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+
 <!-- Optionale Hilfen: EXIF-GPS aus Fotos lesen, HEIC im Browser für die Vorschau wandeln. -->
 <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/public/js/report-form.js"></script>
+<script src="/public/js/report-map.js"></script>

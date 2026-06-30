@@ -14,6 +14,8 @@ import dashboardRoutes from './routes/dashboard'
 import reportsRoutes from './routes/reports'
 import settingsRoutes from './routes/settings'
 import geoRoutes from './routes/geo'
+import tilesRoutes from './routes/tiles'
+import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
 import { PdfService } from './services/pdf'
 import { initDb } from './db/init'
@@ -57,9 +59,9 @@ async function main() {
   await app.register(reportsRoutes)
   await app.register(settingsRoutes)
   await app.register(geoRoutes)
+  await app.register(tilesRoutes)
+  await app.register(publicRoutes)
   await app.register(legalRoutes)
-
-  app.get('/', async (_req, reply) => reply.redirect('/dashboard'))
 
   if (process.env.NODE_ENV !== 'production') {
     app.get('/debug/pdf-fields', async (_req, reply) => {

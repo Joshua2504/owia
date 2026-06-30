@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS reports (
   tatzeit_von   TIME,
   tatzeit_bis   TIME,
   tatort        TEXT,
+  tatort_lat    DECIMAL(9,6) NULL,   -- Koordinaten des Tatorts (für Karte, von Photon/Marker)
+  tatort_lon    DECIMAL(9,6) NULL,
   verstoss_art  VARCHAR(255),
   beschreibung  TEXT,
   behinderung      TINYINT(1) NULL,   -- wurde jemand behindert? 1=ja, 0=nein, NULL=keine Angabe

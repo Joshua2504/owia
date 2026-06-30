@@ -187,10 +187,16 @@ async function persistFields(
   // Text immer aufbewahren (falls später doch wieder „Ja"); im PDF wird er nur
   // bei behinderung=1 angezeigt.
   const behinderungText = v.behinderung_text || null
+  // Tatort-Koordinaten (Karte/Marker) nur übernehmen, wenn beide gültig sind.
+  const lat = Number(v.tatort_lat)
+  const lon = Number(v.tatort_lon)
+  const tatortLat = Number.isFinite(lat) ? lat : null
+  const tatortLon = Number.isFinite(lon) ? lon : null
   await pool.execute(
     `UPDATE reports
        SET kennzeichen=?, fahrzeug_marke=?, tattag=?, tatzeit_von=?, tatzeit_bis=?,
-           tatort=?, verstoss_art=?, beschreibung=?, behinderung=?, behinderung_text=?
+           tatort=?, tatort_lat=?, tatort_lon=?, verstoss_art=?, beschreibung=?,
+           behinderung=?, behinderung_text=?
      WHERE id=? AND user_id=? AND status='entwurf'`,
     [
       v.kennzeichen ? v.kennzeichen.toUpperCase().trim() : null,
@@ -199,6 +205,8 @@ async function persistFields(
       v.tatzeit_von || null,
       v.tatzeit_bis || null,
       v.tatort || null,
+      tatortLat,
+      tatortLon,
       v.verstoss_art || null,
       v.beschreibung || null,
       behinderung,

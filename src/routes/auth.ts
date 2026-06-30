@@ -75,7 +75,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (!email || !isValidEmail(email)) {
       return reply.view('/auth/login.ejs', viewData(request, {
         title: 'Anmelden',
-        error: 'Bitte geben Sie eine gültige E-Mail-Adresse ein.',
+        error: 'Bitte gib eine gültige E-Mail-Adresse ein.',
         email,
       }))
     }
@@ -83,7 +83,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (!datenschutz) {
       return reply.view('/auth/login.ejs', viewData(request, {
         title: 'Anmelden',
-        error: 'Bitte stimmen Sie der Datenschutzerklärung zu.',
+        error: 'Bitte stimme der Datenschutzerklärung zu.',
         email,
       }))
     }
@@ -147,7 +147,7 @@ export default async function authRoutes(app: FastifyInstance) {
       }))
 
     if (!tokenRow || tokenRow.attempts >= MAX_ATTEMPTS) {
-      return renderError('Der Code ist abgelaufen. Bitte fordern Sie einen neuen an.')
+      return renderError('Der Code ist abgelaufen. Bitte fordere einen neuen an.')
     }
 
     if (code.trim() !== tokenRow.code) {

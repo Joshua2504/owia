@@ -5,6 +5,17 @@
   </form>
 </div>
 
+<!-- Anonyme Übersichtskarte aller versendeter Anzeigen (gleiche Daten wie die Startseite). -->
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-1">Öffentliche Übersicht</h5>
+    <p class="text-muted small mb-3">
+      Alle versendeter Anzeigen – anonymisiert, Fotos stark verpixelt.
+    </p>
+    <div id="overview-map" class="rounded border" style="height:380px"></div>
+  </div>
+</div>
+
 <% if (reports.length === 0) { %>
   <div class="card shadow-sm">
     <div class="card-body text-center py-5 text-muted">
@@ -65,3 +76,7 @@
     </div>
   </div>
 <% } %>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/public/js/overview-map.js"></script>

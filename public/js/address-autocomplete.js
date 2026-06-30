@@ -56,6 +56,14 @@
       }
       fill(input.dataset.targetPlz, s.postcode)
       fill(input.dataset.targetOrt, s.city)
+      // Koordinaten an die Karte melden (falls vorhanden) – siehe report-map.js.
+      if (Number.isFinite(s.lat) && Number.isFinite(s.lon)) {
+        document.dispatchEvent(
+          new CustomEvent('address:selected', {
+            detail: { lat: s.lat, lon: s.lon, label: s.label },
+          })
+        )
+      }
       close()
       input.focus()
     }

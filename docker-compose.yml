@@ -83,6 +83,38 @@ services:
     #   - "2322:2322"
     restart: unless-stopped
 
+  # OSM-Raster-Tileserver (nur Hessen, da aktuell nur Frankfurt unterstützt wird).
+  # Rendert Karten-Kacheln, die die App same-origin über /tiles/{z}/{x}/{y}.png
+  # ausliefert (Proxy in src/routes/tiles.ts) – daher kein Port nach außen.
+  #
+  # Auto-Import beim ersten Start: Fehlt der Import-Marker im Volume, läuft
+  # einmalig der Hessen-Import (baut die PostGIS-Render-DB, ~10–30 Min), danach
+  # der Tileserver. Dadurch funktioniert auch ein frisches `docker compose up -d`
+  # (inkl. automatischem Deploy) ohne manuellen Zwischenschritt; Folge-Deploys
+  # überspringen den Import (Marker liegt im persistenten Volume osm-tile-data).
+  # Während des Imports liefert /tiles leere Kacheln – die App blockiert nicht.
+  tileserver:
+    image: overv/openstreetmap-tile-server:latest
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        if [ ! -f /data/database/planet-import-complete ]; then
+          echo "Tile-DB noch nicht importiert – starte einmaligen Hessen-Import ..."
+          /run.sh import
+        fi
+        exec /run.sh run
+    environment:
+      - DOWNLOAD_PBF=https://download.geofabrik.de/europe/germany/hessen-latest.osm.pbf
+      - DOWNLOAD_POLY=https://download.geofabrik.de/europe/germany/hessen.poly
+    volumes:
+      - osm-tile-data:/data/database/
+      - osm-tile-cache:/data/tiles/
+    shm_size: 512m
+    restart: unless-stopped
+
 volumes:
   caddy_data:
   caddy_config:
+  osm-tile-data:
+  osm-tile-cache:

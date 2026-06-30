@@ -47,6 +47,15 @@
     }
   }
 
+  // Koordinaten an die Tatort-Karte melden (report-map.js setzt den Marker und
+  // schreibt die Hidden-Felder tatort_lat/tatort_lon).
+  function announceLocation(lat, lon, label) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return
+    document.dispatchEvent(
+      new CustomEvent('address:selected', { detail: { lat: lat, lon: lon, label: label } })
+    )
+  }
+
   function isHeic(file) {
     const n = (file.name || '').toLowerCase()
     return /image\/hei[cf]/.test(file.type) || n.endsWith('.heic') || n.endsWith('.heif')
@@ -102,6 +111,7 @@
             const s = await reverseGeocode(pos.coords.latitude, pos.coords.longitude)
             if (s && s.label) {
               setTatort(s.label)
+              announceLocation(pos.coords.latitude, pos.coords.longitude, s.label)
               status.textContent = 'Adresse übernommen – bitte prüfen.'
             } else {
               status.textContent = 'Zu diesem Standort wurde keine Adresse gefunden.'
@@ -295,6 +305,7 @@
         const s = await reverseGeocode(item.gps.latitude, item.gps.longitude)
         if (s && s.label) {
           setTatort(s.label)
+          announceLocation(item.gps.latitude, item.gps.longitude, s.label)
           if (status) status.textContent = 'Adresse aus Foto übernommen – bitte prüfen.'
         } else if (status) {
           status.textContent = 'Zu den Foto-Koordinaten wurde keine Adresse gefunden.'
@@ -514,6 +525,8 @@
     'tatzeit_von',
     'tatzeit_bis',
     'tatort',
+    'tatort_lat',
+    'tatort_lon',
     'verstoss_art',
     'beschreibung',
     'behinderung',
