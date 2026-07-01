@@ -62,10 +62,12 @@
     const centerLon = num(el.dataset.centerLon) || 8.6821
     const hasPoint = startLat !== null && startLon !== null
 
-    const map = L.map(el).setView(
-      [hasPoint ? startLat : centerLat, hasPoint ? startLon : centerLon],
-      hasPoint ? 16 : 13
-    )
+    // Solange noch kein Standort gewählt wurde, den Stadtmittelpunkt als Default
+    // verwenden (für Frankfurt der Hauptbahnhof – siehe city.geo.mapLat/mapLon).
+    const initLat = hasPoint ? startLat : centerLat
+    const initLon = hasPoint ? startLon : centerLon
+
+    const map = L.map(el).setView([initLat, initLon], hasPoint ? 16 : 13)
     const tiles = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap-Mitwirkende',
@@ -135,7 +137,15 @@
       }
     }
 
-    if (hasPoint) placeMarker(startLat, startLon)
+    // Marker immer setzen: bei vorhandenem Standort an dessen Position, sonst auf
+    // den Default (Frankfurt Hbf). Beim Default zusätzlich die Koordinaten in die
+    // Hidden-Felder schreiben und die Adresse vorbelegen, damit der Entwurf einen
+    // sinnvollen Standort hat, den der Nutzer nur noch verschieben/anpassen muss.
+    placeMarker(initLat, initLon)
+    if (!hasPoint) {
+      writeInputs(initLat, initLon)
+      if (tatortInput && !tatortInput.value.trim()) reverseFill(initLat, initLon)
+    }
 
     // Adresse/Standort an anderer Stelle gewählt: Marker setzen + Karte zentrieren.
     document.addEventListener('address:selected', (e) => {
