@@ -1,0 +1,50 @@
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 class="mb-0">Offene Erstattungsanträge</h2>
+      <a href="/admin/einzahlungen" class="btn btn-outline-secondary btn-sm">← Einzahlungen</a>
+    </div>
+
+    <% if (!requests.length) { %>
+      <div class="alert alert-info">Keine offenen Erstattungsanträge.</div>
+    <% } else { %>
+      <% for (const r of requests) { %>
+        <div class="card shadow-sm mb-3">
+          <div class="card-body">
+            <div>
+              <strong><%= fmt(jobCostCents(r)) %></strong> · Job #<%= r.transaction_id %>
+              <div class="small text-muted">
+                <%= [r.vorname, r.nachname].filter(Boolean).join(' ') %> · <%= r.email %> ·
+                <%= new Date(r.created_at).toLocaleString('de-DE') %>
+              </div>
+            </div>
+
+            <p class="mt-2 mb-2"><strong>Grund:</strong> <%= r.reason %></p>
+
+            <% const imgs = screenshots[r.id] || [] %>
+            <% if (imgs.length) { %>
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <% for (const imgId of imgs) { %>
+                  <a href="/konto/erstattung/<%= r.id %>/screenshot/<%= imgId %>" target="_blank" rel="noopener">
+                    <img src="/konto/erstattung/<%= r.id %>/screenshot/<%= imgId %>" alt="Screenshot"
+                         style="height:90px;width:auto;border-radius:6px;border:1px solid #dee2e6">
+                  </a>
+                <% } %>
+              </div>
+            <% } %>
+
+            <div class="d-flex gap-2">
+              <form method="post" action="/admin/erstattungen/<%= r.id %>/genehmigen" class="d-flex gap-2 flex-grow-1">
+                <input type="text" name="note" class="form-control form-control-sm" placeholder="Notiz (optional)">
+                <button class="btn btn-success btn-sm text-nowrap">Genehmigen (<%= fmt(jobCostCents(r)) %>)</button>
+              </form>
+              <form method="post" action="/admin/erstattungen/<%= r.id %>/ablehnen">
+                <button class="btn btn-outline-danger btn-sm">Ablehnen</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      <% } %>
+    <% } %>
+  </div>
+</div>

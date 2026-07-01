@@ -1,0 +1,54 @@
+<div class="row justify-content-center">
+  <div class="col-lg-10">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 class="mb-0">Offene Einzahlungen</h2>
+      <a href="/admin/erstattungen" class="btn btn-outline-secondary btn-sm">Erstattungen →</a>
+    </div>
+
+    <% if (!deposits.length) { %>
+      <div class="alert alert-info">Keine offenen Einzahlungen.</div>
+    <% } else { %>
+      <div class="card shadow-sm">
+        <div class="table-responsive">
+          <table class="table mb-0 align-middle">
+            <thead>
+              <tr>
+                <th>Datum</th><th>Nutzer</th><th>Betrag</th><th>Zahlart</th>
+                <th>Verwendungszweck</th><th style="min-width:260px">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% for (const d of deposits) { %>
+                <tr>
+                  <td class="small"><%= new Date(d.created_at).toLocaleString('de-DE') %></td>
+                  <td class="small">
+                    <%= [d.vorname, d.nachname].filter(Boolean).join(' ') %>
+                    <div class="text-muted"><%= d.email %></div>
+                  </td>
+                  <td><strong><%= fmt(d.amount_cents) %></strong></td>
+                  <td><%= d.method === 'paypal' ? 'PayPal' : 'Überweisung' %></td>
+                  <td><code><%= d.reference %></code></td>
+                  <td>
+                    <form method="post" action="/admin/einzahlungen/<%= d.id %>/bestaetigen" class="d-flex gap-2 mb-2">
+                      <input type="text" name="payment_reference" class="form-control form-control-sm"
+                             placeholder="Zahlungsreferenz" required style="min-width:150px">
+                      <button class="btn btn-success btn-sm text-nowrap">Bestätigen</button>
+                    </form>
+                    <form method="post" action="/admin/einzahlungen/<%= d.id %>/stornieren"
+                          onsubmit="return confirm('Einzahlung wirklich stornieren?')">
+                      <button class="btn btn-outline-danger btn-sm">Stornieren</button>
+                    </form>
+                  </td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="text-muted small mt-2">
+        Die Zahlungsreferenz (z.&nbsp;B. Buchungstext / PayPal-Transaktion) erscheint auf der
+        Rechnung, die der Nutzer nach der Bestätigung automatisch erhält.
+      </p>
+    <% } %>
+  </div>
+</div>

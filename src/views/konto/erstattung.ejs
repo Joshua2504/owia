@@ -1,0 +1,35 @@
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2 class="mb-0">Erstattung beantragen</h2>
+      <a href="/konto" class="btn btn-outline-secondary btn-sm">← Konto</a>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <p class="text-muted">
+          Job vom <%= new Date(job.created_at).toLocaleString('de-DE') %> ·
+          Betrag <strong><%= fmt(jobCostCents(job)) %></strong>.
+        </p>
+
+        <form method="post" action="/konto/erstattung/<%= job.id %>" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label class="form-label">Grund <span class="text-danger">*</span></label>
+            <textarea name="reason" class="form-control" rows="4" required
+                      placeholder="Warum möchtest du eine Erstattung? z.B. Kennzeichen falsch erkannt"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Screenshots (optional)</label>
+            <input type="file" name="screenshots" class="form-control" multiple
+                   accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif">
+            <div class="form-text">Bis zu <%= maxScreenshots %> Bilder, je max. 20 MB. JPG, PNG oder HEIC.</div>
+          </div>
+          <div class="d-flex justify-content-end gap-2">
+            <a href="/konto" class="btn btn-outline-secondary">Abbrechen</a>
+            <button type="submit" class="btn btn-primary">Antrag absenden</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

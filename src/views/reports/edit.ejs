@@ -27,7 +27,8 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
     <div class="card shadow-sm">
       <div class="card-body p-4">
         <form id="report-form" method="post" action="/report/<%= r.aktenzeichen %>/save"
-              data-report-id="<%= r.aktenzeichen %>">
+              data-report-id="<%= r.aktenzeichen %>"
+              data-ai-enabled="<%= (typeof aiEnabled !== 'undefined' && aiEnabled) ? '1' : '0' %>">
 
           <h5 class="mb-3">Beweisfotos</h5>
           <div class="mb-4">
@@ -35,14 +36,21 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
             <input type="file" id="bilder-input" class="form-control"
                    accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
             <div class="form-text">
-              JPG, PNG oder HEIC, bis 20 MB pro Bild (max. 10 Bilder). Ausgewählte Bilder
-              werden sofort zum Entwurf hinzugefügt. Anschließend kannst du Bereiche
-              (z.&nbsp;B. Personen) schwärzen – die Schwärzung wird automatisch gespeichert
-              und ersetzt die ursprüngliche Fassung. Bereits gespeicherte Bilder lassen sich
-              auch nach dem Neuladen weiter bearbeiten.
+              Bereiche (z.&nbsp;B. Personen) kannst du schwärzen – wird automatisch gespeichert.
             </div>
+            <div class="form-text">
+              <strong>🤖 Automatisch ausfüllen</strong>: Kennzeichen &amp; Verstoßart per KI –
+              0,10 €/Bild oder <a href="/konto">Flatrate</a>.
+            </div>
+            <% if (typeof subscriptionActive !== 'undefined' && subscriptionActive) { %>
+              <div class="form-text text-success">✓ Flatrate aktiv.</div>
+            <% } else if (typeof aiEnabled !== 'undefined' && !aiEnabled) { %>
+              <div class="form-text text-danger">
+                Kein Guthaben – bitte <a href="/konto">aufladen</a> oder Flatrate buchen.
+              </div>
+            <% } %>
             <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
-            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.aktenzeichen}/image/${img.id}` }))) %></script>
+            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.aktenzeichen}/image/${img.id}`, status: img.analysis_status }))) %></script>
             <div id="image-editor" class="row g-3 mt-1"></div>
           </div>
 
@@ -105,7 +113,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               </div>
               <div class="form-text">
                 Adresse tippen und einen Vorschlag wählen, den aktuellen Standort verwenden
-                oder den Standort aus einem oben hochgeladenen Foto übernehmen.
+                oder Standort und Uhrzeit aus einem oben hochgeladenen Foto übernehmen.
               </div>
               <% if (locals.city) { %>
                 <!-- Zuständige Behörde direkt beim Tatort, da sie sich aus dem Ort ergibt. -->

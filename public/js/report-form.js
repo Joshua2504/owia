@@ -17,6 +17,7 @@
   const SAVE_DEBOUNCE_MS = 800
 
   let reportId = null
+  let aiEnabled = true // KI-Analyse nur mit Guthaben/Flatrate nutzbar (vom Server gesetzt)
 
   function debounce(fn, ms) {
     let t
@@ -298,7 +299,7 @@
     const remove = mkBtn('🗑 Entfernen', 'btn-outline-danger')
     remove.addEventListener('click', () => removeItem(item))
 
-    const gpsBtn = mkBtn('📍 Standort aus Foto', 'btn-outline-primary')
+    const gpsBtn = mkBtn('📍 Standort & Zeit aus Foto', 'btn-outline-primary')
     gpsBtn.style.display = 'none'
     gpsBtn.addEventListener('click', async () => {
       gpsBtn.disabled = true
@@ -312,6 +313,19 @@
         } else if (status) {
           status.textContent = 'Zu den Foto-Koordinaten wurde keine Adresse gefunden.'
         }
+
+        // Zeitspanne (von = frühestes, bis = spätestes Foto) ebenfalls übernehmen.
+        const range = getPhotoTimeRange()
+        if (range) {
+          applyPhotoTimes()
+          const tStatus = document.querySelector('#photo-time-status')
+          if (tStatus) {
+            const von = toHHMM(range.min)
+            const bis = toHHMM(range.max)
+            const span = bis !== von ? von + ' – ' + bis : von
+            tStatus.textContent = 'Uhrzeit aus Fotos übernommen (' + span + ') – bitte prüfen.'
+          }
+        }
       } catch (_) {
         if (status) status.textContent = 'Adresse konnte nicht ermittelt werden.'
       } finally {
@@ -319,12 +333,21 @@
       }
     })
 
+    const aiBtn = mkBtn('🤖 Automatisch ausfüllen (0,10 €)', 'btn-outline-primary')
+    // Erst nach dem Speichern und nur mit Guthaben/Flatrate nutzbar.
+    aiBtn.disabled = !item.serverImageId || !aiEnabled
+    aiBtn.title = aiEnabled
+      ? 'Kennzeichen und Verstoßart per KI aus diesem Bild ausfüllen (0,10 €).'
+      : 'Kein Guthaben – bitte Konto aufladen oder Flatrate buchen (/konto).'
+    aiBtn.addEventListener('click', () => runImageAnalysis(item, aiBtn))
+
+    toolbar.appendChild(aiBtn)
     toolbar.appendChild(gpsBtn)
     toolbar.appendChild(undo)
     toolbar.appendChild(clear)
     toolbar.appendChild(remove)
 
-    item.els = { col, stage, count, status, undo, clear, gpsBtn }
+    item.els = { col, stage, count, status, undo, clear, gpsBtn, aiBtn }
     return col
   }
 
@@ -485,8 +508,8 @@
       if (!savedId) throw new Error('not saved')
       item.serverImageId = savedId
       setItemStatus(item, 'Gespeichert ✓')
-      // Server analysiert das (neue/ersetzte) Bild im Hintergrund – Vorschläge abholen.
-      bumpAnalysisPolling()
+      // Bild ist gespeichert -> KI-Analyse ist jetzt (kostenpflichtig) auslösbar.
+      if (item.els && item.els.aiBtn) item.els.aiBtn.disabled = !aiEnabled
     } catch (_) {
       setItemStatus(item, 'Nicht gespeichert – erneut versuchen.', true)
     } finally {
@@ -535,6 +558,8 @@
         existing = []
       }
       existing.forEach((image) => addExistingItem(image, container))
+      // Läuft aus einem früheren Besuch noch eine Analyse? Dann Vorschläge weiter abholen.
+      if (existing.some((im) => im && im.status === 'pending')) bumpAnalysisPolling()
     }
   }
 
@@ -699,6 +724,60 @@
     return filledAny
   }
 
+  // Guthaben-Anzeige in der Navbar auffrischen (falls vorhanden).
+  async function refreshNavBalance() {
+    const el = document.querySelector('#nav-balance')
+    if (!el) return
+    try {
+      const res = await fetch('/api/konto/summary', { headers: { Accept: 'application/json' } })
+      if (!res.ok) return
+      const d = await res.json()
+      if (d && typeof d.formatted === 'string') el.textContent = d.formatted
+    } catch (_) {
+      /* Navbar-Guthaben ist nur informativ */
+    }
+  }
+
+  function showTopupHint() {
+    const box = document.querySelector('#ai-status')
+    if (box) box.innerHTML = 'Nicht genug Guthaben. <a href="/konto">Jetzt Konto aufladen →</a>'
+  }
+
+  // Kostenpflichtige KI-Analyse für ein einzelnes Bild auslösen (0,10 €) und danach die
+  // Vorschläge per Polling übernehmen. 402 -> Hinweis „aufladen".
+  async function runImageAnalysis(item, btn) {
+    if (!item || !item.serverImageId) {
+      setItemStatus(item, 'Bitte kurz warten – Bild wird noch gespeichert …')
+      return
+    }
+    btn.disabled = true
+    setItemStatus(item, '🔍 Wird analysiert …')
+    try {
+      const res = await fetch('/report/' + reportId + '/images/' + item.serverImageId + '/analyze', {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+      })
+      if (res.status === 402) {
+        const d = await res.json().catch(() => ({}))
+        setItemStatus(item, d.error || 'Nicht genug Guthaben.', true)
+        showTopupHint()
+        btn.disabled = false
+        return
+      }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setItemStatus(item, d.error || 'Analyse konnte nicht gestartet werden.', true)
+        btn.disabled = false
+        return
+      }
+      refreshNavBalance()
+      bumpAnalysisPolling()
+    } catch (_) {
+      setItemStatus(item, 'Analyse fehlgeschlagen.', true)
+      btn.disabled = false
+    }
+  }
+
   async function pollAnalysisOnce(form) {
     try {
       const res = await fetch('/report/' + reportId + '/analysis', {
@@ -731,9 +810,16 @@
       if (data.status === 'done' || Date.now() > aiStopAt) {
         clearInterval(aiTimer)
         aiTimer = null
+        // Analyse fertig -> „Automatisch ausfüllen"-Buttons wieder freigeben und die
+        // Zwischenmeldung „wird analysiert …" auf den Bildkarten aufräumen.
+        items.forEach((it) => {
+          if (it.els && it.els.aiBtn) it.els.aiBtn.disabled = !it.serverImageId || !aiEnabled
+          if (it.els && it.els.status && /analysiert/.test(it.els.status.textContent || '')) {
+            setItemStatus(it, 'Gespeichert ✓')
+          }
+        })
         const box = document.querySelector('#ai-status')
         if (box && box.textContent.indexOf('übernommen') < 0) setAiStatus('')
-
       }
     }
     aiTimer = setInterval(tick, 3000)
@@ -812,6 +898,7 @@
     const form = document.querySelector('#report-form[data-report-id]')
     if (!form) return
     reportId = form.dataset.reportId
+    aiEnabled = form.dataset.aiEnabled !== '0'
 
     initCurrentLocation()
     initImageEditor()
@@ -819,8 +906,7 @@
     initBehinderung(form)
     initPhotoTimes(form)
     initAiTouchTracking(form)
-    // Beim Laden einmal pollen: Ergebnisse können seit dem letzten Besuch fertig
-    // sein, oder ein gerade hochgeladenes Bild wird noch analysiert.
-    bumpAnalysisPolling()
+    // Kein automatisches Pollen beim Laden. initImageEditor stößt das Polling nur an,
+    // wenn eine frühere Analyse noch läuft (analysis_status='pending').
   })
 })()

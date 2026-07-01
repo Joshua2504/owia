@@ -3,7 +3,6 @@ import mysql from 'mysql2/promise'
 import crypto from 'crypto'
 import path from 'path'
 import fs from 'fs/promises'
-import heicConvert from 'heic-convert'
 import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
@@ -11,13 +10,21 @@ import { MailService, buildReportMail } from '../services/mail'
 import { getCity, DEFAULT_CITY_ID } from '../config/cities'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { analyzeImageInBackground, isPhotoAiEnabled } from '../services/imageAnalysis'
+import { prepareImage, writePreparedImage, removeImagePair, PreparedImage } from '../services/images'
+import {
+  chargeAnalysis,
+  refundAnalysis,
+  InsufficientFundsError,
+  hasActiveSubscription,
+  getBalance,
+} from '../services/credits'
+import { ANALYSIS_PRICE_CENTS } from '../config/credits'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
 export { VERSTOSS_ARTEN }
 
 const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
-const DIRECT_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const MAX_IMAGES = 10
 
 /**
@@ -30,17 +37,6 @@ function isSystemEmailEnabled(): boolean {
   if (['on', '1', 'true', 'yes'].includes(v)) return true
   if (['off', '0', 'false', 'no'].includes(v)) return false
   return process.env.NODE_ENV !== 'production'
-}
-
-/** Direkt für PDF/Web verwendbares Bild plus aufbewahrtes Original. */
-type PreparedImage = {
-  buffer: Buffer // JPG/PNG, wird ins PDF eingebettet und im Web angezeigt
-  mimetype: string
-  ext: string
-  originalBuffer: Buffer // exakt wie hochgeladen (z.B. HEIC)
-  originalMimetype: string
-  originalExt: string
-  converted: boolean
 }
 
 /** Buffer, den der PDF-Service einbettet. */
@@ -61,78 +57,18 @@ function generateAktenzeichen(): string {
   return `OWiAA-${code}`
 }
 
-function extFromMime(mime: string): string {
-  return mime === 'image/png' ? 'png' : 'jpg'
+/** Verzeichnis der Bilddateien eines Entwurfs. */
+function reportDir(userId: number, reportId: number | string): string {
+  return path.join(UPLOAD_DIR, String(userId), String(reportId))
 }
 
-function extFromName(filename: string, fallback: string): string {
-  const m = filename.toLowerCase().match(/\.([a-z0-9]+)$/)
-  return m ? m[1] : fallback
-}
-
-/** Browser melden HEIC uneinheitlich – daher MIME *und* Dateiendung prüfen. */
-function isHeic(filename: string, mimetype: string): boolean {
-  const f = filename.toLowerCase()
-  return (
-    mimetype.startsWith('image/heic') ||
-    mimetype.startsWith('image/heif') ||
-    f.endsWith('.heic') ||
-    f.endsWith('.heif')
-  )
-}
-
-/** Hochgeladenes Bild in ein nutzbares JPG/PNG (+ ggf. HEIC-Original) überführen. */
-async function prepareImage(
-  buffer: Buffer,
-  filename: string,
-  mimetype: string
-): Promise<PreparedImage> {
-  if (DIRECT_IMAGE_TYPES.includes(mimetype)) {
-    const ext = extFromMime(mimetype)
-    return {
-      buffer,
-      mimetype,
-      ext,
-      originalBuffer: buffer,
-      originalMimetype: mimetype,
-      originalExt: ext,
-      converted: false,
-    }
-  }
-  if (isHeic(filename, mimetype)) {
-    const jpeg = Buffer.from(await heicConvert({ buffer, format: 'JPEG', quality: 0.85 }))
-    return {
-      buffer: jpeg,
-      mimetype: 'image/jpeg',
-      ext: 'jpg',
-      originalBuffer: buffer,
-      originalMimetype: mimetype || 'image/heic',
-      originalExt: extFromName(filename, 'heic'),
-      converted: true,
-    }
-  }
-  throw new Error('unsupported')
-}
-
-/** Vorbereitetes Bild (+ ggf. Original) auf Platte schreiben; gibt die Dateinamen zurück. */
+/** Vorbereitetes Bild (+ ggf. Original) zum Entwurf auf Platte schreiben. */
 async function writeImageFiles(
   userId: number,
   reportId: number,
   p: PreparedImage
 ): Promise<{ filename: string; originalFilename: string }> {
-  const dir = path.join(UPLOAD_DIR, String(userId), String(reportId))
-  await fs.mkdir(dir, { recursive: true })
-
-  const base = `bild-${crypto.randomBytes(6).toString('hex')}`
-  const filename = `${base}.${p.ext}`
-  await fs.writeFile(path.join(dir, filename), p.buffer)
-
-  let originalFilename = filename
-  if (p.converted) {
-    originalFilename = `${base}-original.${p.originalExt}`
-    await fs.writeFile(path.join(dir, originalFilename), p.originalBuffer)
-  }
-  return { filename, originalFilename }
+  return writePreparedImage(reportDir(userId, reportId), p)
 }
 
 /** Alte Bilddateien (nutzbare Fassung + Original) entfernen. */
@@ -142,15 +78,7 @@ async function removeImageFiles(
   filename: string,
   originalFilename: string
 ): Promise<void> {
-  const dir = path.join(UPLOAD_DIR, String(userId), String(reportId))
-  try {
-    await fs.rm(path.join(dir, filename), { force: true })
-    if (originalFilename && originalFilename !== filename) {
-      await fs.rm(path.join(dir, originalFilename), { force: true })
-    }
-  } catch {
-    /* Dateien evtl. schon weg */
-  }
+  return removeImagePair(reportDir(userId, reportId), filename, originalFilename)
 }
 
 /** Bild zum Entwurf auf Platte + in der DB speichern; gibt die neue Bild-ID zurück. */
@@ -341,15 +269,24 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY id',
+      'SELECT id, filename, original_filename, analysis_status FROM report_images WHERE report_id = ? ORDER BY id',
       [report.id]
     )
+    // KI-Analyse ist nur nutzbar mit aktiver Flatrate oder genug Guthaben (frei + bezahlt).
+    // EXIF-basierte Helfer (Standort/Uhrzeit aus Fotos) bleiben davon unberührt und kostenlos.
+    const [bal, subscribed] = await Promise.all([
+      getBalance(userId),
+      hasActiveSubscription(userId),
+    ])
+    const aiEnabled = isPhotoAiEnabled() && (subscribed || bal.totalCents >= ANALYSIS_PRICE_CENTS)
     return reply.view('/reports/edit.ejs', viewData(request, {
       title: 'Entwurf bearbeiten',
       verstossArten: VERSTOSS_ARTEN,
       report,
       images,
       city: getCity(report.city),
+      aiEnabled,
+      subscriptionActive: subscribed,
     }))
   })
 
@@ -420,6 +357,90 @@ export default async function reportsRoutes(app: FastifyInstance) {
     })
   })
 
+  // Manuelle, kostenpflichtige KI-Analyse eines einzelnen Bildes (0,10 €). Belastet das
+  // Guthaben (erst Freiguthaben), stößt die Analyse für genau dieses Bild an und erstattet
+  // automatisch, falls sie technisch fehlschlägt. Das Formular pollt danach wie gehabt
+  // GET /report/:az/analysis und übernimmt die Vorschläge.
+  app.post('/report/:az/images/:imageId/analyze', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const userId = request.session.userId as number
+
+    if (!isPhotoAiEnabled()) {
+      return reply.status(409).send({ error: 'KI-Analyse ist derzeit nicht verfügbar.' })
+    }
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.id, ri.filename, ri.mimetype, ri.analysis_status, r.id AS report_id
+         FROM report_images ri
+         JOIN reports r ON r.id = ri.report_id
+        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
+      [imageId, az, userId]
+    )
+    const img = rows[0]
+    if (!img) return reply.status(404).send({ error: 'not found' })
+
+    // Job atomar beanspruchen: nur wenn nicht bereits 'pending'. Ein zweiter,
+    // gleichzeitiger Klick trifft affectedRows==0 und wird nicht erneut belastet.
+    // Bestehende Ergebnisse werden hier noch NICHT verworfen (falls die Bezahlung scheitert).
+    const [claim] = await pool.execute<mysql.ResultSetHeader>(
+      `UPDATE report_images SET analysis_status='pending'
+        WHERE id=? AND (analysis_status IS NULL OR analysis_status IN ('done','error'))`,
+      [imageId]
+    )
+    if (claim.affectedRows !== 1) {
+      return reply.send({ ok: true, status: 'pending' })
+    }
+
+    // Flatrate-Nutzer analysieren unbegrenzt (keine Belastung); sonst pro Bild abrechnen.
+    const subscribed = await hasActiveSubscription(userId)
+    let balance: Awaited<ReturnType<typeof chargeAnalysis>> | null = null
+    if (!subscribed) {
+      try {
+        balance = await chargeAnalysis(userId, Number(imageId))
+      } catch (err) {
+        // Beanspruchung zurücknehmen (vorherigen Status wiederherstellen; Ergebnisse blieben erhalten).
+        await pool.execute('UPDATE report_images SET analysis_status=? WHERE id=?', [
+          img.analysis_status ?? null,
+          imageId,
+        ])
+        if (err instanceof InsufficientFundsError) {
+          return reply.status(402).send({
+            error: 'Nicht genug Guthaben. Bitte aufladen oder Flatrate buchen.',
+            topupUrl: '/konto',
+          })
+        }
+        throw err
+      }
+    }
+
+    // Bezahlt/Flatrate -> alte Analyse-Ergebnisse verwerfen und neu analysieren.
+    await pool.execute(
+      `UPDATE report_images
+          SET detected_plate=NULL, plate_confidence=NULL, vlm_verstoss_art=NULL,
+              vlm_marke=NULL, vlm_beschreibung=NULL, analyzed_at=NULL
+        WHERE id=?`,
+      [imageId]
+    )
+    analyzeImageInBackground(
+      userId,
+      img.report_id,
+      Number(imageId),
+      img.filename,
+      img.mimetype,
+      // Nur bei bezahlter Einzelanalyse bei Fehlschlag erstatten (Flatrate wird nicht belastet).
+      subscribed ? undefined : () => refundAnalysis(userId, Number(imageId))
+    )
+
+    return reply.send({
+      ok: true,
+      status: 'pending',
+      subscriptionActive: subscribed,
+      balanceCents: balance?.balanceCents,
+      freeCents: balance?.freeCents,
+      totalCents: balance?.totalCents,
+    })
+  })
+
   // Einzelnes (ggf. bereits geschwärztes) Bild sofort zum Entwurf hochladen.
   app.post('/report/:az/images', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
@@ -450,9 +471,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
         try {
           const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
           const row = await saveImageToReport(userId, reportId, prepared)
-          // Kennzeichen-/Verstoßart-Erkennung im Hintergrund anstoßen (nicht awaiten);
-          // das Formular holt die Vorschläge per GET /report/:az/analysis ab.
-          analyzeImageInBackground(userId, reportId, row.id, row.filename, prepared.mimetype)
+          // KI-Analyse wird nicht mehr automatisch angestoßen – der Nutzer löst sie
+          // pro Bild kostenpflichtig über „Automatisch ausfüllen" aus.
           saved.push({ id: row.id, url: `/report/${az}/image/${row.id}` })
           count++
         } catch {
@@ -518,7 +538,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
 
     const { filename, originalFilename } = await writeImageFiles(userId, old.report_id, prepared)
-    // Neue Bildfassung -> bisherige Analyse verwerfen und neu anstoßen.
+    // Neue Bildfassung -> bisherige Analyse-Ergebnisse verwerfen. Eine neue Analyse
+    // stößt der Nutzer bei Bedarf wieder manuell an (kostenpflichtig).
     await pool.execute(
       `UPDATE report_images
          SET filename=?, mimetype=?, original_filename=?, original_mimetype=?,
@@ -528,7 +549,6 @@ export default async function reportsRoutes(app: FastifyInstance) {
       [filename, prepared.mimetype, originalFilename, prepared.originalMimetype, imageId]
     )
     await removeImageFiles(userId, old.report_id, old.filename, old.original_filename)
-    analyzeImageInBackground(userId, old.report_id, Number(imageId), filename, prepared.mimetype)
 
     return reply.send({ image: { id: Number(imageId), url: `/report/${az}/image/${imageId}` } })
   })

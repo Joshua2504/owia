@@ -18,6 +18,8 @@ import tilesRoutes from './routes/tiles'
 import satRoutes from './routes/sat'
 import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
+import kontoRoutes from './routes/konto'
+import adminRoutes from './routes/admin'
 import { PdfService } from './services/pdf'
 import { initDb } from './db/init'
 import { MySQLSessionStore } from './db/session-store'
@@ -57,7 +59,9 @@ async function main() {
     engine: { ejs },
     root: path.join(__dirname, 'views'),
     layout: '/layout.ejs',
-    defaultContext: {},
+    // isAdmin ist Standard-false, damit das Layout es immer referenzieren kann, auch bei
+    // (seltenen) Views, die ohne viewData gerendert werden.
+    defaultContext: { isAdmin: false },
   })
 
   await app.register(authRoutes)
@@ -69,6 +73,8 @@ async function main() {
   await app.register(satRoutes)
   await app.register(publicRoutes)
   await app.register(legalRoutes)
+  await app.register(kontoRoutes)
+  await app.register(adminRoutes)
 
   if (process.env.NODE_ENV !== 'production') {
     app.get('/debug/pdf-fields', async (_req, reply) => {

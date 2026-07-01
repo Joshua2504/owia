@@ -27,17 +27,20 @@ export function isPhotoAiEnabled(): boolean {
   return process.env.NODE_ENV === 'production'
 }
 
-/** Reiht die Analyse eines Bildes ein (kehrt sofort zurück, läuft im Hintergrund). */
+/** Reiht die Analyse eines Bildes ein (kehrt sofort zurück, läuft im Hintergrund).
+ *  onError wird aufgerufen, wenn die Analyse endgültig scheitert – z.B. um eine
+ *  bereits erfolgte Belastung zu erstatten (src/services/credits.ts). */
 export function analyzeImageInBackground(
   userId: number,
   reportId: number,
   imageId: number,
   filename: string,
-  mimetype: string
+  mimetype: string,
+  onError?: () => void | Promise<void>
 ): void {
   if (!isPhotoAiEnabled()) return
   queue = queue
-    .then(() => runAnalysis(userId, reportId, imageId, filename, mimetype))
+    .then(() => runAnalysis(userId, reportId, imageId, filename, mimetype, onError))
     .catch(() => {
       /* Einzelfehler dürfen die Kette nicht abreißen lassen. */
     })
@@ -56,7 +59,8 @@ async function runAnalysis(
   reportId: number,
   imageId: number,
   filename: string,
-  mimetype: string
+  mimetype: string,
+  onError?: () => void | Promise<void>
 ): Promise<void> {
   const filePath = path.join(UPLOAD_DIR, String(userId), String(reportId), filename)
   await setStatus(imageId, 'pending')
@@ -84,5 +88,12 @@ async function runAnalysis(
   } catch (err) {
     console.error('Bildanalyse fehlgeschlagen', err)
     await setStatus(imageId, 'error')
+    if (onError) {
+      try {
+        await onError()
+      } catch {
+        /* Eine gescheiterte Erstattung darf den Hintergrundlauf nicht beeinflussen. */
+      }
+    }
   }
 }
