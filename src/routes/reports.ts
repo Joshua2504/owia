@@ -13,6 +13,7 @@ import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
 import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
 import { extractPhotoMeta } from '../services/exif'
 import { replyAttachmentPath } from '../services/mailInbox'
+import { MailService } from '../services/mail'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
 export { VERSTOSS_ARTEN }
@@ -600,9 +601,10 @@ export default async function reportsRoutes(app: FastifyInstance) {
       [report.id]
     )
 
-    // Antworten des Ordnungsamts (+ Anhänge); Ansehen der Seite = gelesen.
+    // Nachrichtenverlauf (Anzeige-Mail, Antworten des Amts, eigene Nachrichten)
+    // + Anhänge; Ansehen der Seite = gelesen.
     const [replies] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, from_address, subject, body_text, received_at, read_at
+      `SELECT id, direction, from_address, subject, body_text, received_at, read_at
          FROM report_replies WHERE report_id = ? ORDER BY received_at, id`,
       [report.id]
     )
@@ -631,6 +633,63 @@ export default async function reportsRoutes(app: FastifyInstance) {
       complete: isComplete(report),
       city: getCity(report.city),
     }))
+  })
+
+  // Nachricht des Nutzers ans Ordnungsamt (Antwort auf Rückfragen). Nur bei
+  // versendeten Anzeigen – vorher gibt es keinen Mail-Verlauf mit dem Amt.
+  app.post('/report/:az/message', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const text = String((request.body as { text?: string })?.text || '').trim().slice(0, 10_000)
+
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
+    if (report.status !== 'versendet') {
+      setFlash(reply, 'error', 'Nachrichten sind erst nach dem Versand der Anzeige möglich.')
+      return reply.redirect(`/report/${az}`)
+    }
+    if (!text) {
+      setFlash(reply, 'error', 'Bitte einen Nachrichtentext eingeben.')
+      return reply.redirect(`/report/${az}`)
+    }
+
+    // Threading: auf die letzte Nachricht des Amts antworten (sonst auf die
+    // Anzeige-Mail); References = bisherige Message-IDs des Verlaufs.
+    const [thread] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT direction, message_id FROM report_replies
+        WHERE report_id = ? ORDER BY received_at, id`,
+      [report.id]
+    )
+    const lastIn = [...thread].reverse().find((m) => m.direction === 'in')
+    const inReplyTo = lastIn?.message_id || report.sent_message_id || null
+    const references = [
+      report.sent_message_id,
+      ...thread.map((m) => m.message_id),
+    ].filter((x): x is string => !!x && !x.startsWith('out:') && !x.startsWith('sha256:'))
+
+    const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id = ?', [userId])
+    try {
+      const sent = await MailService.sendUserReply(report, users[0], text, {
+        inReplyTo,
+        references: [...new Set(references)].slice(-10),
+      })
+      await pool.execute(
+        `INSERT INTO report_replies (report_id, direction, message_id, from_address, subject, body_text, received_at, read_at)
+         VALUES (?, 'out', ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          report.id,
+          sent.messageId.slice(0, 255) || `out:${report.id}:${thread.length + 1}`,
+          (process.env.MAIL_FROM || '').slice(0, 255) || null,
+          sent.subject.slice(0, 500),
+          text,
+        ]
+      )
+      setFlash(reply, 'success', 'Nachricht ans Ordnungsamt gesendet (du bist in Kopie).')
+    } catch (err) {
+      app.log.error({ err }, 'Nutzer-Nachricht ans Ordnungsamt fehlgeschlagen')
+      setFlash(reply, 'error', 'Senden fehlgeschlagen – bitte später erneut versuchen.')
+    }
+    return reply.redirect(`/report/${az}`)
   })
 
   // Anhang einer Ordnungsamt-Antwort herunterladen (nur eigene Anzeigen).

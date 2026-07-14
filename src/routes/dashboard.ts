@@ -9,8 +9,8 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const [reports] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tattag, tatzeit_von, tatzeit_bis,
               tatort, verstoss_art, status, created_at,
-              (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id) AS reply_count,
-              (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.read_at IS NULL) AS unread_reply_count
+              (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in') AS reply_count,
+              (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in' AND rr.read_at IS NULL) AS unread_reply_count
        FROM reports WHERE user_id = ? ORDER BY created_at DESC`,
       [userId]
     )

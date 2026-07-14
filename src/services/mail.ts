@@ -104,12 +104,13 @@ export const MailService = {
     })
   },
 
-  /** Anzeige ans Ordnungsamt senden; gibt die Message-ID zurück (für die
-   *  Zuordnung späterer Antworten via In-Reply-To/References). */
+  /** Anzeige ans Ordnungsamt senden; gibt Message-ID + Betreff/Text zurück
+   *  (Message-ID für die Zuordnung späterer Antworten, Betreff/Text für den
+   *  Nachrichtenverlauf auf der Detailseite). */
   async sendReport(
     report: mysql.RowDataPacket,
     user: mysql.RowDataPacket
-  ): Promise<string> {
+  ): Promise<{ messageId: string; subject: string; text: string }> {
     const transport = createTransport()
     const pdfPath = path.join(
       process.cwd(),
@@ -134,7 +135,30 @@ export const MailService = {
         },
       ],
     })
-    return String(info.messageId || '')
+    return { messageId: String(info.messageId || ''), subject, text }
+  },
+
+  /** Nachricht des Nutzers ans Ordnungsamt (Antwort auf eine Rückfrage o.Ä.).
+   *  Threading-Header sorgen dafür, dass die Mail beim Amt im selben Verlauf
+   *  landet und deren Antworten wieder zugeordnet werden können. */
+  async sendUserReply(
+    report: mysql.RowDataPacket,
+    user: mysql.RowDataPacket,
+    text: string,
+    thread: { inReplyTo?: string | null; references?: string[] }
+  ): Promise<{ messageId: string; subject: string }> {
+    const transport = createTransport()
+    const subject = `Re: Anzeige Ordnungswidrigkeit – Kfz ${report.kennzeichen} (${report.aktenzeichen})`
+    const info = await transport.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      to: getCity(report.city).email,
+      cc: user.email,
+      subject,
+      text,
+      inReplyTo: thread.inReplyTo || undefined,
+      references: thread.references?.length ? thread.references : undefined,
+    })
+    return { messageId: String(info.messageId || ''), subject }
   },
 
   /** Kurzer Hinweis an den Nutzer: das Ordnungsamt hat geantwortet. Der

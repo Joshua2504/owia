@@ -72,6 +72,16 @@ async function matchReport(parsed: ParsedMail): Promise<mysql.RowDataPacket | nu
       refs
     )
     if (rows[0]) return rows[0]
+
+    // Auch Antworten auf spätere Nachrichten des Verlaufs (z.B. eine Rückfrage-
+    // Antwort des Nutzers) landen bei der richtigen Anzeige.
+    const [viaThread] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT r.* FROM report_replies rr
+         JOIN reports r ON r.id = rr.report_id
+        WHERE rr.message_id IN (${placeholders}) LIMIT 1`,
+      refs
+    )
+    if (viaThread[0]) return viaThread[0]
   }
 
   for (const source of [parsed.subject, parsed.text, parsed.html || '']) {

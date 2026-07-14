@@ -149,10 +149,22 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
 
     try {
-      const messageId = await MailService.sendReport(loaded.report, loaded.user)
+      const sent = await MailService.sendReport(loaded.report, loaded.user)
       await pool.execute(
         "UPDATE reports SET status='versendet', versand_art='system_email', sent_message_id=? WHERE id=?",
-        [messageId.slice(0, 255) || null, loaded.report.id]
+        [sent.messageId.slice(0, 255) || null, loaded.report.id]
+      )
+      // Die Anzeige-Mail als erste Nachricht des Verlaufs festhalten.
+      await pool.execute(
+        `INSERT INTO report_replies (report_id, direction, message_id, from_address, subject, body_text, received_at, read_at)
+         VALUES (?, 'out', ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          loaded.report.id,
+          sent.messageId.slice(0, 255) || `out:${loaded.report.id}:${Date.now()}`,
+          (process.env.MAIL_FROM || '').slice(0, 255) || null,
+          sent.subject.slice(0, 500),
+          sent.text,
+        ]
       )
       setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} freigegeben und ans Ordnungsamt verschickt.`)
     } catch (err) {

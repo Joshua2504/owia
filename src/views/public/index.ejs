@@ -21,6 +21,35 @@
       <% } %>
     </div>
 
+    <!-- Öffentliche Kennzahlen (aggregiert, anonym) -->
+    <% const stats = locals.stats || {} %>
+    <div class="row g-3 mb-4 text-center">
+      <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body">
+          <div class="display-6 fw-bold"><%= stats.total || 0 %></div>
+          <div class="text-muted small">Anzeigen versendet</div>
+        </div></div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body">
+          <div class="display-6 fw-bold"><%= stats.last30 || 0 %></div>
+          <div class="text-muted small">in den letzten 30 Tagen</div>
+        </div></div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body">
+          <div class="display-6 fw-bold"><%= stats.fotos || 0 %></div>
+          <div class="text-muted small">Beweisfotos eingereicht</div>
+        </div></div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card shadow-sm h-100"><div class="card-body">
+          <div class="fw-bold mt-2" style="font-size:1.05rem"><%= stats.topVerstoss || '–' %></div>
+          <div class="text-muted small">häufigster Verstoß</div>
+        </div></div>
+      </div>
+    </div>
+
     <!-- Karte darunter -->
     <h2 class="h5 mb-1">Öffentliche Übersicht</h2>
     <p class="text-muted small mb-3">

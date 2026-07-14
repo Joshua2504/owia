@@ -160,6 +160,23 @@ export const PdfService = {
       /* Reparatur fehlgeschlagen – flatten unten versucht es trotzdem */
     }
 
+    // Eingetragene Werte in Schwarz statt der grauen Default-Schrift des
+    // Formulars: Default-Appearance aller Felder auf "0 g" (schwarz) setzen
+    // und die Appearances damit neu erzeugen.
+    try {
+      const fieldFont = await doc.embedFont(StandardFonts.Helvetica)
+      for (const field of form.getFields()) {
+        try {
+          field.acroField.setDefaultAppearance('/Helv 10 Tf 0 g')
+        } catch {
+          /* Feld ohne DA – egal */
+        }
+      }
+      form.updateFieldAppearances(fieldFont)
+    } catch {
+      /* Appearances bleiben wie sie sind */
+    }
+
     // Felder „einbrennen", damit sie nicht mehr veränderbar sind und in jedem
     // Viewer/Druck sichtbar sind.
     try {

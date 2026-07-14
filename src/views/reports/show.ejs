@@ -109,14 +109,18 @@ const versandLabel = {
 
     <% const replies = locals.replies || [] %>
     <% const attachmentsByReply = locals.attachmentsByReply || {} %>
-    <% if (replies.length) { %>
+    <% if (replies.length || isVersendet) { %>
       <div class="card shadow-sm mb-4 border-primary">
-        <div class="card-header">📨 Antworten des Ordnungsamts (<%= replies.length %>)</div>
+        <div class="card-header">📨 Nachrichtenverlauf mit dem Ordnungsamt</div>
         <div class="card-body">
+          <% if (!replies.length) { %>
+            <p class="text-muted small mb-0">Noch keine Nachrichten gespeichert.</p>
+          <% } %>
           <% for (const rep of replies) { %>
-            <div class="mb-3 pb-3 <%= rep !== replies[replies.length - 1] ? 'border-bottom' : '' %>">
+            <% const out = rep.direction === 'out' %>
+            <div class="mb-3 p-2 rounded <%= out ? 'bg-light border-start border-4 border-secondary' : 'border-start border-4 border-primary' %>">
               <div class="small text-muted mb-1">
-                <strong><%= rep.from_address || 'Unbekannter Absender' %></strong>
+                <strong><%= out ? 'Du / OWiA-Anzeiger' : (rep.from_address || 'Ordnungsamt') %></strong>
                 <% if (rep.received_at) { %>· <%= new Date(rep.received_at).toLocaleString('de-DE') %><% } %>
                 <% if (rep.subject) { %><br><%= rep.subject %><% } %>
               </div>
@@ -128,6 +132,20 @@ const versandLabel = {
                 </a>
               <% } %>
             </div>
+          <% } %>
+
+          <% if (isVersendet) { %>
+            <!-- Antwort ans Ordnungsamt direkt aus der App (Nutzer in Kopie). -->
+            <form method="post" action="/report/<%= report.aktenzeichen %>/message" class="mt-3">
+              <label class="form-label small">Nachricht ans Ordnungsamt (z.&nbsp;B. Antwort auf eine Rückfrage)</label>
+              <textarea name="text" class="form-control mb-2" rows="4" maxlength="10000" required
+                        placeholder="Sehr geehrte Damen und Herren, …"></textarea>
+              <button type="submit" class="btn btn-primary btn-sm"
+                      onclick="return confirm('Nachricht jetzt ans Ordnungsamt senden?')">
+                📤 Senden
+              </button>
+              <span class="form-text ms-2">Wird von owia@treudler.net gesendet, du erhältst eine Kopie.</span>
+            </form>
           <% } %>
         </div>
       </div>

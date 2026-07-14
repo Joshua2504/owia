@@ -21,10 +21,33 @@ export default async function publicRoutes(app: FastifyInstance) {
   // Öffentliche Startseite mit der Übersichtskarte.
   app.get('/', async (request, reply) => {
     const geo = getCity(DEFAULT_CITY_ID).geo
+
+    // Öffentliche Kennzahlen – nur aggregierte Werte über versendete Anzeigen,
+    // keine personenbezogenen Daten.
+    const [statsRows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT
+         (SELECT COUNT(*) FROM reports WHERE status='versendet') AS total,
+         (SELECT COUNT(*) FROM reports WHERE status='versendet'
+            AND tattag >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS last30,
+         (SELECT COUNT(*) FROM report_images ri
+            JOIN reports r ON r.id = ri.report_id WHERE r.status='versendet') AS fotos`
+    )
+    const [topRows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT verstoss_art, COUNT(*) AS c FROM reports
+        WHERE status='versendet' AND verstoss_art IS NOT NULL
+        GROUP BY verstoss_art ORDER BY c DESC LIMIT 1`
+    )
+
     return reply.view('/public/index.ejs', viewData(request, {
       title: 'Übersicht',
       centerLat: geo.biasLat,
       centerLon: geo.biasLon,
+      stats: {
+        total: Number(statsRows[0]?.total || 0),
+        last30: Number(statsRows[0]?.last30 || 0),
+        fotos: Number(statsRows[0]?.fotos || 0),
+        topVerstoss: topRows[0]?.verstoss_art || null,
+      },
     }))
   })
 
