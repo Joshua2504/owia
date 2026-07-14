@@ -378,6 +378,11 @@
     name.textContent = (item.file && item.file.name) || 'Bild'
     body.appendChild(name)
 
+    // Aufnahmedatum des Fotos (aus den EXIF-Daten, serverseitig ausgelesen).
+    const dateEl = document.createElement('div')
+    dateEl.className = 'small fw-semibold mb-1'
+    body.appendChild(dateEl)
+
     const stage = document.createElement('div')
     stage.className = 'redact-stage'
     stage.textContent = 'lädt …'
@@ -509,7 +514,7 @@
     toolbar.appendChild(moveSel)
 
     item.els = {
-      col, stage, count, status, undo, clear, gpsBtn, moveLeft, moveRight, moveSel,
+      col, stage, count, status, date: dateEl, undo, clear, gpsBtn, moveLeft, moveRight, moveSel,
       toolBtns: { black: toolBlack, pixel: toolPixel, crop: toolCrop },
     }
     return col
@@ -589,24 +594,9 @@
       } catch (_) {
         /* keine GPS-Daten */
       }
-
-      // Aufnahmezeit (EXIF) lesen – speist die Uhrzeit von/bis aus den Fotos.
-      try {
-        const meta = await window.exifr.parse(item.file, [
-          'DateTimeOriginal',
-          'CreateDate',
-          'ModifyDate',
-        ])
-        const dt = meta && (meta.DateTimeOriginal || meta.CreateDate || meta.ModifyDate)
-        if (dt instanceof Date && !isNaN(dt.getTime())) {
-          item.takenAt = dt
-          // Frisch hochgeladene Fotos dürfen die (noch unberührten) Zeitfelder füllen;
-          // beim Nachladen bestehender Entwürfe nur den Button anbieten.
-          refreshPhotoTimes(!item.isExisting)
-        }
-      } catch (_) {
-        /* keine Zeit-Metadaten */
-      }
+      // Die Aufnahmezeit wird NICHT hier (Client-EXIF) gelesen, sondern kommt
+      // zuverlässig vom Server (captured_at aus dem Upload bzw. #existing-images-data)
+      // und wird in saveItem()/addExistingItem() gesetzt.
     }
 
     try {
@@ -643,8 +633,11 @@
   async function addExistingItem(image, container) {
     const item = newItem(null, image.id)
     item.isExisting = true // bereits gespeicherter Entwurf: Zeiten nicht automatisch überschreiben
+    item.takenAt = parseCapturedAt(image.capturedAt) // serverseitig gelesenes Aufnahmedatum
     items.push(item)
     container.appendChild(buildCard(item))
+    setItemDate(item) // Aufnahmedatum auf der Karte anzeigen
+    refreshPhotoTimes(false) // nur „Aus den Fotos: …" anzeigen, Felder nicht überschreiben
     item.els.stage.textContent = 'lädt …'
 
     let blob
@@ -686,6 +679,24 @@
     item.els.status.className = 'small mt-1 ' + (isError ? 'text-danger' : 'text-muted')
   }
 
+  // Server-Aufnahmezeit 'YYYY-MM-DD HH:MM:SS' -> Date (als lokale Wanduhrzeit
+  // interpretiert, kein Zeitzonen-Versatz). Null bei fehlendem/ungültigem Wert.
+  function parseCapturedAt(str) {
+    if (!str) return null
+    const d = new Date(String(str).replace(' ', 'T'))
+    return isNaN(d.getTime()) ? null : d
+  }
+
+  // Aufnahmedatum des Fotos auf der Karte anzeigen (aus item.takenAt).
+  function setItemDate(item) {
+    if (!item.els || !item.els.date) return
+    const d = item.takenAt
+    item.els.date.textContent =
+      d instanceof Date && !isNaN(d.getTime())
+        ? '📅 ' + d.toLocaleDateString('de-DE') + ', ' + toHHMM(d) + ' Uhr'
+        : ''
+  }
+
   // Aktuellen Stand des Bildes (ggf. mit Schwärzungen) zum Entwurf speichern.
   // Erste Speicherung legt das Bild an (POST); spätere ersetzen die Fassung in
   // place (PUT) – so bleibt die Bild-ID stabil und das Limit wird nicht berührt.
@@ -718,6 +729,13 @@
         if (data.errors && data.errors.length) alert(data.errors[0])
         const newImg = (data.images || [])[0]
         savedId = newImg && newImg.id
+        // Aufnahmedatum (serverseitig aus EXIF gelesen) übernehmen: Karte
+        // beschriften und – bei frischem Upload – Tattag/Uhrzeit vorbefüllen.
+        if (newImg && newImg.capturedAt) {
+          item.takenAt = parseCapturedAt(newImg.capturedAt)
+          setItemDate(item)
+          refreshPhotoTimes(!item.isExisting)
+        }
       }
       if (!savedId) throw new Error('not saved')
       item.serverImageId = savedId
@@ -969,8 +987,9 @@
 
   function initAutosave(form) {
     const status = document.querySelector('#save-status')
+    let dirty = false // ungespeicherte Änderung vorhanden?
 
-    const save = debounce(async () => {
+    function collect() {
       const body = {}
       SAVE_FIELDS.forEach((n) => {
         const el = form.elements[n]
@@ -978,18 +997,27 @@
         // Checkboxen: value ist immer gesetzt – der Zustand steckt in checked.
         body[n] = el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value
       })
+      return body
+    }
+
+    async function doSave(useKeepalive) {
       if (status) status.textContent = 'Speichert …'
       try {
         const res = await fetch('/anzeige/' + reportId, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify(collect()),
+          // keepalive: Beim Verlassen der Seite darf der Request noch zu Ende laufen.
+          keepalive: !!useKeepalive,
         })
+        dirty = false
         if (status) status.textContent = res.ok ? 'Gespeichert ✓' : 'Nicht gespeichert'
       } catch (_) {
         if (status) status.textContent = 'Nicht gespeichert'
       }
-    }, SAVE_DEBOUNCE_MS)
+    }
+
+    const save = debounce(() => doSave(false), SAVE_DEBOUNCE_MS)
 
     SAVE_FIELDS.forEach((n) => {
       const el = form.elements[n]
@@ -997,11 +1025,25 @@
       // Radio-Gruppen (z.B. behinderung) liefern eine RadioNodeList ohne
       // addEventListener – dann an jedem einzelnen Radio lauschen.
       const nodes = typeof el.addEventListener === 'function' ? [el] : Array.from(el)
+      const onEdit = () => {
+        dirty = true
+        save()
+      }
       nodes.forEach((node) => {
-        node.addEventListener('input', save)
-        node.addEventListener('change', save)
+        node.addEventListener('input', onEdit)
+        node.addEventListener('change', onEdit)
       })
     })
+
+    // Sicherheitsnetz: eine kurz vor dem Verlassen/Wechseln der Seite gemachte
+    // Änderung (noch im Debounce) sofort sichern, damit nichts verloren geht.
+    const flush = () => {
+      if (dirty) doSave(true)
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flush()
+    })
+    window.addEventListener('pagehide', flush)
   }
 
   // „Wer wurde wie behindert?" nur einblenden, wenn „Ja" gewählt ist.

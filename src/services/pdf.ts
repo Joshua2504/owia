@@ -263,7 +263,9 @@ export const PdfService = {
 
     // Hochgeladene Bilder als zusätzliche Seiten anhängen. PDF-Viewer ignorieren
     // die EXIF-Orientation (Handys speichern Hochkant-Fotos quer + Dreh-Tag);
-    // deshalb wird das Bild hier beim Zeichnen entsprechend gedreht.
+    // deshalb wird das Bild hier beim Zeichnen entsprechend gedreht. Oben je Seite
+    // die Aufnahmezeit (aus EXIF) als Beschriftung – wichtiges Beweis-Detail.
+    const photoFont = await doc.embedFont(StandardFonts.Helvetica)
     for (const image of images) {
       try {
         const embedded =
@@ -273,15 +275,30 @@ export const PdfService = {
         const orientation = await readOrientation(image.buffer)
         const page = doc.addPage([A4.width, A4.height])
 
+        // Beschriftung oben: reserviert eine Kopfzeile, das Bild sitzt darunter.
+        const caption = image.capturedAt ? `Aufgenommen: ${image.capturedAt} Uhr` : null
+        const captionH = caption ? 22 : 0
+        if (caption) {
+          page.drawText(caption, {
+            x: margin,
+            y: A4.height - margin - 11,
+            size: 11,
+            font: photoFont,
+            color: rgb(0.1, 0.1, 0.1),
+          })
+        }
+
         // Anzeige-Maße: bei 90°-Drehungen (Orientation 5-8) sind Breite/Höhe vertauscht.
         const rot90 = orientation >= 5
         const dispW = rot90 ? embedded.height : embedded.width
         const dispH = rot90 ? embedded.width : embedded.height
-        const s = Math.min((A4.width - margin * 2) / dispW, (A4.height - margin * 2) / dispH)
+        // Verfügbare Fläche = Seite minus Ränder minus Kopfzeile (Beschriftung).
+        const availH = A4.height - margin * 2 - captionH
+        const s = Math.min((A4.width - margin * 2) / dispW, availH / dispH)
         const w = embedded.width * s // gezeichnete Maße in gespeicherter Orientierung
         const h = embedded.height * s
-        const bx = (A4.width - dispW * s) / 2 // Ziel-Box (aufrechtes Bild), zentriert
-        const by = (A4.height - dispH * s) / 2
+        const bx = (A4.width - dispW * s) / 2 // Ziel-Box (aufrechtes Bild), horizontal zentriert
+        const by = margin + (availH - dispH * s) / 2 // vertikal in der Fläche unter der Kopfzeile
 
         // pdf-lib dreht um den Punkt (x,y); x/y so wählen, dass das gedrehte
         // Bild exakt in der Ziel-Box landet. Spiegel-Orientierungen (2,4,5,7)

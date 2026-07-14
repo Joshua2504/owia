@@ -23,8 +23,9 @@ export { VERSTOSS_ARTEN }
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 const MAX_IMAGES = 10
 
-/** Buffer, den der PDF-Service einbettet. */
-export type ReportImage = { mimetype: string; buffer: Buffer }
+/** Buffer, den der PDF-Service einbettet. capturedAt = bereits formatierte
+ *  Aufnahmezeit (z.B. "10.07.2026, 14:30") aus den EXIF-Daten, oder null. */
+export type ReportImage = { mimetype: string; buffer: Buffer; capturedAt?: string | null }
 
 /** Vorbereitetes Bild (+ ggf. Original) zum Entwurf auf Platte schreiben. */
 async function writeImageFiles(
@@ -55,7 +56,7 @@ async function saveImageToReport(
   userId: number,
   reportId: number,
   p: PreparedImage
-): Promise<{ id: number; filename: string }> {
+): Promise<{ id: number; filename: string; capturedAt: string | null }> {
   const { filename, originalFilename } = await writeImageFiles(userId, reportId, p)
 
   // EXIF (Aufnahmezeit + GPS) aus dem Original lesen – die HEIC-Konvertierung
@@ -76,7 +77,7 @@ async function saveImageToReport(
     [reportId, filename, p.mimetype, originalFilename, p.originalMimetype, sortOrder,
      meta.capturedAt, meta.lat, meta.lon]
   )
-  return { id: result.insertId, filename }
+  return { id: result.insertId, filename, capturedAt: meta.capturedAt }
 }
 
 async function loadReport(
@@ -220,7 +221,9 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
   )
   const user = uRows[0]
   const [imgRows] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT filename, mimetype FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+    `SELECT filename, mimetype,
+            DATE_FORMAT(captured_at, '%d.%m.%Y, %H:%i') AS captured_at
+       FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
     [reportId]
   )
 
@@ -229,7 +232,7 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
   for (const row of imgRows) {
     try {
       const buffer = await fs.readFile(path.join(dir, row.filename))
-      images.push({ mimetype: row.mimetype, buffer })
+      images.push({ mimetype: row.mimetype, buffer, capturedAt: row.captured_at })
     } catch {
       // Datei fehlt – überspringen
     }
@@ -301,7 +304,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+      `SELECT id, filename, original_filename,
+              DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at
+         FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
     )
     const firstImageUrl = images.length ? `/anzeige/${az}/image/${images[0].id}/thumb.jpg` : null
@@ -367,7 +372,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     )
     let count = Number(cntRows[0].c)
 
-    const saved: { id: number; url: string }[] = []
+    const saved: { id: number; url: string; capturedAt: string | null }[] = []
     const errors: string[] = []
     try {
       for await (const part of request.parts()) {
@@ -382,7 +387,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
         try {
           const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
           const row = await saveImageToReport(userId, reportId, prepared)
-          saved.push({ id: row.id, url: `/anzeige/${az}/image/${row.id}` })
+          saved.push({ id: row.id, url: `/anzeige/${az}/image/${row.id}`, capturedAt: row.capturedAt })
           count++
         } catch {
           errors.push('Nur JPG-, PNG- und HEIC/HEIF-Bilder werden unterstützt.')

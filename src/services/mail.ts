@@ -30,7 +30,8 @@ function createTransport() {
  *  Beispieltext für den Selbst-Versand auf der Detailseite verwendet. */
 export function buildReportMail(
   report: mysql.RowDataPacket,
-  user: mysql.RowDataPacket
+  user: mysql.RowDataPacket,
+  photoLines: string[] = []
 ): { subject: string; text: string } {
   const tattag = report.tattag
     ? new Date(report.tattag).toLocaleDateString('de-DE')
@@ -70,6 +71,9 @@ export function buildReportMail(
     report.beschreibung ? `Beschreibung: ${report.beschreibung}` : '',
     '',
     anhangHinweis,
+    // Aufnahmezeit je Beweisfoto (nur bei roher E-Mail übergeben; bei Frankfurt
+    // stehen die Zeiten stattdessen als Beschriftung auf den PDF-Fotoseiten).
+    ...(photoLines.length ? ['', 'Beweisfotos (Aufnahmezeit):', ...photoLines.map((l) => `- ${l}`)] : []),
     '',
     'Mit freundlichen Grüßen',
     [user.vorname, user.nachname].filter(Boolean).join(' ') || user.email,
@@ -85,14 +89,19 @@ export function buildReportMail(
  * (in nutzbarer Fassung) plus eine gerenderte Tatort-Karte. Best-effort – ein
  * fehlendes Bild/eine fehlende Karte darf den Versand nicht verhindern.
  */
+type Attachment = { filename: string; content?: Buffer; path?: string; contentType?: string }
+
 async function buildEvidenceAttachments(
   report: mysql.RowDataPacket,
   user: mysql.RowDataPacket
-): Promise<{ filename: string; content?: Buffer; path?: string; contentType?: string }[]> {
-  const attachments: { filename: string; content?: Buffer; path?: string; contentType?: string }[] = []
+): Promise<{ attachments: Attachment[]; photoLines: string[] }> {
+  const attachments: Attachment[] = []
+  // Je Beweisfoto eine Zeile "Beweisfoto-N.jpg – aufgenommen: …" für den Mailtext.
+  const photoLines: string[] = []
 
   const [images] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT filename, mimetype, original_filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+    `SELECT filename, mimetype, DATE_FORMAT(captured_at, '%d.%m.%Y, %H:%i') AS captured_at
+       FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
     [report.id]
   )
   const dir = reportDir(Number(user.id), Number(report.id))
@@ -102,11 +111,15 @@ async function buildEvidenceAttachments(
       const buffer = await fs.readFile(path.join(dir, img.filename))
       n++
       const ext = (img.mimetype === 'image/png' ? 'png' : 'jpg')
+      const name = `Beweisfoto-${n}.${ext}`
       attachments.push({
-        filename: `Beweisfoto-${n}.${ext}`,
+        filename: name,
         content: buffer,
         contentType: img.mimetype || 'application/octet-stream',
       })
+      photoLines.push(
+        img.captured_at ? `${name} – aufgenommen: ${img.captured_at} Uhr` : `${name} – Aufnahmezeit unbekannt`
+      )
     } catch {
       /* Datei fehlt – überspringen */
     }
@@ -128,7 +141,7 @@ async function buildEvidenceAttachments(
     }
   }
 
-  return attachments
+  return { attachments, photoLines }
 }
 
 export const MailService = {
@@ -183,11 +196,12 @@ export const MailService = {
     // Empfänger immer aus districts.csv (per Tatort-PLZ) ermitteln.
     const to = recipientEmailForReport(report)
     if (!to) throw new Error('Keine Empfänger-Adresse für den Tatort ermittelbar (PLZ fehlt in districts.csv).')
-    const { subject, text } = buildReportMail(report, user)
 
-    // Städte mit Formular: amtliches PDF anhängen. Städte ohne Formular: rohe
-    // E-Mail mit Beweisfotos + Tatort-Karte (das PDF existiert dort nicht).
-    let attachments: { filename: string; content?: Buffer; path?: string; contentType?: string }[]
+    // Städte mit Formular: amtliches PDF anhängen (Foto-Zeiten stehen dort auf den
+    // PDF-Seiten). Städte ohne Formular: rohe E-Mail mit Beweisfotos + Tatort-Karte;
+    // die Aufnahmezeiten der Fotos werden dann direkt in den Mailtext gelistet.
+    let attachments: Attachment[]
+    let photoLines: string[] = []
     if (hasPdfForm(city) && report.pdf_filename) {
       attachments = [
         {
@@ -197,8 +211,12 @@ export const MailService = {
         },
       ]
     } else {
-      attachments = await buildEvidenceAttachments(report, user)
+      const evidence = await buildEvidenceAttachments(report, user)
+      attachments = evidence.attachments
+      photoLines = evidence.photoLines
     }
+
+    const { subject, text } = buildReportMail(report, user, photoLines)
 
     const info = await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
