@@ -96,21 +96,20 @@ async def recognize(file: UploadFile = File(...)):
             crop, bbox = crop_plate(img, xyxy)
             if crop.size == 0:
                 continue
-            raw_text, ocr_conf = read_text(crop)
-            if not raw_text:
-                continue
-            text, normalized = normalize(raw_text)
-            if not text:
+            reading = read_plate(crop)
+            if not reading:
                 continue
             # Nicht normalisierbare Lesungen abwerten: sie bleiben sichtbar,
             # fallen aber unter die Prefill-Schwelle der App.
-            confidence = det_conf * ocr_conf * (1.0 if normalized else 0.5)
+            confidence = (
+                det_conf * reading["ocr_confidence"] * (1.0 if reading["normalized"] else 0.5)
+            )
             plates.append({
-                "text": text,
-                "raw_text": raw_text,
-                "normalized": normalized,
+                "text": reading["text"],
+                "raw_text": reading["raw_text"],
+                "normalized": reading["normalized"],
                 "det_confidence": round(det_conf, 3),
-                "ocr_confidence": round(ocr_conf, 3),
+                "ocr_confidence": round(reading["ocr_confidence"], 3),
                 "confidence": round(confidence, 3),
                 "bbox": [int(v) for v in bbox],
             })
