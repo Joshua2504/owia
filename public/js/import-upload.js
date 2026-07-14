@@ -39,28 +39,78 @@
     return div.innerHTML
   }
 
-  function setProgress(done, total, withGps, withTime) {
-    var pct = total ? Math.round((done / total) * 100) : 0
+  // --- Fortschritt: Prozent nach Bytes, Geschwindigkeit als gleitendes
+  // Fenster über die letzten Sekunden, Restzeit aus verbleibenden Bytes. ---
+
+  function fmtBytes(b) {
+    if (b >= 1024 * 1024 * 1024) return (b / (1024 * 1024 * 1024)).toFixed(1).replace('.', ',') + ' GB'
+    if (b >= 1024 * 1024) return (b / (1024 * 1024)).toFixed(1).replace('.', ',') + ' MB'
+    return Math.max(1, Math.round(b / 1024)) + ' KB'
+  }
+  function fmtEta(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return ''
+    if (seconds < 60) return '~' + Math.max(1, Math.round(seconds)) + ' s'
+    return '~' + Math.floor(seconds / 60) + ':' + String(Math.round(seconds % 60)).padStart(2, '0') + ' min'
+  }
+
+  var speedSamples = [] // { t, bytes } – Fenster für die Momentan-Geschwindigkeit
+
+  function currentSpeed(uploadedBytes) {
+    var now = Date.now()
+    speedSamples.push({ t: now, bytes: uploadedBytes })
+    while (speedSamples.length > 2 && now - speedSamples[0].t > 4000) speedSamples.shift()
+    var first = speedSamples[0]
+    var dt = (now - first.t) / 1000
+    return dt > 0.3 ? (uploadedBytes - first.bytes) / dt : 0
+  }
+
+  function setProgress(doneFiles, totalFiles, uploadedBytes, totalBytes, withGps, withTime) {
+    var pct = totalBytes ? Math.round((uploadedBytes / totalBytes) * 100) : 0
     bar.style.width = pct + '%'
     bar.textContent = pct + '%'
-    progressText.textContent = 'Foto ' + Math.min(done, total) + ' / ' + total + ' hochgeladen'
+
+    var speed = currentSpeed(uploadedBytes)
+    var parts = [
+      'Foto ' + Math.min(doneFiles, totalFiles) + ' / ' + totalFiles,
+      fmtBytes(uploadedBytes) + ' von ' + fmtBytes(totalBytes),
+    ]
+    if (speed > 1024) {
+      parts.push(fmtBytes(speed) + '/s')
+      var eta = fmtEta((totalBytes - uploadedBytes) / speed)
+      if (eta) parts.push('noch ' + eta)
+    }
+    progressText.textContent = parts.join(' · ')
     stats.textContent = withGps + ' mit GPS-Position · ' + withTime + ' mit Aufnahmezeit'
   }
 
-  function uploadChunk(batchId, files, attempt) {
-    var fd = new FormData()
-    files.forEach(function (f) { fd.append('bilder', f, f.name) })
-    return fetch('/import/' + batchId + '/photos', { method: 'POST', body: fd }).then(
-      function (res) {
-        if (!res.ok && res.status !== 413) throw new Error('http ' + res.status)
-        return res.json()
-      },
-      function (err) {
-        // Ein Retry pro Chunk bei Netzwerkfehlern.
-        if (attempt < 1) return uploadChunk(batchId, files, attempt + 1)
-        throw err
+  // XHR statt fetch: nur so gibt es Upload-Progress-Events (Bytes im Flug).
+  function uploadChunk(batchId, files, attempt, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var fd = new FormData()
+      files.forEach(function (f) { fd.append('bilder', f, f.name) })
+
+      var xhr = new XMLHttpRequest()
+      xhr.open('POST', '/import/' + batchId + '/photos')
+      xhr.responseType = 'json'
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) onProgress(e.loaded, e.total)
       }
-    )
+      xhr.onload = function () {
+        // 413 (zu groß) liefert wie die anderen Antworten JSON mit error-Feld.
+        if (xhr.status && (xhr.status < 400 || xhr.status === 413)) resolve(xhr.response || {})
+        else fail(new Error('http ' + xhr.status))
+      }
+      xhr.onerror = function () { fail(new Error('network')) }
+      xhr.ontimeout = function () { fail(new Error('timeout')) }
+
+      function fail(err) {
+        // Ein Retry pro Chunk bei Netzwerkfehlern.
+        if (attempt < 1) uploadChunk(batchId, files, attempt + 1, onProgress).then(resolve, reject)
+        else reject(err)
+      }
+
+      xhr.send(fd)
+    })
   }
 
   startBtn.addEventListener('click', function () {
@@ -74,7 +124,10 @@
     var done = 0
     var withGps = 0
     var withTime = 0
-    setProgress(0, files.length, 0, 0)
+    var totalBytes = files.reduce(function (sum, f) { return sum + (f.size || 0) }, 0)
+    var completedBytes = 0 // Bytes fertig hochgeladener Chunks
+    speedSamples = []
+    setProgress(0, files.length, 0, totalBytes, 0, 0)
 
     fetch('/import/batch', { method: 'POST' })
       .then(function (r) {
@@ -88,8 +141,13 @@
 
         var chain = Promise.resolve()
         chunks.forEach(function (chunk) {
+          var chunkBytes = chunk.reduce(function (sum, f) { return sum + (f.size || 0) }, 0)
           chain = chain.then(function () {
-            return uploadChunk(batchId, chunk, 0).then(function (res) {
+            return uploadChunk(batchId, chunk, 0, function (loaded, total) {
+              // loaded enthält Multipart-Overhead – auf die Dateigröße normieren.
+              var frac = total ? Math.min(1, loaded / total) : 0
+              setProgress(done, files.length, completedBytes + chunkBytes * frac, totalBytes, withGps, withTime)
+            }).then(function (res) {
               ;(res.photos || []).forEach(function (p) {
                 if (p.hasGps) withGps++
                 if (p.capturedAt) withTime++
@@ -97,7 +155,8 @@
               ;(res.errors || []).forEach(function (e) { allErrors.push(e) })
               if (res.error) allErrors.push(res.error)
               done += chunk.length
-              setProgress(done, files.length, withGps, withTime)
+              completedBytes += chunkBytes
+              setProgress(done, files.length, completedBytes, totalBytes, withGps, withTime)
             })
           })
         })
