@@ -104,10 +104,12 @@ export const MailService = {
     })
   },
 
+  /** Anzeige ans Ordnungsamt senden; gibt die Message-ID zurück (für die
+   *  Zuordnung späterer Antworten via In-Reply-To/References). */
   async sendReport(
     report: mysql.RowDataPacket,
     user: mysql.RowDataPacket
-  ): Promise<void> {
+  ): Promise<string> {
     const transport = createTransport()
     const pdfPath = path.join(
       process.cwd(),
@@ -118,7 +120,7 @@ export const MailService = {
 
     const { subject, text } = buildReportMail(report, user)
 
-    await transport.sendMail({
+    const info = await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
       to: getCity(report.city).email,
       cc: user.email,
@@ -126,11 +128,38 @@ export const MailService = {
       text,
       attachments: [
         {
-          filename: `${report.aktenzeichen || `anzeige-${report.id}`}.pdf`,
+          filename: report.pdf_filename,
           path: pdfPath,
           contentType: 'application/pdf',
         },
       ],
+    })
+    return String(info.messageId || '')
+  },
+
+  /** Kurzer Hinweis an den Nutzer: das Ordnungsamt hat geantwortet. Der
+   *  Inhalt steht bewusst nur in der App (Detailseite), nicht in der Mail. */
+  async sendReplyNotification(
+    user: mysql.RowDataPacket,
+    report: mysql.RowDataPacket
+  ): Promise<void> {
+    const transport = createTransport()
+    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    await transport.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      to: user.email,
+      subject: `Antwort zu deiner Anzeige ${report.aktenzeichen}`,
+      text: [
+        'Hallo,',
+        '',
+        `zu deiner Anzeige ${report.aktenzeichen} ist eine Antwort des Ordnungsamts eingegangen.`,
+        '',
+        'Du kannst sie hier lesen:',
+        `${base}/report/${report.aktenzeichen}`,
+        '',
+        'Viele Grüße',
+        'OWiA-Anzeiger',
+      ].join('\n'),
     })
   },
 

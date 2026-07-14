@@ -72,6 +72,13 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
             <% } else { %>
               <span class="badge bg-info">Eingereicht</span>
             <% } %>
+            <%# Antwort des Ordnungsamts liegt vor (Spalten liefert nur das Dashboard). %>
+            <% if (r.reply_count) { %>
+              <a href="/report/<%= r.aktenzeichen %>" class="badge text-bg-primary text-decoration-none"
+                 title="Antwort des Ordnungsamts ansehen">
+                📨 Antwort<%= r.reply_count > 1 ? ' (' + r.reply_count + ')' : '' %><%= r.unread_reply_count > 0 ? ' • neu' : '' %>
+              </a>
+            <% } %>
           </td>
           <td>
             <div class="d-flex gap-2 justify-content-end">

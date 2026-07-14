@@ -21,6 +21,7 @@ import satRoutes from './routes/sat'
 import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
 import adminRoutes from './routes/admin'
+import { startInboxPolling, processInboundMail } from './services/mailInbox'
 import { PdfService } from './services/pdf'
 import { initDb } from './db/init'
 import { MySQLSessionStore } from './db/session-store'
@@ -110,7 +111,21 @@ async function main() {
   await app.register(legalRoutes)
   await app.register(adminRoutes)
 
+  // Antworten des Ordnungsamts aus dem Versand-Postfach abrufen (IMAP).
+  startInboxPolling(app.log)
+
   if (process.env.NODE_ENV !== 'production') {
+    // Dev-Transport für den Posteingang (Mailpit spricht kein IMAP): rohe
+    // RFC822-Mail per POST einspielen, läuft durch dieselbe Pipeline.
+    app.addContentTypeParser('message/rfc822', { parseAs: 'buffer' }, (_req, body, done) =>
+      done(null, body)
+    )
+    app.post('/dev/inbound-mail', async (request, reply) => {
+      const raw = Buffer.isBuffer(request.body) ? request.body : Buffer.from(String(request.body))
+      const result = await processInboundMail(raw, app.log)
+      return reply.send({ result })
+    })
+
     app.get('/debug/pdf-fields', async (_req, reply) => {
       try {
         const fields = await PdfService.listFields()

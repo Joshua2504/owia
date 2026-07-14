@@ -8,6 +8,7 @@ import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { requireAdmin, viewData, setFlash } from '../middleware/auth'
 import { MailService } from '../services/mail'
+import { replyAttachmentPath } from '../services/mailInbox'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
@@ -50,11 +51,75 @@ export default async function adminRoutes(app: FastifyInstance) {
         ORDER BY r.id DESC
         LIMIT 15`
     )
+    // Antworten des Ordnungsamts ohne Zuordnung (weder Message-ID noch
+    // Aktenzeichen im Betreff/Body gefunden) – manuell zuordnen.
+    const [unmatched] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT rr.id, rr.from_address, rr.subject, rr.body_text, rr.received_at,
+              (SELECT COUNT(*) FROM report_reply_attachments a WHERE a.reply_id = rr.id) AS attachment_count
+         FROM report_replies rr
+        WHERE rr.report_id IS NULL
+        ORDER BY rr.received_at DESC, rr.id DESC`
+    )
+
     return reply.view('/admin/anzeigen.ejs', viewData(request, {
       title: 'Prüfung',
       pending,
       recent,
+      unmatched,
     }))
+  })
+
+  // Nicht zugeordnete Antwort einer Anzeige zuordnen (per Aktenzeichen).
+  app.post('/admin/replies/:id/assign', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const az = String((request.body as { aktenzeichen?: string })?.aktenzeichen || '').trim()
+
+    const [reports] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT * FROM reports WHERE aktenzeichen = ?',
+      [az]
+    )
+    if (!reports[0]) {
+      setFlash(reply, 'error', `Keine Anzeige mit Aktenzeichen „${az}" gefunden.`)
+      return reply.redirect('/admin/anzeigen')
+    }
+
+    const [result] = await pool.execute<mysql.ResultSetHeader>(
+      'UPDATE report_replies SET report_id = ? WHERE id = ? AND report_id IS NULL',
+      [reports[0].id, id]
+    )
+    if (result.affectedRows === 1) {
+      try {
+        const [users] = await pool.execute<mysql.RowDataPacket[]>(
+          'SELECT * FROM users WHERE id = ?',
+          [reports[0].user_id]
+        )
+        if (users[0]) await MailService.sendReplyNotification(users[0], reports[0])
+      } catch (err) {
+        app.log.error({ err }, 'Hinweis-Mail nach Zuordnung fehlgeschlagen')
+      }
+    }
+    setFlash(reply, 'success', `Antwort der Anzeige ${az} zugeordnet.`)
+    return reply.redirect('/admin/anzeigen')
+  })
+
+  // Anhang einer (auch nicht zugeordneten) Antwort ansehen (Admin).
+  app.get('/admin/replies/:replyId/attachment/:attId', { preHandler: requireAdmin }, async (request, reply) => {
+    const { replyId, attId } = request.params as { replyId: string; attId: string }
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT filename, original_filename, mimetype FROM report_reply_attachments WHERE id = ? AND reply_id = ?',
+      [attId, replyId]
+    )
+    const att = rows[0]
+    if (!att) return reply.status(404).send('Anhang nicht gefunden.')
+    try {
+      const buffer = await fs.readFile(replyAttachmentPath(Number(replyId), att.filename))
+      return reply
+        .header('Content-Type', att.mimetype || 'application/octet-stream')
+        .header('Content-Disposition', `attachment; filename="${att.original_filename || att.filename}"`)
+        .send(buffer)
+    } catch {
+      return reply.status(404).send('Anhang-Datei nicht gefunden.')
+    }
   })
 
   // PDF einer beliebigen Anzeige (Admin-Sicht) inline anzeigen.
@@ -69,7 +134,7 @@ export default async function adminRoutes(app: FastifyInstance) {
       )
       return reply
         .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `inline; filename="${loaded.report.aktenzeichen}.pdf"`)
+        .header('Content-Disposition', `inline; filename="${loaded.report.pdf_filename}"`)
         .send(buffer)
     } catch {
       return reply.status(404).send('PDF-Datei nicht gefunden.')
@@ -84,10 +149,10 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
 
     try {
-      await MailService.sendReport(loaded.report, loaded.user)
+      const messageId = await MailService.sendReport(loaded.report, loaded.user)
       await pool.execute(
-        "UPDATE reports SET status='versendet', versand_art='system_email' WHERE id=?",
-        [loaded.report.id]
+        "UPDATE reports SET status='versendet', versand_art='system_email', sent_message_id=? WHERE id=?",
+        [messageId.slice(0, 255) || null, loaded.report.id]
       )
       setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} freigegeben und ans Ordnungsamt verschickt.`)
     } catch (err) {

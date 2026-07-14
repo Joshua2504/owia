@@ -299,8 +299,23 @@ export const PdfService = {
 
     const filled = await doc.save()
 
-    // Dateiname = Aktenzeichen; die Regeneration überschreibt dieselbe Datei.
-    const filename = `${report.aktenzeichen || `anzeige-${report.id}`}.pdf`
+    // Dateiname = Präfix-Tattag-Nummer (z.B. "OWiA-2026-07-14-123456.pdf"):
+    // sortiert sich chronologisch und trägt das Aktenzeichen. Tattag bewusst
+    // aus den lokalen Datums-Komponenten (kein toISOString – das würde je nach
+    // Server-Zeitzone einen Tag verrutschen).
+    let filename = `anzeige-${report.id}.pdf`
+    if (report.aktenzeichen) {
+      let datum = ''
+      if (report.tattag) {
+        const t = new Date(report.tattag)
+        if (!isNaN(t.getTime())) {
+          const pad = (n: number) => String(n).padStart(2, '0')
+          datum = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}-`
+        }
+      }
+      // Erster Bindestrich trennt Präfix und Nummer: "OWiA-123456" -> "OWiA-<datum>-123456".
+      filename = `${String(report.aktenzeichen).replace('-', `-${datum}`)}.pdf`
+    }
     await fs.writeFile(path.join(userDir, filename), filled)
     return filename
   },

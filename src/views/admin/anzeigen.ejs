@@ -80,6 +80,34 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
   </div>
 <% } %>
 
+<% const unmatched = locals.unmatched || [] %>
+<% if (unmatched.length) { %>
+  <div class="card shadow-sm mb-4 border-warning">
+    <div class="card-body">
+      <h5 class="card-title mb-1">Nicht zugeordnete Antworten (<%= unmatched.length %>)</h5>
+      <p class="text-muted small mb-3">
+        Eingegangene Mails ohne erkennbares Aktenzeichen – bitte manuell einer Anzeige zuordnen.
+      </p>
+      <% for (const m of unmatched) { %>
+        <div class="border rounded p-2 mb-2">
+          <div class="small text-muted">
+            <strong><%= m.from_address || 'Unbekannt' %></strong>
+            <% if (m.received_at) { %>· <%= new Date(m.received_at).toLocaleString('de-DE') %><% } %>
+            <% if (m.attachment_count) { %>· 📎 <%= m.attachment_count %> Anhang/Anhänge<% } %>
+            <% if (m.subject) { %><br><%= m.subject %><% } %>
+          </div>
+          <div class="small" style="white-space:pre-wrap"><%= (m.body_text || '').slice(0, 400) %><%= (m.body_text || '').length > 400 ? ' …' : '' %></div>
+          <form method="post" action="/admin/replies/<%= m.id %>/assign" class="d-flex gap-2 mt-2">
+            <input type="text" name="aktenzeichen" class="form-control form-control-sm w-auto"
+                   placeholder="OWiA-123456" required>
+            <button type="submit" class="btn btn-sm btn-outline-primary">Zuordnen</button>
+          </form>
+        </div>
+      <% } %>
+    </div>
+  </div>
+<% } %>
+
 <% if (recent.length) { %>
   <div class="card shadow-sm">
     <div class="card-body">

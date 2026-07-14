@@ -12,6 +12,7 @@ import { prepareImage, writePreparedImage, removeImagePair, PreparedImage } from
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
 import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
 import { extractPhotoMeta } from '../services/exif'
+import { replyAttachmentPath } from '../services/mailInbox'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
 export { VERSTOSS_ARTEN }
@@ -598,13 +599,65 @@ export default async function reportsRoutes(app: FastifyInstance) {
       'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
+
+    // Antworten des Ordnungsamts (+ Anhänge); Ansehen der Seite = gelesen.
+    const [replies] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id, from_address, subject, body_text, received_at, read_at
+         FROM report_replies WHERE report_id = ? ORDER BY received_at, id`,
+      [report.id]
+    )
+    const attachmentsByReply: Record<number, mysql.RowDataPacket[]> = {}
+    if (replies.length) {
+      const ids = replies.map((r) => r.id)
+      const [atts] = await pool.execute<mysql.RowDataPacket[]>(
+        `SELECT id, reply_id, original_filename, size_bytes
+           FROM report_reply_attachments WHERE reply_id IN (${ids.map(() => '?').join(',')})
+          ORDER BY id`,
+        ids
+      )
+      for (const a of atts) (attachmentsByReply[a.reply_id] ??= []).push(a)
+      await pool.execute(
+        'UPDATE report_replies SET read_at = NOW() WHERE report_id = ? AND read_at IS NULL',
+        [report.id]
+      )
+    }
+
     return reply.view('/reports/show.ejs', viewData(request, {
       title: `Anzeige ${report.aktenzeichen || ''}`,
       report,
       images,
+      replies,
+      attachmentsByReply,
       complete: isComplete(report),
       city: getCity(report.city),
     }))
+  })
+
+  // Anhang einer Ordnungsamt-Antwort herunterladen (nur eigene Anzeigen).
+  app.get('/report/:az/reply/:replyId/attachment/:attId', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, replyId, attId } = request.params as { az: string; replyId: string; attId: string }
+    const userId = request.session.userId as number
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT a.filename, a.original_filename, a.mimetype
+         FROM report_reply_attachments a
+         JOIN report_replies rr ON rr.id = a.reply_id
+         JOIN reports r ON r.id = rr.report_id
+        WHERE a.id = ? AND rr.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
+      [attId, replyId, az, userId]
+    )
+    const att = rows[0]
+    if (!att) return reply.status(404).send('Anhang nicht gefunden.')
+
+    try {
+      const buffer = await fs.readFile(replyAttachmentPath(Number(replyId), att.filename))
+      return reply
+        .header('Content-Type', att.mimetype || 'application/octet-stream')
+        .header('Content-Disposition', `attachment; filename="${att.original_filename || att.filename}"`)
+        .send(buffer)
+    } catch {
+      return reply.status(404).send('Anhang-Datei nicht gefunden.')
+    }
   })
 
   app.get('/report/:az/image/:imageId', { preHandler: requireAuth }, async (request, reply) => {
@@ -686,7 +739,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       const disposition = inline ? 'inline' : 'attachment'
       return reply
         .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `${disposition}; filename="${az}.pdf"`)
+        .header('Content-Disposition', `${disposition}; filename="${report.pdf_filename}"`)
         .send(buffer)
     } catch {
       return reply.status(404).send('PDF-Datei nicht gefunden.')

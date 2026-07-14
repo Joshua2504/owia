@@ -107,6 +107,32 @@ const versandLabel = {
       </div>
     <% } %>
 
+    <% const replies = locals.replies || [] %>
+    <% const attachmentsByReply = locals.attachmentsByReply || {} %>
+    <% if (replies.length) { %>
+      <div class="card shadow-sm mb-4 border-primary">
+        <div class="card-header">📨 Antworten des Ordnungsamts (<%= replies.length %>)</div>
+        <div class="card-body">
+          <% for (const rep of replies) { %>
+            <div class="mb-3 pb-3 <%= rep !== replies[replies.length - 1] ? 'border-bottom' : '' %>">
+              <div class="small text-muted mb-1">
+                <strong><%= rep.from_address || 'Unbekannter Absender' %></strong>
+                <% if (rep.received_at) { %>· <%= new Date(rep.received_at).toLocaleString('de-DE') %><% } %>
+                <% if (rep.subject) { %><br><%= rep.subject %><% } %>
+              </div>
+              <div style="white-space:pre-wrap"><%= rep.body_text || '(kein Text)' %></div>
+              <% for (const att of (attachmentsByReply[rep.id] || [])) { %>
+                <a class="btn btn-sm btn-outline-secondary mt-2 me-1"
+                   href="/report/<%= report.aktenzeichen %>/reply/<%= rep.id %>/attachment/<%= att.id %>">
+                  📎 <%= att.original_filename %><% if (att.size_bytes) { %> (<%= Math.round(att.size_bytes / 1024) %> KB)<% } %>
+                </a>
+              <% } %>
+            </div>
+          <% } %>
+        </div>
+      </div>
+    <% } %>
+
     <% if (isEntwurf) { %>
       <% if (report.ablehnung_grund) { %>
         <div class="alert alert-warning">
