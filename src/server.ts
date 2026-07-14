@@ -69,10 +69,9 @@ async function main() {
     },
     saveUninitialized: false,
     // rolling:false = Sessions nur speichern, wenn sie sich tatsächlich geändert
-    // haben. Sonst würden parallele Lese-Requests ihre veraltete Session-Kopie
-    // zurückschreiben und dabei eine gerade konsumierte Flash-Meldung wieder
-    // auferstehen lassen – die Meldung („Entwurf verworfen." o. Ä.) erschien
-    // dann bei jedem Seitenaufruf.
+    // haben (parallele Lese-Requests sollen keine veralteten Kopien zurückschreiben).
+    // Flash-Meldungen laufen deshalb bewusst NICHT über die Session, sondern über
+    // ein kurzlebiges Cookie (setFlash/readFlash in middleware/auth.ts).
     rolling: false,
   })
   await app.register(staticFiles, {
