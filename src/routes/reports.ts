@@ -177,6 +177,17 @@ function isComplete(r: mysql.RowDataPacket): boolean {
   return !!(r.kennzeichen && r.tattag && r.tatzeit_von && r.tatort && r.verstoss_art)
 }
 
+/** Profil vollständig? Das Ordnungsamt bearbeitet anonyme Anzeigen nicht –
+ *  Name und Anschrift des Anzeigenerstatters müssen im PDF stehen. */
+async function isProfileComplete(userId: number): Promise<boolean> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT vorname, nachname, strasse, plz, ort FROM users WHERE id = ?',
+    [userId]
+  )
+  const u = rows[0]
+  return !!(u && u.vorname && u.nachname && u.strasse && u.plz && u.ort)
+}
+
 /** PDF aus dem aktuellen Stand (inkl. gespeicherter Bilder) neu erzeugen. */
 async function regeneratePdf(reportId: string | number, userId: number): Promise<void> {
   const report = await loadReport(reportId, userId)
@@ -631,6 +642,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       replies,
       attachmentsByReply,
       complete: isComplete(report),
+      profileComplete: await isProfileComplete(userId),
       city: getCity(report.city),
     }))
   })
@@ -817,6 +829,13 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!isComplete(report)) {
       setFlash(reply, 'error', 'Bitte zuerst alle Pflichtfelder ausfüllen.')
       return reply.redirect(`/anzeige/${az}/bearbeiten`)
+    }
+
+    // Ohne vollständiges Profil (Name + Anschrift) keine Einreichung – das
+    // Ordnungsamt bearbeitet anonyme Anzeigen nicht.
+    if (!(await isProfileComplete(userId))) {
+      setFlash(reply, 'error', 'Bitte zuerst dein Profil vervollständigen (Name und Anschrift) – anonyme Anzeigen werden vom Ordnungsamt nicht bearbeitet.')
+      return reply.redirect('/einstellungen')
     }
 
     // PDF auf den letzten Stand bringen; eine frühere Ablehnung ist damit erledigt.

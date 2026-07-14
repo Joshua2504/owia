@@ -166,6 +166,13 @@ const versandLabel = {
           dann kann die Anzeige eingereicht werden.
         </div>
       <% } %>
+      <% if (!locals.profileComplete) { %>
+        <div class="alert alert-warning">
+          Dein Profil ist unvollständig. Bitte hinterlege
+          <a href="/einstellungen" class="alert-link">Name und Anschrift in den Einstellungen</a> –
+          anonyme Anzeigen werden vom Ordnungsamt nicht bearbeitet.
+        </div>
+      <% } %>
 
       <div class="card shadow-sm mb-4">
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
@@ -178,7 +185,7 @@ const versandLabel = {
           </div>
           <form method="post" action="/anzeige/<%= report.aktenzeichen %>/submit"
                 onsubmit="return confirm('Anzeige jetzt zur Prüfung einreichen?')">
-            <button type="submit" class="btn btn-success" <%= complete ? '' : 'disabled' %>>
+            <button type="submit" class="btn btn-success" <%= complete && locals.profileComplete ? '' : 'disabled' %>>
               ✓ Einreichen
             </button>
           </form>
