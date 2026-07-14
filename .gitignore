@@ -10,3 +10,6 @@ dist/
 # PDF-Erzeugung in Produktion fehl).
 *.pdf
 !resources/*.pdf
+
+# macos
+.DS_Store
