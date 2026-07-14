@@ -98,10 +98,12 @@ export default async function publicRoutes(app: FastifyInstance) {
     return reply.header('Content-Type', 'application/xml').send(xml)
   })
 
-  // Anonyme Marker-Daten für die Karte.
+  // Anonyme Marker-Daten für die Karte. Bewusst OHNE Aktenzeichen: das ist
+  // der Schlüssel für die Antwort-Zuordnung im Mail-Postfach und darf nicht
+  // öffentlich einsehbar sein (Bild-URL läuft über die Bild-ID).
   app.get('/api/public/reports', async (_request, reply) => {
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT r.aktenzeichen, r.tattag, r.verstoss_art, r.tatort_lat, r.tatort_lon,
+      `SELECT r.tattag, r.verstoss_art, r.tatort_lat, r.tatort_lon,
               (SELECT ri.id FROM report_images ri
                 WHERE ri.report_id = r.id ORDER BY ri.sort_order, ri.id LIMIT 1) AS image_id
          FROM reports r
@@ -114,23 +116,23 @@ export default async function publicRoutes(app: FastifyInstance) {
       lon: Number(r.tatort_lon),
       verstossArt: r.verstoss_art || null,
       tattag: r.tattag || null,
-      imageUrl: r.image_id ? `/api/public/reports/${r.aktenzeichen}/pixel.jpg` : null,
+      imageUrl: r.image_id ? `/api/public/bild/${r.image_id}/pixel.jpg` : null,
     }))
     return reply.send({ reports })
   })
 
   // Stark verpixeltes erstes Foto einer versendeter Anzeige. Das Original
   // verlässt den Server nie – pixelate() rechnet es serverseitig herunter.
-  app.get('/api/public/reports/:az/pixel.jpg', async (request, reply) => {
-    const { az } = request.params as { az: string }
+  app.get('/api/public/bild/:imageId/pixel.jpg', async (request, reply) => {
+    const { imageId } = request.params as { imageId: string }
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT r.user_id, r.id AS report_id, ri.filename, ri.mimetype
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
-        WHERE r.aktenzeichen = ? AND r.status='versendet'
-        ORDER BY ri.sort_order, ri.id LIMIT 1`,
-      [az]
+        WHERE ri.id = ? AND r.status='versendet'
+        LIMIT 1`,
+      [imageId]
     )
     const img = rows[0]
     if (!img) return reply.status(404).send('Nicht gefunden.')

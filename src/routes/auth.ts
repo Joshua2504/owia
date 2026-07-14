@@ -50,10 +50,16 @@ async function loginUserByEmail(
   // Zustimmung zur Datenschutzerklärung dokumentieren. Der Login-Abschluss ist
   // nur über das checkbox-pflichtige POST /login erreichbar, daher ist die
   // Zustimmung an dieser Stelle stets erteilt (Nachweis nach Art. 7 DSGVO).
+  // Nur den ERSTEN Zeitpunkt festhalten – der ursprüngliche Nachweis darf
+  // durch spätere Logins nicht überschrieben werden.
   await pool.execute(
-    'UPDATE users SET datenschutz_akzeptiert_at = NOW() WHERE id = ?',
+    'UPDATE users SET datenschutz_akzeptiert_at = NOW() WHERE id = ? AND datenschutz_akzeptiert_at IS NULL',
     [user.id]
   )
+
+  // Gegen Session-Fixation: vor dem Setzen der Identität eine frische
+  // Session-ID erzeugen (eine evtl. vorher untergeschobene ID wird ungültig).
+  await request.session.regenerate()
 
   request.session.userId = user.id
   request.session.userEmail = user.email
@@ -74,7 +80,10 @@ export default async function authRoutes(app: FastifyInstance) {
     return reply.view('/auth/login.ejs', viewData(request, { title: 'Anmelden' }))
   })
 
-  app.post('/login', async (request, reply) => {
+  // Streng limitiert: jeder Aufruf versendet eine E-Mail (Mail-Bombing-Schutz).
+  app.post('/login', {
+    config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
+  }, async (request, reply) => {
     const { email, datenschutz, remember } = request.body as {
       email?: string
       datenschutz?: string

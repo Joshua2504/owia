@@ -58,6 +58,24 @@ function sanitizeAttachmentName(name: string | undefined): { display: string; ex
   return { display, ext: m ? m[1] : 'bin' }
 }
 
+/** Vertrauenswürdige Absender-Domains fürs Aktenzeichen-Matching (kommagetrennt
+ *  in REPLY_TRUSTED_DOMAINS, Default: Stadt Frankfurt). Das Matching über die
+ *  Message-ID-Kette gilt dagegen für alle Absender – wer die IDs kennt, war
+ *  Teil des Mail-Verlaufs. Verhindert, dass Fremde mit einem erratenen/geleakten
+ *  Aktenzeichen gefälschte "Amts-Antworten" in Nutzerkonten einschleusen. */
+function trustedSenderDomains(): string[] {
+  return (process.env.REPLY_TRUSTED_DOMAINS || 'stadt-frankfurt.de')
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+function isTrustedSender(fromAddress: string | null): boolean {
+  if (!fromAddress) return false
+  const domain = fromAddress.split('@')[1]?.toLowerCase() || ''
+  return trustedSenderDomains().some((d) => domain === d || domain.endsWith(`.${d}`))
+}
+
 /** Anzeige zur eingehenden Mail finden: erst Message-ID-Bezug, dann Aktenzeichen. */
 async function matchReport(parsed: ParsedMail): Promise<mysql.RowDataPacket | null> {
   const refs = [
@@ -83,6 +101,12 @@ async function matchReport(parsed: ParsedMail): Promise<mysql.RowDataPacket | nu
     )
     if (viaThread[0]) return viaThread[0]
   }
+
+  // Aktenzeichen-Matching nur für vertrauenswürdige Absender (s.o.); Mails
+  // anderer Absender ohne Message-ID-Bezug landen als "nicht zugeordnet" beim
+  // Admin und können dort nach Sichtprüfung manuell zugeordnet werden.
+  const from = parsed.from?.value?.[0]?.address || null
+  if (!isTrustedSender(from)) return null
 
   for (const source of [parsed.subject, parsed.text, parsed.html || '']) {
     const az = typeof source === 'string' ? source.match(AZ_REGEX)?.[0] : undefined

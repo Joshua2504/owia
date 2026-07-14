@@ -187,6 +187,53 @@ export const MailService = {
     })
   },
 
+  /** Bestätigungslink für eine E-Mail-Adressänderung (geht an die NEUE Adresse). */
+  async sendEmailChangeConfirmation(newEmail: string, link: string): Promise<void> {
+    const transport = createTransport()
+    await transport.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      to: newEmail,
+      subject: 'Neue E-Mail-Adresse bestätigen',
+      text: [
+        'Hallo,',
+        '',
+        'für dein OWiA-Anzeiger-Konto wurde diese E-Mail-Adresse als neue',
+        'Anmelde-Adresse angegeben. Klicke zum Bestätigen auf diesen Link:',
+        '',
+        link,
+        '',
+        'Der Link ist 1 Stunde gültig. Wenn du das nicht warst, ignoriere diese E-Mail.',
+        '',
+        'Viele Grüße',
+        'OWiA-Anzeiger',
+      ].join('\n'),
+    })
+  },
+
+  /** Hinweis an die Admins: eine neue Anzeige wartet auf Prüfung. */
+  async sendSubmitNotification(
+    adminAddresses: string[],
+    report: mysql.RowDataPacket,
+    userEmail: string
+  ): Promise<void> {
+    if (!adminAddresses.length) return
+    const transport = createTransport()
+    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    await transport.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      to: adminAddresses.join(','),
+      subject: `Neue Anzeige zur Prüfung: ${report.aktenzeichen}`,
+      text: [
+        `Anzeige ${report.aktenzeichen} wurde von ${userEmail} eingereicht.`,
+        '',
+        `Verstoß: ${report.verstoss_art || '—'}`,
+        `Tatort:  ${report.tatort || '—'}`,
+        '',
+        `Zur Prüfung: ${base}/admin/anzeigen`,
+      ].join('\n'),
+    })
+  },
+
   /** Info an den Nutzer: die Prüfung hat die Anzeige zurück in den Entwurf gegeben. */
   async sendReportRejected(
     user: mysql.RowDataPacket,

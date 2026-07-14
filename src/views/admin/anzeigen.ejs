@@ -52,6 +52,15 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
             </dd>
             <dt class="col-sm-4">Fotos</dt>
             <dd class="col-sm-8"><%= r.image_count %></dd>
+            <dt class="col-sm-4">Anzeigenerstatter</dt>
+            <dd class="col-sm-8">
+              <% const profil = [[r.vorname, r.nachname].filter(Boolean).join(' '), r.strasse, [r.plz, r.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ') %>
+              <% if (profil && r.vorname && r.nachname && r.strasse && r.plz && r.ort) { %>
+                <%= profil %>
+              <% } else { %>
+                <span class="text-danger">⚠️ Profil unvollständig<%= profil ? ': ' + profil : '' %></span>
+              <% } %>
+            </dd>
           </dl>
 
           <div class="d-flex gap-2 flex-wrap">

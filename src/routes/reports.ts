@@ -14,6 +14,7 @@ import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
 import { extractPhotoMeta } from '../services/exif'
 import { replyAttachmentPath } from '../services/mailInbox'
 import { MailService } from '../services/mail'
+import { adminEmails } from '../config/admin'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
 export { VERSTOSS_ARTEN }
@@ -179,7 +180,7 @@ function isComplete(r: mysql.RowDataPacket): boolean {
 
 /** Profil vollständig? Das Ordnungsamt bearbeitet anonyme Anzeigen nicht –
  *  Name und Anschrift des Anzeigenerstatters müssen im PDF stehen. */
-async function isProfileComplete(userId: number): Promise<boolean> {
+export async function isProfileComplete(userId: number): Promise<boolean> {
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(
     'SELECT vorname, nachname, strasse, plz, ort FROM users WHERE id = ?',
     [userId]
@@ -189,7 +190,7 @@ async function isProfileComplete(userId: number): Promise<boolean> {
 }
 
 /** PDF aus dem aktuellen Stand (inkl. gespeicherter Bilder) neu erzeugen. */
-async function regeneratePdf(reportId: string | number, userId: number): Promise<void> {
+export async function regeneratePdf(reportId: string | number, userId: number): Promise<void> {
   const report = await loadReport(reportId, userId)
   if (!report) return
   const [uRows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -643,13 +644,18 @@ export default async function reportsRoutes(app: FastifyInstance) {
       attachmentsByReply,
       complete: isComplete(report),
       profileComplete: await isProfileComplete(userId),
+      mailFrom: process.env.MAIL_FROM || null,
       city: getCity(report.city),
     }))
   })
 
   // Nachricht des Nutzers ans Ordnungsamt (Antwort auf Rückfragen). Nur bei
   // versendeten Anzeigen – vorher gibt es keinen Mail-Verlauf mit dem Amt.
-  app.post('/anzeige/:az/message', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/message', {
+    preHandler: requireAuth,
+    // Geht als echte Mail ans Ordnungsamt – streng limitieren (Spam-Schutz).
+    config: { rateLimit: { max: 5, timeWindow: '1 hour' } },
+  }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const text = String((request.body as { text?: string })?.text || '').trim().slice(0, 10_000)
@@ -844,6 +850,12 @@ export default async function reportsRoutes(app: FastifyInstance) {
       "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL WHERE id=?",
       [report.id]
     )
+    // Admins informieren – sonst kann eine Einreichung unbemerkt liegenbleiben.
+    try {
+      await MailService.sendSubmitNotification(adminEmails(), report, request.session.userEmail || '')
+    } catch (err) {
+      app.log.error({ err }, 'Admin-Benachrichtigung zur Einreichung fehlgeschlagen')
+    }
     setFlash(reply, 'success', 'Anzeige eingereicht – sie wird geprüft und dann ans Ordnungsamt verschickt.')
     return reply.redirect(`/anzeige/${az}`)
   })

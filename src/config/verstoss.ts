@@ -1,16 +1,21 @@
-// Katalog der wählbaren Verstoßarten. Eigenes Modul (statt in reports.ts), damit
-// sowohl die Routen als auch die Analyse-Services (vlm.ts) die Liste nutzen können,
-// ohne einen Import-Zyklus Route↔Service zu erzeugen.
+// Katalog der wählbaren Verstoßarten. Eigenes Modul (statt in reports.ts),
+// damit Views und Routen die Liste ohne Import-Zyklen nutzen können.
 export const VERSTOSS_ARTEN = [
   'Parken auf dem Gehweg',
   'Parken im absoluten Halteverbot (Zeichen 283)',
   'Parken im eingeschränkten Halteverbot (Zeichen 286)',
   'Parken in der zweiten Reihe',
   'Halten und Parken auf einem Radweg',
+  'Parken auf einem Schutzstreifen für den Radverkehr',
   'Parken auf einem Sonderfahrstreifen (Busspur/Radweg)',
   'Parken vor einer abgesenkten Bordsteinkante',
   'Parken in einer Feuerwehrzufahrt',
   'Parken auf einem Behindertenparkplatz ohne Ausweis',
+  'Parken auf einem E-Ladeplatz ohne ladendes Elektrofahrzeug',
+  'Parken auf oder vor einem Fußgängerüberweg (Zebrastreifen)',
+  'Parken im Haltestellenbereich (Zeichen 224)',
+  'Parken auf einer Sperrfläche (Zeichen 298)',
+  'Zuparken einer Grundstücksein- oder -ausfahrt',
   'Parken an einer Kreuzung oder Einmündung',
   'Parken auf der linken Fahrbahnseite (entgegen der Fahrtrichtung)',
   'Sonstiges',

@@ -22,13 +22,36 @@ import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
 import adminRoutes from './routes/admin'
 import { startInboxPolling, processInboundMail } from './services/mailInbox'
+import { viewData } from './middleware/auth'
 import { PdfService } from './services/pdf'
+import helmet from '@fastify/helmet'
+import rateLimit from '@fastify/rate-limit'
 import { initDb } from './db/init'
 import { MySQLSessionStore } from './db/session-store'
+import { pool } from './db/connection'
 
-const app = Fastify({ logger: { level: 'info' } })
+// trustProxy: hinter Caddy sonst falsches Protokoll (secure-Cookies) und
+// Docker-interne IPs statt Client-IPs in Logs und Rate-Limits.
+const app = Fastify({ logger: { level: 'info' }, trustProxy: true })
+
+const IS_PROD = process.env.NODE_ENV === 'production'
 
 async function main() {
+  // Fail-fast statt unsicherem Betrieb: In Produktion MÜSSEN ein echtes
+  // SESSION_SECRET und APP_URL gesetzt sein (sonst signierbare Sessions mit
+  // öffentlich bekanntem Fallback bzw. Host-Header-Injection in Magic-Links).
+  if (IS_PROD) {
+    const secret = process.env.SESSION_SECRET || ''
+    if (secret.length < 32 || secret.includes('change-this') || secret.includes('fallback-dev')) {
+      app.log.fatal('SESSION_SECRET fehlt oder ist ein Platzhalter – Start in Produktion verweigert.')
+      process.exit(1)
+    }
+    if (!process.env.APP_URL || !process.env.APP_URL.startsWith('https://')) {
+      app.log.fatal('APP_URL fehlt oder ist nicht https – Start in Produktion verweigert.')
+      process.exit(1)
+    }
+  }
+
   await initDb()
 
   // Lauter Selbsttest: sind die Daten-Verzeichnisse beschreibbar? Häufige
@@ -47,6 +70,30 @@ async function main() {
       app.log.error({ err, dir }, 'Datenverzeichnis nicht beschreibbar – PDF/Uploads werden fehlschlagen!')
     }
   }
+
+  // Security-Header (CSP: nur eigene Quellen – alle Assets werden selbst
+  // gehostet; data: für das SVG-Favicon und Karten-Marker-Thumbnails).
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"], // Inline-Scripts in den Views (Theme, Lightbox, JSON-LD)
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'self'"], // PDF-Vorschau im eigenen iframe erlaubt, Clickjacking von außen nicht
+      },
+    },
+  })
+
+  // Rate-Limits: global großzügig; die mail-versendenden Endpoints (Login,
+  // Nachricht ans Ordnungsamt) sind einzeln strenger konfiguriert.
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: '1 minute',
+  })
 
   await app.register(formbody)
   await app.register(multipart, {
@@ -126,6 +173,32 @@ async function main() {
   // Antworten des Ordnungsamts aus dem Versand-Postfach abrufen (IMAP).
   startInboxPolling(app.log)
 
+  // Aufräumen: abgelaufene Sessions und verbrauchte/abgelaufene Login-Tokens
+  // sammeln sich sonst unbegrenzt an (Löschung passierte bislang nur bei
+  // erneutem Zugriff auf genau dieselbe Session-ID).
+  const purge = async () => {
+    try {
+      await pool.execute('DELETE FROM sessions WHERE expires_at < NOW()')
+      await pool.execute(
+        'DELETE FROM login_tokens WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY)'
+      )
+    } catch (err) {
+      app.log.warn({ err }, 'Session-/Token-Aufräumen fehlgeschlagen')
+    }
+  }
+  setInterval(purge, 6 * 60 * 60 * 1000)
+  void purge()
+
+  // Healthcheck für Monitoring/Compose: prüft DB-Verbindung.
+  app.get('/health', async (_request, reply) => {
+    try {
+      await pool.execute('SELECT 1')
+      return reply.send({ ok: true })
+    } catch {
+      return reply.status(503).send({ ok: false })
+    }
+  })
+
   if (process.env.NODE_ENV !== 'production') {
     // Dev-Transport für den Posteingang (Mailpit spricht kein IMAP): rohe
     // RFC822-Mail per POST einspielen, läuft durch dieselbe Pipeline.
@@ -150,12 +223,16 @@ async function main() {
   }
 
   app.setNotFoundHandler((_req, reply) => {
-    reply.status(404).send('Seite nicht gefunden')
+    return reply.status(404).view('/error.ejs', viewData(_req, { title: 'Nicht gefunden', statusCode: 404 }))
   })
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     app.log.error(err)
-    reply.status(500).send('Interner Serverfehler')
+    // Rate-Limit-Fehler behalten ihren Status (429) und die Plain-Antwort.
+    if (err.statusCode === 429) {
+      return reply.status(429).send('Zu viele Anfragen – bitte kurz warten.')
+    }
+    return reply.status(500).view('/error.ejs', viewData(req, { title: 'Fehler', statusCode: 500 }))
   })
 
   await app.listen({ port: 3000, host: '0.0.0.0' })

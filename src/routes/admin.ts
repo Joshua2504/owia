@@ -9,6 +9,7 @@ import { pool } from '../db/connection'
 import { requireAdmin, viewData, setFlash } from '../middleware/auth'
 import { MailService } from '../services/mail'
 import { replyAttachmentPath } from '../services/mailInbox'
+import { regeneratePdf, isProfileComplete } from './reports'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
@@ -36,7 +37,7 @@ export default async function adminRoutes(app: FastifyInstance) {
               r.tatzeit_von, r.tatzeit_bis, r.tatort, r.verstoss_art, r.beschreibung,
               r.behinderung, r.behinderung_text, r.fahrzeug_verlassen,
               DATE_FORMAT(r.eingereicht_at, '%d.%m.%Y %H:%i') AS eingereicht_fmt,
-              u.email AS user_email,
+              u.email AS user_email, u.vorname, u.nachname, u.strasse, u.plz, u.ort,
               (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count
          FROM reports r
          JOIN users u ON u.id = r.user_id
@@ -58,7 +59,8 @@ export default async function adminRoutes(app: FastifyInstance) {
               (SELECT COUNT(*) FROM report_reply_attachments a WHERE a.reply_id = rr.id) AS attachment_count
          FROM report_replies rr
         WHERE rr.report_id IS NULL
-        ORDER BY rr.received_at DESC, rr.id DESC`
+        ORDER BY rr.received_at DESC, rr.id DESC
+        LIMIT 50`
     )
 
     return reply.view('/admin/anzeigen.ejs', viewData(request, {
@@ -148,7 +150,19 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
 
+    // Zwischen Einreichung und Freigabe kann sich das Profil geändert haben:
+    // erneut prüfen und das PDF frisch erzeugen, damit Mail und PDF konsistent
+    // den aktuellen Stand tragen.
+    if (!(await isProfileComplete(loaded.report.user_id))) {
+      setFlash(reply, 'error', `Profil von ${loaded.user.email} ist unvollständig – Anzeige nicht versendet (ggf. ablehnen).`)
+      return reply.redirect('/admin/anzeigen')
+    }
+
     try {
+      await regeneratePdf(loaded.report.id, loaded.report.user_id)
+      const fresh = await loadReportWithUser(id)
+      if (fresh) loaded.report = fresh.report
+
       const sent = await MailService.sendReport(loaded.report, loaded.user)
       await pool.execute(
         "UPDATE reports SET status='versendet', versand_art='system_email', sent_message_id=? WHERE id=?",

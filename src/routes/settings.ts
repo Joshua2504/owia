@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
+import crypto from 'crypto'
 import path from 'path'
 import fs from 'fs/promises'
 import { ZipArchive } from 'archiver'
@@ -7,6 +8,7 @@ import { pool } from '../db/connection'
 import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { reportDir, UPLOAD_DIR } from '../services/drafts'
 import { replyAttachmentPath } from '../services/mailInbox'
+import { MailService } from '../services/mail'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
@@ -32,7 +34,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
   app.get('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT email, vorname, nachname, strasse, plz, ort, telefon FROM users WHERE id = ?',
-      [request.session.userId]
+      [request.session.userId as number]
     )
     return reply.view('/settings/index.ejs', viewData(request, {
       title: 'Einstellungen',
@@ -47,13 +49,133 @@ export default async function settingsRoutes(app: FastifyInstance) {
     await pool.execute(
       `UPDATE users SET vorname=?, nachname=?, strasse=?, plz=?, ort=?, telefon=?
        WHERE id = ?`,
-      [vorname, nachname, strasse, plz, ort, telefon, request.session.userId]
+      [vorname, nachname, strasse, plz, ort, telefon, request.session.userId as number]
     )
 
     const name = [vorname, nachname].filter(Boolean).join(' ')
     request.session.userName = name || request.session.userEmail
     setFlash(reply, 'success', 'Einstellungen gespeichert.')
     return reply.redirect('/einstellungen')
+  })
+
+  // E-Mail-Adresse ändern (Schritt 1): Bestätigungslink an die NEUE Adresse.
+  // Erst die Bestätigung (Schritt 2) übernimmt die Adresse – das beweist,
+  // dass der Nutzer das neue Postfach kontrolliert.
+  app.post('/einstellungen/email', {
+    preHandler: requireAuth,
+    config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
+  }, async (request, reply) => {
+    const userId = request.session.userId as number
+    const neu = String((request.body as { email_neu?: string })?.email_neu || '')
+      .trim()
+      .toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(neu)) {
+      setFlash(reply, 'error', 'Bitte eine gültige E-Mail-Adresse eingeben.')
+      return reply.redirect('/einstellungen')
+    }
+    const [taken] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id FROM users WHERE email = ?',
+      [neu]
+    )
+    if (taken.length) {
+      setFlash(reply, 'error', 'Diese E-Mail-Adresse wird bereits verwendet.')
+      return reply.redirect('/einstellungen')
+    }
+
+    const token = crypto.randomBytes(32).toString('hex')
+    await pool.execute(
+      `UPDATE users SET email_change_neu=?, email_change_token=?,
+              email_change_expires=DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id=?`,
+      [neu, token, userId]
+    )
+    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    try {
+      await MailService.sendEmailChangeConfirmation(neu, `${base}/einstellungen/email/bestaetigen/${token}`)
+      setFlash(reply, 'success', `Bestätigungslink an ${neu} gesendet – bitte dort klicken.`)
+    } catch (err) {
+      app.log.error({ err }, 'E-Mail-Änderungs-Mail fehlgeschlagen')
+      setFlash(reply, 'error', 'Die Bestätigungs-Mail konnte nicht gesendet werden.')
+    }
+    return reply.redirect('/einstellungen')
+  })
+
+  // E-Mail-Adresse ändern (Schritt 2): Token aus dem Link einlösen.
+  app.get('/einstellungen/email/bestaetigen/:token', async (request, reply) => {
+    const { token } = request.params as { token: string }
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id, email_change_neu FROM users
+        WHERE email_change_token = ? AND email_change_expires > NOW()
+          AND email_change_neu IS NOT NULL`,
+      [token]
+    )
+    const user = rows[0]
+    if (!user) {
+      setFlash(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen.')
+      return reply.redirect('/login')
+    }
+    // Adresse könnte inzwischen vergeben sein (Race) – Unique-Kollision abfangen.
+    try {
+      await pool.execute(
+        `UPDATE users SET email = email_change_neu, email_change_neu = NULL,
+                email_change_token = NULL, email_change_expires = NULL WHERE id = ?`,
+        [user.id]
+      )
+    } catch {
+      setFlash(reply, 'error', 'Diese E-Mail-Adresse wird inzwischen bereits verwendet.')
+      return reply.redirect('/login')
+    }
+    // Falls der Bestätigende gerade als dieser Nutzer angemeldet ist: Session aktualisieren.
+    if (request.session.userId === user.id) {
+      request.session.userEmail = user.email_change_neu
+      await request.session.save()
+    }
+    setFlash(reply, 'success', 'E-Mail-Adresse geändert – bitte künftig damit anmelden.')
+    return reply.redirect(request.session.userId === user.id ? '/einstellungen' : '/login')
+  })
+
+  // Konto löschen (DSGVO Art. 17): entfernt Nutzer, alle Anzeigen, Fotos,
+  // PDFs, Nachrichtenverlauf samt Anhängen und Import-Daten – DB-Kaskaden
+  // erledigen die Tabellen, Dateien werden explizit gelöscht. Die Antworten
+  // des Ordnungsamts hängen per ON DELETE SET NULL an den Anzeigen und werden
+  // deshalb vorab explizit mitgelöscht (sonst blieben verwaiste Mails übrig).
+  app.post('/einstellungen/loeschen', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = request.session.userId as number
+    const bestaetigung = String((request.body as { bestaetigung?: string })?.bestaetigung || '').trim()
+    if (bestaetigung !== 'LÖSCHEN') {
+      setFlash(reply, 'error', 'Bitte zur Bestätigung das Wort LÖSCHEN eingeben.')
+      return reply.redirect('/einstellungen')
+    }
+
+    const [reportRows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id FROM reports WHERE user_id = ?',
+      [userId]
+    )
+    if (reportRows.length) {
+      const ids = reportRows.map((r) => r.id)
+      const ph = ids.map(() => '?').join(',')
+      const [replyRows] = await pool.execute<mysql.RowDataPacket[]>(
+        `SELECT id FROM report_replies WHERE report_id IN (${ph})`,
+        ids
+      )
+      for (const r of replyRows) {
+        await fs.rm(path.dirname(replyAttachmentPath(r.id, 'x')), { recursive: true, force: true })
+      }
+      if (replyRows.length) {
+        await pool.execute(
+          `DELETE FROM report_replies WHERE id IN (${replyRows.map(() => '?').join(',')})`,
+          replyRows.map((r) => r.id)
+        )
+      }
+    }
+
+    // users löschen kaskadiert auf reports, report_images, intake_batches/photos, sessions bleiben (werden zerstört).
+    await pool.execute('DELETE FROM users WHERE id = ?', [userId])
+    await fs.rm(path.join(UPLOAD_DIR, String(userId)), { recursive: true, force: true })
+    await fs.rm(path.join(PDF_DIR, String(userId)), { recursive: true, force: true })
+
+    await request.session.destroy()
+    app.log.info({ userId }, 'Konto auf Nutzerwunsch gelöscht (DSGVO Art. 17)')
+    return reply.redirect('/')
   })
 
   // DSGVO-Datenexport (Art. 15/20): ZIP mit ALLEN gespeicherten Daten des

@@ -1,3 +1,10 @@
+# Log-Rotation für alle Services (json-file wächst sonst unbegrenzt).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # Reverse-Proxy mit automatischem HTTPS (Let's Encrypt).
   # Läuft nur in Produktion: aktiviert über COMPOSE_PROFILES=production
@@ -21,14 +28,19 @@ services:
     depends_on:
       - app
     restart: unless-stopped
+    logging: *default-logging
 
   app:
     build:
       context: .
       dockerfile: docker/node/Dockerfile
-    command: tsx watch src/server.ts
+    # Dev: "watch" (Hot-Reload). Produktion: TSX_WATCH= (leer) in der .env setzen,
+    # sonst restartet jeder Deploy-rsync die App mehrfach mit Mischständen.
+    command: sh -c "exec tsx $${TSX_WATCH-watch} src/server.ts"
     ports:
-      - "3000:3000"
+      # Produktion: APP_BIND=127.0.0.1:3000 setzen, damit Port 3000 nicht am
+      # Caddy vorbei öffentlich erreichbar ist.
+      - "${APP_BIND:-3000}:3000"
     volumes:
       - ./src:/app/src
       - ./public:/app/public
@@ -41,6 +53,13 @@ services:
         condition: service_healthy
     env_file: .env
     restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   db:
     image: mariadb:11
@@ -58,12 +77,16 @@ services:
       timeout: 5s
       retries: 15
     restart: unless-stopped
+    logging: *default-logging
 
   mail:
     image: axllent/mailpit
     ports:
-      - "8025:8025"
+      # Produktion: MAILPIT_BIND=127.0.0.1:8025 (UI nicht öffentlich; wird bei
+      # MAIL_DRIVER=smtp ohnehin nicht genutzt).
+      - "${MAILPIT_BIND:-8025}:8025"
     restart: unless-stopped
+    logging: *default-logging
 
   # OpenStreetMap-Geocoder für die Adresssuche (Autovervollständigung).
   # Lädt beim ersten Start automatisch den fertigen Deutschland-Index
@@ -82,6 +105,7 @@ services:
     # ports:
     #   - "2322:2322"
     restart: unless-stopped
+    logging: *default-logging
 
   # OSM-Raster-Tileserver (nur Hessen, da aktuell nur Frankfurt unterstützt wird).
   # Rendert Karten-Kacheln, die die App same-origin über /tiles/{z}/{x}/{y}.png
@@ -118,6 +142,7 @@ services:
       - osm-tile-cache:/data/tiles/
     shm_size: 512m
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   caddy_data:

@@ -241,7 +241,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 <form id="discard-form" method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="d-none"></form>
 
 <!-- Leaflet für die Tatort-Karte (Tiles kommen same-origin über /tiles/...). -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/public/vendor/leaflet.css">
 
 <!-- Optionale Hilfen: EXIF-GPS und Aufnahmezeit aus Fotos lesen, HEIC im Browser für die Vorschau wandeln. -->
 <script>
@@ -252,8 +252,8 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
     label: [d.tattag_fmt, d.kennzeichen || d.tatort].filter(Boolean).join(' – ') || d.aktenzeichen,
   }))).replace(/</g, '\\u003c') %>;
 </script>
-<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/public/vendor/exifr-lite.umd.js"></script>
+<script src="/public/vendor/heic2any.min.js"></script>
+<script src="/public/vendor/leaflet.js"></script>
 <script src="/public/js/report-form.js"></script>
 <script src="/public/js/report-map.js"></script>

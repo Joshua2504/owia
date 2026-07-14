@@ -46,10 +46,28 @@
             <div class="col-sm-12">
               <label class="form-label">E-Mail</label>
               <input type="email" class="form-control" value="<%= user.email %>" disabled>
+              <div class="form-text">Änderbar weiter unten – mit Bestätigung an die neue Adresse.</div>
             </div>
           </div>
 
           <button type="submit" class="btn btn-primary mt-4">Speichern</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- E-Mail-Adresse ändern (Bestätigung an die neue Adresse) -->
+    <div class="card shadow-sm mt-4">
+      <div class="card-body">
+        <h5 class="card-title mb-1">E-Mail-Adresse ändern</h5>
+        <p class="small text-muted">
+          Die Anmeldung läuft über deine E-Mail-Adresse. Nach dem Absenden erhältst du
+          an die <strong>neue</strong> Adresse einen Bestätigungslink (1 Stunde gültig) –
+          erst mit dem Klick darauf wird die Adresse umgestellt.
+        </p>
+        <form method="post" action="/einstellungen/email" class="d-flex gap-2 flex-wrap">
+          <input type="email" name="email_neu" class="form-control w-auto" style="min-width:280px"
+                 placeholder="neue@adresse.de" required>
+          <button type="submit" class="btn btn-outline-primary">Bestätigungslink senden</button>
         </form>
       </div>
     </div>
@@ -67,6 +85,25 @@
           </p>
         </div>
         <a href="/einstellungen/export" class="btn btn-outline-primary">⬇ Daten exportieren</a>
+      </div>
+    </div>
+
+    <!-- DSGVO Art. 17: Konto unwiderruflich löschen -->
+    <div class="card shadow-sm mt-4 border-danger">
+      <div class="card-body">
+        <h5 class="card-title mb-1">Konto löschen</h5>
+        <p class="small text-muted">
+          Löscht dein Konto <strong>unwiderruflich</strong> – inklusive aller Anzeigen,
+          Fotos, PDFs und des Nachrichtenverlaufs mit dem Ordnungsamt. Bereits ans
+          Ordnungsamt versendete E-Mails können nicht zurückgeholt werden.
+          Tipp: vorher die Daten exportieren.
+        </p>
+        <form method="post" action="/einstellungen/loeschen" class="d-flex gap-2 flex-wrap"
+              onsubmit="return confirm('Konto und ALLE Daten unwiderruflich löschen?')">
+          <input type="text" name="bestaetigung" class="form-control w-auto"
+                 placeholder="Zur Bestätigung: LÖSCHEN" required autocomplete="off">
+          <button type="submit" class="btn btn-outline-danger">Konto unwiderruflich löschen</button>
+        </form>
       </div>
     </div>
   </div>

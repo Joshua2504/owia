@@ -1,0 +1,17 @@
+<div class="row justify-content-center">
+  <div class="col-md-6 text-center py-5">
+    <div class="display-1 mb-3"><%= locals.statusCode === 404 ? '🔍' : '🛠️' %></div>
+    <h1 class="h3 mb-3"><%= locals.statusCode === 404 ? 'Seite nicht gefunden' : 'Da ist etwas schiefgelaufen' %></h1>
+    <p class="text-muted mb-4">
+      <% if (locals.statusCode === 404) { %>
+        Die aufgerufene Seite existiert nicht (mehr). Vielleicht hilft die Übersicht weiter.
+      <% } else { %>
+        Ein interner Fehler ist aufgetreten – wir wurden informiert. Bitte versuch es gleich noch einmal.
+      <% } %>
+    </p>
+    <a href="/" class="btn btn-primary">Zur Startseite</a>
+    <% if (currentUser) { %>
+      <a href="/anzeigen" class="btn btn-outline-secondary">Meine Anzeigen</a>
+    <% } %>
+  </div>
+</div>

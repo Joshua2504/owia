@@ -144,7 +144,7 @@ const versandLabel = {
                       onclick="return confirm('Nachricht jetzt ans Ordnungsamt senden?')">
                 📤 Senden
               </button>
-              <span class="form-text ms-2">Wird von owia@treudler.net gesendet, du erhältst eine Kopie.</span>
+              <span class="form-text ms-2">Wird von <%= locals.mailFrom || 'unserem Postfach' %> gesendet, du erhältst eine Kopie.</span>
             </form>
           <% } %>
         </div>
@@ -178,13 +178,17 @@ const versandLabel = {
         <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>
             <h6 class="mb-1">Zur Prüfung einreichen</h6>
-            <p class="small text-muted mb-0">
+            <p class="small text-muted mb-1">
               Die Anzeige wird von uns geprüft und danach inkl. PDF per E-Mail ans
               Ordnungsamt verschickt (du erhältst eine Kopie).
             </p>
+            <p class="small text-danger mb-0">
+              ⚠️ Wissentlich falsche Anzeigen sind strafbar (falsche Verdächtigung,
+              § 164 StGB). Bitte reiche nur wahrheitsgemäße Angaben ein.
+            </p>
           </div>
           <form method="post" action="/anzeige/<%= report.aktenzeichen %>/submit"
-                onsubmit="return confirm('Anzeige jetzt zur Prüfung einreichen?')">
+                onsubmit="return confirm('Anzeige jetzt zur Prüfung einreichen?\n\nMit dem Einreichen bestätigst du die Richtigkeit deiner Angaben – wissentlich falsche Anzeigen sind strafbar (§ 164 StGB).')">
             <button type="submit" class="btn btn-success" <%= complete && locals.profileComplete ? '' : 'disabled' %>>
               ✓ Einreichen
             </button>
