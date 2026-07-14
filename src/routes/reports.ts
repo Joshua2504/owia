@@ -20,11 +20,12 @@ import {
   getBalance,
 } from '../services/credits'
 import { ANALYSIS_PRICE_CENTS } from '../config/credits'
+import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
+import { extractPhotoMeta } from '../services/exif'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
 export { VERSTOSS_ARTEN }
 
-const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 const MAX_IMAGES = 10
 
@@ -42,26 +43,6 @@ function isSystemEmailEnabled(): boolean {
 
 /** Buffer, den der PDF-Service einbettet. */
 export type ReportImage = { mimetype: string; buffer: Buffer }
-
-// Aktenzeichen-Alphabet ohne leicht verwechselbare Zeichen (0/O, 1/I).
-// 32 Zeichen → 256 % 32 == 0, daher kein Modulo-Bias bei randomBytes.
-const AKTENZEICHEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-
-/** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiAA-7K3QF2".
- *  Bindestrich statt '#', damit es direkt in URLs/Links verwendbar ist. */
-function generateAktenzeichen(): string {
-  const bytes = crypto.randomBytes(6)
-  let code = ''
-  for (let i = 0; i < bytes.length; i++) {
-    code += AKTENZEICHEN_ALPHABET[bytes[i] % AKTENZEICHEN_ALPHABET.length]
-  }
-  return `OWiAA-${code}`
-}
-
-/** Verzeichnis der Bilddateien eines Entwurfs. */
-function reportDir(userId: number, reportId: number | string): string {
-  return path.join(UPLOAD_DIR, String(userId), String(reportId))
-}
 
 /** Vorbereitetes Bild (+ ggf. Original) zum Entwurf auf Platte schreiben. */
 async function writeImageFiles(
@@ -90,6 +71,10 @@ async function saveImageToReport(
 ): Promise<{ id: number; filename: string }> {
   const { filename, originalFilename } = await writeImageFiles(userId, reportId, p)
 
+  // EXIF (Aufnahmezeit + GPS) aus dem Original lesen – die HEIC-Konvertierung
+  // entfernt die Metadaten aus der nutzbaren Fassung.
+  const meta = await extractPhotoMeta(p.originalBuffer)
+
   // Neues Bild ans Ende der Sortierreihenfolge hängen.
   const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
     'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
@@ -97,9 +82,12 @@ async function saveImageToReport(
   )
   const sortOrder = Number(maxRows[0].next)
   const [result] = await pool.execute<mysql.ResultSetHeader>(
-    `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [reportId, filename, p.mimetype, originalFilename, p.originalMimetype, sortOrder]
+    `INSERT INTO report_images
+       (report_id, filename, mimetype, original_filename, original_mimetype, sort_order,
+        captured_at, gps_lat, gps_lon)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [reportId, filename, p.mimetype, originalFilename, p.originalMimetype, sortOrder,
+     meta.capturedAt, meta.lat, meta.lon]
   )
   return { id: result.insertId, filename }
 }
@@ -127,6 +115,32 @@ async function loadReportByAktenzeichen(
   return rows[0]
 }
 
+/** Kontext der Review-Queue eines Foto-Imports: Position des aktuellen
+ *  Entwurfs sowie vorheriger/nächster noch offener Entwurf des Batches. */
+async function loadQueueContext(
+  batchId: number,
+  userId: number,
+  currentAz: string
+): Promise<{ batchId: number; position: number; total: number; prevAz: string | null; nextAz: string | null } | null> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT aktenzeichen, status FROM reports
+      WHERE intake_batch_id = ? AND user_id = ?
+      ORDER BY tattag, tatzeit_von, id`,
+    [batchId, userId]
+  )
+  const idx = rows.findIndex((r) => r.aktenzeichen === currentAz)
+  if (idx === -1) return null
+  const prev = rows.slice(0, idx).reverse().find((r) => r.status === 'entwurf')
+  const next = rows.slice(idx + 1).find((r) => r.status === 'entwurf')
+  return {
+    batchId,
+    position: idx + 1,
+    total: rows.length,
+    prevAz: prev ? prev.aktenzeichen : null,
+    nextAz: next ? next.aktenzeichen : null,
+  }
+}
+
 /** Felder eines Entwurfs persistieren (leere Strings -> NULL). */
 async function persistFields(
   reportId: string | number,
@@ -137,6 +151,8 @@ async function persistFields(
   // Text immer aufbewahren (falls später doch wieder „Ja"); im PDF wird er nur
   // bei behinderung=1 angezeigt.
   const behinderungText = v.behinderung_text || null
+  // Checkbox: nicht angehakt = Feld fehlt im Body bzw. ist leer.
+  const fahrzeugVerlassen = v.fahrzeug_verlassen && v.fahrzeug_verlassen !== '0' ? 1 : 0
   // Tatort-Koordinaten (Karte/Marker) nur übernehmen, wenn beide gültig sind.
   const lat = Number(v.tatort_lat)
   const lon = Number(v.tatort_lon)
@@ -146,7 +162,7 @@ async function persistFields(
     `UPDATE reports
        SET kennzeichen=?, fahrzeug_marke=?, tattag=?, tatzeit_von=?, tatzeit_bis=?,
            tatort=?, tatort_lat=?, tatort_lon=?, verstoss_art=?, beschreibung=?,
-           behinderung=?, behinderung_text=?
+           behinderung=?, behinderung_text=?, fahrzeug_verlassen=?
      WHERE id=? AND user_id=? AND status='entwurf'`,
     [
       v.kennzeichen ? v.kennzeichen.toUpperCase().trim() : null,
@@ -161,6 +177,7 @@ async function persistFields(
       v.beschreibung || null,
       behinderung,
       behinderungText,
+      fahrzeugVerlassen,
       reportId,
       userId,
     ]
@@ -250,24 +267,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
   app.post('/report/new', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
-    // Tattag/Tatzeit mit dem aktuellen Zeitpunkt vorbelegen (häufigster Fall: Vorfall jetzt).
-    // Aktenzeichen ist zufällig + eindeutig; bei (extrem seltener) Kollision neu würfeln.
-    let aktenzeichen: string | undefined
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const candidate = generateAktenzeichen()
-      try {
-        await pool.execute<mysql.ResultSetHeader>(
-          `INSERT INTO reports (user_id, status, tattag, tatzeit_von, aktenzeichen, city)
-           VALUES (?, 'entwurf', CURDATE(), CURTIME(), ?, ?)`,
-          [userId, candidate, DEFAULT_CITY_ID]
-        )
-        aktenzeichen = candidate
-        break
-      } catch (err) {
-        if ((err as { code?: string }).code === 'ER_DUP_ENTRY' && attempt < 4) continue
-        throw err
-      }
-    }
+    const { aktenzeichen } = await createDraft(userId)
     return reply.redirect(`/report/${aktenzeichen}/edit`)
   })
 
@@ -290,6 +290,15 @@ export default async function reportsRoutes(app: FastifyInstance) {
     ])
     const aiEnabled = isPhotoAiEnabled() && (subscribed || bal.totalCents >= ANALYSIS_PRICE_CENTS)
     const firstImageUrl = images.length ? `/report/${az}/image/${images[0].id}/thumb.jpg` : null
+
+    // Review-Queue des Foto-Imports: "Entwurf X von N" mit Vor/Zurück-Navigation
+    // über alle noch offenen Entwürfe desselben Batches.
+    const queueParam = Number((request.query as { queue?: string }).queue)
+    const queue =
+      Number.isInteger(queueParam) && queueParam > 0 && queueParam === report.intake_batch_id
+        ? await loadQueueContext(queueParam, userId, az)
+        : null
+
     return reply.view('/reports/edit.ejs', viewData(request, {
       title: 'Entwurf bearbeiten',
       verstossArten: VERSTOSS_ARTEN,
@@ -299,6 +308,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       aiEnabled,
       subscriptionActive: subscribed,
       firstImageUrl,
+      queue,
     }))
   })
 
@@ -601,8 +611,20 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
     if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
 
-    await persistFields(report.id, userId, (request.body || {}) as Record<string, string>)
+    const body = (request.body || {}) as Record<string, string>
+    await persistFields(report.id, userId, body)
     await regeneratePdf(report.id, userId)
+
+    // In der Review-Queue des Foto-Imports: direkt zum nächsten offenen Entwurf,
+    // nach dem letzten zurück zur Batch-Übersicht.
+    const queueId = Number(body.queue)
+    if (Number.isInteger(queueId) && queueId > 0 && queueId === report.intake_batch_id) {
+      const queue = await loadQueueContext(queueId, userId, az)
+      request.session.flash = { type: 'success', message: `Entwurf ${az} gespeichert.` }
+      await request.session.save()
+      if (queue?.nextAz) return reply.redirect(`/report/${queue.nextAz}/edit?queue=${queueId}`)
+      return reply.redirect(`/intake/${queueId}`)
+    }
 
     request.session.flash = { type: 'success', message: 'Entwurf gespeichert.' }
     await request.session.save()

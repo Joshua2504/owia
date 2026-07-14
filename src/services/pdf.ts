@@ -63,7 +63,11 @@ export const PdfService = {
     // Tatvorwurf und Beschreibung gehören in EIN Feld (die Sachverhalts-
     // schilderung). Das davorliegende Feld "Angaben zum Tatvorwurf" ist
     // unbrauchbar und bleibt leer.
-    const sachverhalt = [report.verstoss_art, report.beschreibung]
+    const sachverhalt = [
+      report.verstoss_art,
+      report.fahrzeug_verlassen === 1 ? 'Das Fahrzeug war verlassen.' : '',
+      report.beschreibung,
+    ]
       .filter((v) => v && String(v).trim())
       .join('\n\n')
 

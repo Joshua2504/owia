@@ -1,0 +1,86 @@
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0">Foto-Import</h2>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h5 class="card-title mb-1">Viele Fotos auf einmal hochladen</h5>
+    <p class="text-muted small mb-3">
+      Lade alle Beweisfotos eines Tages in einem Rutsch hoch. Wir lesen Aufnahmezeit und
+      GPS-Position aus den Fotos, fassen Fotos vom selben Ort und Tag zu einem Verstoß
+      zusammen (inkl. Verstoßdauer von–bis) und legen automatisch Entwürfe an.
+      Danach gehst du die Entwürfe einzeln durch und wählst die Verstoßart.
+    </p>
+
+    <div id="intake-picker">
+      <input type="file" id="intake-files" class="form-control"
+             accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
+      <div class="form-text">JPG, PNG oder HEIC/HEIF · max. 20 MB pro Foto.</div>
+      <button type="button" id="intake-start" class="btn btn-primary mt-3" disabled>
+        Fotos hochladen &amp; gruppieren
+      </button>
+    </div>
+
+    <div id="intake-progress" class="d-none">
+      <div class="progress mb-2" style="height: 1.5rem">
+        <div id="intake-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
+      </div>
+      <div id="intake-progress-text" class="small text-muted"></div>
+      <div id="intake-stats" class="small text-muted"></div>
+    </div>
+
+    <div id="intake-errors" class="alert alert-warning d-none mt-3 mb-0 small"></div>
+  </div>
+</div>
+
+<% if (batches.length) { %>
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h5 class="card-title mb-3">Bisherige Importe</h5>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Datum</th>
+              <th>Fotos</th>
+              <th>Status</th>
+              <th class="text-end"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% for (const b of batches) { %>
+              <tr>
+                <td><%= new Date(b.created_at).toLocaleString('de-DE') %></td>
+                <td><%= b.photo_count %></td>
+                <td>
+                  <% if (b.status === 'open') { %>
+                    <span class="badge text-bg-warning">Upload offen</span>
+                  <% } else { %>
+                    <span class="badge text-bg-success">Gruppiert</span>
+                  <% } %>
+                </td>
+                <td class="text-end">
+                  <% if (b.status === 'open') { %>
+                    <% if (Number(b.photo_count) > 0) { %>
+                      <button type="button" class="btn btn-sm btn-outline-primary intake-finish-open" data-batch="<%= b.id %>">
+                        Jetzt gruppieren
+                      </button>
+                    <% } %>
+                    <button type="button" class="btn btn-sm btn-outline-danger intake-discard" data-batch="<%= b.id %>">
+                      Verwerfen
+                    </button>
+                  <% } else { %>
+                    <a class="btn btn-sm btn-outline-secondary" href="/intake/<%= b.id %>">Ergebnis ansehen</a>
+                  <% } %>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<script>window.INTAKE_CHUNK_SIZE = <%= chunkSize %>;</script>
+<script src="/public/js/intake-upload.js"></script>

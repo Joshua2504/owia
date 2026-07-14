@@ -69,6 +69,7 @@ export function buildReportMail(
     `Tatzeit:      ${tatzeit || '—'}`,
     `Tatort:       ${report.tatort}`,
     `Verstoß:      ${report.verstoss_art}`,
+    report.fahrzeug_verlassen === 1 ? 'Das Fahrzeug war verlassen.' : undefined,
     report.beschreibung ? `Beschreibung: ${report.beschreibung}` : '',
     '',
     'Das ausgefüllte Formular finden Sie im Anhang.',

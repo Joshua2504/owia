@@ -1,0 +1,153 @@
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0">Foto-Import – Ergebnis</h2>
+  <a class="btn btn-outline-secondary btn-sm" href="/intake">← Neuer Import</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <h5 class="card-title mb-1"><%= drafts.length %> Entwürfe erstellt</h5>
+        <p class="text-muted small mb-0">
+          Fotos wurden nach Standort und Aufnahmezeit gruppiert – bitte jeden Entwurf
+          prüfen und die Verstoßart wählen.
+        </p>
+      </div>
+      <% if (firstOpenAz) { %>
+        <a class="btn btn-primary" href="/report/<%= firstOpenAz %>/edit?queue=<%= batch.id %>">
+          Prüfen starten (<%= openCount %> offen)
+        </a>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<% if (drafts.length) { %>
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Tattag / Zeit</th>
+              <th>Tatort</th>
+              <th>Fotos</th>
+              <th>Status</th>
+              <th class="text-end"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% for (const d of drafts) { %>
+              <tr>
+                <td style="width:64px">
+                  <% if (d.first_image_id) { %>
+                    <img src="/report/<%= d.aktenzeichen %>/image/<%= d.first_image_id %>/thumb.jpg"
+                         alt="" class="rounded border" style="width:56px;height:42px;object-fit:cover">
+                  <% } %>
+                </td>
+                <td>
+                  <%= d.tattag_fmt || '–' %>
+                  <% if (d.von_fmt) { %>
+                    <div class="text-muted small">
+                      <%= d.von_fmt %><% if (d.bis_fmt && d.bis_fmt !== d.von_fmt) { %> – <%= d.bis_fmt %> Uhr
+                        <span class="badge text-bg-info">Dauer belegt</span><% } else { %> Uhr<% } %>
+                    </div>
+                  <% } %>
+                </td>
+                <td class="small"><%= d.tatort || '' %><% if (!d.tatort) { %><span class="text-muted">– bitte prüfen –</span><% } %></td>
+                <td><%= d.image_count %></td>
+                <td>
+                  <% if (d.status === 'entwurf') { %>
+                    <span class="badge text-bg-warning">Entwurf</span>
+                  <% } else { %>
+                    <span class="badge text-bg-success">Versendet</span>
+                  <% } %>
+                </td>
+                <td class="text-end">
+                  <% if (d.status === 'entwurf') { %>
+                    <a class="btn btn-sm btn-outline-primary" href="/report/<%= d.aktenzeichen %>/edit?queue=<%= batch.id %>">Bearbeiten</a>
+                  <% } else { %>
+                    <a class="btn btn-sm btn-outline-secondary" href="/report/<%= d.aktenzeichen %>">Ansehen</a>
+                  <% } %>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<% if (unassigned.length) { %>
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h5 class="card-title mb-1">Nicht zugeordnete Fotos (<%= unassigned.length %>)</h5>
+      <p class="text-muted small mb-3">
+        Diese Fotos enthalten weder GPS-Position noch Aufnahmezeit (z.&nbsp;B. Screenshots) –
+        bitte manuell einem Entwurf zuordnen oder einen neuen Entwurf daraus erstellen.
+      </p>
+      <div class="row g-3">
+        <% for (const p of unassigned) { %>
+          <div class="col-6 col-md-4 col-lg-3" data-photo-card="<%= p.id %>">
+            <div class="card h-100">
+              <img src="/intake/<%= batch.id %>/photo/<%= p.id %>/thumb.jpg" alt=""
+                   class="card-img-top" style="height:120px;object-fit:cover">
+              <div class="card-body p-2">
+                <select class="form-select form-select-sm mb-2" data-assign-select="<%= p.id %>">
+                  <option value="">Entwurf wählen …</option>
+                  <% for (const d of drafts) { %>
+                    <% if (d.status === 'entwurf') { %>
+                      <option value="<%= d.aktenzeichen %>">
+                        <%= d.tattag_fmt || d.aktenzeichen %><% if (d.tatort) { %> – <%= d.tatort.slice(0, 30) %><% } %>
+                      </option>
+                    <% } %>
+                  <% } %>
+                </select>
+                <div class="d-flex gap-1">
+                  <button type="button" class="btn btn-sm btn-outline-primary flex-fill"
+                          data-assign-btn="<%= p.id %>">Zuordnen</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary flex-fill"
+                          data-newdraft-btn="<%= p.id %>">Neuer Entwurf</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var batchId = <%= batch.id %>
+      function assign(photoId, body) {
+        fetch('/intake/' + batchId + '/photos/' + photoId + '/assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
+          .then(function (res) {
+            if (!res.ok) { alert(res.d.error || 'Zuordnung fehlgeschlagen.'); return }
+            location.reload()
+          })
+          .catch(function () { alert('Zuordnung fehlgeschlagen.') })
+      }
+      document.querySelectorAll('[data-assign-btn]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.getAttribute('data-assign-btn')
+          var sel = document.querySelector('[data-assign-select="' + id + '"]')
+          if (!sel || !sel.value) { alert('Bitte zuerst einen Entwurf wählen.'); return }
+          assign(id, { az: sel.value })
+        })
+      })
+      document.querySelectorAll('[data-newdraft-btn]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          assign(btn.getAttribute('data-newdraft-btn'), { newDraft: true })
+        })
+      })
+    })()
+  </script>
+<% } %>

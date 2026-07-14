@@ -17,8 +17,31 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
   <div class="col-lg-7">
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h2 class="mb-0">Anzeige bearbeiten</h2>
-      <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+      <% if (locals.queue) { %>
+        <a href="/intake/<%= queue.batchId %>" class="btn btn-outline-secondary btn-sm">← Import-Übersicht</a>
+      <% } else { %>
+        <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+      <% } %>
     </div>
+
+    <% if (locals.queue) { %>
+      <div class="card shadow-sm mb-3 sticky-top" style="top:.5rem;z-index:1030">
+        <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div class="fw-semibold">Entwurf <%= queue.position %> von <%= queue.total %></div>
+          <div class="d-flex gap-2">
+            <% if (queue.prevAz) { %>
+              <a class="btn btn-sm btn-outline-secondary" href="/report/<%= queue.prevAz %>/edit?queue=<%= queue.batchId %>">← Zurück</a>
+            <% } %>
+            <% if (queue.nextAz) { %>
+              <a class="btn btn-sm btn-outline-secondary" href="/report/<%= queue.nextAz %>/edit?queue=<%= queue.batchId %>">Überspringen →</a>
+            <% } %>
+            <button type="submit" form="report-form" class="btn btn-sm btn-primary">
+              Speichern &amp; weiter<% if (!queue.nextAz) { %> (letzter)<% } %>
+            </button>
+          </div>
+        </div>
+      </div>
+    <% } %>
 
     <% if (locals.error) { %>
       <div class="alert alert-danger"><%= error %></div>
@@ -29,6 +52,9 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
         <form id="report-form" method="post" action="/report/<%= r.aktenzeichen %>/save"
               data-report-id="<%= r.aktenzeichen %>"
               data-ai-enabled="<%= (typeof aiEnabled !== 'undefined' && aiEnabled) ? '1' : '0' %>">
+          <% if (locals.queue) { %>
+            <input type="hidden" name="queue" value="<%= queue.batchId %>">
+          <% } %>
 
           <h5 class="mb-3">Beweisfotos</h5>
           <div class="mb-4">
@@ -151,6 +177,14 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               <label class="form-label">Beschreibung</label>
               <textarea name="beschreibung" class="form-control" rows="3"
                         placeholder="Optionale Schilderung des Vorfalls"><%= r.beschreibung || '' %></textarea>
+            </div>
+            <div class="col-sm-12">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" name="fahrzeug_verlassen"
+                       id="fahrzeug-verlassen" value="1" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>>
+                <label class="form-check-label" for="fahrzeug-verlassen">Das Fahrzeug war verlassen</label>
+              </div>
+              <div class="form-text">Wird dem Tatvorwurf als Satz „Das Fahrzeug war verlassen." hinzugefügt.</div>
             </div>
             <div class="col-sm-12">
               <label class="form-label d-block">Wurde jemand behindert?</label>

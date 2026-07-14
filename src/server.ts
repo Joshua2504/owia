@@ -12,6 +12,7 @@ import ejs from 'ejs'
 import authRoutes from './routes/auth'
 import dashboardRoutes from './routes/dashboard'
 import reportsRoutes from './routes/reports'
+import intakeRoutes from './routes/intake'
 import settingsRoutes from './routes/settings'
 import geoRoutes from './routes/geo'
 import tilesRoutes from './routes/tiles'
@@ -73,6 +74,7 @@ async function main() {
   await app.register(authRoutes)
   await app.register(dashboardRoutes)
   await app.register(reportsRoutes)
+  await app.register(intakeRoutes)
   await app.register(settingsRoutes)
   await app.register(geoRoutes)
   await app.register(tilesRoutes)

@@ -925,6 +925,7 @@
     'beschreibung',
     'behinderung',
     'behinderung_text',
+    'fahrzeug_verlassen',
   ]
 
   function initAutosave(form) {
@@ -934,7 +935,9 @@
       const body = {}
       SAVE_FIELDS.forEach((n) => {
         const el = form.elements[n]
-        if (el) body[n] = el.value
+        if (!el) return
+        // Checkboxen: value ist immer gesetzt – der Zustand steckt in checked.
+        body[n] = el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value
       })
       if (status) status.textContent = 'Speichert …'
       try {

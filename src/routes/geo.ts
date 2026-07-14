@@ -1,30 +1,11 @@
 import { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth'
 import { getCity, getCityByScope } from '../config/cities'
-
-const PHOTON_URL = (process.env.PHOTON_URL || 'http://photon:2322').replace(/\/$/, '')
+import { PHOTON_URL, PhotonFeature, toSuggestion, reverseGeocode } from '../services/geocode'
 
 // Allgemeiner Kartenschwerpunkt (Deutschland-Mitte), falls kein Stadt-Scope greift.
 const DEFAULT_BIAS_LAT = 51.16
 const DEFAULT_BIAS_LON = 10.45
-
-type PhotonFeature = {
-  properties: {
-    name?: string
-    housenumber?: string
-    street?: string
-    postcode?: string
-    city?: string
-    district?: string
-    town?: string
-    village?: string
-    county?: string
-    state?: string
-    osm_value?: string
-    type?: string
-  }
-  geometry?: { coordinates?: [number, number] }
-}
 
 // Nur Adressen anzeigen (Straßen + Hausnummern), keine Firmen/POIs.
 // Photon liefert den Treffertyp in `properties.type`. Firmen/benannte Gebäude
@@ -44,42 +25,6 @@ function matchesCity(p: PhotonFeature['properties'], cityMatch: string): boolean
   return [p.city, p.town, p.village, p.district, p.county].some((v) =>
     (v || '').toLowerCase().includes(cityMatch)
   )
-}
-
-type AddressSuggestion = {
-  label: string
-  street: string
-  housenumber: string
-  postcode: string
-  city: string
-  lat: number | null
-  lon: number | null
-}
-
-function toSuggestion(f: PhotonFeature): AddressSuggestion {
-  const p = f.properties || {}
-  const city = p.city || p.town || p.village || p.district || ''
-  // Bei Straßen/Adressen steht der Straßenname in `name`, bei Hausnummern in `street`.
-  const street = p.street || p.name || ''
-  const coords = f.geometry?.coordinates
-
-  // Reine Adresszeile: "Straße Hausnr., PLZ Ort" – ohne POI-/Firmennamen.
-  const label = [
-    [street, p.housenumber].filter(Boolean).join(' '),
-    [p.postcode, city].filter(Boolean).join(' '),
-  ]
-    .filter(Boolean)
-    .join(', ')
-
-  return {
-    label,
-    street,
-    housenumber: p.housenumber || '',
-    postcode: p.postcode || '',
-    city,
-    lat: coords ? coords[1] : null,
-    lon: coords ? coords[0] : null,
-  }
 }
 
 export default async function geoRoutes(app: FastifyInstance) {
@@ -141,25 +86,8 @@ export default async function geoRoutes(app: FastifyInstance) {
       return reply.send({ result: null })
     }
 
-    const url = `${PHOTON_URL}/reverse?lat=${latN}&lon=${lonN}&lang=de`
-    try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 4000)
-      const res = await fetch(url, { signal: controller.signal })
-      clearTimeout(timeout)
-
-      if (!res.ok) {
-        request.log.warn({ status: res.status }, 'Photon-Reverse fehlgeschlagen')
-        return reply.send({ result: null })
-      }
-
-      const data = (await res.json()) as { features?: PhotonFeature[] }
-      const feature = (data.features || [])[0]
-      const result = feature ? toSuggestion(feature) : null
-      return reply.send({ result: result && result.label ? result : null })
-    } catch (err) {
-      request.log.warn({ err }, 'Photon-Reverse nicht erreichbar')
-      return reply.send({ result: null })
-    }
+    const result = await reverseGeocode(latN, lonN)
+    if (!result) request.log.warn({ lat: latN, lon: lonN }, 'Photon-Reverse ohne Ergebnis/nicht erreichbar')
+    return reply.send({ result })
   })
 }
