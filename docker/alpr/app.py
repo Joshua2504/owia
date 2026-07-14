@@ -99,11 +99,13 @@ async def recognize(file: UploadFile = File(...)):
             reading = read_plate(crop)
             if not reading:
                 continue
-            # Nicht normalisierbare Lesungen abwerten: sie bleiben sichtbar,
+            # Konfidenz = OCR-Score: Eine formatgültige, gegen die Kürzel-Liste
+            # validierte Lesung belegt selbst, dass die Box ein Kennzeichen war —
+            # det_conf gated bereits über DET_CONF_MIN und würde multiplikativ
+            # nur sichere Lesungen unter die Prefill-Schwelle drücken. Nicht
+            # normalisierbare Lesungen werden abgewertet: sie bleiben sichtbar,
             # fallen aber unter die Prefill-Schwelle der App.
-            confidence = (
-                det_conf * reading["ocr_confidence"] * (1.0 if reading["normalized"] else 0.5)
-            )
+            confidence = reading["ocr_confidence"] * (1.0 if reading["normalized"] else 0.5)
             plates.append({
                 "text": reading["text"],
                 "raw_text": reading["raw_text"],
