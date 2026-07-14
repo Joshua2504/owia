@@ -19,6 +19,28 @@
     return Number.isFinite(n) ? n : null
   }
 
+  // Marker als kleines Vorschaubild (erstes Foto) statt Standard-Pin. Für öffentliche
+  // Anzeigen ist die URL bereits die verpixelte Fassung; eigene Entwürfe zeigen das Original.
+  function imageIcon(url, border) {
+    const size = 44
+    return L.divIcon({
+      className: 'photo-marker',
+      html:
+        '<img src="' +
+        encodeURI(url) +
+        '" alt="" style="width:' +
+        size +
+        'px;height:' +
+        size +
+        'px;object-fit:cover;border-radius:8px;border:2px solid ' +
+        (border || '#495057') +
+        ';box-shadow:0 1px 4px rgba(0,0,0,.45)">',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2],
+    })
+  }
+
   // Hinweis-Banner oben auf der Karte, falls die Kacheln (noch) nicht verfügbar
   // sind – z.B. weil der Tileserver nach einem Update neu importiert. Blendet
   // sich aus, sobald die erste Kachel erfolgreich lädt.
@@ -120,7 +142,9 @@
       const lat = num(r.lat)
       const lon = num(r.lon)
       if (lat === null || lon === null) return
-      L.marker([lat, lon]).addTo(map).bindPopup(popupHtml(r))
+      L.marker([lat, lon], r.imageUrl ? { icon: imageIcon(r.imageUrl, '#495057') } : {})
+        .addTo(map)
+        .bindPopup(popupHtml(r))
       bounds.push([lat, lon])
     })
 
@@ -139,15 +163,16 @@
         const lat = num(r.lat)
         const lon = num(r.lon)
         if (lat === null || lon === null) return
-        L.circleMarker([lat, lon], {
-          radius: 8,
-          color: '#fff',
-          weight: 2,
-          fillColor: '#fd7e14',
-          fillOpacity: 0.95,
-        })
-          .addTo(map)
-          .bindPopup(ownPopupHtml(r))
+        const ownMarker = r.imageUrl
+          ? L.marker([lat, lon], { icon: imageIcon(r.imageUrl, '#fd7e14') })
+          : L.circleMarker([lat, lon], {
+              radius: 8,
+              color: '#fff',
+              weight: 2,
+              fillColor: '#fd7e14',
+              fillOpacity: 0.95,
+            })
+        ownMarker.addTo(map).bindPopup(ownPopupHtml(r))
         bounds.push([lat, lon])
       })
     }

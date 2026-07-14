@@ -341,13 +341,24 @@
       : 'Kein Guthaben – bitte Konto aufladen oder Flatrate buchen (/konto).'
     aiBtn.addEventListener('click', () => runImageAnalysis(item, aiBtn))
 
+    // Reihenfolge ändern: ◀ weiter nach vorne, ▶ weiter nach hinten. Das erste Bild
+    // dient u.a. als Karten-Marker.
+    const moveLeft = mkBtn('◀', 'btn-outline-secondary')
+    moveLeft.title = 'Weiter nach vorne'
+    moveLeft.addEventListener('click', () => moveItem(item, -1))
+    const moveRight = mkBtn('▶', 'btn-outline-secondary')
+    moveRight.title = 'Weiter nach hinten'
+    moveRight.addEventListener('click', () => moveItem(item, 1))
+
+    toolbar.appendChild(moveLeft)
+    toolbar.appendChild(moveRight)
     toolbar.appendChild(aiBtn)
     toolbar.appendChild(gpsBtn)
     toolbar.appendChild(undo)
     toolbar.appendChild(clear)
     toolbar.appendChild(remove)
 
-    item.els = { col, stage, count, status, undo, clear, gpsBtn, aiBtn }
+    item.els = { col, stage, count, status, undo, clear, gpsBtn, aiBtn, moveLeft, moveRight }
     return col
   }
 
@@ -423,6 +434,7 @@
     const item = newItem(file, null)
     items.push(item)
     container.appendChild(buildCard(item))
+    updateMoveButtons()
     saveItem(item) // sofort hinzufügen; Schwärzungen werden danach automatisch gespeichert
     await renderItemMedia(item)
   }
@@ -510,6 +522,8 @@
       setItemStatus(item, 'Gespeichert ✓')
       // Bild ist gespeichert -> KI-Analyse ist jetzt (kostenpflichtig) auslösbar.
       if (item.els && item.els.aiBtn) item.els.aiBtn.disabled = !aiEnabled
+      updateMoveButtons()
+      announceFirstImage() // neu gespeichertes (erstes) Bild -> Karten-Marker aktualisieren
     } catch (_) {
       setItemStatus(item, 'Nicht gespeichert – erneut versuchen.', true)
     } finally {
@@ -534,6 +548,73 @@
         () => {}
       )
     }
+    updateMoveButtons()
+    announceFirstImage() // erstes Bild könnte sich geändert haben -> Karten-Marker aktualisieren
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bildreihenfolge (◀ ▶) – das erste Bild dient u.a. als Karten-Marker.
+  // ---------------------------------------------------------------------------
+
+  function orderedCols() {
+    const container = document.querySelector('#image-editor')
+    return container ? Array.from(container.children) : []
+  }
+
+  // Server-Bild-IDs in aktueller DOM-Reihenfolge (nur bereits gespeicherte Bilder).
+  function currentOrderIds() {
+    return orderedCols()
+      .map((col) => {
+        const it = items.find((x) => x.els && x.els.col === col)
+        return it && it.serverImageId
+      })
+      .filter(Boolean)
+  }
+
+  // Erstes Bild an die Tatort-Karte melden (report-map.js aktualisiert den Marker).
+  function announceFirstImage() {
+    const first = currentOrderIds()[0]
+    document.dispatchEvent(
+      new CustomEvent('report:first-image', {
+        detail: { url: first ? '/report/' + reportId + '/image/' + first + '/thumb.jpg' : null },
+      })
+    )
+  }
+
+  function persistImageOrder() {
+    const order = currentOrderIds()
+    announceFirstImage()
+    if (order.length < 2) return
+    fetch('/report/' + reportId + '/images/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: order }),
+    }).catch(() => {})
+  }
+
+  function updateMoveButtons() {
+    const cols = orderedCols()
+    cols.forEach((col, i) => {
+      const it = items.find((x) => x.els && x.els.col === col)
+      if (!it || !it.els) return
+      if (it.els.moveLeft) it.els.moveLeft.disabled = i === 0
+      if (it.els.moveRight) it.els.moveRight.disabled = i === cols.length - 1
+    })
+  }
+
+  function moveItem(item, dir) {
+    const container = document.querySelector('#image-editor')
+    const col = item.els && item.els.col
+    if (!container || !col) return
+    if (dir < 0 && col.previousElementSibling) {
+      container.insertBefore(col, col.previousElementSibling)
+    } else if (dir > 0 && col.nextElementSibling) {
+      container.insertBefore(col.nextElementSibling, col)
+    } else {
+      return
+    }
+    updateMoveButtons()
+    persistImageOrder()
   }
 
   function initImageEditor() {
@@ -558,6 +639,7 @@
         existing = []
       }
       existing.forEach((image) => addExistingItem(image, container))
+      updateMoveButtons()
       // Läuft aus einem früheren Besuch noch eine Analyse? Dann Vorschläge weiter abholen.
       if (existing.some((im) => im && im.status === 'pending')) bumpAnalysisPolling()
     }

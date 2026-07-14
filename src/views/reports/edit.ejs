@@ -130,6 +130,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               <div id="tatort-map" class="rounded border mt-2"
                    style="height:320px"
                    data-lat="<%= r.tatort_lat || '' %>" data-lon="<%= r.tatort_lon || '' %>"
+                   data-thumb="<%= (typeof firstImageUrl !== 'undefined' && firstImageUrl) ? firstImageUrl : '' %>"
                    data-center-lat="<%= city.geo.mapLat %>" data-center-lon="<%= city.geo.mapLon %>"></div>
               <div class="form-text">
                 Den Marker kannst du zur genauen Stelle ziehen – die Adresse wird dann übernommen.

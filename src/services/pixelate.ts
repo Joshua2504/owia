@@ -70,3 +70,21 @@ export function pixelate(buffer: Buffer, mimetype: string): Buffer {
   const encoded = jpeg.encode({ data: rgba, width: outW, height: outH }, 70)
   return Buffer.from(encoded.data)
 }
+
+// Längste Kante des Vorschaubilds für Karten-Marker (2x für scharfe Retina-Darstellung
+// bei ~48 px Marker). Ergebnis ist ein winziges JPEG (wenige KB) statt des Vollbilds.
+const THUMB_MAX = 96
+
+/**
+ * Liefert ein kleines, klares JPEG-Vorschaubild (nicht verpixelt) fürs Karten-Marker.
+ * Wirft, wenn das Bild nicht dekodiert werden kann.
+ */
+export function thumbnail(buffer: Buffer, mimetype: string, maxEdge = THUMB_MAX): Buffer {
+  const src = decode(buffer, mimetype)
+  const scale = Math.min(1, maxEdge / Math.max(src.width, src.height))
+  const outW = Math.max(1, Math.round(src.width * scale))
+  const outH = Math.max(1, Math.round(src.height * scale))
+  const rgba = downsample(src, outW, outH)
+  const encoded = jpeg.encode({ data: rgba, width: outW, height: outH }, 72)
+  return Buffer.from(encoded.data)
+}

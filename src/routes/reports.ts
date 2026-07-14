@@ -11,6 +11,7 @@ import { getCity, DEFAULT_CITY_ID } from '../config/cities'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { analyzeImageInBackground, isPhotoAiEnabled } from '../services/imageAnalysis'
 import { prepareImage, writePreparedImage, removeImagePair, PreparedImage } from '../services/images'
+import { thumbnail } from '../services/pixelate'
 import {
   chargeAnalysis,
   refundAnalysis,
@@ -89,10 +90,16 @@ async function saveImageToReport(
 ): Promise<{ id: number; filename: string }> {
   const { filename, originalFilename } = await writeImageFiles(userId, reportId, p)
 
+  // Neues Bild ans Ende der Sortierreihenfolge hängen.
+  const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
+    [reportId]
+  )
+  const sortOrder = Number(maxRows[0].next)
   const [result] = await pool.execute<mysql.ResultSetHeader>(
-    `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype)
-     VALUES (?, ?, ?, ?, ?)`,
-    [reportId, filename, p.mimetype, originalFilename, p.originalMimetype]
+    `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [reportId, filename, p.mimetype, originalFilename, p.originalMimetype, sortOrder]
   )
   return { id: result.insertId, filename }
 }
@@ -174,7 +181,7 @@ async function regeneratePdf(reportId: string | number, userId: number): Promise
   )
   const user = uRows[0]
   const [imgRows] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT filename, mimetype FROM report_images WHERE report_id = ? ORDER BY id',
+    'SELECT filename, mimetype FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
     [reportId]
   )
 
@@ -214,7 +221,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
   app.get('/api/my/reports', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT aktenzeichen, status, tattag, verstoss_art, tatort, tatort_lat, tatort_lon
+      `SELECT aktenzeichen, status, tattag, verstoss_art, tatort, tatort_lat, tatort_lon,
+              (SELECT ri.id FROM report_images ri
+                WHERE ri.report_id = reports.id ORDER BY ri.sort_order, ri.id LIMIT 1) AS image_id
          FROM reports
         WHERE user_id = ? AND status <> 'versendet'
           AND tatort_lat IS NOT NULL AND tatort_lon IS NOT NULL
@@ -230,6 +239,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       tattag: r.tattag || null,
       tatort: r.tatort || null,
       url: `/report/${r.aktenzeichen}/edit`,
+      imageUrl: r.image_id ? `/report/${r.aktenzeichen}/image/${r.image_id}/thumb.jpg` : null,
     }))
     return reply.send({ reports })
   })
@@ -269,7 +279,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, original_filename, analysis_status FROM report_images WHERE report_id = ? ORDER BY id',
+      'SELECT id, filename, original_filename, analysis_status FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
     // KI-Analyse ist nur nutzbar mit aktiver Flatrate oder genug Guthaben (frei + bezahlt).
@@ -279,6 +289,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       hasActiveSubscription(userId),
     ])
     const aiEnabled = isPhotoAiEnabled() && (subscribed || bal.totalCents >= ANALYSIS_PRICE_CENTS)
+    const firstImageUrl = images.length ? `/report/${az}/image/${images[0].id}/thumb.jpg` : null
     return reply.view('/reports/edit.ejs', viewData(request, {
       title: 'Entwurf bearbeiten',
       verstossArten: VERSTOSS_ARTEN,
@@ -287,6 +298,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       city: getCity(report.city),
       aiEnabled,
       subscriptionActive: subscribed,
+      firstImageUrl,
     }))
   })
 
@@ -322,7 +334,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT analysis_status, detected_plate, plate_confidence,
               vlm_verstoss_art, vlm_marke, vlm_beschreibung
-         FROM report_images WHERE report_id = ? ORDER BY id`,
+         FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
     )
 
@@ -553,6 +565,34 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({ image: { id: Number(imageId), url: `/report/${az}/image/${imageId}` } })
   })
 
+  // Bildreihenfolge speichern (Nutzer sortiert per ◀ ▶). Das erste Bild dient u.a. als
+  // Karten-Marker. order = Bild-IDs in der neuen Reihenfolge.
+  app.post('/report/:az/images/reorder', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send({ error: 'not found' })
+    if (report.status !== 'entwurf') return reply.status(409).send({ error: 'not a draft' })
+
+    const body = (request.body || {}) as { order?: unknown }
+    const order = Array.isArray(body.order)
+      ? body.order.map((v) => Number(v)).filter((n) => Number.isFinite(n))
+      : []
+    if (!order.length) return reply.send({ ok: true })
+
+    // Position = Index in der übergebenen Liste; nur Bilder dieses Reports betroffen.
+    let pos = 0
+    for (const imageId of order) {
+      await pool.execute('UPDATE report_images SET sort_order = ? WHERE id = ? AND report_id = ?', [
+        pos,
+        imageId,
+        report.id,
+      ])
+      pos++
+    }
+    return reply.send({ ok: true })
+  })
+
   // „Entwurf speichern": finale Werte sichern, PDF erzeugen, zur Detailseite.
   app.post('/report/:az/save', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
@@ -607,7 +647,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY id',
+      'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
     const [uRows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -655,6 +695,42 @@ export default async function reportsRoutes(app: FastifyInstance) {
         reply2.header('Content-Disposition', `attachment; filename="${filename}"`)
       }
       return reply2.send(buffer)
+    } catch {
+      return reply.status(404).send('Bilddatei nicht gefunden.')
+    }
+  })
+
+  // Kleines Vorschaubild (fürs Karten-Marker): serverseitig auf wenige KB heruntergerechnet,
+  // damit die Karte nicht die Vollbilder laden muss.
+  app.get('/report/:az/image/:imageId/thumb.jpg', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const userId = request.session.userId as number
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.filename, ri.mimetype, r.id AS report_id
+         FROM report_images ri
+         JOIN reports r ON r.id = ri.report_id
+        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
+      [imageId, az, userId]
+    )
+    const image = rows[0]
+    if (!image) return reply.status(404).send('Bild nicht gefunden.')
+
+    const imagePath = path.join(UPLOAD_DIR, String(userId), String(image.report_id), image.filename)
+    try {
+      const buffer = await fs.readFile(imagePath)
+      let out: Buffer = buffer
+      let type = image.mimetype || 'image/jpeg'
+      try {
+        out = thumbnail(buffer, image.mimetype || 'image/jpeg')
+        type = 'image/jpeg'
+      } catch {
+        /* Nicht dekodierbar -> Originalbild ausliefern (Marker bleibt sichtbar). */
+      }
+      return reply
+        .header('Content-Type', type)
+        .header('Cache-Control', 'private, max-age=3600')
+        .send(out)
     } catch {
       return reply.status(404).send('Bilddatei nicht gefunden.')
     }

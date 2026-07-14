@@ -33,7 +33,7 @@ export default async function publicRoutes(app: FastifyInstance) {
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT r.aktenzeichen, r.tattag, r.verstoss_art, r.tatort_lat, r.tatort_lon,
               (SELECT ri.id FROM report_images ri
-                WHERE ri.report_id = r.id ORDER BY ri.id LIMIT 1) AS image_id
+                WHERE ri.report_id = r.id ORDER BY ri.sort_order, ri.id LIMIT 1) AS image_id
          FROM reports r
         WHERE ${PUBLIC_WHERE}
         ORDER BY r.tattag DESC
@@ -59,7 +59,7 @@ export default async function publicRoutes(app: FastifyInstance) {
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
         WHERE r.aktenzeichen = ? AND r.status='versendet'
-        ORDER BY ri.id LIMIT 1`,
+        ORDER BY ri.sort_order, ri.id LIMIT 1`,
       [az]
     )
     const img = rows[0]

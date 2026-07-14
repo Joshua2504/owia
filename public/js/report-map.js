@@ -25,6 +25,25 @@
     return Number.isFinite(n) ? n : null
   }
 
+  // Marker als kleines Vorschaubild (erstes Beweisfoto) statt Standard-Pin.
+  function imageIcon(url) {
+    const size = 48
+    return L.divIcon({
+      className: 'photo-marker',
+      html:
+        '<img src="' +
+        encodeURI(url) +
+        '" alt="" style="width:' +
+        size +
+        'px;height:' +
+        size +
+        'px;object-fit:cover;border-radius:8px;border:2px solid #0d6efd;box-shadow:0 1px 4px rgba(0,0,0,.45)">',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2],
+    })
+  }
+
   // Hinweis-Banner oben auf der Karte, falls die Kacheln (noch) nicht verfügbar
   // sind – z.B. weil der Tileserver nach einem Update neu importiert. Blendet
   // sich aus, sobald die erste Kachel erfolgreich lädt.
@@ -56,6 +75,7 @@
     const lonInput = document.querySelector('input[name="tatort_lon"]')
     const tatortInput = document.querySelector('#tatort')
 
+    let thumbUrl = el.dataset.thumb || null // erstes Beweisfoto als Marker (falls vorhanden)
     const startLat = num(el.dataset.lat)
     const startLon = num(el.dataset.lon)
     const centerLat = num(el.dataset.centerLat) || 50.1109
@@ -119,10 +139,12 @@
     }
 
     function placeMarker(lat, lon) {
+      const icon = thumbUrl ? imageIcon(thumbUrl) : null
       if (marker) {
         marker.setLatLng([lat, lon])
+        if (icon) marker.setIcon(icon)
       } else {
-        marker = L.marker([lat, lon], { draggable: true }).addTo(map)
+        marker = L.marker([lat, lon], icon ? { draggable: true, icon } : { draggable: true }).addTo(map)
         marker.on('dragend', () => {
           const p = marker.getLatLng()
           writeInputs(p.lat, p.lng)
@@ -156,6 +178,12 @@
       placeMarker(lat, lon)
       map.setView([lat, lon], Math.max(map.getZoom(), 16))
       writeInputs(lat, lon)
+    })
+
+    // Erstes Beweisfoto geändert/umsortiert (report-form.js) -> Marker-Icon aktualisieren.
+    document.addEventListener('report:first-image', (e) => {
+      thumbUrl = (e.detail && e.detail.url) || null
+      if (marker) marker.setIcon(thumbUrl ? imageIcon(thumbUrl) : new L.Icon.Default())
     })
   })
 })()

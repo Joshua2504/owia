@@ -50,6 +50,12 @@ async function main() {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
     saveUninitialized: false,
+    // rolling:false = Sessions nur speichern, wenn sie sich tatsächlich geändert
+    // haben. Sonst würden parallele Lese-Requests (z. B. der Navbar-Guthaben-Abruf
+    // /api/konto/summary) ihre veraltete Session-Kopie zurückschreiben und dabei
+    // eine gerade konsumierte Flash-Meldung wieder auferstehen lassen – die
+    // Meldung („Entwurf verworfen." o. Ä.) erschien dann bei jedem Seitenaufruf.
+    rolling: false,
   })
   await app.register(staticFiles, {
     root: path.join(process.cwd(), 'public'),

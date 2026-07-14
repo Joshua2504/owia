@@ -40,3 +40,10 @@ code {
   cursor: crosshair;
   touch-action: none; /* Wischgesten nicht scrollen, sondern zum Schwärzen nutzen */
 }
+
+/* Karten-Marker, der das erste Beweisfoto als Vorschaubild zeigt (kein weißer
+   Leaflet-Standardkasten hinter dem abgerundeten Bild). */
+.photo-marker {
+  background: transparent;
+  border: 0;
+}
