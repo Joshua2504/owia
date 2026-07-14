@@ -126,9 +126,10 @@ export function pixelate(buffer: Buffer, mimetype: string, orientation = 1): Buf
   return Buffer.from(encoded.data)
 }
 
-// Längste Kante des Vorschaubilds für Karten-Marker (2x für scharfe Retina-Darstellung
-// bei ~48 px Marker). Ergebnis ist ein winziges JPEG (wenige KB) statt des Vollbilds.
-const THUMB_MAX = 96
+// Längste Kante des Vorschaubilds. Die Listen zeigen Thumbnails bis 96 px breit;
+// mit 288 px (3x) bleiben sie auch auf Retina-Displays scharf. Ergebnis ist ein
+// kleines JPEG (wenige KB) statt des Vollbilds.
+const THUMB_MAX = 288
 
 /**
  * Liefert ein kleines, klares JPEG-Vorschaubild (nicht verpixelt) fürs Karten-Marker.

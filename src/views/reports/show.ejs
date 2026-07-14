@@ -92,10 +92,11 @@ const versandLabel = {
           <div class="row g-3">
             <% for (const img of images) { %>
               <div class="col-6 col-md-4">
-                <a href="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>" target="_blank">
-                  <img src="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>"
-                       class="img-fluid rounded border" alt="Beweisfoto">
-                </a>
+                <img src="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>"
+                     class="img-fluid rounded border w-100" alt="Beweisfoto"
+                     style="cursor:zoom-in;aspect-ratio:4/3;object-fit:cover"
+                     data-zoom-src="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>"
+                     title="Zum Vergrößern klicken">
                 <% if (img.original_filename && img.original_filename !== img.filename) { %>
                   <a href="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>?original=1"
                      class="d-block small text-muted mt-1">Original herunterladen</a>
@@ -105,6 +106,59 @@ const versandLabel = {
           </div>
         </div>
       </div>
+
+      <!-- Zoom-Lightbox: Klick öffnet groß, Klick aufs Bild schaltet 100%/pannbar. -->
+      <div id="zoom-overlay" class="d-none position-fixed top-0 start-0 w-100 h-100"
+           style="z-index:2000;background:rgba(0,0,0,.9);overflow:auto">
+        <button type="button" id="zoom-close" class="btn btn-light position-fixed"
+                style="top:1rem;right:1rem;z-index:2010" aria-label="Schließen">✕ Schließen</button>
+        <div id="zoom-stage" class="d-flex align-items-center justify-content-center min-vh-100 p-3">
+          <img id="zoom-img" alt="Beweisfoto groß" style="max-width:100%;max-height:95vh;cursor:zoom-in">
+        </div>
+      </div>
+      <script>
+        (function () {
+          var overlay = document.getElementById('zoom-overlay')
+          var stage = document.getElementById('zoom-stage')
+          var big = document.getElementById('zoom-img')
+          var closeBtn = document.getElementById('zoom-close')
+          if (!overlay || !big) return
+          function open(src) {
+            big.classList.remove('zoomed')
+            big.style.maxWidth = '100%'; big.style.maxHeight = '95vh'
+            big.style.width = ''; big.style.cursor = 'zoom-in'
+            big.src = src
+            overlay.classList.remove('d-none')
+            document.body.style.overflow = 'hidden'
+          }
+          function close() {
+            overlay.classList.add('d-none')
+            big.src = ''
+            document.body.style.overflow = ''
+          }
+          document.querySelectorAll('[data-zoom-src]').forEach(function (t) {
+            t.addEventListener('click', function () { open(t.getAttribute('data-zoom-src')) })
+          })
+          // Klick aufs große Bild schaltet zwischen "eingepasst" und "100 % (pannbar)".
+          big.addEventListener('click', function (e) {
+            e.stopPropagation()
+            var zoomed = big.classList.toggle('zoomed')
+            if (zoomed) {
+              big.style.maxWidth = 'none'; big.style.maxHeight = 'none'
+              big.style.width = 'auto'; big.style.cursor = 'zoom-out'
+            } else {
+              big.style.maxWidth = '100%'; big.style.maxHeight = '95vh'
+              big.style.width = ''; big.style.cursor = 'zoom-in'
+            }
+          })
+          // Klick auf den Hintergrund (nicht aufs Bild) schließt.
+          stage.addEventListener('click', close)
+          closeBtn.addEventListener('click', close)
+          document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !overlay.classList.contains('d-none')) close()
+          })
+        })()
+      </script>
     <% } %>
 
     <% const replies = locals.replies || [] %>

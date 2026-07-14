@@ -87,11 +87,13 @@ async function main() {
     },
   })
 
-  // Rate-Limits: global großzügig; die mail-versendenden Endpoints (Login,
-  // Nachricht ans Ordnungsamt) sind einzeln strenger konfiguriert.
+  // Rate-Limits: global nur als grober Missbrauchs-Deckel. Bild-, Kachel- und
+  // Asset-Requests summieren sich beim normalen Blättern schnell (eine Listen-
+  // seite lädt viele Thumbnails, die Karte viele Kacheln) – daher hoch angesetzt;
+  // die sensiblen, mail-versendenden Endpoints sind einzeln streng limitiert.
   await app.register(rateLimit, {
     global: true,
-    max: 300,
+    max: 2000,
     timeWindow: '1 minute',
   })
 

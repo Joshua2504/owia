@@ -28,11 +28,11 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
       <% for (const r of reports) { %>
         <% const imgIds = (typeof imagesByReport !== 'undefined' && imagesByReport && imagesByReport[r.id]) || [] %>
         <tr <% if (r.status === 'entwurf') { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
-          <td style="min-width:70px;max-width:220px">
+          <td style="min-width:100px;max-width:300px">
             <div class="d-flex flex-wrap gap-1">
               <% for (const imgId of imgIds) { %>
                 <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt=""
-                     class="rounded border" style="width:40px;height:30px;object-fit:cover;cursor:zoom-in"
+                     class="rounded border" style="width:96px;height:72px;object-fit:cover;cursor:zoom-in"
                      loading="lazy" decoding="async"
                      data-full-src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>"
                      <% if (r.status === 'entwurf') { %>
