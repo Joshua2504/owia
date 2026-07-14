@@ -122,6 +122,10 @@
         const result = data.result
         const label = result && result.label
         if (label && tatortInput) {
+          // Adresse (nächstgelegene Straße/Hausnummer) nur als Beschriftung setzen.
+          // Der Marker bleibt bewusst dort, wo der Nutzer ihn abgelegt hat – die
+          // gespeicherte Position (Hidden-Felder) ist der gezogene Punkt, nicht die
+          // Adress-Koordinate.
           tatortInput.value = label
           tatortInput.dispatchEvent(new Event('input', { bubbles: true }))
           tatortInput.dispatchEvent(new Event('change', { bubbles: true }))

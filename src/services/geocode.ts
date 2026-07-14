@@ -57,11 +57,18 @@ export function toSuggestion(f: PhotonFeature): AddressSuggestion {
   }
 }
 
-/** Koordinaten -> nächstgelegene Adresse; null bei Fehler/Timeout (Photon
- *  darf z.B. die Entwurfs-Erzeugung im Sammel-Import nie blockieren). */
+/** Koordinaten -> nächstgelegene Adresse; null bei Fehler/Timeout (Photon darf
+ *  z.B. die Entwurfs-Erzeugung im Sammel-Import nie blockieren).
+ *
+ *  Der Tatort soll IMMER eine Hausnummer tragen (z.B. für die Anzeige ans Amt):
+ *  Deshalb mehrere Treffer holen und die nächstgelegene MIT Hausnummer bevorzugen
+ *  (Photon liefert nach Entfernung sortiert -> das ist die nächste Hausnummer).
+ *  Nur wenn es im Umkreis gar keine Hausnummer gibt, wird der nächste Treffer
+ *  (Straße) verwendet. Der Marker selbst bleibt, wo der Nutzer ihn gesetzt hat –
+ *  diese Adresse ist nur die Beschriftung (report-map.js verschiebt ihn NICHT). */
 export async function reverseGeocode(lat: number, lon: number): Promise<AddressSuggestion | null> {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
-  const url = `${PHOTON_URL}/reverse?lat=${lat}&lon=${lon}&lang=de`
+  const url = `${PHOTON_URL}/reverse?lat=${lat}&lon=${lon}&lang=de&limit=40`
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 4000)
@@ -70,7 +77,9 @@ export async function reverseGeocode(lat: number, lon: number): Promise<AddressS
     if (!res.ok) return null
 
     const data = (await res.json()) as { features?: PhotonFeature[] }
-    const feature = (data.features || [])[0]
+    const features = data.features || []
+    const nearestWithNumber = features.find((f) => (f.properties?.housenumber || '').trim())
+    const feature = nearestWithNumber || features[0]
     const result = feature ? toSuggestion(feature) : null
     return result && result.label ? result : null
   } catch {

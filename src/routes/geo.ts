@@ -2,7 +2,13 @@ import { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth'
 import { City, getCityByScope, unlockedCities } from '../config/cities'
 import { detectCityByPlz } from '../services/districts'
-import { PHOTON_URL, PhotonFeature, toSuggestion, reverseGeocode } from '../services/geocode'
+import {
+  PHOTON_URL,
+  PhotonFeature,
+  AddressSuggestion,
+  toSuggestion,
+  reverseGeocode,
+} from '../services/geocode'
 
 // Allgemeiner Kartenschwerpunkt (Deutschland-Mitte), falls kein Stadt-Scope greift.
 const DEFAULT_BIAS_LAT = 51.16
@@ -16,17 +22,48 @@ function scopeCities(scope?: string | null): City[] {
   return city ? [city] : []
 }
 
-/** Hüllen-Bounding-Box "minLon,minLat,maxLon,maxLat" über mehrere Städte. */
-function unionBbox(cities: City[]): string | null {
-  if (!cities.length) return null
-  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity
-  for (const c of cities) {
-    const [a, b, cc, d] = c.geo.bbox.split(',').map(Number)
-    if ([a, b, cc, d].some((n) => !Number.isFinite(n))) continue
-    minLon = Math.min(minLon, a); minLat = Math.min(minLat, b)
-    maxLon = Math.max(maxLon, cc); maxLat = Math.max(maxLat, d)
+/** Eine Photon-Adresssuche ausführen; bei Fehler/Timeout leeres Feature-Array. */
+async function photonSearch(
+  q: string,
+  opts: { biasLat: number; biasLon: number; bbox?: string | null; limit: number }
+): Promise<PhotonFeature[]> {
+  const url =
+    `${PHOTON_URL}/api?q=${encodeURIComponent(q)}&lang=de&limit=${opts.limit}` +
+    `&lat=${opts.biasLat}&lon=${opts.biasLon}&location_bias_scale=0.3` +
+    (opts.bbox ? `&bbox=${opts.bbox}` : '')
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 4000)
+    const res = await fetch(url, { signal: controller.signal })
+    clearTimeout(timeout)
+    if (!res.ok) return []
+    const data = (await res.json()) as { features?: PhotonFeature[] }
+    return data.features || []
+  } catch {
+    return []
   }
-  return Number.isFinite(minLon) ? `${minLon},${minLat},${maxLon},${maxLat}` : null
+}
+
+/** Adressen einer Stadt suchen: eng auf die Stadt gescopt (Bias + Bbox), gefiltert
+ *  über die PLZ des Treffers (districts.csv -> genau diese freigeschaltete Stadt).
+ *  Die PLZ ist robuster als der Ortsname: Photon liefert für Bad Soden-Salmünster
+ *  je nach Stadtteil "Bad Soden", "Salmünster" o.Ä. – alle mit PLZ 63628. */
+async function searchCity(q: string, city: City, limit: number): Promise<AddressSuggestion[]> {
+  const features = await photonSearch(q, {
+    biasLat: city.geo.biasLat,
+    biasLon: city.geo.biasLon,
+    bbox: city.geo.bbox,
+    limit: 25,
+  })
+  return features
+    .filter((f) => isAddress(f.properties))
+    .filter((f) => {
+      const det = detectCityByPlz(f.properties.postcode)
+      return det.status === 'unlocked' && det.city.id === city.id
+    })
+    .map(toSuggestion)
+    .filter((s) => s.label.length > 0)
+    .slice(0, limit)
 }
 
 // Nur Adressen anzeigen (Straßen + Hausnummern), keine Firmen/POIs.
@@ -43,12 +80,6 @@ function isAddress(p: PhotonFeature['properties']): boolean {
   return false
 }
 
-function matchesCity(p: PhotonFeature['properties'], cityMatch: string): boolean {
-  return [p.city, p.town, p.village, p.district, p.county].some((v) =>
-    (v || '').toLowerCase().includes(cityMatch)
-  )
-}
-
 export default async function geoRoutes(app: FastifyInstance) {
   app.get('/api/geo/search', { preHandler: requireAuth }, async (request, reply) => {
     const { q, scope } = request.query as { q?: string; scope?: string }
@@ -59,50 +90,40 @@ export default async function geoRoutes(app: FastifyInstance) {
     // ("unlocked") ein. So findet die Tatort-Suche Adressen in Frankfurt UND Bad
     // Soden-Salmünster, aber keine Orte, die (noch) nicht unterstützt werden.
     const cities = scopeCities(scope)
-    const primary = cities[0]
-    const biasLat = primary ? primary.geo.biasLat : DEFAULT_BIAS_LAT
-    const biasLon = primary ? primary.geo.biasLon : DEFAULT_BIAS_LON
-    const bbox = unionBbox(cities)
 
-    // Mehr Treffer anfragen, da der Adress- (und ggf. Stadt-)Filter
-    // anschließend noch POIs/Nachbarorte herausnimmt.
-    const limit = cities.length ? 25 : 15
-    let url =
-      `${PHOTON_URL}/api?q=${encodeURIComponent(q.trim())}` +
-      `&lang=de&limit=${limit}&lat=${biasLat}&lon=${biasLon}&location_bias_scale=0.3`
-    if (bbox) {
-      url += `&bbox=${bbox}`
+    if (cities.length) {
+      // Pro Stadt eine eigene, eng gescopte Suche und dann mergen: eine gemeinsame
+      // Bias-Stadt würde die Treffer der weiter entfernten Stadt sonst verdrängen
+      // (bei häufigen Straßennamen käme Bad Soden nie in die Top-Treffer).
+      const perCity = await Promise.all(cities.map((c) => searchCity(q.trim(), c, 6)))
+      // Im Round-Robin mischen, damit beide Städte in der Liste vertreten sind.
+      const seen = new Set<string>()
+      const merged: AddressSuggestion[] = []
+      const maxLen = Math.max(0, ...perCity.map((a) => a.length))
+      for (let i = 0; i < maxLen; i++) {
+        for (const arr of perCity) {
+          const s = arr[i]
+          if (s && !seen.has(s.label)) {
+            seen.add(s.label)
+            merged.push(s)
+          }
+        }
+      }
+      return reply.send({ results: merged.slice(0, 8) })
     }
 
-    try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 4000)
-      const res = await fetch(url, { signal: controller.signal })
-      clearTimeout(timeout)
-
-      if (!res.ok) {
-        request.log.warn({ status: res.status }, 'Photon-Suche fehlgeschlagen')
-        return reply.send({ results: [] })
-      }
-
-      const data = (await res.json()) as { features?: PhotonFeature[] }
-      let features = (data.features || []).filter((f) => isAddress(f.properties))
-      if (cities.length) {
-        // Nur Treffer in einer der freigeschalteten Städte behalten.
-        features = features.filter((f) =>
-          cities.some((c) => matchesCity(f.properties, c.geo.cityMatch))
-        )
-      }
-      const results = features
-        .map(toSuggestion)
-        .filter((s) => s.label.length > 0)
-        .slice(0, 6)
-      return reply.send({ results })
-    } catch (err) {
-      // Photon noch nicht bereit (Index-Import) oder nicht erreichbar – leer liefern.
-      request.log.warn({ err }, 'Photon nicht erreichbar')
-      return reply.send({ results: [] })
-    }
+    // Ohne Scope: bundesweite Suche (Deutschland-Mitte als Bias), keine Stadt-Filter.
+    const features = await photonSearch(q.trim(), {
+      biasLat: DEFAULT_BIAS_LAT,
+      biasLon: DEFAULT_BIAS_LON,
+      limit: 15,
+    })
+    const results = features
+      .filter((f) => isAddress(f.properties))
+      .map(toSuggestion)
+      .filter((s) => s.label.length > 0)
+      .slice(0, 6)
+    return reply.send({ results })
   })
 
   // Reverse-Geocoding: Koordinaten -> nächstgelegene Adresse. Wird für

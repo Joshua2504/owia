@@ -114,7 +114,12 @@
       }
     }, DEBOUNCE_MS)
 
-    input.addEventListener('input', search)
+    // Nur bei echter Tastatureingabe suchen. Programmatisch gesetzte Werte (Marker
+    // verschoben/eingerastet, Standort oder Foto übernommen) dispatchen zwar ein
+    // input-Event fürs Autosave, sollen aber die Vorschlagsliste NICHT öffnen.
+    input.addEventListener('input', (e) => {
+      if (e.isTrusted) search()
+    })
     input.addEventListener('keydown', (e) => {
       if (menu.style.display === 'none') return
       if (e.key === 'ArrowDown') {
