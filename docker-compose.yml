@@ -153,11 +153,6 @@ services:
   alpr:
     build: ./docker/alpr
     profiles: [production, alpr]
-    # Produktionshost ist x86_64; auf aarch64 (Apple-Silicon-Dev) segfaultet
-    # paddlepaddle sobald torch im selben Prozess Inferenz gemacht hat. Daher
-    # fest auf amd64 gepinnt – auf dem Host nativ, lokal nur emuliert (und dank
-    # Profil-Gating im Dev-Alltag gar nicht gestartet).
-    platform: linux/amd64
     mem_limit: 2g
     restart: unless-stopped
     logging: *default-logging

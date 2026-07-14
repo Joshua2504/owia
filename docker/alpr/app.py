@@ -1,53 +1,81 @@
-# HTTP-Wrapper um YOLOv11 (Kennzeichen-Detektion) + PaddleOCR (Texterkennung).
-# Eine POST-Route nimmt ein Bild entgegen und liefert die erkannten Kennzeichen
-# als JSON. Läuft selbst-gehostet im Docker-Netz; das Bild verlässt den Host nie.
+# HTTP-Wrapper um YOLOv11 (Kennzeichen-Detektion, onnxruntime) + RapidOCR
+# (PP-OCRv5-Latin-Recognition als ONNX). Eine POST-Route nimmt ein Bild entgegen
+# und liefert die erkannten Kennzeichen als JSON. Läuft selbst-gehostet im
+# Docker-Netz; das Bild verlässt den Host nie. Bewusst ohne torch/paddle
+# (Begründung in detector.py).
 import threading
 
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, UploadFile
-from paddleocr import TextRecognition
-from ultralytics import YOLO
+from rapidocr import RapidOCR
+from rapidocr.utils.typings import LangRec, ModelType, OCRVersion
 
+from detector import PlateDetector
 from plate import normalize
 
-MODEL_PATH = "models/license-plate-finetune-v1s.pt"
+MODEL_PATH = "models/license-plate-finetune-v1s.onnx"
 DET_CONF_MIN = 0.35
 
-app = FastAPI(title="OWiA ALPR (YOLOv11 + PaddleOCR)")
+app = FastAPI(title="OWiA ALPR (YOLOv11 + PP-OCRv5, ONNX)")
 
 # Modelle einmalig beim Start laden (beim Build vorgecached, kein Download).
-detector = YOLO(MODEL_PATH)
+detector = PlateDetector(MODEL_PATH)
 # Nur Recognition auf dem YOLO-Crop; "latin" deckt Ö/Ü der Kreiskürzel ab.
-recognizer = TextRecognition(model_name="latin_PP-OCRv5_mobile_rec")
+recognizer = RapidOCR(
+    params={
+        "Rec.lang_type": LangRec.LATIN,
+        "Rec.ocr_version": OCRVersion.PPOCRV5,
+        "Rec.model_type": ModelType.MOBILE,
+    }
+)
 
 # Inferenz serialisieren: eine Anfrage darf die CPU nutzen, weitere warten.
 inference_lock = threading.Lock()
 
 
-def crop_plate(img: np.ndarray, xyxy: list[float]) -> tuple[np.ndarray, list[int]]:
-    """Kennzeichen-Crop mit 12 % Rand; kleine Crops für die OCR hochskalieren."""
+def crop_plate(img: np.ndarray, xyxy: list) -> tuple:
+    """Enger Kennzeichen-Crop. Ohne Rand: hineinragende Umgebung (EU-Band,
+    Stoßstange) verschlechtert die OCR messbar."""
     h, w = img.shape[:2]
-    x1, y1, x2, y2 = xyxy
-    pad_x, pad_y = (x2 - x1) * 0.12, (y2 - y1) * 0.12
-    x1, y1 = max(0, int(x1 - pad_x)), max(0, int(y1 - pad_y))
-    x2, y2 = min(w, int(x2 + pad_x)), min(h, int(y2 + pad_y))
-    crop = img[y1:y2, x1:x2]
-    if 0 < crop.shape[0] < 48:
-        scale = 96 / crop.shape[0]
-        crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    return crop, [x1, y1, x2, y2]
+    x1, y1 = max(0, int(xyxy[0])), max(0, int(xyxy[1]))
+    x2, y2 = min(w, int(xyxy[2])), min(h, int(xyxy[3]))
+    return img[y1:y2, x1:x2], [x1, y1, x2, y2]
 
 
-def read_text(crop: np.ndarray) -> tuple[str, float]:
+def read_text(crop: np.ndarray) -> tuple:
     """Beste OCR-Lesung des Crops als (text, score)."""
+    res = recognizer(crop, use_det=False, use_cls=False, use_rec=True)
     best_text, best_score = "", 0.0
-    for res in recognizer.predict(input=crop):
-        text = str(res.get("rec_text") or "")
-        score = float(res.get("rec_score") or 0.0)
-        if text and score > best_score:
-            best_text, best_score = text, score
+    for text, score in zip(res.txts or [], res.scores or []):
+        if text and float(score) > best_score:
+            best_text, best_score = str(text), float(score)
     return best_text, best_score
+
+
+def read_plate(crop: np.ndarray) -> dict | None:
+    """Liest den Crop in zwei Varianten (Original + 2x hochskaliert) und liefert
+    die beste Lesung: normalisierte schlagen unnormalisierte, dann zählt der Score."""
+    variants = [crop]
+    if crop.shape[0] > 0:
+        variants.append(cv2.resize(crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC))
+    best = None
+    for variant in variants:
+        raw_text, ocr_conf = read_text(variant)
+        if not raw_text:
+            continue
+        text, normalized = normalize(raw_text)
+        if not text:
+            continue
+        candidate = {
+            "text": text,
+            "raw_text": raw_text,
+            "normalized": normalized,
+            "ocr_confidence": ocr_conf,
+        }
+        if best is None or (normalized, ocr_conf) > (best["normalized"], best["ocr_confidence"]):
+            best = candidate
+    return best
 
 
 @app.get("/health")
@@ -64,31 +92,28 @@ async def recognize(file: UploadFile = File(...)):
 
     plates = []
     with inference_lock:
-        results = detector.predict(img, conf=DET_CONF_MIN, verbose=False)
-        for result in results:
-            for box in result.boxes:
-                det_conf = float(box.conf[0])
-                crop, bbox = crop_plate(img, box.xyxy[0].tolist())
-                if crop.size == 0:
-                    continue
-                raw_text, ocr_conf = read_text(crop)
-                if not raw_text:
-                    continue
-                text, normalized = normalize(raw_text)
-                if not text:
-                    continue
-                # Nicht normalisierbare Lesungen abwerten: sie bleiben sichtbar,
-                # fallen aber unter die Prefill-Schwelle der App.
-                confidence = det_conf * ocr_conf * (1.0 if normalized else 0.5)
-                plates.append({
-                    "text": text,
-                    "raw_text": raw_text,
-                    "normalized": normalized,
-                    "det_confidence": round(det_conf, 3),
-                    "ocr_confidence": round(ocr_conf, 3),
-                    "confidence": round(confidence, 3),
-                    "bbox": bbox,
-                })
+        for det_conf, xyxy in detector.detect(img, conf_min=DET_CONF_MIN):
+            crop, bbox = crop_plate(img, xyxy)
+            if crop.size == 0:
+                continue
+            raw_text, ocr_conf = read_text(crop)
+            if not raw_text:
+                continue
+            text, normalized = normalize(raw_text)
+            if not text:
+                continue
+            # Nicht normalisierbare Lesungen abwerten: sie bleiben sichtbar,
+            # fallen aber unter die Prefill-Schwelle der App.
+            confidence = det_conf * ocr_conf * (1.0 if normalized else 0.5)
+            plates.append({
+                "text": text,
+                "raw_text": raw_text,
+                "normalized": normalized,
+                "det_confidence": round(det_conf, 3),
+                "ocr_confidence": round(ocr_conf, 3),
+                "confidence": round(confidence, 3),
+                "bbox": [int(v) for v in bbox],
+            })
 
     plates.sort(key=lambda p: p["confidence"], reverse=True)
     return {"plates": plates, "best": plates[0] if plates else None}

@@ -7,7 +7,7 @@ from pathlib import Path
 from huggingface_hub import hf_hub_download
 
 REPO_ID = "morsetechlab/yolov11-license-plate-detection"  # AGPL-3.0
-FILENAME = "license-plate-finetune-v1s.pt"
+FILENAME = "license-plate-finetune-v1s.onnx"
 REVISION = "251a30d7daedca065f56e04b0af04052c907c68f"
 
 target = Path("models") / FILENAME

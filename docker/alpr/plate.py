@@ -25,6 +25,20 @@ def normalize(raw: str) -> tuple[str, bool]:
     """Liefert (text, normalized). normalized=True nur, wenn die Lesung eindeutig
     auf ein gültiges deutsches Kennzeichen gemappt werden konnte; sonst wird die
     bereinigte Rohlesung zurückgegeben (Aufrufer senkt dann die Konfidenz)."""
+    # Die Stempelplakette zwischen den Buchstabengruppen liest die OCR gern als
+    # Kleinbuchstaben ("MSeWL 545"); echte Prägeschrift wird groß gelesen. Erst
+    # mit Kleinbuchstaben-als-Trenner versuchen (markiert zugleich die sonst
+    # mehrdeutige Kürzel-Grenze), dann mit der wörtlichen Lesung.
+    literal = raw or ""
+    stripped = re.sub(r"[a-zäöü]", " ", literal)
+    for candidate in ([stripped] if stripped != literal else []) + [literal]:
+        text, ok = _normalize_one(candidate)
+        if ok:
+            return text, True
+    return _normalize_one(literal)[0], False
+
+
+def _normalize_one(raw: str) -> tuple[str, bool]:
     text = (raw or "").upper()
     segs = [s for s in re.split(r"[^A-ZÄÖÜ0-9]+", text) if s]
     if not segs:

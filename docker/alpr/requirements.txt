@@ -1,9 +1,9 @@
-# ML-Stack exakt gepinnt (Reproduzierbarkeit; Wheels für x86_64 und aarch64).
-# torch/torchvision werden im Dockerfile separat vom CPU-Index installiert.
-# paddlepaddle NICHT auf 3.2.0 anheben: segfaultet auf aarch64 beim Modell-Laden.
-paddlepaddle==3.1.0
-paddleocr==3.5.0
-ultralytics==8.4.95
+# Bewusst reiner ONNX-Stack (kein torch, kein paddlepaddle):
+#  - paddle-Wheels verlangen AVX -> "Illegal instruction" auf dem Produktionshost
+#  - torch+paddle im selben Prozess segfaulten auf aarch64
+# onnxruntime läuft ohne Sonderanforderungen auf x86_64 wie aarch64.
+onnxruntime==1.27.0
+rapidocr==3.9.1
 huggingface_hub
 fastapi
 uvicorn[standard]
