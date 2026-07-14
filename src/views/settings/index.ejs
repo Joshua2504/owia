@@ -88,21 +88,26 @@
       </div>
     </div>
 
-    <!-- DSGVO Art. 17: Konto unwiderruflich löschen -->
+    <!-- DSGVO Art. 17: Konto schließen & personenbezogene Daten anonymisieren -->
     <div class="card shadow-sm mt-4 border-danger">
       <div class="card-body">
-        <h5 class="card-title mb-1">Konto löschen</h5>
+        <h5 class="card-title mb-1">Konto schließen</h5>
+        <p class="small text-muted mb-1">
+          Entfernt <strong>unwiderruflich</strong> deine personenbezogenen Daten –
+          Profil (Name, Anschrift, Telefon), E-Mail-Adresse, die erzeugten PDFs und
+          den Nachrichtenverlauf mit dem Ordnungsamt. Deine Anmeldung wird deaktiviert.
+        </p>
         <p class="small text-muted">
-          Löscht dein Konto <strong>unwiderruflich</strong> – inklusive aller Anzeigen,
-          Fotos, PDFs und des Nachrichtenverlaufs mit dem Ordnungsamt. Bereits ans
-          Ordnungsamt versendete E-Mails können nicht zurückgeholt werden.
+          Deine bereits erstellten Anzeigen bleiben <strong>anonymisiert</strong>
+          erhalten (ohne deinen Namen, aber inkl. Fotos und Tatort) – zu
+          Dokumentations- und Statistikzwecken und für die öffentliche Übersichtskarte.
           Tipp: vorher die Daten exportieren.
         </p>
         <form method="post" action="/einstellungen/loeschen" class="d-flex gap-2 flex-wrap"
-              onsubmit="return confirm('Konto und ALLE Daten unwiderruflich löschen?')">
+              onsubmit="return confirm('Konto schließen? Deine personenbezogenen Daten werden unwiderruflich entfernt.')">
           <input type="text" name="bestaetigung" class="form-control w-auto"
                  placeholder="Zur Bestätigung: LÖSCHEN" required autocomplete="off">
-          <button type="submit" class="btn btn-outline-danger">Konto unwiderruflich löschen</button>
+          <button type="submit" class="btn btn-outline-danger">Konto schließen &amp; anonymisieren</button>
         </form>
       </div>
     </div>

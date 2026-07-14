@@ -133,11 +133,12 @@ export default async function settingsRoutes(app: FastifyInstance) {
     return reply.redirect(request.session.userId === user.id ? '/einstellungen' : '/login')
   })
 
-  // Konto löschen (DSGVO Art. 17): entfernt Nutzer, alle Anzeigen, Fotos,
-  // PDFs, Nachrichtenverlauf samt Anhängen und Import-Daten – DB-Kaskaden
-  // erledigen die Tabellen, Dateien werden explizit gelöscht. Die Antworten
-  // des Ordnungsamts hängen per ON DELETE SET NULL an den Anzeigen und werden
-  // deshalb vorab explizit mitgelöscht (sonst blieben verwaiste Mails übrig).
+  // Konto schließen & anonymisieren (DSGVO Art. 17): Statt die Anzeigen hart zu
+  // löschen, werden nur die personenbezogenen Daten des Anzeigenerstatters
+  // entfernt – die users-Zeile bleibt (geleert, Platzhalter-E-Mail) erhalten,
+  // damit die Anzeigen inkl. Fotos/Tatort für Statistik/öffentliche Karte
+  // bestehen bleiben. Entfernt werden: Nachrichtenverlauf (Korrespondenz),
+  // erzeugte PDFs (enthalten Name/Anschrift/E-Mail) und die Profildaten.
   app.post('/einstellungen/loeschen', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
     const bestaetigung = String((request.body as { bestaetigung?: string })?.bestaetigung || '').trim()
@@ -146,6 +147,8 @@ export default async function settingsRoutes(app: FastifyInstance) {
       return reply.redirect('/einstellungen')
     }
 
+    // 1) Nachrichtenverlauf (Ordnungsamt-Korrespondenz + eigene Mails) samt
+    //    Anhängen löschen – enthält Absenderadresse/Signatur des Erstatters.
     const [reportRows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id FROM reports WHERE user_id = ?',
       [userId]
@@ -168,13 +171,30 @@ export default async function settingsRoutes(app: FastifyInstance) {
       }
     }
 
-    // users löschen kaskadiert auf reports, report_images, intake_batches/photos, sessions bleiben (werden zerstört).
-    await pool.execute('DELETE FROM users WHERE id = ?', [userId])
-    await fs.rm(path.join(UPLOAD_DIR, String(userId)), { recursive: true, force: true })
+    // 2) Erzeugte PDFs löschen – das amtliche Formular enthält Name/Anschrift/
+    //    E-Mail des Erstatters. Die Sach-Anzeige (Fotos, Tatort) bleibt erhalten.
     await fs.rm(path.join(PDF_DIR, String(userId)), { recursive: true, force: true })
+    await pool.execute('UPDATE reports SET pdf_filename = NULL WHERE user_id = ?', [userId])
 
+    // 3) users-Zeile scrubben (Profil leeren, E-Mail durch eindeutigen
+    //    Platzhalter ersetzen, Konto als anonymisiert markieren = Login gesperrt).
+    const platzhalter = `geloescht-${userId}-${crypto.randomBytes(4).toString('hex')}@anonym.invalid`
+    await pool.execute(
+      `UPDATE users
+          SET vorname=NULL, nachname=NULL, strasse=NULL, plz=NULL, ort=NULL, telefon=NULL,
+              email=?, anonymized_at=NOW(),
+              email_change_neu=NULL, email_change_token=NULL, email_change_expires=NULL
+        WHERE id=?`,
+      [platzhalter, userId]
+    )
+
+    // 4) Login der bisherigen Adresse entwerten, Session beenden. report_images
+    //    und die Dateien unter data/uploads/<userId>/ bleiben bewusst erhalten.
+    await pool.execute('UPDATE login_tokens SET used_at = NOW() WHERE used_at IS NULL AND email = ?', [
+      request.session.userEmail || '',
+    ])
     await request.session.destroy()
-    app.log.info({ userId }, 'Konto auf Nutzerwunsch gelöscht (DSGVO Art. 17)')
+    app.log.info({ userId }, 'Konto anonymisiert (Anzeigen bleiben ohne Personenbezug erhalten)')
     return reply.redirect('/')
   })
 

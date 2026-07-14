@@ -196,13 +196,17 @@ export async function processInboundMail(
   }
 
   // Nutzer informieren (Fehler loggen, aber die Verarbeitung nie blockieren).
+  // Die Antwort wird auch bei anonymisierten Konten gespeichert (Aktenrecord),
+  // aber es geht keine Hinweis-Mail mehr raus (liefe an die Platzhalter-Adresse).
   if (report) {
     try {
       const [users] = await pool.execute<mysql.RowDataPacket[]>(
         'SELECT * FROM users WHERE id = ?',
         [report.user_id]
       )
-      if (users[0]) await MailService.sendReplyNotification(users[0], report)
+      if (users[0] && !users[0].anonymized_at) {
+        await MailService.sendReplyNotification(users[0], report)
+      }
     } catch (err) {
       log.error({ err, replyId }, 'Posteingang: Hinweis-Mail fehlgeschlagen')
     }
