@@ -15,6 +15,19 @@ function safeName(name: string): string {
   return (name || 'datei').replace(/[^\wäöüÄÖÜß .()-]/g, '_').slice(0, 150)
 }
 
+function esc(v: unknown): string {
+  return String(v ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string
+  )
+}
+
+function fmtDate(v: unknown): string {
+  if (!v) return '—'
+  const d = new Date(v as string)
+  return isNaN(d.getTime()) ? String(v) : d.toLocaleString('de-DE')
+}
+
 export default async function settingsRoutes(app: FastifyInstance) {
   app.get('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -168,6 +181,92 @@ export default async function settingsRoutes(app: FastifyInstance) {
     archive.on('warning', (err: Error) => app.log.warn({ err }, 'DSGVO-Export: Warnung'))
     archive.on('error', (err: Error) => app.log.error({ err }, 'DSGVO-Export: Fehler'))
 
+    // index.html: menschenlesbare Übersicht des Exports. Komplett offline
+    // (inline-CSS, keine externen Ressourcen); Fotos/PDFs/Anhänge werden über
+    // ihre relativen Pfade im entpackten ZIP eingebunden.
+    const u = users[0] || {}
+    const statusLabel: Record<string, string> = {
+      entwurf: 'Entwurf',
+      eingereicht: 'Eingereicht (in Prüfung)',
+      versendet: 'Versendet',
+    }
+    const html = `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>OWiA-Anzeiger – Datenexport ${esc(datum)}</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 2rem auto; max-width: 900px; padding: 0 1rem; color: #1a1a1a; line-height: 1.5; }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.2rem; margin-top: 2rem; } h3 { font-size: 1rem; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem 1.25rem; margin: 1rem 0; }
+  .muted { color: #666; font-size: .875rem; }
+  table { border-collapse: collapse; } td { padding: .15rem .75rem .15rem 0; vertical-align: top; }
+  td:first-child { color: #666; white-space: nowrap; }
+  .fotos { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
+  .fotos a { display: block; } .fotos img { height: 110px; border-radius: 6px; border: 1px solid #ccc; }
+  .msg { border-left: 4px solid #0d6efd; padding: .5rem .75rem; margin: .5rem 0; border-radius: 4px; background: #f8f9fa; white-space: pre-wrap; }
+  .msg.out { border-left-color: #6c757d; background: #f1f3f5; }
+  .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; background: #e9ecef; }
+  a { color: #0d6efd; }
+</style>
+</head>
+<body>
+<h1>🚗 OWiA-Anzeiger – Datenexport</h1>
+<p class="muted">Erstellt am ${esc(fmtDate(new Date()))} · gemäß Art. 15/20 DSGVO ·
+maschinenlesbare Fassung: <a href="daten.json">daten.json</a></p>
+
+<h2>Profil</h2>
+<div class="card"><table>
+<tr><td>E-Mail</td><td>${esc(u.email)}</td></tr>
+<tr><td>Name</td><td>${esc([u.vorname, u.nachname].filter(Boolean).join(' ') || '—')}</td></tr>
+<tr><td>Anschrift</td><td>${esc([u.strasse, [u.plz, u.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—')}</td></tr>
+<tr><td>Telefon</td><td>${esc(u.telefon || '—')}</td></tr>
+<tr><td>Konto erstellt</td><td>${esc(fmtDate(u.created_at))}</td></tr>
+</table></div>
+
+<h2>Anzeigen (${reports.length})</h2>
+${reports
+  .map((r) => {
+    const dirAz = safeName(r.aktenzeichen || String(r.id))
+    const fotos = images.filter((i) => i.report_id === r.id)
+    const msgs = replies.filter((m) => m.report_id === r.id)
+    return `<div class="card">
+<h3>${esc(r.aktenzeichen)} <span class="badge">${esc(statusLabel[r.status] || r.status)}</span></h3>
+<table>
+<tr><td>Kennzeichen</td><td>${esc(r.kennzeichen || '—')}${r.kennzeichen_land && r.kennzeichen_land !== 'D' ? ` (${esc(r.kennzeichen_land)})` : ''}</td></tr>
+<tr><td>Tattag / Zeit</td><td>${esc(r.tattag ? new Date(r.tattag).toLocaleDateString('de-DE') : '—')}${r.tatzeit_von ? `, ${esc(String(r.tatzeit_von).slice(0, 5))}${r.tatzeit_bis ? ` – ${esc(String(r.tatzeit_bis).slice(0, 5))}` : ''} Uhr` : ''}</td></tr>
+<tr><td>Tatort</td><td>${esc(r.tatort || '—')}</td></tr>
+<tr><td>Verstoß</td><td>${esc(r.verstoss_art || '—')}${r.fahrzeug_verlassen === 1 ? ' · Fahrzeug war verlassen' : ''}</td></tr>
+${r.beschreibung ? `<tr><td>Beschreibung</td><td>${esc(r.beschreibung)}</td></tr>` : ''}
+<tr><td>Behinderung</td><td>${r.behinderung === 1 ? `Ja${r.behinderung_text ? ` – ${esc(r.behinderung_text)}` : ''}` : 'Nein'}</td></tr>
+${r.ablehnung_grund ? `<tr><td>Ablehnungsgrund</td><td>${esc(r.ablehnung_grund)}</td></tr>` : ''}
+<tr><td>Erstellt</td><td>${esc(fmtDate(r.created_at))}</td></tr>
+${r.pdf_filename ? `<tr><td>PDF</td><td><a href="anzeigen/${esc(dirAz)}/${esc(safeName(r.pdf_filename))}">${esc(safeName(r.pdf_filename))}</a></td></tr>` : ''}
+</table>
+${fotos.length ? `<div class="fotos">${fotos.map((f) => `<a href="${esc(f.datei)}"><img src="${esc(f.datei)}" alt="Beweisfoto" loading="lazy"></a>`).join('')}</div>` : ''}
+${msgs.length ? `<h3>Nachrichtenverlauf</h3>${msgs
+      .map((m) => {
+        const anh = attachments.filter((a) => a.reply_id === m.id)
+        return `<div class="msg${m.direction === 'out' ? ' out' : ''}">
+<span class="muted">${m.direction === 'out' ? 'Gesendet' : 'Empfangen'} · ${esc(fmtDate(m.received_at))}${m.subject ? ` · ${esc(m.subject)}` : ''}</span>
+
+${esc(m.body_text || '(kein Text)')}${anh.length ? `\n\n${anh.map((a) => `📎 <a href="${esc(a.datei)}">${esc(a.original_filename || 'Anhang')}</a>`).join(' · ')}` : ''}</div>`
+      })
+      .join('')}` : ''}
+</div>`
+  })
+  .join('')}
+
+${intakePhotos.length ? `<h2>Nicht zugeordnete Import-Fotos (${intakePhotos.length})</h2>
+<div class="card"><div class="fotos">${intakePhotos.map((p) => `<a href="${esc(p.datei)}"><img src="${esc(p.datei)}" alt="Import-Foto" loading="lazy"></a>`).join('')}</div></div>` : ''}
+
+<p class="muted">Sitzungs- und Anmelde-Daten (Sessions, Einmal-Codes) sind flüchtige
+Sicherheitsartefakte und nicht Teil dieses Exports.</p>
+</body>
+</html>
+`
+
+    archive.append(html, { name: 'index.html' })
     archive.append(JSON.stringify(exportData, null, 2), { name: 'daten.json' })
     for (const f of files) {
       try {
