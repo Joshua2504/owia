@@ -70,7 +70,7 @@
                       Verwerfen
                     </button>
                   <% } else { %>
-                    <a class="btn btn-sm btn-outline-secondary" href="/intake/<%= b.id %>">Ergebnis ansehen</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="/import/<%= b.id %>">Ergebnis ansehen</a>
                   <% } %>
                 </td>
               </tr>
@@ -83,4 +83,4 @@
 <% } %>
 
 <script>window.INTAKE_CHUNK_SIZE = <%= chunkSize %>;</script>
-<script src="/public/js/intake-upload.js"></script>
+<script src="/public/js/import-upload.js"></script>

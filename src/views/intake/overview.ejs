@@ -1,6 +1,6 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h2 class="mb-0">Foto-Import – Ergebnis</h2>
-  <a class="btn btn-outline-secondary btn-sm" href="/intake">← Neuer Import</a>
+  <a class="btn btn-outline-secondary btn-sm" href="/import">← Neuer Import</a>
 </div>
 
 <div class="card shadow-sm mb-4">
@@ -14,7 +14,7 @@
         </p>
       </div>
       <% if (firstOpenAz) { %>
-        <a class="btn btn-primary" href="/report/<%= firstOpenAz %>/edit?queue=<%= batch.id %>">
+        <a class="btn btn-primary" href="/anzeige/<%= firstOpenAz %>/bearbeiten?queue=<%= batch.id %>">
           Prüfen starten (<%= openCount %> offen)
         </a>
       <% } %>
@@ -40,10 +40,10 @@
         <% for (const p of unassigned) { %>
           <div class="col-6 col-md-4 col-lg-3" data-photo-card="<%= p.id %>">
             <div class="card h-100">
-              <img src="/intake/<%= batch.id %>/photo/<%= p.id %>/thumb.jpg" alt=""
+              <img src="/import/<%= batch.id %>/photo/<%= p.id %>/thumb.jpg" alt=""
                    class="card-img-top" style="height:120px;object-fit:cover;cursor:zoom-in"
                    loading="lazy" decoding="async"
-                   data-full-src="/intake/<%= batch.id %>/photo/<%= p.id %>" title="Klick: vergrößern">
+                   data-full-src="/import/<%= batch.id %>/photo/<%= p.id %>" title="Klick: vergrößern">
               <div class="card-body p-2">
                 <select class="form-select form-select-sm mb-2" data-assign-select="<%= p.id %>">
                   <option value="">Entwurf wählen …</option>
@@ -73,7 +73,7 @@
     (function () {
       var batchId = <%= batch.id %>
       function assign(photoId, body) {
-        fetch('/intake/' + batchId + '/photos/' + photoId + '/assign', {
+        fetch('/import/' + batchId + '/photos/' + photoId + '/assign', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),

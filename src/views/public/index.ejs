@@ -2,17 +2,18 @@
   <div class="col-lg-10">
     <!-- Prominenter Call-to-Action ganz oben -->
     <div class="text-center py-5">
-      <h1 class="display-5 fw-bold mb-3">Falschparken in Frankfurt melden</h1>
+      <h1 class="display-5 fw-bold mb-3">Falschparker melden in Frankfurt am Main</h1>
       <p class="lead text-muted mb-4 mx-auto" style="max-width:640px">
-        Schnell und einfach eine Ordnungswidrigkeit anzeigen – mit Fotos, Standort
-        und fertigem PDF fürs Ordnungsamt.
+        Gehweg, Radweg oder Feuerwehrzufahrt zugeparkt? Erstatte in wenigen Minuten
+        Anzeige wegen einer Park-Ordnungswidrigkeit – mit Beweisfotos, automatischem
+        Tatort aus den Bildern und fertigem PDF fürs Ordnungsamt Frankfurt. Kostenlos.
       </p>
       <% if (currentUser) { %>
         <div class="d-flex justify-content-center gap-3 flex-wrap">
-          <form method="post" action="/report/new" class="m-0">
+          <form method="post" action="/anzeige/neu" class="m-0">
             <button type="submit" class="btn btn-primary btn-lg px-4">+ Neue Anzeige erstatten</button>
           </form>
-          <a href="/dashboard" class="btn btn-outline-secondary btn-lg px-4">Meine Anzeigen</a>
+          <a href="/anzeigen" class="btn btn-outline-secondary btn-lg px-4">Meine Anzeigen</a>
         </div>
       <% } else { %>
         <a href="/login" class="btn btn-primary btn-lg px-5 py-3 fw-semibold shadow-sm">
@@ -50,6 +51,46 @@
       </div>
     </div>
 
+    <!-- So funktioniert's: erklärt den Ablauf (und liefert Suchmaschinen Kontext) -->
+    <section class="mb-5">
+      <h2 class="h4 mb-3 text-center">So meldest du einen Falschparker</h2>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="card h-100 shadow-sm"><div class="card-body">
+            <div class="fs-3 mb-1">📸</div>
+            <h3 class="h6">1. Fotos aufnehmen &amp; hochladen</h3>
+            <p class="small text-muted mb-0">
+              Beweisfotos vom falsch geparkten Fahrzeug machen (Kennzeichen und Situation
+              sichtbar). Beim Foto-Import werden Standort und Uhrzeit automatisch aus den
+              Bildern übernommen – auch für viele Fotos auf einmal.
+            </p>
+          </div></div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100 shadow-sm"><div class="card-body">
+            <div class="fs-3 mb-1">📝</div>
+            <h3 class="h6">2. Verstoß auswählen</h3>
+            <p class="small text-muted mb-0">
+              Parken auf dem Gehweg, Radweg, in der Feuerwehrzufahrt oder im Halteverbot –
+              Verstoßart wählen, Angaben prüfen, fertig. Ein amtliches PDF-Formular wird
+              automatisch erzeugt.
+            </p>
+          </div></div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100 shadow-sm"><div class="card-body">
+            <div class="fs-3 mb-1">📮</div>
+            <h3 class="h6">3. Wir prüfen &amp; verschicken</h3>
+            <p class="small text-muted mb-0">
+              Nach dem Einreichen prüfen wir die Anzeige und senden sie ans Ordnungsamt
+              Frankfurt – du bekommst die E-Mail in Kopie und siehst Antworten des Amts
+              direkt in der App.
+            </p>
+          </div></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Karte darunter -->
     <h2 class="h5 mb-1">Öffentliche Übersicht</h2>
     <p class="text-muted small mb-3">
@@ -60,6 +101,66 @@
     <div id="overview-map" class="rounded border shadow-sm"
          style="height:520px"
          data-center-lat="<%= centerLat %>" data-center-lon="<%= centerLon %>"></div>
+
+    <!-- FAQ: beantwortet die häufigsten Suchanfragen (auch als FAQPage-Schema unten) -->
+    <%
+    const faq = [
+      ['Darf ich Falschparker überhaupt anzeigen?',
+       'Ja. Jeder darf eine Ordnungswidrigkeit wie Falschparken beim Ordnungsamt anzeigen (Privatanzeige nach § 46 OWiG i.V.m. der StVO). Wichtig sind Beweisfotos, Tatort, Datum, Uhrzeit und das Kennzeichen – genau das erfasst OWiA-Anzeiger für dich.'],
+      ['Was kostet die Anzeige eines Falschparkers?',
+       'Nichts. OWiA-Anzeiger ist kostenlos. Auch beim Ordnungsamt entstehen dir als anzeigender Person keine Kosten.'],
+      ['Welche Parkverstöße kann ich melden?',
+       'Unter anderem: Parken auf dem Gehweg oder Radweg, im absoluten oder eingeschränkten Halteverbot, in zweiter Reihe, in Feuerwehrzufahrten, auf Behindertenparkplätzen, vor abgesenkten Bordsteinen, an Kreuzungen und auf der linken Fahrbahnseite.'],
+      ['Welche Fotos brauche ich als Beweis?',
+       'Am besten mehrere Fotos: eine Übersicht der Situation (z.B. blockierter Gehweg samt Umgebung) und eine Nahaufnahme mit lesbarem Kennzeichen. Fotografierst du denselben Verstoß über einen längeren Zeitraum mehrfach, belegt das die Dauer.'],
+      ['Bleibe ich anonym?',
+       'Gegenüber der Öffentlichkeit ja – die öffentliche Karte zeigt keine personenbezogenen Daten. Gegenüber dem Ordnungsamt nicht: Anonyme Anzeigen werden nicht bearbeitet, als Zeugin oder Zeuge musst du mit Name und Anschrift benannt sein.'],
+      ['Was passiert nach dem Absenden?',
+       'Wir prüfen deine Anzeige und senden sie mit dem amtlichen PDF-Formular per E-Mail an das Ordnungsamt Frankfurt – du erhältst eine Kopie. Antworten des Amts (z.B. Rückfragen oder der Ausgang des Verfahrens) siehst du direkt in der App.'],
+    ]
+    %>
+    <section class="my-5">
+      <h2 class="h4 mb-3 text-center">Häufige Fragen zum Melden von Falschparkern</h2>
+      <div class="accordion" id="faq">
+        <% faq.forEach(([q, a], i) => { %>
+          <div class="accordion-item">
+            <h3 class="accordion-header">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                      data-bs-target="#faq-<%= i %>"><%= q %></button>
+            </h3>
+            <div id="faq-<%= i %>" class="accordion-collapse collapse" data-bs-parent="#faq">
+              <div class="accordion-body small"><%= a %></div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    </section>
+
+    <!-- Strukturierte Daten für Suchmaschinen (FAQ + Web-Anwendung) -->
+    <script type="application/ld+json"><%- JSON.stringify({
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'WebApplication',
+          name: 'OWiA-Anzeiger',
+          url: (locals.appUrl || '') + '/',
+          description: locals.metaDescription || '',
+          applicationCategory: 'UtilityApplication',
+          operatingSystem: 'Web',
+          offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+          areaServed: { '@type': 'City', name: 'Frankfurt am Main' },
+          inLanguage: 'de',
+        },
+        {
+          '@type': 'FAQPage',
+          mainEntity: faq.map(([q, a]) => ({
+            '@type': 'Question',
+            name: q,
+            acceptedAnswer: { '@type': 'Answer', text: a },
+          })),
+        },
+      ],
+    }).replace(/</g, '\\u003c') %></script>
   </div>
 </div>
 

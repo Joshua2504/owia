@@ -70,7 +70,7 @@ async function loginUserByEmail(
 export default async function authRoutes(app: FastifyInstance) {
   // Schritt 1: E-Mail-Adresse eingeben
   app.get('/login', async (request, reply) => {
-    if (request.session.userId) return reply.redirect('/dashboard')
+    if (request.session.userId) return reply.redirect('/anzeigen')
     return reply.view('/auth/login.ejs', viewData(request, { title: 'Anmelden' }))
   })
 
@@ -175,7 +175,7 @@ export default async function authRoutes(app: FastifyInstance) {
       tokenRow.id,
     ])
     await loginUserByEmail(request, normalizedEmail, tokenRow.remember === 1)
-    return reply.redirect('/dashboard')
+    return reply.redirect('/anzeigen')
   })
 
   // Alternative: Anmeldung direkt über den Link in der E-Mail
@@ -201,7 +201,7 @@ export default async function authRoutes(app: FastifyInstance) {
       tokenRow.id,
     ])
     await loginUserByEmail(request, tokenRow.email, tokenRow.remember === 1)
-    return reply.redirect('/dashboard')
+    return reply.redirect('/anzeigen')
   })
 
   app.get('/logout', async (request, reply) => {

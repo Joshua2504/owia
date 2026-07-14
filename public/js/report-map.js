@@ -1,4 +1,4 @@
-// Tatort-Karte auf der Bearbeiten-Seite (/report/:id/edit).
+// Tatort-Karte auf der Bearbeiten-Seite (/anzeige/:id/bearbeiten).
 //
 // Zeigt den Tatort als verschiebbaren Marker. Tiles kommen same-origin über
 // /tiles/{z}/{x}/{y}.png (Proxy auf den OSM-Tileserver, siehe src/routes/tiles.ts).

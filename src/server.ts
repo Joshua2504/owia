@@ -99,6 +99,18 @@ async function main() {
     return payload
   })
 
+  // Alte (englische) Pfade auf die neuen deutschen umleiten – Lesezeichen und
+  // bereits versendete Mail-Links (/report/...) sollen weiter funktionieren.
+  app.get('/dashboard', (_req, reply) => reply.redirect(301, '/anzeigen'))
+  app.get('/settings', (_req, reply) => reply.redirect(301, '/einstellungen'))
+  app.get('/intake', (_req, reply) => reply.redirect(301, '/import'))
+  app.get('/intake/*', (req, reply) =>
+    reply.redirect(301, req.url.replace(/^\/intake/, '/import'))
+  )
+  app.get('/report/*', (req, reply) =>
+    reply.redirect(301, req.url.replace(/^\/report/, '/anzeige').replace(/\/edit(\?|$)/, '/bearbeiten$1'))
+  )
+
   await app.register(authRoutes)
   await app.register(dashboardRoutes)
   await app.register(reportsRoutes)

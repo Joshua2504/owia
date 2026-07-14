@@ -11,7 +11,7 @@ const _queue = typeof queueId !== 'undefined' && queueId ? '?queue=' + queueId :
 const _hasDrafts = reports.some((r) => r.status === 'entwurf')
 %>
 <div class="table-responsive">
-  <table class="table table-hover align-middle mb-0">
+  <table class="table table-sm table-hover align-middle mb-0">
     <thead class="table-light">
       <tr>
         <th>Fotos</th>
@@ -31,10 +31,10 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
           <td style="min-width:70px;max-width:220px">
             <div class="d-flex flex-wrap gap-1">
               <% for (const imgId of imgIds) { %>
-                <img src="/report/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt=""
-                     class="rounded border" style="width:48px;height:36px;object-fit:cover;cursor:zoom-in"
+                <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt=""
+                     class="rounded border" style="width:40px;height:30px;object-fit:cover;cursor:zoom-in"
                      loading="lazy" decoding="async"
-                     data-full-src="/report/<%= r.aktenzeichen %>/image/<%= imgId %>"
+                     data-full-src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>"
                      <% if (r.status === 'entwurf') { %>
                        draggable="true" data-drag-image="<%= imgId %>" data-drag-az="<%= r.aktenzeichen %>"
                        title="Klick: vergrößern · Ziehen: in anderen Entwurf verschieben"
@@ -55,8 +55,7 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
             <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
             <% if (von) { %>
               <div class="text-muted small">
-                <%= von %><% if (bis && bis !== von) { %> – <%= bis %> Uhr
-                  <span class="badge text-bg-info">Dauer belegt</span><% } else { %> Uhr<% } %>
+                <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr
               </div>
             <% } %>
           </td>
@@ -74,7 +73,7 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
             <% } %>
             <%# Antwort des Ordnungsamts liegt vor (Spalten liefert nur das Dashboard). %>
             <% if (r.reply_count) { %>
-              <a href="/report/<%= r.aktenzeichen %>" class="badge text-bg-primary text-decoration-none"
+              <a href="/anzeige/<%= r.aktenzeichen %>" class="badge text-bg-primary text-decoration-none"
                  title="Antwort des Ordnungsamts ansehen">
                 📨 Antwort<%= r.reply_count > 1 ? ' (' + r.reply_count + ')' : '' %><%= r.unread_reply_count > 0 ? ' • neu' : '' %>
               </a>
@@ -83,13 +82,13 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
           <td>
             <div class="d-flex gap-2 justify-content-end">
               <% if (r.status === 'entwurf') { %>
-                <a href="/report/<%= r.aktenzeichen %>/edit<%= _queue %>" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
-                <form method="post" action="/report/<%= r.aktenzeichen %>/discard" class="m-0"
+                <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+                <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0"
                       onsubmit="return confirm('Entwurf wirklich löschen?')">
                   <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
                 </form>
               <% } else { %>
-                <a href="/report/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
+                <a href="/anzeige/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
               <% } %>
             </div>
           </td>

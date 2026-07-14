@@ -21,7 +21,7 @@
   })
 
   function moveDragged(moved, body) {
-    fetch('/report/' + moved.az + '/images/' + moved.imageId + '/move', {
+    fetch('/anzeige/' + moved.az + '/images/' + moved.imageId + '/move', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

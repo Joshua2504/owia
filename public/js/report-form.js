@@ -1,4 +1,4 @@
-// Zusatzfunktionen für das Entwurfs-Formular (/report/:id/edit):
+// Zusatzfunktionen für das Entwurfs-Formular (/anzeige/:id/bearbeiten):
 //
 //   1. Tatort aus dem aktuellen Standort des Geräts übernehmen (Geolocation API).
 //   2. Tatort aus den GPS-Daten (EXIF) eines hochgeladenen Fotos übernehmen.
@@ -533,7 +533,7 @@
     }
     sel.disabled = true
     try {
-      const res = await fetch('/report/' + reportId + '/images/' + item.serverImageId + '/move', {
+      const res = await fetch('/anzeige/' + reportId + '/images/' + item.serverImageId + '/move', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(isNew ? { newDraft: true } : { targetAz: targetAz }),
@@ -704,7 +704,7 @@
 
       let savedId
       if (item.serverImageId) {
-        const res = await fetch('/report/' + reportId + '/images/' + item.serverImageId, {
+        const res = await fetch('/anzeige/' + reportId + '/images/' + item.serverImageId, {
           method: 'PUT',
           body: fd,
         })
@@ -712,7 +712,7 @@
         const data = await res.json()
         savedId = data.image && data.image.id
       } else {
-        const res = await fetch('/report/' + reportId + '/images', { method: 'POST', body: fd })
+        const res = await fetch('/anzeige/' + reportId + '/images', { method: 'POST', body: fd })
         if (!res.ok) throw new Error('upload failed')
         const data = await res.json()
         if (data.errors && data.errors.length) alert(data.errors[0])
@@ -746,7 +746,7 @@
     if (item.els && item.els.col) item.els.col.remove()
     if (item.takenAt) refreshPhotoTimes(false) // Zeitspanne ohne dieses Foto neu anzeigen
     if (item.serverImageId) {
-      fetch('/report/' + reportId + '/images/' + item.serverImageId, { method: 'DELETE' }).catch(
+      fetch('/anzeige/' + reportId + '/images/' + item.serverImageId, { method: 'DELETE' }).catch(
         () => {}
       )
     }
@@ -778,7 +778,7 @@
     const first = currentOrderIds()[0]
     document.dispatchEvent(
       new CustomEvent('report:first-image', {
-        detail: { url: first ? '/report/' + reportId + '/image/' + first + '/thumb.jpg' : null },
+        detail: { url: first ? '/anzeige/' + reportId + '/image/' + first + '/thumb.jpg' : null },
       })
     )
   }
@@ -787,7 +787,7 @@
     const order = currentOrderIds()
     announceFirstImage()
     if (order.length < 2) return
-    fetch('/report/' + reportId + '/images/reorder', {
+    fetch('/anzeige/' + reportId + '/images/reorder', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order: order }),
@@ -979,7 +979,7 @@
       })
       if (status) status.textContent = 'Speichert …'
       try {
-        const res = await fetch('/report/' + reportId, {
+        const res = await fetch('/anzeige/' + reportId, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),

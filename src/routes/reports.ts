@@ -244,8 +244,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
       verstossArt: r.verstoss_art || null,
       tattag: r.tattag || null,
       tatort: r.tatort || null,
-      url: `/report/${r.aktenzeichen}/edit`,
-      imageUrl: r.image_id ? `/report/${r.aktenzeichen}/image/${r.image_id}/thumb.jpg` : null,
+      url: `/anzeige/${r.aktenzeichen}/bearbeiten`,
+      imageUrl: r.image_id ? `/anzeige/${r.aktenzeichen}/image/${r.image_id}/thumb.jpg` : null,
     }))
     return reply.send({ reports })
   })
@@ -254,24 +254,24 @@ export default async function reportsRoutes(app: FastifyInstance) {
   // Entwurf anlegen + bearbeiten
   // ---------------------------------------------------------------------------
 
-  app.post('/report/new', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/neu', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
     const { aktenzeichen } = await createDraft(userId)
-    return reply.redirect(`/report/${aktenzeichen}/edit`)
+    return reply.redirect(`/anzeige/${aktenzeichen}/bearbeiten`)
   })
 
-  app.get('/report/:az/edit', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/anzeige/:az/bearbeiten', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
+    if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
-    const firstImageUrl = images.length ? `/report/${az}/image/${images[0].id}/thumb.jpg` : null
+    const firstImageUrl = images.length ? `/anzeige/${az}/image/${images[0].id}/thumb.jpg` : null
 
     // Review-Queue des Foto-Imports: "Entwurf X von N" mit Vor/Zurück-Navigation
     // über alle noch offenen Entwürfe desselben Batches.
@@ -305,7 +305,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
   })
 
   // Hintergrund-Autosave der Textfelder (JSON).
-  app.patch('/report/:az', { preHandler: requireAuth }, async (request, reply) => {
+  app.patch('/anzeige/:az', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
@@ -317,7 +317,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
   })
 
   // Einzelnes (ggf. bereits geschwärztes) Bild sofort zum Entwurf hochladen.
-  app.post('/report/:az/images', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/images', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
@@ -346,7 +346,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
         try {
           const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
           const row = await saveImageToReport(userId, reportId, prepared)
-          saved.push({ id: row.id, url: `/report/${az}/image/${row.id}` })
+          saved.push({ id: row.id, url: `/anzeige/${az}/image/${row.id}` })
           count++
         } catch {
           errors.push('Nur JPG-, PNG- und HEIC/HEIF-Bilder werden unterstützt.')
@@ -359,7 +359,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({ images: saved, errors })
   })
 
-  app.delete('/report/:az/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
+  app.delete('/anzeige/:az/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
@@ -380,7 +380,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
   // Bestehendes Bild durch eine neue (z.B. geschwärzte) Fassung ersetzen.
   // Die Bild-ID bleibt erhalten, das Bilder-Limit wird nicht berührt.
-  app.put('/report/:az/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
+  app.put('/anzeige/:az/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
@@ -419,12 +419,12 @@ export default async function reportsRoutes(app: FastifyInstance) {
     )
     await removeImageFiles(userId, old.report_id, old.filename, old.original_filename)
 
-    return reply.send({ image: { id: Number(imageId), url: `/report/${az}/image/${imageId}` } })
+    return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` } })
   })
 
   // Bildreihenfolge speichern (Nutzer sortiert per ◀ ▶). Das erste Bild dient u.a. als
   // Karten-Marker. order = Bild-IDs in der neuen Reihenfolge.
-  app.post('/report/:az/images/reorder', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/images/reorder', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
@@ -453,7 +453,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
   // Foto in einen anderen eigenen Entwurf verschieben (aus dem Formular oder
   // per Drag & Drop in der Import-Übersicht). Dateien wandern physisch mit,
   // das Bild landet am Ende der Ziel-Sortierung; beide PDFs werden aktualisiert.
-  app.post('/report/:az/images/:imageId/move', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/images/:imageId/move', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
     const { targetAz, newDraft } = (request.body || {}) as { targetAz?: string; newDraft?: boolean }
@@ -535,12 +535,12 @@ export default async function reportsRoutes(app: FastifyInstance) {
   })
 
   // „Entwurf speichern": finale Werte sichern, PDF erzeugen, zur Detailseite.
-  app.post('/report/:az/save', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/save', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
+    if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
 
     const body = (request.body || {}) as Record<string, string>
     await persistFields(report.id, userId, body)
@@ -552,20 +552,20 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (Number.isInteger(queueId) && queueId > 0 && queueId === report.intake_batch_id) {
       const queue = await loadQueueContext(queueId, userId, az)
       setFlash(reply, 'success', `Entwurf ${az} gespeichert.`)
-      if (queue?.nextAz) return reply.redirect(`/report/${queue.nextAz}/edit?queue=${queueId}`)
-      return reply.redirect(`/intake/${queueId}`)
+      if (queue?.nextAz) return reply.redirect(`/anzeige/${queue.nextAz}/bearbeiten?queue=${queueId}`)
+      return reply.redirect(`/import/${queueId}`)
     }
 
     setFlash(reply, 'success', 'Entwurf gespeichert.')
-    return reply.redirect(`/report/${az}`)
+    return reply.redirect(`/anzeige/${az}`)
   })
 
-  app.post('/report/:az/discard', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/discard', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
+    if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
     const reportId = report.id
 
     await pool.execute('DELETE FROM reports WHERE id = ? AND user_id = ?', [reportId, userId])
@@ -583,14 +583,14 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
 
     setFlash(reply, 'success', 'Entwurf verworfen.')
-    return reply.redirect('/dashboard')
+    return reply.redirect('/anzeigen')
   })
 
   // ---------------------------------------------------------------------------
   // Detail / Versand
   // ---------------------------------------------------------------------------
 
-  app.get('/report/:az', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/anzeige/:az', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
@@ -637,7 +637,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
   // Nachricht des Nutzers ans Ordnungsamt (Antwort auf Rückfragen). Nur bei
   // versendeten Anzeigen – vorher gibt es keinen Mail-Verlauf mit dem Amt.
-  app.post('/report/:az/message', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/message', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const text = String((request.body as { text?: string })?.text || '').trim().slice(0, 10_000)
@@ -646,11 +646,11 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
     if (report.status !== 'versendet') {
       setFlash(reply, 'error', 'Nachrichten sind erst nach dem Versand der Anzeige möglich.')
-      return reply.redirect(`/report/${az}`)
+      return reply.redirect(`/anzeige/${az}`)
     }
     if (!text) {
       setFlash(reply, 'error', 'Bitte einen Nachrichtentext eingeben.')
-      return reply.redirect(`/report/${az}`)
+      return reply.redirect(`/anzeige/${az}`)
     }
 
     // Threading: auf die letzte Nachricht des Amts antworten (sonst auf die
@@ -689,11 +689,11 @@ export default async function reportsRoutes(app: FastifyInstance) {
       app.log.error({ err }, 'Nutzer-Nachricht ans Ordnungsamt fehlgeschlagen')
       setFlash(reply, 'error', 'Senden fehlgeschlagen – bitte später erneut versuchen.')
     }
-    return reply.redirect(`/report/${az}`)
+    return reply.redirect(`/anzeige/${az}`)
   })
 
   // Anhang einer Ordnungsamt-Antwort herunterladen (nur eigene Anzeigen).
-  app.get('/report/:az/reply/:replyId/attachment/:attId', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/anzeige/:az/reply/:replyId/attachment/:attId', { preHandler: requireAuth }, async (request, reply) => {
     const { az, replyId, attId } = request.params as { az: string; replyId: string; attId: string }
     const userId = request.session.userId as number
 
@@ -719,7 +719,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
   })
 
-  app.get('/report/:az/image/:imageId', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/anzeige/:az/image/:imageId', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
     const wantOriginal = (request.query as { original?: string }).original === '1'
@@ -752,7 +752,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
   // Kleines Vorschaubild (fürs Karten-Marker): serverseitig auf wenige KB heruntergerechnet,
   // damit die Karte nicht die Vollbilder laden muss.
-  app.get('/report/:az/image/:imageId/thumb.jpg', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/anzeige/:az/image/:imageId/thumb.jpg', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
@@ -781,7 +781,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
   })
 
-  app.get('/report/:az/pdf', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/anzeige/:az/pdf', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const inline = (request.query as { inline?: string }).inline === '1'
@@ -807,16 +807,16 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
   // Anzeige zur Prüfung einreichen: ein Admin gibt sie frei und verschickt sie
   // ans Ordnungsamt. Nutzer versenden nicht mehr selbst.
-  app.post('/report/:az/submit', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/submit', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
+    if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
 
     if (!isComplete(report)) {
       setFlash(reply, 'error', 'Bitte zuerst alle Pflichtfelder ausfüllen.')
-      return reply.redirect(`/report/${az}/edit`)
+      return reply.redirect(`/anzeige/${az}/bearbeiten`)
     }
 
     // PDF auf den letzten Stand bringen; eine frühere Ablehnung ist damit erledigt.
@@ -826,21 +826,21 @@ export default async function reportsRoutes(app: FastifyInstance) {
       [report.id]
     )
     setFlash(reply, 'success', 'Anzeige eingereicht – sie wird geprüft und dann ans Ordnungsamt verschickt.')
-    return reply.redirect(`/report/${az}`)
+    return reply.redirect(`/anzeige/${az}`)
   })
 
   // Eingereichte Anzeige zurückziehen (wird wieder bearbeitbarer Entwurf).
-  app.post('/report/:az/withdraw', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/anzeige/:az/withdraw', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'eingereicht') return reply.redirect(`/report/${az}`)
+    if (report.status !== 'eingereicht') return reply.redirect(`/anzeige/${az}`)
 
     await pool.execute("UPDATE reports SET status='entwurf', eingereicht_at=NULL WHERE id=?", [
       report.id,
     ])
     setFlash(reply, 'success', 'Anzeige zurückgezogen – sie ist wieder ein Entwurf.')
-    return reply.redirect(`/report/${az}/edit`)
+    return reply.redirect(`/anzeige/${az}/bearbeiten`)
   })
 }

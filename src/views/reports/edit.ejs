@@ -18,9 +18,9 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
     <div class="d-flex justify-content-between align-items-center mb-4">
       <h2 class="mb-0">Anzeige bearbeiten</h2>
       <% if (locals.queue) { %>
-        <a href="/intake/<%= queue.batchId %>" class="btn btn-outline-secondary btn-sm">← Import-Übersicht</a>
+        <a href="/import/<%= queue.batchId %>" class="btn btn-outline-secondary btn-sm">← Import-Übersicht</a>
       <% } else { %>
-        <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+        <a href="/anzeigen" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
       <% } %>
     </div>
 
@@ -30,10 +30,10 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
           <div class="fw-semibold">Entwurf <%= queue.position %> von <%= queue.total %></div>
           <div class="d-flex gap-2">
             <% if (queue.prevAz) { %>
-              <a class="btn btn-sm btn-outline-secondary" href="/report/<%= queue.prevAz %>/edit?queue=<%= queue.batchId %>">← Zurück</a>
+              <a class="btn btn-sm btn-outline-secondary" href="/anzeige/<%= queue.prevAz %>/edit?queue=<%= queue.batchId %>">← Zurück</a>
             <% } %>
             <% if (queue.nextAz) { %>
-              <a class="btn btn-sm btn-outline-secondary" href="/report/<%= queue.nextAz %>/edit?queue=<%= queue.batchId %>">Überspringen →</a>
+              <a class="btn btn-sm btn-outline-secondary" href="/anzeige/<%= queue.nextAz %>/edit?queue=<%= queue.batchId %>">Überspringen →</a>
             <% } %>
             <button type="submit" form="report-form" class="btn btn-sm btn-primary">
               Speichern &amp; weiter<% if (!queue.nextAz) { %> (letzter)<% } %>
@@ -56,7 +56,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 
     <div class="card shadow-sm">
       <div class="card-body p-4">
-        <form id="report-form" method="post" action="/report/<%= r.aktenzeichen %>/save"
+        <form id="report-form" method="post" action="/anzeige/<%= r.aktenzeichen %>/save"
               data-report-id="<%= r.aktenzeichen %>">
           <% if (locals.queue) { %>
             <input type="hidden" name="queue" value="<%= queue.batchId %>">
@@ -71,7 +71,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               Bereiche (z.&nbsp;B. Personen) kannst du schwärzen – wird automatisch gespeichert.
             </div>
             <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
-            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.aktenzeichen}/image/${img.id}` }))) %></script>
+            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/anzeige/${r.aktenzeichen}/image/${img.id}` }))) %></script>
             <div id="image-editor" class="row g-3 mt-1"></div>
           </div>
 
@@ -233,12 +233,12 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
       nur einem ausgefüllten Feld oder nur einem Foto, etwa um unterwegs Fotos und Standort
       festzuhalten und die Anzeige später zu vervollständigen. Eingaben werden zudem
       automatisch gespeichert. Deine persönlichen Daten (Name, Adresse) werden aus den
-      <a href="/settings">Einstellungen</a> übernommen.
+      <a href="/einstellungen">Einstellungen</a> übernommen.
     </p>
   </div>
 </div>
 
-<form id="discard-form" method="post" action="/report/<%= r.aktenzeichen %>/discard" class="d-none"></form>
+<form id="discard-form" method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="d-none"></form>
 
 <!-- Leaflet für die Tatort-Karte (Tiles kommen same-origin über /tiles/...). -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">

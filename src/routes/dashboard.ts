@@ -4,7 +4,7 @@ import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
 
 export default async function dashboardRoutes(app: FastifyInstance) {
-  app.get('/dashboard', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/anzeigen', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
     const [reports] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tattag, tatzeit_von, tatzeit_bis,

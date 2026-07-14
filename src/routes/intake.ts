@@ -16,7 +16,7 @@ import { createDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/
 import { reverseGeocode } from '../services/geocode'
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
 
-// Muss zur Chunk-Größe in public/js/intake-upload.js passen und unter dem
+// Muss zur Chunk-Größe in public/js/import-upload.js passen und unter dem
 // globalen Multipart-Limit (files: 10, src/server.ts) bleiben.
 export const CHUNK_SIZE = 5
 const MAX_IMAGES_PER_REPORT = 10
@@ -84,7 +84,7 @@ async function loadPhotos(batchId: number, onlyUnassigned = false): Promise<Phot
 
 export default async function intakeRoutes(app: FastifyInstance) {
   // Upload-Seite; listet auch bestehende Batches (offenen Upload fortsetzen/verwerfen).
-  app.get('/intake', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/import', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
     const [batches] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT b.id, b.status, b.created_at,
@@ -106,7 +106,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
   })
 
   // Neuen Batch anlegen (wird vom Upload-JS vor dem ersten Chunk aufgerufen).
-  app.post('/intake/batch', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/import/batch', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
     const [result] = await pool.execute<mysql.ResultSetHeader>(
       "INSERT INTO intake_batches (user_id, status) VALUES (?, 'open')",
@@ -116,7 +116,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
   })
 
   // Ein Upload-Chunk (<= CHUNK_SIZE Dateien, Feld "bilder").
-  app.post('/intake/:batchId/photos', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/import/:batchId/photos', { preHandler: requireAuth }, async (request, reply) => {
     const { batchId } = request.params as { batchId: string }
     const userId = request.session.userId as number
     const batch = await loadBatch(batchId, userId)
@@ -168,21 +168,21 @@ export default async function intakeRoutes(app: FastifyInstance) {
 
   // Gruppierung + Entwurfs-Erzeugung. Claim über den Status, damit ein doppelter
   // Aufruf (Reload, zweiter Tab) nicht doppelte Entwürfe erzeugt.
-  app.post('/intake/:batchId/finish', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/import/:batchId/finish', { preHandler: requireAuth }, async (request, reply) => {
     const { batchId } = request.params as { batchId: string }
     const userId = request.session.userId as number
     const batch = await loadBatch(batchId, userId)
     if (!batch) return reply.status(404).send({ error: 'not found' })
     if (batch.status !== 'open') {
       // done/grouping: einfach zur Übersicht – die zeigt den aktuellen Stand.
-      return reply.send({ redirect: `/intake/${batch.id}` })
+      return reply.send({ redirect: `/import/${batch.id}` })
     }
 
     const [claim] = await pool.execute<mysql.ResultSetHeader>(
       "UPDATE intake_batches SET status = 'grouping' WHERE id = ? AND status = 'open'",
       [batch.id]
     )
-    if (claim.affectedRows === 0) return reply.send({ redirect: `/intake/${batch.id}` })
+    if (claim.affectedRows === 0) return reply.send({ redirect: `/import/${batch.id}` })
 
     try {
       const photos = await loadPhotos(batch.id, true)
@@ -245,23 +245,23 @@ export default async function intakeRoutes(app: FastifyInstance) {
         "UPDATE intake_batches SET status = 'done', grouped_at = NOW() WHERE id = ?",
         [batch.id]
       )
-      return reply.send({ redirect: `/intake/${batch.id}` })
+      return reply.send({ redirect: `/import/${batch.id}` })
     } catch (err) {
       // Fehler mittendrin: bereits erzeugte Entwürfe bleiben bestehen, die
       // restlichen Fotos bleiben unzugeordnet und lassen sich manuell verteilen.
       request.log.error({ err }, 'Intake-Gruppierung fehlgeschlagen')
       await pool.execute("UPDATE intake_batches SET status = 'done', grouped_at = NOW() WHERE id = ?", [batch.id])
-      return reply.send({ redirect: `/intake/${batch.id}` })
+      return reply.send({ redirect: `/import/${batch.id}` })
     }
   })
 
   // Batch-Übersicht: erzeugte Entwürfe + unzugeordnete Fotos.
-  app.get('/intake/:batchId', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/import/:batchId', { preHandler: requireAuth }, async (request, reply) => {
     const { batchId } = request.params as { batchId: string }
     const userId = request.session.userId as number
     const batch = await loadBatch(batchId, userId)
     if (!batch) return reply.status(404).send('Import nicht gefunden.')
-    if (batch.status === 'open') return reply.redirect('/intake')
+    if (batch.status === 'open') return reply.redirect('/import')
 
     const [drafts] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT r.id, r.aktenzeichen, r.status, r.tattag, r.tatzeit_von, r.tatzeit_bis,
@@ -305,7 +305,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
   })
 
   // Vollbild eines (unzugeordneten) Intake-Fotos (Lightbox in der Übersicht).
-  app.get('/intake/:batchId/photo/:photoId', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/import/:batchId/photo/:photoId', { preHandler: requireAuth }, async (request, reply) => {
     const { batchId, photoId } = request.params as { batchId: string; photoId: string }
     const userId = request.session.userId as number
 
@@ -331,7 +331,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
   })
 
   // Thumbnail eines (unzugeordneten) Intake-Fotos.
-  app.get('/intake/:batchId/photo/:photoId/thumb.jpg', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/import/:batchId/photo/:photoId/thumb.jpg', { preHandler: requireAuth }, async (request, reply) => {
     const { batchId, photoId } = request.params as { batchId: string; photoId: string }
     const userId = request.session.userId as number
 
@@ -361,7 +361,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
   })
 
   // Unzugeordnetes Foto einem Entwurf des Batches zuordnen (oder neuen anlegen).
-  app.post('/intake/:batchId/photos/:photoId/assign', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/import/:batchId/photos/:photoId/assign', { preHandler: requireAuth }, async (request, reply) => {
     const { batchId, photoId } = request.params as { batchId: string; photoId: string }
     const userId = request.session.userId as number
     const body = (request.body || {}) as { az?: string; newDraft?: boolean }
@@ -424,7 +424,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
   })
 
   // Offenen Batch verwerfen (Fotos + Dateien löschen).
-  app.post('/intake/:batchId/discard', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/import/:batchId/discard', { preHandler: requireAuth }, async (request, reply) => {
     const { batchId } = request.params as { batchId: string }
     const userId = request.session.userId as number
     const batch = await loadBatch(batchId, userId)
@@ -434,6 +434,6 @@ export default async function intakeRoutes(app: FastifyInstance) {
     await pool.execute('DELETE FROM intake_batches WHERE id = ?', [batch.id])
     await fs.rm(intakeDir(userId, batch.id), { recursive: true, force: true })
     setFlash(reply, 'success', 'Foto-Import verworfen.')
-    return reply.send({ redirect: '/intake' })
+    return reply.send({ redirect: '/import' })
   })
 }

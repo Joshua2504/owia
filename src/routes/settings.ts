@@ -4,7 +4,7 @@ import { pool } from '../db/connection'
 import { requireAuth, viewData, setFlash } from '../middleware/auth'
 
 export default async function settingsRoutes(app: FastifyInstance) {
-  app.get('/settings', { preHandler: requireAuth }, async (request, reply) => {
+  app.get('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT email, vorname, nachname, strasse, plz, ort, telefon FROM users WHERE id = ?',
       [request.session.userId]
@@ -15,7 +15,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
     }))
   })
 
-  app.post('/settings', { preHandler: requireAuth }, async (request, reply) => {
+  app.post('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
     const { vorname, nachname, strasse, plz, ort, telefon } =
       request.body as Record<string, string>
 
@@ -28,6 +28,6 @@ export default async function settingsRoutes(app: FastifyInstance) {
     const name = [vorname, nachname].filter(Boolean).join(' ')
     request.session.userName = name || request.session.userEmail
     setFlash(reply, 'success', 'Einstellungen gespeichert.')
-    return reply.redirect('/settings')
+    return reply.redirect('/einstellungen')
   })
 }

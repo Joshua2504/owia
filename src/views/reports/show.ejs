@@ -23,9 +23,9 @@ const versandLabel = {
       <h2 class="mb-0">Anzeige <code><%= report.aktenzeichen || `#${report.id}` %></code></h2>
       <div class="d-flex gap-2">
         <% if (isEntwurf) { %>
-          <a href="/report/<%= report.aktenzeichen %>/edit" class="btn btn-outline-primary btn-sm">✎ Bearbeiten</a>
+          <a href="/anzeige/<%= report.aktenzeichen %>/bearbeiten" class="btn btn-outline-primary btn-sm">✎ Bearbeiten</a>
         <% } %>
-        <a href="/dashboard" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+        <a href="/anzeigen" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
       </div>
     </div>
 
@@ -92,12 +92,12 @@ const versandLabel = {
           <div class="row g-3">
             <% for (const img of images) { %>
               <div class="col-6 col-md-4">
-                <a href="/report/<%= report.aktenzeichen %>/image/<%= img.id %>" target="_blank">
-                  <img src="/report/<%= report.aktenzeichen %>/image/<%= img.id %>"
+                <a href="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>" target="_blank">
+                  <img src="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>"
                        class="img-fluid rounded border" alt="Beweisfoto">
                 </a>
                 <% if (img.original_filename && img.original_filename !== img.filename) { %>
-                  <a href="/report/<%= report.aktenzeichen %>/image/<%= img.id %>?original=1"
+                  <a href="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>?original=1"
                      class="d-block small text-muted mt-1">Original herunterladen</a>
                 <% } %>
               </div>
@@ -127,7 +127,7 @@ const versandLabel = {
               <div style="white-space:pre-wrap"><%= rep.body_text || '(kein Text)' %></div>
               <% for (const att of (attachmentsByReply[rep.id] || [])) { %>
                 <a class="btn btn-sm btn-outline-secondary mt-2 me-1"
-                   href="/report/<%= report.aktenzeichen %>/reply/<%= rep.id %>/attachment/<%= att.id %>">
+                   href="/anzeige/<%= report.aktenzeichen %>/reply/<%= rep.id %>/attachment/<%= att.id %>">
                   📎 <%= att.original_filename %><% if (att.size_bytes) { %> (<%= Math.round(att.size_bytes / 1024) %> KB)<% } %>
                 </a>
               <% } %>
@@ -136,7 +136,7 @@ const versandLabel = {
 
           <% if (isVersendet) { %>
             <!-- Antwort ans Ordnungsamt direkt aus der App (Nutzer in Kopie). -->
-            <form method="post" action="/report/<%= report.aktenzeichen %>/message" class="mt-3">
+            <form method="post" action="/anzeige/<%= report.aktenzeichen %>/message" class="mt-3">
               <label class="form-label small">Nachricht ans Ordnungsamt (z.&nbsp;B. Antwort auf eine Rückfrage)</label>
               <textarea name="text" class="form-control mb-2" rows="4" maxlength="10000" required
                         placeholder="Sehr geehrte Damen und Herren, …"></textarea>
@@ -162,7 +162,7 @@ const versandLabel = {
       <% if (!complete) { %>
         <div class="alert alert-warning">
           Es fehlen noch Pflichtangaben. Bitte zuerst
-          <a href="/report/<%= report.aktenzeichen %>/edit" class="alert-link">den Entwurf vervollständigen</a>,
+          <a href="/anzeige/<%= report.aktenzeichen %>/bearbeiten" class="alert-link">den Entwurf vervollständigen</a>,
           dann kann die Anzeige eingereicht werden.
         </div>
       <% } %>
@@ -176,7 +176,7 @@ const versandLabel = {
               Ordnungsamt verschickt (du erhältst eine Kopie).
             </p>
           </div>
-          <form method="post" action="/report/<%= report.aktenzeichen %>/submit"
+          <form method="post" action="/anzeige/<%= report.aktenzeichen %>/submit"
                 onsubmit="return confirm('Anzeige jetzt zur Prüfung einreichen?')">
             <button type="submit" class="btn btn-success" <%= complete ? '' : 'disabled' %>>
               ✓ Einreichen
@@ -194,7 +194,7 @@ const versandLabel = {
               Ordnungsamt – du erhältst die E-Mail in Kopie.
             </p>
           </div>
-          <form method="post" action="/report/<%= report.aktenzeichen %>/withdraw"
+          <form method="post" action="/anzeige/<%= report.aktenzeichen %>/withdraw"
                 onsubmit="return confirm('Anzeige zurückziehen und wieder bearbeiten?')">
             <button type="submit" class="btn btn-outline-secondary">Zurückziehen &amp; bearbeiten</button>
           </form>
@@ -202,14 +202,14 @@ const versandLabel = {
       </div>
     <% } else { %>
       <div class="d-flex gap-2 flex-wrap mb-4">
-        <a href="/report/<%= report.aktenzeichen %>/pdf" class="btn btn-outline-primary">⬇ PDF herunterladen</a>
+        <a href="/anzeige/<%= report.aktenzeichen %>/pdf" class="btn btn-outline-primary">⬇ PDF herunterladen</a>
       </div>
     <% } %>
 
     <!-- PDF-Vorschau ganz unten -->
     <% if (report.pdf_filename) { %>
       <h4 class="mb-3">PDF-Vorschau</h4>
-      <iframe src="/report/<%= report.aktenzeichen %>/pdf?inline=1"
+      <iframe src="/anzeige/<%= report.aktenzeichen %>/pdf?inline=1"
               class="w-100 border rounded" style="height: 600px;"
               title="PDF-Vorschau"></iframe>
     <% } else { %>

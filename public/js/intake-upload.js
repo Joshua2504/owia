@@ -50,7 +50,7 @@
   function uploadChunk(batchId, files, attempt) {
     var fd = new FormData()
     files.forEach(function (f) { fd.append('bilder', f, f.name) })
-    return fetch('/intake/' + batchId + '/photos', { method: 'POST', body: fd }).then(
+    return fetch('/import/' + batchId + '/photos', { method: 'POST', body: fd }).then(
       function (res) {
         if (!res.ok && res.status !== 413) throw new Error('http ' + res.status)
         return res.json()
@@ -76,7 +76,7 @@
     var withTime = 0
     setProgress(0, files.length, 0, 0)
 
-    fetch('/intake/batch', { method: 'POST' })
+    fetch('/import/batch', { method: 'POST' })
       .then(function (r) {
         if (!r.ok) throw new Error('batch')
         return r.json()
@@ -105,7 +105,7 @@
         return chain.then(function () {
           progressText.textContent = 'Gruppiere Fotos …'
           bar.style.width = '100%'
-          return fetch('/intake/' + batchId + '/finish', { method: 'POST' })
+          return fetch('/import/' + batchId + '/finish', { method: 'POST' })
         })
       })
       .then(function (res) { return res.json() })
@@ -129,14 +129,14 @@
   document.querySelectorAll('.intake-discard').forEach(function (btn) {
     btn.addEventListener('click', function () {
       if (!confirm('Diesen Import samt hochgeladener Fotos verwerfen?')) return
-      fetch('/intake/' + btn.getAttribute('data-batch') + '/discard', { method: 'POST' })
+      fetch('/import/' + btn.getAttribute('data-batch') + '/discard', { method: 'POST' })
         .then(function () { location.reload() })
     })
   })
   document.querySelectorAll('.intake-finish-open').forEach(function (btn) {
     btn.addEventListener('click', function () {
       btn.disabled = true
-      fetch('/intake/' + btn.getAttribute('data-batch') + '/finish', { method: 'POST' })
+      fetch('/import/' + btn.getAttribute('data-batch') + '/finish', { method: 'POST' })
         .then(function (r) { return r.json() })
         .then(function (d) {
           if (d.redirect) location.href = d.redirect

@@ -38,8 +38,15 @@ export default async function publicRoutes(app: FastifyInstance) {
         GROUP BY verstoss_art ORDER BY c DESC LIMIT 1`
     )
 
+    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
     return reply.view('/public/index.ejs', viewData(request, {
       title: 'Übersicht',
+      // SEO: sprechender Titel + Beschreibung für Suchmaschinen und Vorschauen.
+      pageTitle: 'Falschparker melden in Frankfurt – kostenlos Anzeige erstatten | OWiA-Anzeiger',
+      metaDescription:
+        'Falschparker in Frankfurt anzeigen: Fotos hochladen, Tatort und Zeit automatisch aus den Bildern, fertiges PDF fürs Ordnungsamt – kostenlos und in wenigen Minuten. Gehweg, Radweg oder Feuerwehrzufahrt zugeparkt? Jetzt Ordnungswidrigkeit melden.',
+      canonical: `${appUrl}/`,
+      appUrl,
       centerLat: geo.biasLat,
       centerLon: geo.biasLon,
       stats: {
@@ -49,6 +56,37 @@ export default async function publicRoutes(app: FastifyInstance) {
         topVerstoss: topRows[0]?.verstoss_art || null,
       },
     }))
+  })
+
+  // SEO: Crawler-Regeln (nur öffentliche Seiten indexieren) + Sitemap.
+  app.get('/robots.txt', async (_request, reply) => {
+    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    return reply.header('Content-Type', 'text/plain').send(
+      [
+        'User-agent: *',
+        'Allow: /$',
+        'Allow: /login',
+        'Allow: /impressum',
+        'Allow: /datenschutz',
+        'Allow: /nutzungsbedingungen',
+        'Disallow: /',
+        `Sitemap: ${appUrl}/sitemap.xml`,
+        '',
+      ].join('\n')
+    )
+  })
+
+  app.get('/sitemap.xml', async (_request, reply) => {
+    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    const urls = ['/', '/login', '/impressum', '/datenschutz', '/nutzungsbedingungen']
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+      ...urls.map((u) => `  <url><loc>${appUrl}${u}</loc></url>`),
+      '</urlset>',
+      '',
+    ].join('\n')
+    return reply.header('Content-Type', 'application/xml').send(xml)
   })
 
   // Anonyme Marker-Daten für die Karte.

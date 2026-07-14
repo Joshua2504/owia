@@ -179,7 +179,7 @@ export const MailService = {
         `zu deiner Anzeige ${report.aktenzeichen} ist eine Antwort des Ordnungsamts eingegangen.`,
         '',
         'Du kannst sie hier lesen:',
-        `${base}/report/${report.aktenzeichen}`,
+        `${base}/anzeige/${report.aktenzeichen}`,
         '',
         'Viele Grüße',
         'OWiA-Anzeiger',
