@@ -1,6 +1,6 @@
 code {
   font-size: 1em;
-  background: #f8f9fa;
+  background: var(--bs-tertiary-bg);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -28,14 +28,14 @@ code {
 /* Bild-Vorschau mit Schwärzen */
 .redact-stage {
   font-size: 0.875rem;
-  color: #6c757d;
+  color: var(--bs-secondary-color);
 }
 
 .img-redact {
   display: block;
   width: 100%;
   height: auto;
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--bs-border-color);
   border-radius: 4px;
   cursor: crosshair;
   touch-action: none; /* Wischgesten nicht scrollen, sondern zum Schwärzen nutzen */
@@ -151,4 +151,11 @@ code {
 
 .plate-euband .plate-d-input::placeholder {
   color: rgba(255, 255, 255, 0.5);
+}
+
+
+/* Dark Mode: Body-Hintergrund folgt dem Bootstrap-Theme (statt festem bg-light).
+   Das Kennzeichen-Schild bleibt bewusst weiß – ein Nummernschild ist weiß. */
+body {
+  background-color: var(--bs-tertiary-bg);
 }
