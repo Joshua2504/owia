@@ -21,6 +21,7 @@ import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
 import adminRoutes from './routes/admin'
 import { startInboxPolling, processInboundMail } from './services/mailInbox'
+import { failStalePlateAnalyses } from './services/plateAnalysis'
 import { viewData } from './middleware/auth'
 import { PdfService } from './services/pdf'
 import helmet from '@fastify/helmet'
@@ -188,6 +189,10 @@ async function main() {
   }
   setInterval(purge, 6 * 60 * 60 * 1000)
   void purge()
+
+  // Bei einem Neustart mitten in der Kennzeichen-Analyse liegengebliebene
+  // 'pending'-Bilder auflösen, sonst zeigt das Formular dort endlos den Spinner.
+  void failStalePlateAnalyses()
 
   // Healthcheck für Monitoring/Compose: prüft DB-Verbindung.
   app.get('/health', async (_request, reply) => {

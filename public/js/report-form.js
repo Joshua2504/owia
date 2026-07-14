@@ -435,6 +435,15 @@
     const remove = mkBtn('🗑 Entfernen', 'btn-outline-danger')
     remove.addEventListener('click', () => removeItem(item))
 
+    // Erkanntes Kennzeichen dieses Fotos per Klick ins Formular übernehmen.
+    // Erscheint, sobald die Hintergrund-Analyse für das Foto etwas gelesen hat.
+    const plateBtn = mkBtn('🚗 Kennzeichen übernehmen', 'btn-outline-primary')
+    plateBtn.style.display = 'none'
+    plateBtn.addEventListener('click', () => {
+      if (!item.detectedPlate) return
+      applyPlateToField(item.detectedPlate, 'Kennzeichen vom Foto übernommen – bitte prüfen.')
+    })
+
     const gpsBtn = mkBtn('📍 Standort & Zeit aus Foto', 'btn-outline-primary')
     gpsBtn.style.display = 'none'
     gpsBtn.addEventListener('click', async () => {
@@ -484,6 +493,7 @@
     toolbar.appendChild(rotate)
     toolbar.appendChild(moveLeft)
     toolbar.appendChild(moveRight)
+    toolbar.appendChild(plateBtn)
     toolbar.appendChild(gpsBtn)
     toolbar.appendChild(undo)
     toolbar.appendChild(clear)
@@ -514,10 +524,24 @@
     toolbar.appendChild(moveSel)
 
     item.els = {
-      col, stage, count, status, date: dateEl, undo, clear, gpsBtn, moveLeft, moveRight, moveSel,
+      col, stage, count, status, date: dateEl, undo, clear, gpsBtn, plateBtn, moveLeft, moveRight,
+      moveSel,
       toolBtns: { black: toolBlack, pixel: toolPixel, crop: toolCrop },
     }
     return col
+  }
+
+  // Erkanntes Kennzeichen eines Fotos an der Karte anzeigen (Button ein-/ausblenden).
+  function setItemPlate(item, plate) {
+    item.detectedPlate = plate || null
+    const btn = item.els && item.els.plateBtn
+    if (!btn) return
+    if (!item.detectedPlate) {
+      btn.style.display = 'none'
+      return
+    }
+    btn.textContent = '🚗 Kennzeichen übernehmen (' + item.detectedPlate + ')'
+    btn.style.display = ''
   }
 
   // Foto (gespeicherte Fassung) in einen anderen Entwurf oder eine neue Anzeige verschieben.
@@ -575,6 +599,7 @@
       gps: null,
       els: null,
       serverImageId: serverImageId || null, // ID der gespeicherten Fassung im Entwurf
+      detectedPlate: null, // erkanntes Kennzeichen dieses Fotos (Hintergrund-Analyse)
       saving: false,
       dirty: false,
     }
@@ -637,6 +662,7 @@
     items.push(item)
     container.appendChild(buildCard(item))
     setItemDate(item) // Aufnahmedatum auf der Karte anzeigen
+    setItemPlate(item, image.detectedPlate) // "Kennzeichen übernehmen"-Button
     refreshPhotoTimes(false) // nur „Aus den Fotos: …" anzeigen, Felder nicht überschreiben
     item.els.stage.textContent = 'lädt …'
 
@@ -973,6 +999,7 @@
   // ---------------------------------------------------------------------------
 
   let plateTouched = false // Nutzer hat das Feld selbst geändert (nur echte Events)
+  let plateHintShown = false // Vorschlags-Hinweis sichtbar -> nicht mehr überschreiben
   let plateForm = null
   let plateTimer = null
   let plateStopAt = 0
@@ -980,6 +1007,17 @@
   function setPlateStatus(text) {
     const box = document.querySelector('#alpr-status')
     if (box) box.textContent = text || ''
+  }
+
+  // Ladeanimation, solange der Server noch Fotos analysiert. Erscheint erst
+  // nach einer echten "pending"-Antwort (kein Aufblitzen, wenn die Analyse
+  // deaktiviert oder längst fertig ist).
+  function setPlateLoading() {
+    const box = document.querySelector('#alpr-status')
+    if (!box || box.querySelector('.spinner-border')) return
+    box.innerHTML =
+      '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>' +
+      'Kennzeichen wird aus den Fotos gelesen …'
   }
 
   // Manuelle Eingaben merken (isTrusted nur bei echten Nutzer-Events), damit die
@@ -994,21 +1032,31 @@
     el.addEventListener('change', mark)
   }
 
-  function applyPlateSuggestion(form, suggestions) {
-    const el = form.elements['kennzeichen']
-    const val = suggestions && suggestions.kennzeichen
-    if (!el || !val || plateTouched || String(el.value || '').trim()) return false
-    el.value = val
-    // Programmatische Events lösen Formatierung + Autosave aus; isTrusted=false,
-    // daher wird das Feld nicht fälschlich als „vom Nutzer angefasst" markiert.
+  // Kennzeichen ins Formularfeld schreiben und Formatierung + Autosave auslösen.
+  // Programmatische Events haben isTrusted=false, daher wird das Feld nicht
+  // fälschlich als „vom Nutzer angefasst" markiert.
+  function applyPlateToField(plate, statusText) {
+    const form = plateForm || document.querySelector('#report-form[data-report-id]')
+    const el = form && form.elements['kennzeichen']
+    if (!el || !plate) return
+    el.value = plate
     el.dispatchEvent(new Event('input'))
     el.dispatchEvent(new Event('change'))
     el.classList.remove('alpr-filled')
     void el.offsetWidth // Reflow, damit die Animation erneut startet
     el.classList.add('alpr-filled')
+    setPlateStatus(statusText)
+    plateHintShown = true
+  }
+
+  function applyPlateSuggestion(form, suggestions) {
+    const el = form.elements['kennzeichen']
+    const val = suggestions && suggestions.kennzeichen
+    if (!el || !val || plateTouched || String(el.value || '').trim()) return false
     const pct =
       typeof suggestions.confidence === 'number' ? Math.round(suggestions.confidence * 100) : null
-    setPlateStatus(
+    applyPlateToField(
+      val,
       'Kennzeichen aus den Fotos erkannt' + (pct !== null ? ' (' + pct + ' %)' : '') + ' – bitte prüfen.'
     )
     return true
@@ -1022,6 +1070,13 @@
       if (!res.ok) return { status: 'done' }
       const data = await res.json()
       if (data && data.suggestions) applyPlateSuggestion(form, data.suggestions)
+      // Einzelergebnisse an den Foto-Karten aktualisieren ("Kennzeichen übernehmen").
+      if (data && Array.isArray(data.images)) {
+        data.images.forEach((info) => {
+          const it = items.find((x) => x.serverImageId === info.id)
+          if (it) setItemPlate(it, info.kennzeichen)
+        })
+      }
       return data || { status: 'done' }
     } catch (_) {
       return { status: 'done' }
@@ -1037,10 +1092,14 @@
     if (plateTimer) return // läuft bereits
     const tick = async () => {
       const data = await pollAnalysisOnce(form)
-      if (data.status === 'done' || Date.now() > plateStopAt) {
-        clearInterval(plateTimer)
-        plateTimer = null
+      if (data.status === 'pending' && Date.now() <= plateStopAt) {
+        if (!plateHintShown) setPlateLoading()
+        return
       }
+      // fertig (oder Zeitlimit): Spinner ausblenden, Vorschlags-Hinweis bleibt.
+      if (!plateHintShown) setPlateStatus('')
+      clearInterval(plateTimer)
+      plateTimer = null
     }
     plateTimer = setInterval(tick, 3000)
     tick()

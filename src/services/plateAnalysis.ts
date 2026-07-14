@@ -26,11 +26,28 @@ export function queuePlateAnalysis(
     void setStatus(imageId, 'skipped')
     return
   }
+  // Sofort als 'pending' markieren (nicht erst beim Abarbeiten): Der Poll-Endpoint
+  // wertet nur 'pending' als "läuft noch" – wartende Bilder hinter einem langen
+  // Job dürfen dem Formular nicht fälschlich als fertig gemeldet werden.
+  void setStatus(imageId, 'pending')
   queue = queue
     .then(() => runAnalysis(userId, reportId, imageId, filename, mimetype))
     .catch(() => {
       /* Einzelfehler dürfen die Kette nicht abreißen lassen. */
     })
+}
+
+/** Beim App-Start liegengebliebene 'pending'-Jobs als 'failed' markieren
+ *  (Neustart mitten in der Analyse) – sonst zeigt das Formular dort dauerhaft
+ *  die Ladeanimation. Neue Uploads reihen sich ohnehin frisch ein. */
+export async function failStalePlateAnalyses(): Promise<void> {
+  try {
+    await pool.execute(
+      "UPDATE report_images SET analysis_status='failed' WHERE analysis_status='pending'"
+    )
+  } catch {
+    /* unkritisch – schlimmstenfalls pollt das Formular bis zum 2-Minuten-Cap */
+  }
 }
 
 async function setStatus(imageId: number, status: 'pending' | 'failed' | 'skipped'): Promise<void> {
@@ -49,7 +66,6 @@ async function runAnalysis(
   mimetype: string
 ): Promise<void> {
   const filePath = path.join(reportDir(userId, reportId), filename)
-  await setStatus(imageId, 'pending')
 
   try {
     const result = await recognizePlate(filePath, mimetype)

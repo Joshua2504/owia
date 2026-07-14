@@ -306,7 +306,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, filename, original_filename,
+      `SELECT id, filename, original_filename, detected_plate,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at
          FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
@@ -491,14 +491,20 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // Analyse deaktiviert (z.B. Entwicklung): sofort fertig melden, damit das
     // Formular gar nicht erst weiterpollt.
     if (!alprEnabled()) {
-      return reply.send({ status: 'done', suggestions: { kennzeichen: null, confidence: null } })
+      return reply.send({
+        status: 'done',
+        suggestions: { kennzeichen: null, confidence: null },
+        images: [],
+      })
     }
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT analysis_status, detected_plate, plate_confidence FROM report_images WHERE report_id = ?',
+      'SELECT id, analysis_status, detected_plate, plate_confidence FROM report_images WHERE report_id = ?',
       [report.id]
     )
-    const pending = rows.some((r) => r.analysis_status === null || r.analysis_status === 'pending')
+    // Nur 'pending' zählt als "läuft noch" – NULL sind Altbilder von vor dem
+    // Feature (bzw. per 0026 'skipped'), die nie analysiert werden.
+    const pending = rows.some((r) => r.analysis_status === 'pending')
     // Vorschlag = sicherste Lesung über alle Bilder; unsichere Lesungen (unter
     // der Prefill-Schwelle) werden dem Nutzer gar nicht erst vorgeschlagen.
     let best: { plate: string; confidence: number } | null = null
@@ -511,6 +517,15 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({
       status: pending ? 'pending' : 'done',
       suggestions: { kennzeichen: best?.plate ?? null, confidence: best?.confidence ?? null },
+      // Einzelergebnisse pro Foto: speisen die "Kennzeichen übernehmen"-Buttons
+      // auf den Bild-Karten (auch Lesungen unter der Prefill-Schwelle).
+      images: rows
+        .filter((r) => r.detected_plate)
+        .map((r) => ({
+          id: r.id,
+          kennzeichen: r.detected_plate,
+          confidence: r.plate_confidence !== null ? Number(r.plate_confidence) : null,
+        })),
     })
   })
 
