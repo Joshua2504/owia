@@ -69,7 +69,7 @@ export default async function adminRoutes(app: FastifyInstance) {
       )
       return reply
         .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `inline; filename="anzeige-${loaded.report.aktenzeichen}.pdf"`)
+        .header('Content-Disposition', `inline; filename="${loaded.report.aktenzeichen}.pdf"`)
         .send(buffer)
     } catch {
       return reply.status(404).send('PDF-Datei nicht gefunden.')

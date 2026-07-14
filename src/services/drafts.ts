@@ -9,13 +9,13 @@ import { DEFAULT_CITY_ID } from '../config/cities'
 
 export const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 
-/** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiAA-123456".
+/** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiA-123456".
  *  Rein numerisch und 6-stellig (leichter zu diktieren/abzutippen); bei
  *  Kollision würfelt createDraft() neu. Bindestrich statt '#', damit es
  *  direkt in URLs/Links verwendbar ist. */
 export function generateAktenzeichen(): string {
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
-  return `OWiAA-${code}`
+  return `OWiA-${code}`
 }
 
 /** Verzeichnis der Bilddateien eines Entwurfs. */

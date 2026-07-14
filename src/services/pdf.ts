@@ -299,7 +299,8 @@ export const PdfService = {
 
     const filled = await doc.save()
 
-    const filename = `anzeige-${report.id}-${Date.now()}.pdf`
+    // Dateiname = Aktenzeichen; die Regeneration überschreibt dieselbe Datei.
+    const filename = `${report.aktenzeichen || `anzeige-${report.id}`}.pdf`
     await fs.writeFile(path.join(userDir, filename), filled)
     return filename
   },

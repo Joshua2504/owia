@@ -126,7 +126,7 @@ export const MailService = {
       text,
       attachments: [
         {
-          filename: `anzeige-${report.id}.pdf`,
+          filename: `${report.aktenzeichen || `anzeige-${report.id}`}.pdf`,
           path: pdfPath,
           contentType: 'application/pdf',
         },

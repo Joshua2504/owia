@@ -686,7 +686,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       const disposition = inline ? 'inline' : 'attachment'
       return reply
         .header('Content-Type', 'application/pdf')
-        .header('Content-Disposition', `${disposition}; filename="anzeige-${az}.pdf"`)
+        .header('Content-Disposition', `${disposition}; filename="${az}.pdf"`)
         .send(buffer)
     } catch {
       return reply.status(404).send('PDF-Datei nicht gefunden.')
