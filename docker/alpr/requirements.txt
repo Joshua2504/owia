@@ -1,8 +1,0 @@
-fast-alpr
-# fast-alpr installiert die ONNX-Runtime nicht selbst – CPU-Variante explizit.
-onnxruntime
-fastapi
-uvicorn[standard]
-python-multipart
-opencv-python-headless
-numpy

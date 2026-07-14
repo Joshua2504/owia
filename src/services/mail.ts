@@ -2,27 +2,6 @@ import path from 'path'
 import nodemailer from 'nodemailer'
 import mysql from 'mysql2/promise'
 import { getCity } from '../config/cities'
-import { formatEuro } from '../config/credits'
-
-/** Daten für die Rechnung einer bestätigten Guthabenaufladung. */
-export type DepositInvoiceData = {
-  amountCents: number
-  method: string
-  reference: string
-  paymentReference: string
-  invoiceNumber: string
-}
-
-function methodLabel(method: string): string {
-  return method === 'paypal' ? 'PayPal' : 'Überweisung'
-}
-
-function escapeHtml(s: string): string {
-  return String(s || '').replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string
-  )
-}
 
 function createTransport() {
   if (process.env.MAIL_DRIVER === 'smtp') {
@@ -63,7 +42,9 @@ export function buildReportMail(
     'hiermit erstatte ich Anzeige wegen folgender Ordnungswidrigkeit:',
     '',
     report.aktenzeichen ? `Aktenzeichen: ${report.aktenzeichen}` : '',
-    `Kennzeichen:  ${report.kennzeichen}`,
+    `Kennzeichen:  ${report.kennzeichen}${
+      report.kennzeichen_land && report.kennzeichen_land !== 'D' ? ` (${report.kennzeichen_land})` : ''
+    }`,
     `Fahrzeug:     ${report.fahrzeug_marke || '—'}`,
     `Tattag:       ${tattag}`,
     `Tatzeit:      ${tatzeit || '—'}`,
@@ -81,62 +62,6 @@ export function buildReportMail(
     .join('\n')
 
   return { subject, text }
-}
-
-/** Betreff, Text und HTML der Rechnung für eine bestätigte Guthabenaufladung. */
-export function buildDepositInvoice(
-  user: mysql.RowDataPacket,
-  data: DepositInvoiceData
-): { subject: string; text: string; html: string } {
-  const betrag = formatEuro(data.amountCents)
-  const datum = new Date().toLocaleDateString('de-DE')
-  const name = [user.vorname, user.nachname].filter(Boolean).join(' ') || user.email
-  const anschrift = [user.strasse, [user.plz, user.ort].filter(Boolean).join(' ')].filter(Boolean)
-
-  const subject = `Rechnung ${data.invoiceNumber} – Guthabenaufladung OWiA-Anzeiger`
-  const text = [
-    `Rechnung ${data.invoiceNumber}`,
-    `Rechnungsdatum: ${datum}`,
-    '',
-    'Rechnungsempfänger:',
-    name,
-    ...anschrift,
-    '',
-    'Position:',
-    `  Guthabenaufladung OWiA-Anzeiger .......... ${betrag}`,
-    '',
-    `Zahlart:          ${methodLabel(data.method)}`,
-    `Verwendungszweck: ${data.reference}`,
-    data.paymentReference ? `Zahlungsreferenz: ${data.paymentReference}` : undefined,
-    '',
-    `Gesamtbetrag: ${betrag}`,
-    '',
-    'Der Betrag wurde deinem Guthaben gutgeschrieben und steht sofort zur Verfügung.',
-    '',
-    'Mit freundlichen Grüßen',
-    'OWiA-Anzeiger',
-  ]
-    .filter((line) => line !== undefined)
-    .join('\n')
-
-  const html = [
-    `<h2>Rechnung ${data.invoiceNumber}</h2>`,
-    `<p style="color:#666;">Rechnungsdatum: ${datum}</p>`,
-    `<p><strong>${escapeHtml(name)}</strong>${
-      anschrift.length ? '<br>' + anschrift.map(escapeHtml).join('<br>') : ''
-    }</p>`,
-    '<table cellpadding="6" style="border-collapse:collapse;">',
-    `<tr><td>Guthabenaufladung OWiA-Anzeiger</td><td style="text-align:right;">${betrag}</td></tr>`,
-    `<tr><td><strong>Gesamtbetrag</strong></td><td style="text-align:right;"><strong>${betrag}</strong></td></tr>`,
-    '</table>',
-    `<p style="color:#666;font-size:13px;">Zahlart: ${methodLabel(data.method)}<br>Verwendungszweck: ${escapeHtml(
-      data.reference
-    )}${data.paymentReference ? '<br>Zahlungsreferenz: ' + escapeHtml(data.paymentReference) : ''}</p>`,
-    '<p>Der Betrag wurde deinem Guthaben gutgeschrieben und steht sofort zur Verfügung.</p>',
-    '<p>Mit freundlichen Grüßen<br>OWiA-Anzeiger</p>',
-  ].join('\n')
-
-  return { subject, text, html }
 }
 
 export const MailService = {
@@ -209,16 +134,29 @@ export const MailService = {
     })
   },
 
-  /** Rechnung/Zahlungsbestätigung an den Nutzer, nachdem ein Admin die Einzahlung bestätigt hat. */
-  async sendDepositInvoice(user: mysql.RowDataPacket, data: DepositInvoiceData): Promise<void> {
+  /** Info an den Nutzer: die Prüfung hat die Anzeige zurück in den Entwurf gegeben. */
+  async sendReportRejected(
+    user: mysql.RowDataPacket,
+    report: mysql.RowDataPacket,
+    grund: string
+  ): Promise<void> {
     const transport = createTransport()
-    const { subject, text, html } = buildDepositInvoice(user, data)
     await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
       to: user.email,
-      subject,
-      text,
-      html,
+      subject: `Anzeige ${report.aktenzeichen}: Rückfrage aus der Prüfung`,
+      text: [
+        'Hallo,',
+        '',
+        `deine Anzeige ${report.aktenzeichen} wurde bei der Prüfung nicht freigegeben:`,
+        '',
+        grund,
+        '',
+        'Die Anzeige ist wieder ein Entwurf – bitte passe sie an und reiche sie erneut ein.',
+        '',
+        'Viele Grüße',
+        'OWiA-Anzeiger',
+      ].join('\n'),
     })
   },
 }

@@ -1,0 +1,106 @@
+<%
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '')
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
+%>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0">Prüfung eingereichter Anzeigen</h2>
+</div>
+
+<% if (!pending.length) { %>
+  <div class="card shadow-sm mb-4">
+    <div class="card-body text-center py-5 text-muted">
+      Keine Anzeigen zur Prüfung offen. 🎉
+    </div>
+  </div>
+<% } %>
+
+<% for (const r of pending) { %>
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <code><%= r.aktenzeichen %></code>
+        <span class="text-muted small ms-2">von <%= r.user_email %> · eingereicht <%= r.eingereicht_fmt %></span>
+      </div>
+      <span class="plate-badge"><%- include('../partials/euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-lg-5">
+          <dl class="row small mb-3">
+            <dt class="col-sm-4">Tattag / Zeit</dt>
+            <dd class="col-sm-8">
+              <%= fmtDate(r.tattag) %>
+              <% const von = hhmm(r.tatzeit_von), bis = hhmm(r.tatzeit_bis) %>
+              <% if (von) { %>, <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr<% } %>
+            </dd>
+            <dt class="col-sm-4">Tatort</dt>
+            <dd class="col-sm-8"><%= r.tatort %></dd>
+            <dt class="col-sm-4">Verstoß</dt>
+            <dd class="col-sm-8">
+              <%= r.verstoss_art %>
+              <% if (r.fahrzeug_verlassen === 1) { %><br><span class="text-muted">Fahrzeug war verlassen</span><% } %>
+            </dd>
+            <% if (r.beschreibung) { %>
+              <dt class="col-sm-4">Beschreibung</dt>
+              <dd class="col-sm-8"><%= r.beschreibung %></dd>
+            <% } %>
+            <dt class="col-sm-4">Behinderung</dt>
+            <dd class="col-sm-8">
+              <%= r.behinderung === 1 ? 'Ja' : 'Nein' %>
+              <% if (r.behinderung === 1 && r.behinderung_text) { %> – <%= r.behinderung_text %><% } %>
+            </dd>
+            <dt class="col-sm-4">Fotos</dt>
+            <dd class="col-sm-8"><%= r.image_count %></dd>
+          </dl>
+
+          <div class="d-flex gap-2 flex-wrap">
+            <form method="post" action="/admin/anzeigen/<%= r.id %>/approve"
+                  onsubmit="return confirm('Anzeige <%= r.aktenzeichen %> freigeben und ans Ordnungsamt verschicken?')">
+              <button type="submit" class="btn btn-success">✓ Freigeben &amp; verschicken</button>
+            </form>
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse"
+                    data-bs-target="#reject-<%= r.id %>">✕ Ablehnen</button>
+          </div>
+          <div class="collapse mt-2" id="reject-<%= r.id %>">
+            <form method="post" action="/admin/anzeigen/<%= r.id %>/reject">
+              <textarea name="grund" class="form-control form-control-sm mb-2" rows="2" required
+                        placeholder="Begründung für den Nutzer (z.B. Foto unscharf, Kennzeichen nicht lesbar)"></textarea>
+              <button type="submit" class="btn btn-sm btn-danger">Ablehnen &amp; Nutzer informieren</button>
+            </form>
+          </div>
+        </div>
+        <div class="col-lg-7">
+          <!-- Das PDF enthält alle Angaben, Kartenseite und Beweisfotos. -->
+          <iframe src="/admin/anzeigen/<%= r.id %>/pdf" class="w-100 border rounded"
+                  style="height:420px" title="PDF <%= r.aktenzeichen %>" loading="lazy"></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<% if (recent.length) { %>
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h5 class="card-title mb-3">Zuletzt verschickt</h5>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <tbody>
+            <% for (const r of recent) { %>
+              <tr>
+                <td><code class="small"><%= r.aktenzeichen %></code></td>
+                <td><code><%= r.kennzeichen %></code></td>
+                <td class="small text-muted"><%= r.tatort %></td>
+                <td class="small text-muted"><%= r.user_email %></td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-secondary" href="/admin/anzeigen/<%= r.id %>/pdf" target="_blank">PDF</a>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+<% } %>

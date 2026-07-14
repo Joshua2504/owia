@@ -2,8 +2,7 @@
 // EXIF (GPS + Aufnahmezeit) lesen, zu Vorfällen gruppieren und daraus automatisch
 // Entwürfe erzeugen. Der Upload läuft client-seitig in kleinen Chunks (unter dem
 // globalen Multipart-Limit von 10 Dateien); die Gruppierung ("finish") ist ein
-// schneller synchroner Schritt. Die KI-Analyse (Kennzeichen/Verstoßart) wird hier
-// bewusst NICHT angestoßen – sie bleibt opt-in und kostenpflichtig wie bisher.
+// schneller synchroner Schritt.
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import path from 'path'
@@ -15,7 +14,7 @@ import { extractPhotoMeta } from '../services/exif'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
 import { createDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
 import { reverseGeocode } from '../services/geocode'
-import { thumbnail } from '../services/pixelate'
+import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
 
 // Muss zur Chunk-Größe in public/js/intake-upload.js passen und unter dem
 // globalen Multipart-Limit (files: 10, src/server.ts) bleiben.
@@ -51,6 +50,10 @@ async function movePhotoFiles(
   if (originalFilename && originalFilename !== filename) {
     await fs.rename(path.join(from, originalFilename), path.join(to, originalFilename))
   }
+  // Gecachtes Vorschaubild mitnehmen (falls schon berechnet); sonst egal.
+  await fs
+    .rename(path.join(from, `${filename}.thumb.jpg`), path.join(to, `${filename}.thumb.jpg`))
+    .catch(() => {})
 }
 
 type PhotoRow = mysql.RowDataPacket & {
@@ -136,6 +139,9 @@ export default async function intakeRoutes(app: FastifyInstance) {
             intakeDir(userId, batch.id),
             prepared
           )
+          // Vorschaubild sofort mitschreiben, damit die Übersicht später nicht
+          // dutzende Vollbilder synchron dekodieren muss.
+          await writeThumbnailCache(intakeDir(userId, batch.id), filename, prepared.buffer, prepared.mimetype)
           const [result] = await pool.execute<mysql.ResultSetHeader>(
             `INSERT INTO intake_photos
                (batch_id, filename, mimetype, original_filename, original_mimetype,
@@ -259,28 +265,69 @@ export default async function intakeRoutes(app: FastifyInstance) {
 
     const [drafts] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT r.id, r.aktenzeichen, r.status, r.tattag, r.tatzeit_von, r.tatzeit_bis,
-              r.tatort, r.verstoss_art, r.kennzeichen,
+              r.tatort, r.verstoss_art, r.kennzeichen, r.kennzeichen_land,
               DATE_FORMAT(r.tattag, '%d.%m.%Y') AS tattag_fmt,
               TIME_FORMAT(r.tatzeit_von, '%H:%i') AS von_fmt,
               TIME_FORMAT(r.tatzeit_bis, '%H:%i') AS bis_fmt,
-              (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count,
-              (SELECT ri.id FROM report_images ri WHERE ri.report_id = r.id
-                ORDER BY ri.sort_order, ri.id LIMIT 1) AS first_image_id
+              (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count
          FROM reports r
         WHERE r.intake_batch_id = ? AND r.user_id = ?
         ORDER BY r.tattag, r.tatzeit_von, r.id`,
       [batch.id, userId]
     )
+    // Alle Fotos der Batch-Entwürfe für die Thumbnail-Leisten (Drag & Drop).
+    const [draftImages] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.id, ri.report_id
+         FROM report_images ri
+         JOIN reports r ON r.id = ri.report_id
+        WHERE r.intake_batch_id = ? AND r.user_id = ?
+        ORDER BY ri.report_id, ri.sort_order, ri.id`,
+      [batch.id, userId]
+    )
+    const imagesByReport = new Map<number, number[]>()
+    for (const img of draftImages) {
+      const list = imagesByReport.get(img.report_id) ?? []
+      list.push(img.id)
+      imagesByReport.set(img.report_id, list)
+    }
+
     const unassigned = await loadPhotos(batch.id, true)
     const openDrafts = drafts.filter((d) => d.status === 'entwurf')
     return reply.view('/intake/overview.ejs', viewData(request, {
       title: 'Foto-Import – Ergebnis',
       batch,
       drafts,
+      imagesByReport: Object.fromEntries(imagesByReport),
       unassigned,
       firstOpenAz: openDrafts.length ? openDrafts[0].aktenzeichen : null,
       openCount: openDrafts.length,
     }))
+  })
+
+  // Vollbild eines (unzugeordneten) Intake-Fotos (Lightbox in der Übersicht).
+  app.get('/intake/:batchId/photo/:photoId', { preHandler: requireAuth }, async (request, reply) => {
+    const { batchId, photoId } = request.params as { batchId: string; photoId: string }
+    const userId = request.session.userId as number
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT p.filename, p.mimetype
+         FROM intake_photos p
+         JOIN intake_batches b ON b.id = p.batch_id
+        WHERE p.id = ? AND p.batch_id = ? AND b.user_id = ? AND p.report_id IS NULL`,
+      [photoId, batchId, userId]
+    )
+    const photo = rows[0]
+    if (!photo) return reply.status(404).send('Bild nicht gefunden.')
+
+    try {
+      const buffer = await fs.readFile(path.join(intakeDir(userId, batchId), photo.filename))
+      return reply
+        .header('Content-Type', photo.mimetype || 'application/octet-stream')
+        .header('Cache-Control', 'private, max-age=3600')
+        .send(buffer)
+    } catch {
+      return reply.status(404).send('Bilddatei nicht gefunden.')
+    }
   })
 
   // Thumbnail eines (unzugeordneten) Intake-Fotos.
@@ -298,21 +345,16 @@ export default async function intakeRoutes(app: FastifyInstance) {
     const photo = rows[0]
     if (!photo) return reply.status(404).send('Bild nicht gefunden.')
 
-    const imagePath = path.join(intakeDir(userId, batchId), photo.filename)
     try {
-      const buffer = await fs.readFile(imagePath)
-      let out: Buffer = buffer
-      let type = photo.mimetype || 'image/jpeg'
-      try {
-        out = thumbnail(buffer, photo.mimetype || 'image/jpeg')
-        type = 'image/jpeg'
-      } catch {
-        /* Nicht dekodierbar -> Original ausliefern. */
-      }
+      const { buffer, type } = await cachedThumbnail(
+        intakeDir(userId, batchId),
+        photo.filename,
+        photo.mimetype
+      )
       return reply
         .header('Content-Type', type)
         .header('Cache-Control', 'private, max-age=3600')
-        .send(out)
+        .send(buffer)
     } catch {
       return reply.status(404).send('Bilddatei nicht gefunden.')
     }

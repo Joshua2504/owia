@@ -31,62 +31,11 @@
   </div>
 <% } else { %>
   <div class="card shadow-sm">
-    <div class="table-responsive">
-      <table class="table table-hover mb-0">
-        <thead class="table-light">
-          <tr>
-            <th>Aktenzeichen</th>
-            <th>Kennzeichen</th>
-            <th>Tattag</th>
-            <th>Tatort</th>
-            <th>Verstoß</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <% for (const r of reports) { %>
-            <tr>
-              <td class="text-nowrap"><code class="small"><%= r.aktenzeichen || '—' %></code></td>
-              <td><code><%= r.kennzeichen %></code></td>
-              <td class="text-nowrap">
-                <%= r.tattag ? new Date(r.tattag).toLocaleDateString('de-DE') : '—' %>
-                <% if (r.tatzeit_von) { %>
-                  <span class="text-muted"><%= String(r.tatzeit_von).slice(0,5) %></span>
-                <% } %>
-              </td>
-              <td class="text-truncate" style="max-width:180px"><%= r.tatort %></td>
-              <td class="text-truncate" style="max-width:180px"><%= r.verstoss_art %></td>
-              <td>
-                <% if (r.status === 'versendet') { %>
-                  <span class="badge bg-success">Versendet</span>
-                <% } else if (r.status === 'entwurf') { %>
-                  <span class="badge bg-secondary">Entwurf</span>
-                <% } else { %>
-                  <span class="badge bg-info">Eingereicht</span>
-                <% } %>
-              </td>
-              <td>
-                <div class="d-flex gap-2 justify-content-end">
-                  <% if (r.status === 'entwurf') { %>
-                    <a href="/report/<%= r.aktenzeichen %>/edit" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
-                    <form method="post" action="/report/<%= r.aktenzeichen %>/discard" class="m-0"
-                          onsubmit="return confirm('Entwurf wirklich löschen?')">
-                      <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
-                    </form>
-                  <% } else { %>
-                    <a href="/report/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
-                  <% } %>
-                </div>
-              </td>
-            </tr>
-          <% } %>
-        </tbody>
-      </table>
-    </div>
+    <%- include('../partials/report-table', { reports, imagesByReport, queueId: null }) %>
   </div>
 <% } %>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="/public/js/overview-map.js"></script>
+<script src="/public/js/report-table.js"></script>

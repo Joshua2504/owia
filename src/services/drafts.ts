@@ -9,18 +9,12 @@ import { DEFAULT_CITY_ID } from '../config/cities'
 
 export const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 
-// Aktenzeichen-Alphabet ohne leicht verwechselbare Zeichen (0/O, 1/I).
-// 32 Zeichen → 256 % 32 == 0, daher kein Modulo-Bias bei randomBytes.
-const AKTENZEICHEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-
-/** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiAA-7K3QF2".
- *  Bindestrich statt '#', damit es direkt in URLs/Links verwendbar ist. */
+/** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiAA-123456".
+ *  Rein numerisch und 6-stellig (leichter zu diktieren/abzutippen); bei
+ *  Kollision würfelt createDraft() neu. Bindestrich statt '#', damit es
+ *  direkt in URLs/Links verwendbar ist. */
 export function generateAktenzeichen(): string {
-  const bytes = crypto.randomBytes(6)
-  let code = ''
-  for (let i = 0; i < bytes.length; i++) {
-    code += AKTENZEICHEN_ALPHABET[bytes[i] % AKTENZEICHEN_ALPHABET.length]
-  }
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
   return `OWiAA-${code}`
 }
 

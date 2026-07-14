@@ -1,5 +1,6 @@
 import './types'
 import path from 'path'
+import fs from 'fs/promises'
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import session from '@fastify/session'
@@ -19,7 +20,6 @@ import tilesRoutes from './routes/tiles'
 import satRoutes from './routes/sat'
 import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
-import kontoRoutes from './routes/konto'
 import adminRoutes from './routes/admin'
 import { PdfService } from './services/pdf'
 import { initDb } from './db/init'
@@ -29,6 +29,23 @@ const app = Fastify({ logger: { level: 'info' } })
 
 async function main() {
   await initDb()
+
+  // Lauter Selbsttest: sind die Daten-Verzeichnisse beschreibbar? Häufige
+  // Ursache für "PDF wird nicht erzeugt" in Produktion sind falsche Rechte
+  // auf den gemounteten Volumes – das soll direkt beim Start im Log stehen.
+  for (const dir of [
+    path.join(process.cwd(), 'data', 'pdfs'),
+    path.join(process.cwd(), 'data', 'uploads'),
+  ]) {
+    try {
+      await fs.mkdir(dir, { recursive: true })
+      const probe = path.join(dir, '.write-probe')
+      await fs.writeFile(probe, '')
+      await fs.rm(probe, { force: true })
+    } catch (err) {
+      app.log.error({ err, dir }, 'Datenverzeichnis nicht beschreibbar – PDF/Uploads werden fehlschlagen!')
+    }
+  }
 
   await app.register(formbody)
   await app.register(multipart, {
@@ -52,10 +69,10 @@ async function main() {
     },
     saveUninitialized: false,
     // rolling:false = Sessions nur speichern, wenn sie sich tatsächlich geändert
-    // haben. Sonst würden parallele Lese-Requests (z. B. der Navbar-Guthaben-Abruf
-    // /api/konto/summary) ihre veraltete Session-Kopie zurückschreiben und dabei
-    // eine gerade konsumierte Flash-Meldung wieder auferstehen lassen – die
-    // Meldung („Entwurf verworfen." o. Ä.) erschien dann bei jedem Seitenaufruf.
+    // haben. Sonst würden parallele Lese-Requests ihre veraltete Session-Kopie
+    // zurückschreiben und dabei eine gerade konsumierte Flash-Meldung wieder
+    // auferstehen lassen – die Meldung („Entwurf verworfen." o. Ä.) erschien
+    // dann bei jedem Seitenaufruf.
     rolling: false,
   })
   await app.register(staticFiles, {
@@ -66,8 +83,8 @@ async function main() {
     engine: { ejs },
     root: path.join(__dirname, 'views'),
     layout: '/layout.ejs',
-    // isAdmin ist Standard-false, damit das Layout es immer referenzieren kann, auch bei
-    // (seltenen) Views, die ohne viewData gerendert werden.
+    // isAdmin ist Standard-false, damit das Layout es immer referenzieren kann,
+    // auch bei (seltenen) Views, die ohne viewData gerendert werden.
     defaultContext: { isAdmin: false },
   })
 
@@ -81,7 +98,6 @@ async function main() {
   await app.register(satRoutes)
   await app.register(publicRoutes)
   await app.register(legalRoutes)
-  await app.register(kontoRoutes)
   await app.register(adminRoutes)
 
   if (process.env.NODE_ENV !== 'production') {

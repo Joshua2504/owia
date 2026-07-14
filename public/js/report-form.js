@@ -17,7 +17,6 @@
   const SAVE_DEBOUNCE_MS = 800
 
   let reportId = null
-  let aiEnabled = true // KI-Analyse nur mit Guthaben/Flatrate nutzbar (vom Server gesetzt)
 
   function debounce(fn, ms) {
     let t
@@ -158,11 +157,97 @@
     return null
   }
 
+  // Bereich als grobe Mosaik-Blöcke unkenntlich machen (stärker als ein weicher
+  // Blur – Kennzeichen/Gesichter bleiben auch vergrößert unlesbar).
+  function drawPixelated(ctx, base, r) {
+    const block = 14
+    const tw = Math.max(1, Math.round(r.w / block))
+    const th = Math.max(1, Math.round(r.h / block))
+    const tmp = document.createElement('canvas')
+    tmp.width = tw
+    tmp.height = th
+    tmp.getContext('2d').drawImage(base, r.x, r.y, r.w, r.h, 0, 0, tw, th)
+    ctx.save()
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(tmp, 0, 0, tw, th, r.x, r.y, r.w, r.h)
+    ctx.restore()
+  }
+
   function redraw(item) {
     const { ctx, base, redactions } = item
     ctx.drawImage(base, 0, 0)
-    ctx.fillStyle = '#000'
-    for (const r of redactions) ctx.fillRect(r.x, r.y, r.w, r.h)
+    for (const r of redactions) {
+      if (r.type === 'pixel') {
+        drawPixelated(ctx, base, r)
+      } else {
+        ctx.fillStyle = '#000'
+        ctx.fillRect(r.x, r.y, r.w, r.h)
+      }
+    }
+  }
+
+  // Bild um 90° im Uhrzeigersinn drehen; vorhandene Markierungen drehen mit.
+  function rotateItem(item) {
+    if (!item.base) return
+    const old = item.base
+    const rotated = document.createElement('canvas')
+    rotated.width = old.height
+    rotated.height = old.width
+    const rctx = rotated.getContext('2d')
+    rctx.translate(rotated.width, 0)
+    rctx.rotate(Math.PI / 2)
+    rctx.drawImage(old, 0, 0)
+
+    item.redactions = item.redactions.map((r) => ({
+      x: old.height - (r.y + r.h),
+      y: r.x,
+      w: r.h,
+      h: r.w,
+      type: r.type,
+    }))
+
+    item.base = rotated
+    item.canvas.width = rotated.width
+    item.canvas.height = rotated.height
+    item.edited = true
+    redraw(item)
+    updateToolbar(item)
+    item.saveDebounced()
+  }
+
+  // Bild auf den markierten Bereich zuschneiden; Markierungen wandern mit,
+  // vollständig außerhalb liegende entfallen.
+  function applyCrop(item, rect) {
+    const old = item.base
+    const x = Math.max(0, Math.round(rect.x))
+    const y = Math.max(0, Math.round(rect.y))
+    const w = Math.min(old.width - x, Math.round(rect.w))
+    const h = Math.min(old.height - y, Math.round(rect.h))
+    if (w < 1 || h < 1) return
+
+    const cropped = document.createElement('canvas')
+    cropped.width = w
+    cropped.height = h
+    cropped.getContext('2d').drawImage(old, x, y, w, h, 0, 0, w, h)
+
+    item.redactions = item.redactions
+      .map((r) => {
+        const nx = Math.max(0, r.x - x)
+        const ny = Math.max(0, r.y - y)
+        const nw = Math.min(r.x + r.w - x, w) - nx
+        const nh = Math.min(r.y + r.h - y, h) - ny
+        return { x: nx, y: ny, w: nw, h: nh, type: r.type }
+      })
+      .filter((r) => r.w >= MIN_BOX && r.h >= MIN_BOX)
+
+    item.base = cropped
+    item.canvas.width = w
+    item.canvas.height = h
+    item.edited = true
+    setTool(item, 'black') // nach dem Zuschnitt zurück zum Standard-Werkzeug
+    redraw(item)
+    updateToolbar(item)
+    item.saveDebounced()
   }
 
   function prepareCanvas(item, img) {
@@ -212,8 +297,16 @@
       const p = toCanvasCoords(e)
       redraw(item)
       item.ctx.save()
-      item.ctx.fillStyle = 'rgba(0,0,0,0.55)'
-      item.ctx.fillRect(start.x, start.y, p.x - start.x, p.y - start.y)
+      if (item.tool === 'crop') {
+        // Zuschnitt-Vorschau: gestrichelter Rahmen statt Füllung.
+        item.ctx.strokeStyle = '#0d6efd'
+        item.ctx.lineWidth = Math.max(2, canvas.width / 300)
+        item.ctx.setLineDash([8, 6])
+        item.ctx.strokeRect(start.x, start.y, p.x - start.x, p.y - start.y)
+      } else {
+        item.ctx.fillStyle = 'rgba(0,0,0,0.55)'
+        item.ctx.fillRect(start.x, start.y, p.x - start.x, p.y - start.y)
+      }
       item.ctx.restore()
     })
 
@@ -225,8 +318,14 @@
       const y = Math.min(start.y, p.y)
       const w = Math.abs(p.x - start.x)
       const h = Math.abs(p.y - start.y)
-      if (w >= MIN_BOX && h >= MIN_BOX) {
-        item.redactions.push({ x, y, w, h })
+      if (item.tool === 'crop') {
+        // Mindestgröße, damit ein versehentlicher Klick nicht alles wegschneidet.
+        if (w >= 40 && h >= 40 && confirm('Bild auf den markierten Bereich zuschneiden?')) {
+          applyCrop(item, { x, y, w, h })
+          return
+        }
+      } else if (w >= MIN_BOX && h >= MIN_BOX) {
+        item.redactions.push({ x, y, w, h, type: item.tool === 'pixel' ? 'pixel' : 'black' })
         updateToolbar(item)
         item.saveDebounced()
       }
@@ -242,7 +341,25 @@
     const has = item.redactions.length > 0
     item.els.undo.disabled = !has
     item.els.clear.disabled = !has
-    item.els.count.textContent = has ? item.redactions.length + ' Bereich(e) geschwärzt' : ''
+    if (item.tool === 'crop') {
+      item.els.count.textContent = 'Bereich zum Zuschneiden aufziehen'
+    } else {
+      item.els.count.textContent = has
+        ? item.redactions.length + ' Bereich(e) unkenntlich gemacht'
+        : ''
+    }
+  }
+
+  // Aktives Zeichen-Werkzeug der Karte umschalten (Schwärzen/Verpixeln/Zuschneiden).
+  function setTool(item, tool) {
+    item.tool = tool
+    if (item.els && item.els.toolBtns) {
+      Object.keys(item.els.toolBtns).forEach((key) => {
+        item.els.toolBtns[key].classList.toggle('btn-secondary', key === tool)
+        item.els.toolBtns[key].classList.toggle('btn-outline-secondary', key !== tool)
+      })
+    }
+    updateToolbar(item)
   }
 
   function buildCard(item) {
@@ -277,6 +394,20 @@
     const toolbar = document.createElement('div')
     toolbar.className = 'd-flex flex-wrap gap-2 mt-2'
     body.appendChild(toolbar)
+
+    // Werkzeuge: Schwärzen (Standard), Verpixeln, Zuschneiden + Drehen-Aktion.
+    const toolBlack = mkBtn('⬛ Schwärzen', 'btn-secondary')
+    toolBlack.title = 'Bereiche schwarz übermalen'
+    toolBlack.addEventListener('click', () => setTool(item, 'black'))
+    const toolPixel = mkBtn('▩ Verpixeln', 'btn-outline-secondary')
+    toolPixel.title = 'Bereiche verpixeln (z.B. Gesichter, fremde Kennzeichen)'
+    toolPixel.addEventListener('click', () => setTool(item, 'pixel'))
+    const toolCrop = mkBtn('✂️ Zuschneiden', 'btn-outline-secondary')
+    toolCrop.title = 'Bild auf einen Ausschnitt zuschneiden'
+    toolCrop.addEventListener('click', () => setTool(item, item.tool === 'crop' ? 'black' : 'crop'))
+    const rotate = mkBtn('⟳ Drehen', 'btn-outline-secondary')
+    rotate.title = 'Um 90° im Uhrzeigersinn drehen'
+    rotate.addEventListener('click', () => rotateItem(item))
 
     const undo = mkBtn('↩︎ Rückgängig', 'btn-outline-secondary')
     undo.disabled = true
@@ -333,14 +464,6 @@
       }
     })
 
-    const aiBtn = mkBtn('🤖 Automatisch ausfüllen (0,10 €)', 'btn-outline-primary')
-    // Erst nach dem Speichern und nur mit Guthaben/Flatrate nutzbar.
-    aiBtn.disabled = !item.serverImageId || !aiEnabled
-    aiBtn.title = aiEnabled
-      ? 'Kennzeichen und Verstoßart per KI aus diesem Bild ausfüllen (0,10 €).'
-      : 'Kein Guthaben – bitte Konto aufladen oder Flatrate buchen (/konto).'
-    aiBtn.addEventListener('click', () => runImageAnalysis(item, aiBtn))
-
     // Reihenfolge ändern: ◀ weiter nach vorne, ▶ weiter nach hinten. Das erste Bild
     // dient u.a. als Karten-Marker.
     const moveLeft = mkBtn('◀', 'btn-outline-secondary')
@@ -350,16 +473,91 @@
     moveRight.title = 'Weiter nach hinten'
     moveRight.addEventListener('click', () => moveItem(item, 1))
 
+    toolbar.appendChild(toolBlack)
+    toolbar.appendChild(toolPixel)
+    toolbar.appendChild(toolCrop)
+    toolbar.appendChild(rotate)
     toolbar.appendChild(moveLeft)
     toolbar.appendChild(moveRight)
-    toolbar.appendChild(aiBtn)
     toolbar.appendChild(gpsBtn)
     toolbar.appendChild(undo)
     toolbar.appendChild(clear)
     toolbar.appendChild(remove)
 
-    item.els = { col, stage, count, status, undo, clear, gpsBtn, aiBtn, moveLeft, moveRight }
+    // Foto in einen anderen offenen Entwurf oder eine neue Anzeige verschieben.
+    var moveSel = document.createElement('select')
+    moveSel.className = 'form-select form-select-sm w-auto'
+    moveSel.title = 'Foto in eine andere Anzeige verschieben'
+    var placeholder = document.createElement('option')
+    placeholder.value = ''
+    placeholder.textContent = '↪ Verschieben in …'
+    moveSel.appendChild(placeholder)
+    ;(window.OTHER_DRAFTS || []).forEach(function (d) {
+      var opt = document.createElement('option')
+      opt.value = d.az
+      opt.textContent = d.label
+      moveSel.appendChild(opt)
+    })
+    var newOpt = document.createElement('option')
+    newOpt.value = '__new__'
+    newOpt.textContent = '➕ Neue Anzeige'
+    moveSel.appendChild(newOpt)
+    // Erst nutzbar, sobald das Bild serverseitig gespeichert ist (bestehende
+    // Bilder haben die ID schon beim Aufbau der Karte).
+    moveSel.disabled = !item.serverImageId
+    moveSel.addEventListener('change', function () { moveItemToReport(item, moveSel) })
+    toolbar.appendChild(moveSel)
+
+    item.els = {
+      col, stage, count, status, undo, clear, gpsBtn, moveLeft, moveRight, moveSel,
+      toolBtns: { black: toolBlack, pixel: toolPixel, crop: toolCrop },
+    }
     return col
+  }
+
+  // Foto (gespeicherte Fassung) in einen anderen Entwurf oder eine neue Anzeige verschieben.
+  async function moveItemToReport(item, sel) {
+    const targetAz = sel.value
+    if (!targetAz || !item.serverImageId) {
+      sel.value = ''
+      return
+    }
+    const isNew = targetAz === '__new__'
+    const label = sel.options[sel.selectedIndex].textContent
+    const question = isNew
+      ? 'Foto in eine neue Anzeige verschieben?'
+      : 'Foto in die Anzeige „' + label + '" verschieben?'
+    if (!confirm(question)) {
+      sel.value = ''
+      return
+    }
+    sel.disabled = true
+    try {
+      const res = await fetch('/report/' + reportId + '/images/' + item.serverImageId + '/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isNew ? { newDraft: true } : { targetAz: targetAz }),
+      })
+      const data = await res.json().catch(function () { return {} })
+      if (!res.ok) {
+        alert(data.error || 'Verschieben fehlgeschlagen.')
+        sel.value = ''
+        sel.disabled = false
+        return
+      }
+      // Karte entfernen wie beim Löschen, aber ohne Lösch-Request.
+      item.removed = true
+      const i = items.indexOf(item)
+      if (i >= 0) items.splice(i, 1)
+      if (item.els && item.els.col) item.els.col.remove()
+      if (item.takenAt) refreshPhotoTimes(false)
+      updateMoveButtons()
+      announceFirstImage()
+    } catch (_) {
+      alert('Verschieben fehlgeschlagen.')
+      sel.value = ''
+      sel.disabled = false
+    }
   }
 
   function newItem(file, serverImageId) {
@@ -367,6 +565,8 @@
       file,
       kind: 'passthrough',
       redactions: [],
+      tool: 'black', // aktives Zeichen-Werkzeug: black | pixel | crop
+      edited: false, // true nach Drehen/Zuschneiden (auch ohne Markierungen speichern)
       gps: null,
       els: null,
       serverImageId: serverImageId || null, // ID der gespeicherten Fassung im Entwurf
@@ -471,7 +671,9 @@
   }
 
   async function exportItem(item) {
-    if (item.kind === 'raster' && item.redactions.length > 0) {
+    // Bearbeitet = Schwärzungen/Verpixelungen ODER Drehen/Zuschneiden angewandt.
+    if (item.kind === 'raster' && (item.redactions.length > 0 || item.edited)) {
+      redraw(item) // sicherstellen, dass keine Zeichen-Vorschau im Export landet
       const blob = await toBlob(item.canvas)
       if (blob) return new File([blob], baseName(item.file.name) + '.jpg', { type: 'image/jpeg' })
     }
@@ -520,8 +722,8 @@
       if (!savedId) throw new Error('not saved')
       item.serverImageId = savedId
       setItemStatus(item, 'Gespeichert ✓')
-      // Bild ist gespeichert -> KI-Analyse ist jetzt (kostenpflichtig) auslösbar.
-      if (item.els && item.els.aiBtn) item.els.aiBtn.disabled = !aiEnabled
+      // Bild ist gespeichert -> es kann in eine andere Anzeige verschoben werden.
+      if (item.els && item.els.moveSel) item.els.moveSel.disabled = false
       updateMoveButtons()
       announceFirstImage() // neu gespeichertes (erstes) Bild -> Karten-Marker aktualisieren
     } catch (_) {
@@ -640,8 +842,6 @@
       }
       existing.forEach((image) => addExistingItem(image, container))
       updateMoveButtons()
-      // Läuft aus einem früheren Besuch noch eine Analyse? Dann Vorschläge weiter abholen.
-      if (existing.some((im) => im && im.status === 'pending')) bumpAnalysisPolling()
     }
   }
 
@@ -746,174 +946,12 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 3b. KI-Foto-Analyse: Vorschläge (Kennzeichen + Verstoßart) abholen
-  // ---------------------------------------------------------------------------
-  // Nach dem Upload analysiert der Server die Fotos im Hintergrund. Hier holen wir
-  // die Befunde per Poll ab und füllen damit nur LEERE, vom Nutzer noch nicht
-  // angefasste Felder vor – der Nutzer prüft und speichert wie gewohnt.
-
-  const AI_FIELDS = ['kennzeichen', 'fahrzeug_marke', 'verstoss_art', 'beschreibung']
-  const aiTouched = {} // vom Nutzer manuell geänderte Felder (nur echte Events)
-  let aiForm = null
-  let aiTimer = null
-  let aiStopAt = 0
-
-  function setAiStatus(text) {
-    const box = document.querySelector('#ai-status')
-    if (box) box.textContent = text || ''
-  }
-
-  function aiFieldEmpty(el) {
-    return !el || !String(el.value || '').trim()
-  }
-
-  function markAiSuggested(el) {
-    if (!el) return
-    el.classList.remove('ai-filled')
-    // Reflow erzwingen, damit die Animation bei erneutem Setzen wieder startet.
-    void el.offsetWidth
-    el.classList.add('ai-filled')
-  }
-
-  // Manuelle Eingaben merken (isTrusted nur bei echten Nutzer-Events), damit die
-  // KI später nichts überschreibt, was der Nutzer selbst getippt/gewählt hat.
-  function initAiTouchTracking(form) {
-    AI_FIELDS.forEach((n) => {
-      const el = form.elements[n]
-      if (!el || typeof el.addEventListener !== 'function') return
-      const mark = (e) => {
-        if (e.isTrusted) aiTouched[n] = true
-      }
-      el.addEventListener('input', mark)
-      el.addEventListener('change', mark)
-    })
-  }
-
-  function applyAiSuggestions(form, suggestions) {
-    let filledAny = false
-    AI_FIELDS.forEach((n) => {
-      const el = form.elements[n]
-      const val = suggestions[n]
-      if (!el || !val || aiTouched[n] || !aiFieldEmpty(el)) return
-      el.value = val
-      // Programmatische Events lösen das Autosave aus; isTrusted=false, daher wird
-      // das Feld nicht fälschlich als „vom Nutzer angefasst" markiert.
-      el.dispatchEvent(new Event('input'))
-      el.dispatchEvent(new Event('change'))
-      markAiSuggested(el)
-      filledAny = true
-    })
-    return filledAny
-  }
-
-  // Guthaben-Anzeige in der Navbar auffrischen (falls vorhanden).
-  async function refreshNavBalance() {
-    const el = document.querySelector('#nav-balance')
-    if (!el) return
-    try {
-      const res = await fetch('/api/konto/summary', { headers: { Accept: 'application/json' } })
-      if (!res.ok) return
-      const d = await res.json()
-      if (d && typeof d.formatted === 'string') el.textContent = d.formatted
-    } catch (_) {
-      /* Navbar-Guthaben ist nur informativ */
-    }
-  }
-
-  function showTopupHint() {
-    const box = document.querySelector('#ai-status')
-    if (box) box.innerHTML = 'Nicht genug Guthaben. <a href="/konto">Jetzt Konto aufladen →</a>'
-  }
-
-  // Kostenpflichtige KI-Analyse für ein einzelnes Bild auslösen (0,10 €) und danach die
-  // Vorschläge per Polling übernehmen. 402 -> Hinweis „aufladen".
-  async function runImageAnalysis(item, btn) {
-    if (!item || !item.serverImageId) {
-      setItemStatus(item, 'Bitte kurz warten – Bild wird noch gespeichert …')
-      return
-    }
-    btn.disabled = true
-    setItemStatus(item, '🔍 Wird analysiert …')
-    try {
-      const res = await fetch('/report/' + reportId + '/images/' + item.serverImageId + '/analyze', {
-        method: 'POST',
-        headers: { Accept: 'application/json' },
-      })
-      if (res.status === 402) {
-        const d = await res.json().catch(() => ({}))
-        setItemStatus(item, d.error || 'Nicht genug Guthaben.', true)
-        showTopupHint()
-        btn.disabled = false
-        return
-      }
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        setItemStatus(item, d.error || 'Analyse konnte nicht gestartet werden.', true)
-        btn.disabled = false
-        return
-      }
-      refreshNavBalance()
-      bumpAnalysisPolling()
-    } catch (_) {
-      setItemStatus(item, 'Analyse fehlgeschlagen.', true)
-      btn.disabled = false
-    }
-  }
-
-  async function pollAnalysisOnce(form) {
-    try {
-      const res = await fetch('/report/' + reportId + '/analysis', {
-        headers: { Accept: 'application/json' },
-      })
-      if (!res.ok) return { status: 'done' }
-      const data = await res.json()
-      if (data && data.suggestions && applyAiSuggestions(form, data.suggestions)) {
-        setAiStatus('KI-Vorschläge aus den Fotos übernommen – bitte prüfen.')
-      }
-      return data || { status: 'done' }
-    } catch (_) {
-      return { status: 'done' }
-    }
-  }
-
-  // Polling starten bzw. „verlängern" (z.B. nach einem weiteren Upload).
-  function bumpAnalysisPolling() {
-    const form = aiForm || document.querySelector('#report-form[data-report-id]')
-    if (!form || !reportId) return
-    aiForm = form
-    aiStopAt = Date.now() + 120000 // höchstens 2 Minuten pollen
-    if (aiTimer) return // läuft bereits
-    const statusBox = document.querySelector('#ai-status')
-    if (statusBox && !statusBox.textContent) {
-      setAiStatus('🔍 Fotos werden analysiert …')
-    }
-    const tick = async () => {
-      const data = await pollAnalysisOnce(form)
-      if (data.status === 'done' || Date.now() > aiStopAt) {
-        clearInterval(aiTimer)
-        aiTimer = null
-        // Analyse fertig -> „Automatisch ausfüllen"-Buttons wieder freigeben und die
-        // Zwischenmeldung „wird analysiert …" auf den Bildkarten aufräumen.
-        items.forEach((it) => {
-          if (it.els && it.els.aiBtn) it.els.aiBtn.disabled = !it.serverImageId || !aiEnabled
-          if (it.els && it.els.status && /analysiert/.test(it.els.status.textContent || '')) {
-            setItemStatus(it, 'Gespeichert ✓')
-          }
-        })
-        const box = document.querySelector('#ai-status')
-        if (box && box.textContent.indexOf('übernommen') < 0) setAiStatus('')
-      }
-    }
-    aiTimer = setInterval(tick, 3000)
-    tick()
-  }
-
-  // ---------------------------------------------------------------------------
   // 4. Autosave der Textfelder
   // ---------------------------------------------------------------------------
 
   const SAVE_FIELDS = [
     'kennzeichen',
+    'kennzeichen_land',
     'fahrzeug_marke',
     'tattag',
     'tatzeit_von',
@@ -966,6 +1004,27 @@
   }
 
   // „Wer wurde wie behindert?" nur einblenden, wenn „Ja" gewählt ist.
+  // Kennzeichen beim Tippen formatieren: Großschreibung, erster Trenner wird
+  // zum Bindestrich, vor dem Ziffernblock steht automatisch ein Leerzeichen
+  // ("F AB1234" / "F-AB1234" -> "F-AB 1234"). Ohne getippten Trenner bleibt die
+  // Buchstabenfolge unangetastet (die Aufteilung wäre mehrdeutig, z.B. "FAB").
+  function initKennzeichenFormat(form) {
+    const el = form.elements['kennzeichen']
+    if (!el) return
+    el.addEventListener('input', () => {
+      const m = el.value
+        .toUpperCase()
+        .replace(/[^A-ZÄÖÜ0-9 -]/g, '')
+        // Nach den Ziffern optional E (Elektro) oder H (Oldtimer).
+        .match(/^([A-ZÄÖÜ]{1,3})(?:[ -]+([A-ZÄÖÜ]{0,2}))?[ -]*(\d{0,4})?([EH])?/)
+      if (!m) return
+      let out = m[1]
+      if (m[2] !== undefined) out += '-' + m[2]
+      if (m[3]) out += ' ' + m[3] + (m[4] || '')
+      if (out !== el.value) el.value = out
+    })
+  }
+
   function initBehinderung(form) {
     const detail = document.querySelector('#behinderung-detail')
     if (!detail) return
@@ -977,21 +1036,32 @@
     }
     nodes.forEach((node) => node.addEventListener('change', update))
     update()
+
+    // Schnellauswahl: Standard-Sätze per Klick ins Textfeld übernehmen
+    // (angehängt, falls schon Text drinsteht); Autosave über input-Event.
+    const textarea = form.elements['behinderung_text']
+    if (!textarea) return
+    detail.querySelectorAll('[data-behinderung-vorschlag]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const satz = btn.getAttribute('data-behinderung-vorschlag')
+        const current = textarea.value.trim()
+        if (current.includes(satz)) return
+        textarea.value = current ? current + ' ' + satz : satz
+        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    })
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     const form = document.querySelector('#report-form[data-report-id]')
     if (!form) return
     reportId = form.dataset.reportId
-    aiEnabled = form.dataset.aiEnabled !== '0'
 
     initCurrentLocation()
     initImageEditor()
     initAutosave(form)
     initBehinderung(form)
     initPhotoTimes(form)
-    initAiTouchTracking(form)
-    // Kein automatisches Pollen beim Laden. initImageEditor stößt das Polling nur an,
-    // wenn eine frühere Analyse noch läuft (analysis_status='pending').
+    initKennzeichenFormat(form)
   })
 })()

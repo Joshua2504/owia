@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { isAdminEmail } from '../config/credits'
+import { isAdminEmail } from '../config/admin'
 
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
   if (!request.session.userId) {

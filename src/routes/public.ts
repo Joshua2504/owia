@@ -4,7 +4,7 @@ import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { viewData } from '../middleware/auth'
-import { pixelate } from '../services/pixelate'
+import { cachedPixelate } from '../services/pixelate'
 import { getCity, DEFAULT_CITY_ID } from '../config/cities'
 
 // Öffentliche, anonyme Übersicht aller versendeter Anzeigen auf einer Karte.
@@ -65,10 +65,9 @@ export default async function publicRoutes(app: FastifyInstance) {
     const img = rows[0]
     if (!img) return reply.status(404).send('Nicht gefunden.')
 
-    const imagePath = path.join(UPLOAD_DIR, String(img.user_id), String(img.report_id), img.filename)
+    const imageDir = path.join(UPLOAD_DIR, String(img.user_id), String(img.report_id))
     try {
-      const buffer = await fs.readFile(imagePath)
-      const pixelated = pixelate(buffer, img.mimetype || 'image/jpeg')
+      const pixelated = await cachedPixelate(imageDir, img.filename, img.mimetype)
       return reply
         .header('Content-Type', 'image/jpeg')
         .header('Cache-Control', 'public, max-age=3600')

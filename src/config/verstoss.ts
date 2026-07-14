@@ -12,5 +12,6 @@ export const VERSTOSS_ARTEN = [
   'Parken in einer Feuerwehrzufahrt',
   'Parken auf einem Behindertenparkplatz ohne Ausweis',
   'Parken an einer Kreuzung oder Einmündung',
+  'Parken auf der linken Fahrbahnseite (entgegen der Fahrtrichtung)',
   'Sonstiges',
 ]

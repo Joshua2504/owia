@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS reports (
   tatort_lon    DECIMAL(9,6) NULL,
   verstoss_art  VARCHAR(255),
   beschreibung  TEXT,
-  behinderung      TINYINT(1) NULL,   -- wurde jemand behindert? 1=ja, 0=nein, NULL=keine Angabe
+  behinderung      TINYINT(1) NOT NULL DEFAULT 0, -- wurde jemand behindert? 1=ja, 0=nein (Standard)
   behinderung_text TEXT,              -- wer wurde wie behindert
   status        ENUM('entwurf','eingereicht','versendet') NOT NULL DEFAULT 'entwurf',
   versand_art   VARCHAR(20) NULL,

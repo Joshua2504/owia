@@ -1,7 +1,6 @@
 // Gemeinsame Bild-Pipeline: hochgeladene Fotos in ein nutzbares JPG/PNG überführen
 // (HEIC/HEIF werden konvertiert, das Original bleibt erhalten) und auf Platte schreiben.
-// Wird sowohl von den Beweisfotos (src/routes/reports.ts) als auch von den
-// Erstattungs-Screenshots (src/routes/konto.ts) genutzt.
+// Genutzt von den Beweisfotos (src/routes/reports.ts, src/routes/intake.ts).
 import crypto from 'crypto'
 import path from 'path'
 import fs from 'fs/promises'
@@ -92,7 +91,7 @@ export async function writePreparedImage(
   return { filename, originalFilename }
 }
 
-/** Bilddateien (nutzbare Fassung + Original) aus einem Verzeichnis entfernen. */
+/** Bilddateien (nutzbare Fassung + Original + gecachte Ableitungen) entfernen. */
 export async function removeImagePair(
   dir: string,
   filename: string,
@@ -103,6 +102,9 @@ export async function removeImagePair(
     if (originalFilename && originalFilename !== filename) {
       await fs.rm(path.join(dir, originalFilename), { force: true })
     }
+    // Gecachte Vorschau-/Pixelbilder (siehe services/pixelate.ts) mit aufräumen.
+    await fs.rm(path.join(dir, `${filename}.thumb.jpg`), { force: true })
+    await fs.rm(path.join(dir, `${filename}.pixel.jpg`), { force: true })
   } catch {
     /* Dateien evtl. schon weg */
   }

@@ -47,11 +47,17 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
       <div class="alert alert-danger"><%= error %></div>
     <% } %>
 
+    <% if (r.ablehnung_grund) { %>
+      <div class="alert alert-warning">
+        <strong>Die Prüfung hat die Anzeige zurückgegeben:</strong> <%= r.ablehnung_grund %><br>
+        Bitte anpassen und über die Detailseite erneut einreichen.
+      </div>
+    <% } %>
+
     <div class="card shadow-sm">
       <div class="card-body p-4">
         <form id="report-form" method="post" action="/report/<%= r.aktenzeichen %>/save"
-              data-report-id="<%= r.aktenzeichen %>"
-              data-ai-enabled="<%= (typeof aiEnabled !== 'undefined' && aiEnabled) ? '1' : '0' %>">
+              data-report-id="<%= r.aktenzeichen %>">
           <% if (locals.queue) { %>
             <input type="hidden" name="queue" value="<%= queue.batchId %>">
           <% } %>
@@ -64,31 +70,22 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
             <div class="form-text">
               Bereiche (z.&nbsp;B. Personen) kannst du schwärzen – wird automatisch gespeichert.
             </div>
-            <div class="form-text">
-              <strong>🤖 Automatisch ausfüllen</strong>: Kennzeichen &amp; Verstoßart per KI –
-              0,10 €/Bild oder <a href="/konto">Flatrate</a>.
-            </div>
-            <% if (typeof subscriptionActive !== 'undefined' && subscriptionActive) { %>
-              <div class="form-text text-success">✓ Flatrate aktiv.</div>
-            <% } else if (typeof aiEnabled !== 'undefined' && !aiEnabled) { %>
-              <div class="form-text text-danger">
-                Kein Guthaben – bitte <a href="/konto">aufladen</a> oder Flatrate buchen.
-              </div>
-            <% } %>
             <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
-            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.aktenzeichen}/image/${img.id}`, status: img.analysis_status }))) %></script>
+            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/report/${r.aktenzeichen}/image/${img.id}` }))) %></script>
             <div id="image-editor" class="row g-3 mt-1"></div>
           </div>
 
           <h5 class="mb-3">Fahrzeug</h5>
-          <!-- Status/Hinweis der automatischen Foto-Analyse (Kennzeichen + Verstoßart). -->
-          <div id="ai-status" class="form-text mb-2" role="status"></div>
           <div class="row g-3 mb-4">
             <div class="col-sm-6">
-              <label class="form-label">Kennzeichen <span class="text-danger">*</span></label>
-              <input type="text" name="kennzeichen" class="form-control text-uppercase"
-                     value="<%= r.kennzeichen || '' %>"
-                     placeholder="z.B. F-AB 1234">
+              <label class="form-label" for="kennzeichen-input">Kennzeichen <span class="text-danger">*</span></label>
+              <!-- Optik eines deutschen KFZ-Kennzeichens (EU-Band + Prägeschrift). -->
+              <div class="plate-input">
+                <%- include('../partials/euband', { land: r.kennzeichen_land || 'D', landInput: true }) %>
+                <input type="text" name="kennzeichen" id="kennzeichen-input"
+                       value="<%= r.kennzeichen || '' %>"
+                       placeholder="F-AB 1234" autocomplete="off" spellcheck="false">
+              </div>
             </div>
             <div class="col-sm-6">
               <label class="form-label">Fahrzeugmarke / -farbe</label>
@@ -192,8 +189,9 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
                 <input type="radio" class="btn-check" name="behinderung" id="behinderung-ja"
                        value="ja" <%= r.behinderung === 1 ? 'checked' : '' %>>
                 <label class="btn btn-outline-secondary" for="behinderung-ja">Ja</label>
+                <!-- Standard: "Nein" – nur explizit gespeichertes "Ja" wählt Ja vor. -->
                 <input type="radio" class="btn-check" name="behinderung" id="behinderung-nein"
-                       value="nein" <%= r.behinderung === 0 ? 'checked' : '' %>>
+                       value="nein" <%= r.behinderung !== 1 ? 'checked' : '' %>>
                 <label class="btn btn-outline-secondary" for="behinderung-nein">Nein</label>
               </div>
               <!-- Nur bei „Ja" relevant: wer wurde wie behindert. -->
@@ -201,6 +199,19 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
                 <label class="form-label">Wer wurde wie behindert?</label>
                 <textarea name="behinderung_text" class="form-control" rows="2"
                           placeholder="z.B. Rollstuhlfahrer musste auf die Straße ausweichen"><%= r.behinderung_text || '' %></textarea>
+                <!-- Schnellauswahl: Klick übernimmt den Satz ins Textfeld. -->
+                <div class="d-flex flex-wrap gap-1 mt-2">
+                  <% for (const satz of [
+                    'Ich musste auf die Straße ausweichen.',
+                    'Ich musste auf den Gehweg ausweichen.',
+                    'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
+                    'Fußgänger mussten auf die Straße ausweichen.',
+                    'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.',
+                  ]) { %>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            data-behinderung-vorschlag="<%= satz %>"><%= satz %></button>
+                  <% } %>
+                </div>
               </div>
             </div>
           </div>
@@ -229,19 +240,18 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 
 <form id="discard-form" method="post" action="/report/<%= r.aktenzeichen %>/discard" class="d-none"></form>
 
-<!-- Kurzes Aufleuchten von Feldern, die per KI-Foto-Analyse vorbelegt wurden. -->
-<style>
-  .ai-filled { animation: ai-flash 2.4s ease-out; }
-  @keyframes ai-flash {
-    0%   { background-color: #fff3cd; }
-    100% { background-color: transparent; }
-  }
-</style>
-
 <!-- Leaflet für die Tatort-Karte (Tiles kommen same-origin über /tiles/...). -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
 <!-- Optionale Hilfen: EXIF-GPS und Aufnahmezeit aus Fotos lesen, HEIC im Browser für die Vorschau wandeln. -->
+<script>
+  // Ziel-Entwürfe für "Foto verschieben"; "<" wird escaped, damit Nutzereingaben
+  // (z.B. Tatort) das Script-Tag nicht vorzeitig beenden können.
+  window.OTHER_DRAFTS = <%- JSON.stringify((locals.otherDrafts || []).map((d) => ({
+    az: d.aktenzeichen,
+    label: [d.tattag_fmt, d.kennzeichen || d.tatort].filter(Boolean).join(' – ') || d.aktenzeichen,
+  }))).replace(/</g, '\\u003c') %>;
+</script>
 <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>

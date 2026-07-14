@@ -1,147 +1,137 @@
+// Admin-Prüfung: Nutzer reichen Anzeigen ein (status 'eingereicht'), ein Admin
+// gibt sie hier frei (Versand ans Ordnungsamt per E-Mail, Nutzer in Kopie) oder
+// lehnt sie mit Begründung ab (zurück in den Entwurf + Info-Mail an den Nutzer).
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
+import path from 'path'
+import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { requireAdmin, viewData } from '../middleware/auth'
-import { confirmDeposit, cancelDeposit, decideRefundRequest } from '../services/credits'
 import { MailService } from '../services/mail'
-import { formatEuro } from '../config/credits'
 
-/** Kosten eines Jobs (Analyse) aus der Belastung: bezahlter + gratis gedeckter Anteil. */
-function jobCostCents(row: mysql.RowDataPacket): number {
-  return Math.max(0, -Number(row.amount_cents)) + Math.max(0, Number(row.free_used_cents))
+const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
+
+/** Eingereichte/versendete Anzeige inkl. Nutzer laden (Admin-Sicht, nutzerübergreifend). */
+async function loadReportWithUser(
+  id: string
+): Promise<{ report: mysql.RowDataPacket; user: mysql.RowDataPacket } | null> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT * FROM reports WHERE id = ?',
+    [id]
+  )
+  const report = rows[0]
+  if (!report) return null
+  const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id = ?', [
+    report.user_id,
+  ])
+  if (!users[0]) return null
+  return { report, user: users[0] }
 }
 
 export default async function adminRoutes(app: FastifyInstance) {
-  app.get('/admin', { preHandler: requireAdmin }, async (_request, reply) => {
-    return reply.redirect('/admin/einzahlungen')
-  })
-
-  // Offene Einzahlungen bestätigen/stornieren.
-  app.get('/admin/einzahlungen', { preHandler: requireAdmin }, async (request, reply) => {
-    const [deposits] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT d.id, d.amount_cents, d.method, d.reference, d.created_at,
-              u.email, u.vorname, u.nachname
-         FROM deposit_orders d
-         JOIN users u ON u.id = d.user_id
-        WHERE d.status = 'pending'
-        ORDER BY d.id ASC`
-    )
-    return reply.view('/admin/einzahlungen.ejs', viewData(request, {
-      title: 'Admin · Einzahlungen',
-      deposits,
-      fmt: formatEuro,
-    }))
-  })
-
-  app.post('/admin/einzahlungen/:id/bestaetigen', { preHandler: requireAdmin }, async (request, reply) => {
-    const { id } = request.params as { id: string }
-    const adminEmail = request.session.userEmail as string
-    const { payment_reference } = (request.body || {}) as { payment_reference?: string }
-    const paymentReference = (payment_reference || '').trim()
-
-    if (!paymentReference) {
-      request.session.flash = { type: 'error', message: 'Bitte eine Zahlungsreferenz angeben.' }
-      await request.session.save()
-      return reply.redirect('/admin/einzahlungen')
-    }
-
-    const result = await confirmDeposit(Number(id), adminEmail, paymentReference)
-    if (result) {
-      // Rechnung an den Nutzer schicken (Fehler dabei dürfen die Gutschrift nicht blockieren).
-      try {
-        const [uRows] = await pool.execute<mysql.RowDataPacket[]>(
-          'SELECT id, email, vorname, nachname, strasse, plz, ort FROM users WHERE id = ?',
-          [result.userId]
-        )
-        if (uRows[0]) {
-          await MailService.sendDepositInvoice(uRows[0], {
-            amountCents: result.amountCents,
-            method: result.method,
-            reference: result.reference,
-            paymentReference: result.paymentReference,
-            invoiceNumber: result.invoiceNumber,
-          })
-        }
-        request.session.flash = {
-          type: 'success',
-          message: `Einzahlung gutgeschrieben, Rechnung ${result.invoiceNumber} versendet.`,
-        }
-      } catch (err) {
-        app.log.error({ err }, 'Rechnungsversand fehlgeschlagen')
-        request.session.flash = {
-          type: 'success',
-          message: `Einzahlung gutgeschrieben (Rechnung ${result.invoiceNumber}). Rechnungs-E-Mail konnte nicht versendet werden.`,
-        }
-      }
-    } else {
-      request.session.flash = { type: 'error', message: 'Einzahlung bereits bearbeitet oder nicht gefunden.' }
-    }
-    await request.session.save()
-    return reply.redirect('/admin/einzahlungen')
-  })
-
-  app.post('/admin/einzahlungen/:id/stornieren', { preHandler: requireAdmin }, async (request, reply) => {
-    const { id } = request.params as { id: string }
-    const adminEmail = request.session.userEmail as string
-    await cancelDeposit(Number(id), adminEmail)
-    request.session.flash = { type: 'success', message: 'Einzahlung storniert.' }
-    await request.session.save()
-    return reply.redirect('/admin/einzahlungen')
-  })
-
-  // Offene Erstattungsanträge prüfen.
-  app.get('/admin/erstattungen', { preHandler: requireAdmin }, async (request, reply) => {
-    const [requests] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.id, r.reason, r.created_at, r.transaction_id, r.image_id,
-              u.email, u.vorname, u.nachname,
-              t.amount_cents, t.free_used_cents
-         FROM refund_requests r
+  app.get('/admin/anzeigen', { preHandler: requireAdmin }, async (request, reply) => {
+    const [pending] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.kennzeichen_land, r.tattag,
+              r.tatzeit_von, r.tatzeit_bis, r.tatort, r.verstoss_art, r.beschreibung,
+              r.behinderung, r.behinderung_text, r.fahrzeug_verlassen,
+              DATE_FORMAT(r.eingereicht_at, '%d.%m.%Y %H:%i') AS eingereicht_fmt,
+              u.email AS user_email,
+              (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count
+         FROM reports r
          JOIN users u ON u.id = r.user_id
-         LEFT JOIN account_transactions t ON t.id = r.transaction_id
-        WHERE r.status = 'pending'
-        ORDER BY r.id ASC`
+        WHERE r.status = 'eingereicht'
+        ORDER BY r.eingereicht_at, r.id`
     )
-
-    // Screenshots je Antrag laden und gruppieren.
-    const screenshots: Record<number, number[]> = {}
-    if (requests.length) {
-      const ids = requests.map((r) => r.id)
-      const placeholders = ids.map(() => '?').join(',')
-      const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-        `SELECT id, request_id FROM refund_request_images WHERE request_id IN (${placeholders}) ORDER BY id`,
-        ids
-      )
-      for (const img of imgs) {
-        ;(screenshots[img.request_id] ||= []).push(img.id)
-      }
-    }
-
-    return reply.view('/admin/erstattungen.ejs', viewData(request, {
-      title: 'Admin · Erstattungen',
-      requests,
-      screenshots,
-      fmt: formatEuro,
-      jobCostCents,
+    const [recent] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.tatort, u.email AS user_email
+         FROM reports r
+         JOIN users u ON u.id = r.user_id
+        WHERE r.status = 'versendet' AND r.versand_art = 'system_email'
+        ORDER BY r.id DESC
+        LIMIT 15`
+    )
+    return reply.view('/admin/anzeigen.ejs', viewData(request, {
+      title: 'Prüfung',
+      pending,
+      recent,
     }))
   })
 
-  app.post('/admin/erstattungen/:id/genehmigen', { preHandler: requireAdmin }, async (request, reply) => {
+  // PDF einer beliebigen Anzeige (Admin-Sicht) inline anzeigen.
+  app.get('/admin/anzeigen/:id/pdf', { preHandler: requireAdmin }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const adminEmail = request.session.userEmail as string
-    const { note } = (request.body || {}) as { note?: string }
-    await decideRefundRequest(Number(id), true, adminEmail, (note || '').trim() || undefined)
-    request.session.flash = { type: 'success', message: 'Erstattung genehmigt und gutgeschrieben.' }
-    await request.session.save()
-    return reply.redirect('/admin/erstattungen')
+    const loaded = await loadReportWithUser(id)
+    if (!loaded?.report.pdf_filename) return reply.status(404).send('PDF nicht verfügbar.')
+
+    try {
+      const buffer = await fs.readFile(
+        path.join(PDF_DIR, String(loaded.report.user_id), loaded.report.pdf_filename)
+      )
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `inline; filename="anzeige-${loaded.report.aktenzeichen}.pdf"`)
+        .send(buffer)
+    } catch {
+      return reply.status(404).send('PDF-Datei nicht gefunden.')
+    }
   })
 
-  app.post('/admin/erstattungen/:id/ablehnen', { preHandler: requireAdmin }, async (request, reply) => {
+  // Freigeben: Anzeige ans Ordnungsamt verschicken (Nutzer in Kopie).
+  app.post('/admin/anzeigen/:id/approve', { preHandler: requireAdmin }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const adminEmail = request.session.userEmail as string
-    const { note } = (request.body || {}) as { note?: string }
-    await decideRefundRequest(Number(id), false, adminEmail, (note || '').trim() || undefined)
-    request.session.flash = { type: 'success', message: 'Erstattungsantrag abgelehnt.' }
+    const loaded = await loadReportWithUser(id)
+    if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
+    if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
+
+    try {
+      await MailService.sendReport(loaded.report, loaded.user)
+      await pool.execute(
+        "UPDATE reports SET status='versendet', versand_art='system_email' WHERE id=?",
+        [loaded.report.id]
+      )
+      request.session.flash = {
+        type: 'success',
+        message: `Anzeige ${loaded.report.aktenzeichen} freigegeben und ans Ordnungsamt verschickt.`,
+      }
+    } catch (err) {
+      app.log.error({ err }, 'Versand nach Freigabe fehlgeschlagen')
+      request.session.flash = {
+        type: 'error',
+        message: `Versand von ${loaded.report.aktenzeichen} fehlgeschlagen – Anzeige bleibt eingereicht.`,
+      }
+    }
     await request.session.save()
-    return reply.redirect('/admin/erstattungen')
+    return reply.redirect('/admin/anzeigen')
+  })
+
+  // Ablehnen: zurück in den Entwurf, Begründung speichern + Nutzer informieren.
+  app.post('/admin/anzeigen/:id/reject', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const grund = String((request.body as { grund?: string })?.grund || '').trim()
+    if (!grund) {
+      request.session.flash = { type: 'error', message: 'Bitte eine Begründung angeben.' }
+      await request.session.save()
+      return reply.redirect('/admin/anzeigen')
+    }
+
+    const loaded = await loadReportWithUser(id)
+    if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
+    if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
+
+    await pool.execute(
+      "UPDATE reports SET status='entwurf', eingereicht_at=NULL, ablehnung_grund=? WHERE id=?",
+      [grund, loaded.report.id]
+    )
+    try {
+      await MailService.sendReportRejected(loaded.user, loaded.report, grund)
+    } catch (err) {
+      app.log.error({ err }, 'Ablehnungs-Mail fehlgeschlagen')
+    }
+    request.session.flash = {
+      type: 'success',
+      message: `Anzeige ${loaded.report.aktenzeichen} abgelehnt – der Nutzer wurde informiert.`,
+    }
+    await request.session.save()
+    return reply.redirect('/admin/anzeigen')
   })
 }

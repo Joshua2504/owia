@@ -47,3 +47,108 @@ code {
   background: transparent;
   border: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Kennzeichen im Look eines deutschen KFZ-Kennzeichens: weißes Schild mit
+   schwarzem Rand, blaues EU-Band (Sternenkranz + D) links, Prägeschrift-Optik.
+   .plate-input = Eingabefeld im Formular, .plate-badge = kleine Lese-Variante
+   in Tabellen. Beide teilen sich das EU-Band (.plate-euband).
+   --------------------------------------------------------------------------- */
+.plate-input,
+.plate-badge {
+  display: inline-flex;
+  align-items: stretch;
+  background: #fff;
+  border: 2px solid #1a1a1a;
+  border-radius: 0.45rem;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.plate-input {
+  border-width: 3px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.plate-euband {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  background: #039;
+  color: #fff;
+  padding: 0.2rem 0.3rem;
+}
+
+.plate-euband .plate-d {
+  font-weight: 700;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.plate-input input {
+  border: 0;
+  outline: none;
+  width: 100%;
+  min-width: 0;
+  padding: 0.15rem 0.6rem;
+  background: transparent;
+  font-family: 'DIN Condensed', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', sans-serif;
+  font-weight: 700;
+  font-size: 1.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #1a1a1a;
+}
+
+.plate-input input::placeholder {
+  color: #b0b0b0;
+  letter-spacing: 0.05em;
+}
+
+.plate-input:focus-within {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.plate-badge {
+  padding: 0;
+  font-family: 'DIN Condensed', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.plate-badge .plate-euband {
+  padding: 0.1rem 0.2rem;
+}
+
+.plate-badge .plate-euband .plate-d {
+  font-size: 0.55rem;
+}
+
+.plate-badge .plate-text {
+  padding: 0.05rem 0.4rem;
+  color: #1a1a1a;
+}
+
+/* Länderkürzel im EU-Band als Eingabefeld (Formular). */
+.plate-euband .plate-d-input {
+  width: 2.1rem;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 0;
+}
+
+.plate-euband .plate-d-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}

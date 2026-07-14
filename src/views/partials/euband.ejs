@@ -1,0 +1,21 @@
+<%# Blaues EU-Band eines Kennzeichens: Sternenkranz + Länderkürzel.
+    locals.land      – Kürzel (Default 'D')
+    locals.landInput – true: als Eingabefeld rendern (Formular), sonst statisch %>
+<span class="plate-euband" aria-hidden="<%= locals.landInput ? 'false' : 'true' %>">
+  <svg viewBox="-12 -12 24 24" width="14" height="14" role="presentation">
+    <g fill="#fc0">
+      <% for (let i = 0; i < 12; i++) { %>
+        <polygon
+          points="0,-2.6 0.65,-0.89 2.47,-0.8 1.05,0.34 1.53,2.1 0,1.1 -1.53,2.1 -1.05,0.34 -2.47,-0.8 -0.65,-0.89"
+          transform="rotate(<%= i * 30 %>) translate(0,-8.5)"/>
+      <% } %>
+    </g>
+  </svg>
+  <% if (locals.landInput) { %>
+    <input type="text" class="plate-d-input" name="kennzeichen_land" maxlength="3"
+           value="<%= locals.land || 'D' %>" title="Länderkürzel (z.B. D, A, CH, USA)"
+           autocomplete="off" spellcheck="false">
+  <% } else { %>
+    <span class="plate-d"><%= locals.land || 'D' %></span>
+  <% } %>
+</span>

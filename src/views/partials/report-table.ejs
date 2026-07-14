@@ -1,0 +1,100 @@
+<%
+// Gemeinsame Anzeigen-Tabelle für Dashboard und Foto-Import-Übersicht.
+// Erwartet: reports (mit id, aktenzeichen, kennzeichen, tattag, tatzeit_von/bis,
+// tatort, verstoss_art, status), imagesByReport ({ reportId: [imageIds] }),
+// optional queueId (Edit-Links öffnen die Review-Queue des Batches).
+// Thumbnails: Klick = Lightbox, Ziehen = in anderen Entwurf verschieben
+// (public/js/report-table.js muss auf der Seite eingebunden sein).
+const _fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '')
+const _hhmm = (t) => (t ? String(t).slice(0, 5) : '')
+const _queue = typeof queueId !== 'undefined' && queueId ? '?queue=' + queueId : ''
+const _hasDrafts = reports.some((r) => r.status === 'entwurf')
+%>
+<div class="table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead class="table-light">
+      <tr>
+        <th>Fotos</th>
+        <th>Aktenzeichen</th>
+        <th>Kennzeichen</th>
+        <th>Tattag / Zeit</th>
+        <th>Tatort</th>
+        <th>Verstoß</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% for (const r of reports) { %>
+        <% const imgIds = (typeof imagesByReport !== 'undefined' && imagesByReport && imagesByReport[r.id]) || [] %>
+        <tr <% if (r.status === 'entwurf') { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
+          <td style="min-width:70px;max-width:220px">
+            <div class="d-flex flex-wrap gap-1">
+              <% for (const imgId of imgIds) { %>
+                <img src="/report/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt=""
+                     class="rounded border" style="width:48px;height:36px;object-fit:cover;cursor:zoom-in"
+                     loading="lazy" decoding="async"
+                     data-full-src="/report/<%= r.aktenzeichen %>/image/<%= imgId %>"
+                     <% if (r.status === 'entwurf') { %>
+                       draggable="true" data-drag-image="<%= imgId %>" data-drag-az="<%= r.aktenzeichen %>"
+                       title="Klick: vergrößern · Ziehen: in anderen Entwurf verschieben"
+                     <% } else { %>
+                       title="Klick: vergrößern"
+                     <% } %>>
+              <% } %>
+            </div>
+          </td>
+          <td class="text-nowrap"><code class="small"><%= r.aktenzeichen || '—' %></code></td>
+          <td>
+            <% if (r.kennzeichen) { %>
+              <span class="plate-badge"><%- include('euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
+            <% } %>
+          </td>
+          <td class="text-nowrap">
+            <%= _fmtDate(r.tattag) || '—' %>
+            <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
+            <% if (von) { %>
+              <div class="text-muted small">
+                <%= von %><% if (bis && bis !== von) { %> – <%= bis %> Uhr
+                  <span class="badge text-bg-info">Dauer belegt</span><% } else { %> Uhr<% } %>
+              </div>
+            <% } %>
+          </td>
+          <td class="small" style="max-width:200px">
+            <%= r.tatort || '' %><% if (!r.tatort && r.status === 'entwurf') { %><span class="text-muted">– bitte prüfen –</span><% } %>
+          </td>
+          <td class="text-truncate small" style="max-width:180px"><%= r.verstoss_art || '' %></td>
+          <td>
+            <% if (r.status === 'versendet') { %>
+              <span class="badge bg-success">Versendet</span>
+            <% } else if (r.status === 'entwurf') { %>
+              <span class="badge text-bg-warning">Entwurf</span>
+            <% } else { %>
+              <span class="badge bg-info">Eingereicht</span>
+            <% } %>
+          </td>
+          <td>
+            <div class="d-flex gap-2 justify-content-end">
+              <% if (r.status === 'entwurf') { %>
+                <a href="/report/<%= r.aktenzeichen %>/edit<%= _queue %>" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+                <form method="post" action="/report/<%= r.aktenzeichen %>/discard" class="m-0"
+                      onsubmit="return confirm('Entwurf wirklich löschen?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+                </form>
+              <% } else { %>
+                <a href="/report/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
+              <% } %>
+            </div>
+          </td>
+        </tr>
+      <% } %>
+    </tbody>
+  </table>
+</div>
+<% if (_hasDrafts) { %>
+  <!-- Drop-Ziel: Foto hierher ziehen, um dafür eine neue Anzeige anzulegen. -->
+  <div id="drop-new-draft"
+       class="border border-2 border-dashed rounded text-center text-muted py-3 mt-2 mx-3 mb-3 small">
+    ➕ Foto hierher ziehen, um eine <strong>neue Anzeige</strong> daraus zu erstellen
+  </div>
+<% } %>

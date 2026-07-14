@@ -24,59 +24,7 @@
 
 <% if (drafts.length) { %>
   <div class="card shadow-sm mb-4">
-    <div class="card-body">
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-          <thead>
-            <tr>
-              <th></th>
-              <th>Tattag / Zeit</th>
-              <th>Tatort</th>
-              <th>Fotos</th>
-              <th>Status</th>
-              <th class="text-end"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <% for (const d of drafts) { %>
-              <tr>
-                <td style="width:64px">
-                  <% if (d.first_image_id) { %>
-                    <img src="/report/<%= d.aktenzeichen %>/image/<%= d.first_image_id %>/thumb.jpg"
-                         alt="" class="rounded border" style="width:56px;height:42px;object-fit:cover">
-                  <% } %>
-                </td>
-                <td>
-                  <%= d.tattag_fmt || '–' %>
-                  <% if (d.von_fmt) { %>
-                    <div class="text-muted small">
-                      <%= d.von_fmt %><% if (d.bis_fmt && d.bis_fmt !== d.von_fmt) { %> – <%= d.bis_fmt %> Uhr
-                        <span class="badge text-bg-info">Dauer belegt</span><% } else { %> Uhr<% } %>
-                    </div>
-                  <% } %>
-                </td>
-                <td class="small"><%= d.tatort || '' %><% if (!d.tatort) { %><span class="text-muted">– bitte prüfen –</span><% } %></td>
-                <td><%= d.image_count %></td>
-                <td>
-                  <% if (d.status === 'entwurf') { %>
-                    <span class="badge text-bg-warning">Entwurf</span>
-                  <% } else { %>
-                    <span class="badge text-bg-success">Versendet</span>
-                  <% } %>
-                </td>
-                <td class="text-end">
-                  <% if (d.status === 'entwurf') { %>
-                    <a class="btn btn-sm btn-outline-primary" href="/report/<%= d.aktenzeichen %>/edit?queue=<%= batch.id %>">Bearbeiten</a>
-                  <% } else { %>
-                    <a class="btn btn-sm btn-outline-secondary" href="/report/<%= d.aktenzeichen %>">Ansehen</a>
-                  <% } %>
-                </td>
-              </tr>
-            <% } %>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <%- include('../partials/report-table', { reports: drafts, imagesByReport, queueId: batch.id }) %>
   </div>
 <% } %>
 
@@ -93,7 +41,9 @@
           <div class="col-6 col-md-4 col-lg-3" data-photo-card="<%= p.id %>">
             <div class="card h-100">
               <img src="/intake/<%= batch.id %>/photo/<%= p.id %>/thumb.jpg" alt=""
-                   class="card-img-top" style="height:120px;object-fit:cover">
+                   class="card-img-top" style="height:120px;object-fit:cover;cursor:zoom-in"
+                   loading="lazy" decoding="async"
+                   data-full-src="/intake/<%= batch.id %>/photo/<%= p.id %>" title="Klick: vergrößern">
               <div class="card-body p-2">
                 <select class="form-select form-select-sm mb-2" data-assign-select="<%= p.id %>">
                   <option value="">Entwurf wählen …</option>
@@ -151,3 +101,5 @@
     })()
   </script>
 <% } %>
+
+<script src="/public/js/report-table.js"></script>

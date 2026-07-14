@@ -1,17 +1,15 @@
 // Gruppierung der Sammel-Import-Fotos zu "Vorfällen" (je Vorfall entsteht ein
 // Entwurf). Grundidee: der Ort ist das primäre Signal – Fotos innerhalb von
 // ~50 m am selben Tag gehören zu EINEM Verstoß, dessen Dauer sich aus
-// frühester und spätester Aufnahmezeit ergibt (tatzeit_von/bis). Erkannte
-// Kennzeichen (aus der optionalen, kostenpflichtigen Analyse) verfeinern nur:
-// zwei Fahrzeuge am selben Ort werden getrennt. Bewusst ohne Libraries und
-// deterministisch, damit dieselben Fotos immer dieselben Gruppen ergeben.
+// frühester und spätester Aufnahmezeit ergibt (tatzeit_von/bis). Bewusst ohne
+// Libraries und deterministisch, damit dieselben Fotos immer dieselben
+// Gruppen ergeben.
 
 export type IntakePhoto = {
   id: number
   capturedAt: string | null // 'YYYY-MM-DD HH:MM:SS' (Wanduhrzeit)
   lat: number | null
   lon: number | null
-  plate?: string | null
 }
 
 export type Incident = {
@@ -112,59 +110,14 @@ export function groupPhotos(input: IntakePhoto[]): GroupingResult {
     }
   }
 
-  // Pass 2: Kennzeichen-Verfeinerung. Nur relevant, wenn Analyse-Daten
-  // vorliegen (heute i.d.R. nicht – dann ist das ein No-op). Cluster mit
-  // mehreren erkannten Kennzeichen werden pro Kennzeichen aufgeteilt;
-  // kennzeichenlose Fotos wandern zum zeitlich nächsten Teil-Cluster.
-  const refined: Cluster[] = []
-  for (const c of clusters) {
-    const plates = [...new Set(c.photos.map((p) => p.plate).filter((x): x is string => !!x))]
-    if (plates.length < 2) {
-      refined.push(c)
-      continue
-    }
-    const parts = new Map<string, IntakePhoto[]>(plates.map((pl) => [pl, []]))
-    const plateless: IntakePhoto[] = []
-    for (const p of c.photos) {
-      if (p.plate && parts.has(p.plate)) parts.get(p.plate)!.push(p)
-      else plateless.push(p)
-    }
-    for (const p of plateless) {
-      if (!p.capturedAt) {
-        // Ohne Zeit keine sinnvolle Zuordnung – zum größten Teil-Cluster.
-        const biggest = [...parts.values()].sort((a, b) => b.length - a.length)[0]
-        biggest.push(p)
-        continue
-      }
-      const t = minutesOf(p.capturedAt)
-      let best: IntakePhoto[] | null = null
-      let bestDist = Infinity
-      for (const group of parts.values()) {
-        const ts = group.filter((g) => g.capturedAt).map((g) => minutesOf(g.capturedAt as string))
-        if (!ts.length) continue
-        const d = Math.min(...ts.map((x) => Math.abs(x - t)))
-        if (d < bestDist) {
-          bestDist = d
-          best = group
-        }
-      }
-      ;(best ?? [...parts.values()][0]).push(p)
-    }
-    for (const group of parts.values()) {
-      if (group.length) {
-        refined.push({ anchorLat: c.anchorLat, anchorLon: c.anchorLon, day: c.day, photos: group })
-      }
-    }
-  }
-
-  // Pass 3: GPS-lose Fotos mit Zeit. Eindeutig (genau ein Cluster mit gleichem
+  // Pass 2: GPS-lose Fotos mit Zeit. Eindeutig (genau ein Cluster mit gleichem
   // Tag, dessen Zeitfenster ±Slack passt) -> anhängen; sonst sammeln und
   // zeitlich bei großen Lücken splitten -> Vorfälle ohne Koordinaten.
   const leftover: IntakePhoto[] = []
   for (const p of timeOnly) {
     const day = dayOf(p.capturedAt)
     const t = minutesOf(p.capturedAt as string)
-    const candidates = refined.filter((c) => {
+    const candidates = clusters.filter((c) => {
       if (c.day !== day) return false
       const ts = c.photos.filter((g) => g.capturedAt).map((g) => minutesOf(g.capturedAt as string))
       if (!ts.length) return false
@@ -174,7 +127,7 @@ export function groupPhotos(input: IntakePhoto[]): GroupingResult {
     else leftover.push(p)
   }
 
-  const incidents = refined.map((c) => toIncident(c.photos))
+  const incidents = clusters.map((c) => toIncident(c.photos))
 
   // Übrige zeitbehaftete Fotos: chronologisch, bei Lücke > TIME_GAP_MIN oder
   // Tageswechsel neuer Vorfall.

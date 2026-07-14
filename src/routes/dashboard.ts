@@ -5,14 +5,32 @@ import { requireAuth, viewData } from '../middleware/auth'
 
 export default async function dashboardRoutes(app: FastifyInstance) {
   app.get('/dashboard', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = request.session.userId as number
     const [reports] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, aktenzeichen, kennzeichen, tattag, tatzeit_von, tatort, verstoss_art, status, created_at
+      `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tattag, tatzeit_von, tatzeit_bis,
+              tatort, verstoss_art, status, created_at
        FROM reports WHERE user_id = ? ORDER BY created_at DESC`,
-      [request.session.userId]
+      [userId]
     )
+
+    // Foto-IDs pro Anzeige für die Thumbnail-Leiste (gemeinsames Tabellen-Partial).
+    const [images] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.id, ri.report_id
+         FROM report_images ri
+         JOIN reports r ON r.id = ri.report_id
+        WHERE r.user_id = ?
+        ORDER BY ri.report_id, ri.sort_order, ri.id`,
+      [userId]
+    )
+    const imagesByReport: Record<number, number[]> = {}
+    for (const img of images) {
+      ;(imagesByReport[img.report_id] ??= []).push(img.id)
+    }
+
     return reply.view('/dashboard/index.ejs', viewData(request, {
       title: 'Meine Anzeigen',
       reports,
+      imagesByReport,
     }))
   })
 }
