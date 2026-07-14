@@ -126,8 +126,8 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               <input type="text" name="tatort" id="tatort" class="form-control"
                      value="<%= r.tatort || '' %>"
                      data-address-autocomplete data-fill="full"
-                     data-geo-scope="<%= locals.city ? city.geo.scope : 'ffm' %>"
-                     placeholder="Adresse in <%= locals.city ? city.name : 'Frankfurt' %> eingeben und aus der Liste wählen …">
+                     data-geo-scope="unlocked"
+                     placeholder="Adresse eingeben und aus der Liste wählen …">
               <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-current-location">
                   📍 Aktuellen Standort verwenden
@@ -138,16 +138,31 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
                 Adresse tippen und einen Vorschlag wählen, den aktuellen Standort verwenden
                 oder Standort und Uhrzeit aus einem oben hochgeladenen Foto übernehmen.
               </div>
-              <% if (locals.city) { %>
-                <!-- Zuständige Behörde direkt beim Tatort, da sie sich aus dem Ort ergibt. -->
-                <div class="form-text d-flex align-items-start gap-2 mt-2 mb-0" role="status">
+              <!-- Zuständiges Ordnungsamt: aus dem Tatort automatisch erkannt
+                   (report-form.js: initCity), bei Bedarf manuell umstellbar. -->
+              <div class="mt-3">
+                <label for="city-select" class="form-label">Zuständiges Ordnungsamt</label>
+                <select name="city" id="city-select" class="form-select">
+                  <% for (const c of (locals.cities || [])) { %>
+                    <option value="<%= c.id %>"
+                            data-ordnungsamt="<%= c.ordnungsamt %>"
+                            data-email="<%= c.email %>"
+                            data-center-lat="<%= c.geo.mapLat %>"
+                            data-center-lon="<%= c.geo.mapLon %>"
+                            <%= report.city === c.id ? 'selected' : '' %>>
+                      <%= c.name %>
+                    </option>
+                  <% } %>
+                </select>
+                <div id="city-hint" class="form-text d-flex align-items-start gap-2 mt-2 mb-0" role="status">
                   <span aria-hidden="true">🏛️</span>
                   <div>
-                    Diese Anzeige geht an das <strong><%= city.ordnungsamt %></strong>
-                    (<%= city.email %>).
+                    Diese Anzeige geht an das <strong id="city-ordnungsamt"><%= city.ordnungsamt %></strong>
+                    (<span id="city-email"><%= locals.cityEmail || '' %></span>).
                   </div>
                 </div>
-              <% } %>
+                <div id="city-warning" class="alert alert-warning small mt-2 mb-0 d-none" role="alert"></div>
+              </div>
               <!-- Karte zum Tatort. Marker lässt sich verschieben; die Adresse wird dann
                    per Reverse-Geocoding aktualisiert. Koordinaten gehen in die Hidden-Felder. -->
               <div id="tatort-map" class="rounded border mt-2"

@@ -1,7 +1,12 @@
 import path from 'path'
+import fs from 'fs/promises'
 import nodemailer from 'nodemailer'
 import mysql from 'mysql2/promise'
-import { getCity } from '../config/cities'
+import { getCity, hasPdfForm } from '../config/cities'
+import { pool } from '../db/connection'
+import { reportDir } from './drafts'
+import { renderTatortMap } from './staticmap'
+import { recipientEmailForReport } from './districts'
 
 function createTransport() {
   if (process.env.MAIL_DRIVER === 'smtp') {
@@ -36,6 +41,14 @@ export function buildReportMail(
 
   const az = report.aktenzeichen ? ` (${report.aktenzeichen})` : ''
   const subject = `Anzeige Ordnungswidrigkeit – Kfz ${report.kennzeichen}${az}`
+
+  // Städte mit amtlichem Formular bekommen das PDF im Anhang; Städte ohne Formular
+  // erhalten eine rohe E-Mail, der Beweisfotos und eine Tatort-Karte beiliegen.
+  const withForm = hasPdfForm(getCity(report.city))
+  const anhangHinweis = withForm
+    ? 'Das ausgefüllte Formular finden Sie im Anhang.'
+    : 'Die Beweisfotos und – soweit ermittelbar – eine Tatort-Karte finden Sie im Anhang.'
+
   const text = [
     'Sehr geehrte Damen und Herren,',
     '',
@@ -51,9 +64,12 @@ export function buildReportMail(
     `Tatort:       ${report.tatort}`,
     `Verstoß:      ${report.verstoss_art}`,
     report.fahrzeug_verlassen === 1 ? 'Das Fahrzeug war verlassen.' : undefined,
+    report.behinderung === 1
+      ? `Behinderung:  ${report.behinderung_text || 'ja'}`
+      : undefined,
     report.beschreibung ? `Beschreibung: ${report.beschreibung}` : '',
     '',
-    'Das ausgefüllte Formular finden Sie im Anhang.',
+    anhangHinweis,
     '',
     'Mit freundlichen Grüßen',
     [user.vorname, user.nachname].filter(Boolean).join(' ') || user.email,
@@ -62,6 +78,57 @@ export function buildReportMail(
     .join('\n')
 
   return { subject, text }
+}
+
+/**
+ * Anhänge für Städte OHNE amtliches Formular (rohe E-Mail): die Beweisfotos
+ * (in nutzbarer Fassung) plus eine gerenderte Tatort-Karte. Best-effort – ein
+ * fehlendes Bild/eine fehlende Karte darf den Versand nicht verhindern.
+ */
+async function buildEvidenceAttachments(
+  report: mysql.RowDataPacket,
+  user: mysql.RowDataPacket
+): Promise<{ filename: string; content?: Buffer; path?: string; contentType?: string }[]> {
+  const attachments: { filename: string; content?: Buffer; path?: string; contentType?: string }[] = []
+
+  const [images] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT filename, mimetype, original_filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+    [report.id]
+  )
+  const dir = reportDir(Number(user.id), Number(report.id))
+  let n = 0
+  for (const img of images) {
+    try {
+      const buffer = await fs.readFile(path.join(dir, img.filename))
+      n++
+      const ext = (img.mimetype === 'image/png' ? 'png' : 'jpg')
+      attachments.push({
+        filename: `Beweisfoto-${n}.${ext}`,
+        content: buffer,
+        contentType: img.mimetype || 'application/octet-stream',
+      })
+    } catch {
+      /* Datei fehlt – überspringen */
+    }
+  }
+
+  // Tatort-Karte mit Marker (wie die Kartenseite im PDF), sofern Koordinaten da sind.
+  if (report.tatort_lat != null && report.tatort_lon != null) {
+    try {
+      const mapPng = await renderTatortMap(Number(report.tatort_lat), Number(report.tatort_lon))
+      if (mapPng) {
+        attachments.push({
+          filename: 'Tatort-Karte.png',
+          content: mapPng,
+          contentType: 'image/png',
+        })
+      }
+    } catch {
+      /* Karte nicht verfügbar – ohne Karte versenden */
+    }
+  }
+
+  return attachments
 }
 
 export const MailService = {
@@ -112,28 +179,34 @@ export const MailService = {
     user: mysql.RowDataPacket
   ): Promise<{ messageId: string; subject: string; text: string }> {
     const transport = createTransport()
-    const pdfPath = path.join(
-      process.cwd(),
-      'data/pdfs',
-      String(user.id),
-      report.pdf_filename
-    )
-
+    const city = getCity(report.city)
+    // Empfänger immer aus districts.csv (per Tatort-PLZ) ermitteln.
+    const to = recipientEmailForReport(report)
+    if (!to) throw new Error('Keine Empfänger-Adresse für den Tatort ermittelbar (PLZ fehlt in districts.csv).')
     const { subject, text } = buildReportMail(report, user)
+
+    // Städte mit Formular: amtliches PDF anhängen. Städte ohne Formular: rohe
+    // E-Mail mit Beweisfotos + Tatort-Karte (das PDF existiert dort nicht).
+    let attachments: { filename: string; content?: Buffer; path?: string; contentType?: string }[]
+    if (hasPdfForm(city) && report.pdf_filename) {
+      attachments = [
+        {
+          filename: report.pdf_filename,
+          path: path.join(process.cwd(), 'data/pdfs', String(user.id), report.pdf_filename),
+          contentType: 'application/pdf',
+        },
+      ]
+    } else {
+      attachments = await buildEvidenceAttachments(report, user)
+    }
 
     const info = await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
-      to: getCity(report.city).email,
+      to,
       cc: user.email,
       subject,
       text,
-      attachments: [
-        {
-          filename: report.pdf_filename,
-          path: pdfPath,
-          contentType: 'application/pdf',
-        },
-      ],
+      attachments,
     })
     return { messageId: String(info.messageId || ''), subject, text }
   },
@@ -149,9 +222,11 @@ export const MailService = {
   ): Promise<{ messageId: string; subject: string }> {
     const transport = createTransport()
     const subject = `Re: Anzeige Ordnungswidrigkeit – Kfz ${report.kennzeichen} (${report.aktenzeichen})`
+    const to = recipientEmailForReport(report)
+    if (!to) throw new Error('Keine Empfänger-Adresse für den Tatort ermittelbar (PLZ fehlt in districts.csv).')
     const info = await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
-      to: getCity(report.city).email,
+      to,
       cc: user.email,
       subject,
       text,

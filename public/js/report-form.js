@@ -964,6 +964,7 @@
     'behinderung',
     'behinderung_text',
     'fahrzeug_verlassen',
+    'city',
   ]
 
   function initAutosave(form) {
@@ -1052,6 +1053,93 @@
     })
   }
 
+  // ---------------------------------------------------------------------------
+  // Zuständiges Ordnungsamt: aus dem Tatort erkennen (PLZ -> /api/geo/authority),
+  // Dropdown automatisch setzen, bei nicht freigeschalteten Orten warnen. Der
+  // Nutzer kann die Stadt jederzeit manuell umstellen (dann keine Auto-Korrektur).
+  // ---------------------------------------------------------------------------
+  function initCity() {
+    const select = document.getElementById('city-select')
+    if (!select) return
+    const hintName = document.getElementById('city-ordnungsamt')
+    const hintEmail = document.getElementById('city-email')
+    const warning = document.getElementById('city-warning')
+    let userTouched = false
+
+    function selectedOption() {
+      return select.options[select.selectedIndex] || null
+    }
+    function updateHint() {
+      const opt = selectedOption()
+      if (!opt) return
+      if (hintName) hintName.textContent = opt.getAttribute('data-ordnungsamt') || ''
+      if (hintEmail) hintEmail.textContent = opt.getAttribute('data-email') || ''
+    }
+    function showWarning(msg) {
+      if (!warning) return
+      warning.textContent = msg || ''
+      warning.classList.toggle('d-none', !msg)
+    }
+    function plzFrom(detail) {
+      if (detail && /^\d{5}$/.test(String(detail.postcode || ''))) return String(detail.postcode)
+      const m = /\b(\d{5})\b/.exec((detail && detail.label) || '')
+      return m ? m[1] : null
+    }
+    function recenter() {
+      const opt = selectedOption()
+      const lat = opt && Number(opt.getAttribute('data-center-lat'))
+      const lon = opt && Number(opt.getAttribute('data-center-lon'))
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        document.dispatchEvent(new CustomEvent('city:changed', { detail: { lat: lat, lon: lon } }))
+      }
+    }
+
+    select.addEventListener('change', (e) => {
+      if (e.isTrusted) {
+        userTouched = true // manuelle Wahl -> Auto-Erkennung überschreibt nicht mehr
+        showWarning(null)
+        recenter()
+      }
+      updateHint()
+    })
+
+    document.addEventListener('address:selected', async (e) => {
+      const plz = plzFrom(e.detail || {})
+      if (!plz) return showWarning(null)
+      let data
+      try {
+        const res = await fetch('/api/geo/authority?plz=' + encodeURIComponent(plz), {
+          headers: { Accept: 'application/json' },
+        })
+        if (!res.ok) return
+        data = await res.json()
+      } catch (_) {
+        return
+      }
+      if (!data) return
+      if (data.status === 'unlocked') {
+        showWarning(null)
+        if (!userTouched && select.value !== data.cityId) {
+          select.value = data.cityId
+          updateHint()
+          select.dispatchEvent(new Event('change', { bubbles: true })) // Autosave + Karte
+        } else {
+          updateHint()
+        }
+      } else if (data.status === 'locked') {
+        showWarning(
+          'Für ' + (data.name || 'diesen Ort') + ' ist OWiA noch nicht freigeschaltet. ' +
+          'Zuständig wäre: ' + (data.email || 'unbekannt') + '. ' +
+          'Aktuell werden nur die oben wählbaren Städte unterstützt.'
+        )
+      } else {
+        showWarning(null)
+      }
+    })
+
+    updateHint()
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     const form = document.querySelector('#report-form[data-report-id]')
     if (!form) return
@@ -1063,5 +1151,6 @@
     initBehinderung(form)
     initPhotoTimes(form)
     initKennzeichenFormat(form)
+    initCity()
   })
 })()

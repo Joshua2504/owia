@@ -10,6 +10,9 @@ const isVersendet = report.status === 'versendet'
 const isEntwurf = report.status === 'entwurf'
 const images = locals.images || []
 const complete = locals.complete
+// Städte mit amtlichem Formular -> PDF; ohne Formular (z.B. Bad Soden-Salmünster)
+// -> rohe E-Mail mit Fotos/Karte im Anhang (kein PDF).
+const hasForm = !!(locals.city && locals.city.pdfForm)
 const versandLabel = {
   gedruckt: 'selbst gedruckt / per Post',
   selbst_email: 'selbst per E-Mail',
@@ -233,8 +236,10 @@ const versandLabel = {
           <div>
             <h6 class="mb-1">Zur Prüfung einreichen</h6>
             <p class="small text-muted mb-1">
-              Die Anzeige wird von uns geprüft und danach inkl. PDF per E-Mail ans
-              Ordnungsamt verschickt (du erhältst eine Kopie).
+              Die Anzeige wird von uns geprüft und danach per E-Mail an das
+              <%= city.ordnungsamt %> verschickt –
+              <%= hasForm ? 'mit ausgefülltem PDF-Formular' : 'mit den Beweisfotos im Anhang' %>
+              (du erhältst eine Kopie).
             </p>
             <p class="small text-danger mb-0">
               ⚠️ Wissentlich falsche Anzeigen sind strafbar (falsche Verdächtigung,
@@ -266,17 +271,25 @@ const versandLabel = {
         </div>
       </div>
     <% } else { %>
-      <div class="d-flex gap-2 flex-wrap mb-4">
-        <a href="/anzeige/<%= report.aktenzeichen %>/pdf" class="btn btn-outline-primary">⬇ PDF herunterladen</a>
-      </div>
+      <% if (report.pdf_filename) { %>
+        <div class="d-flex gap-2 flex-wrap mb-4">
+          <a href="/anzeige/<%= report.aktenzeichen %>/pdf" class="btn btn-outline-primary">⬇ PDF herunterladen</a>
+        </div>
+      <% } %>
     <% } %>
 
-    <!-- PDF-Vorschau ganz unten -->
+    <!-- Vorschau ganz unten: PDF (Formular-Städte) bzw. E-Mail-Hinweis (rohe E-Mail). -->
     <% if (report.pdf_filename) { %>
       <h4 class="mb-3">PDF-Vorschau</h4>
       <iframe src="/anzeige/<%= report.aktenzeichen %>/pdf?inline=1"
               class="w-100 border rounded" style="height: 600px;"
               title="PDF-Vorschau"></iframe>
+    <% } else if (!hasForm) { %>
+      <div class="alert alert-info">
+        Diese Anzeige wird als E-Mail an das <strong><%= city.ordnungsamt %></strong>
+        versendet – für <%= city.name %> gibt es kein amtliches PDF-Formular. Die
+        Beweisfotos und (soweit vorhanden) eine Tatort-Karte liegen der E-Mail bei.
+      </div>
     <% } else { %>
       <p class="text-muted">Die PDF-Vorschau erscheint, sobald der Entwurf gespeichert wurde.</p>
     <% } %>

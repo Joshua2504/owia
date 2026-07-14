@@ -6,7 +6,8 @@ import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
-import { getCity, DEFAULT_CITY_ID } from '../config/cities'
+import { getCity, CITIES, unlockedCities, hasPdfForm } from '../config/cities'
+import { resolveSendCity, cityEmail } from '../services/districts'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { prepareImage, writePreparedImage, removeImagePair, PreparedImage } from '../services/images'
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
@@ -147,11 +148,14 @@ async function persistFields(
   const lon = Number(v.tatort_lon)
   const tatortLat = Number.isFinite(lat) ? lat : null
   const tatortLon = Number.isFinite(lon) ? lon : null
+  // Zuständige Stadt aus dem Dropdown (nur freigeschaltete IDs zulassen). Fehlt der
+  // Wert oder ist er unbekannt, bleibt die gespeicherte Stadt erhalten (COALESCE).
+  const city = v.city && CITIES[v.city] ? v.city : null
   await pool.execute(
     `UPDATE reports
        SET kennzeichen=?, kennzeichen_land=?, fahrzeug_marke=?, tattag=?, tatzeit_von=?, tatzeit_bis=?,
            tatort=?, tatort_lat=?, tatort_lon=?, verstoss_art=?, beschreibung=?,
-           behinderung=?, behinderung_text=?, fahrzeug_verlassen=?
+           behinderung=?, behinderung_text=?, fahrzeug_verlassen=?, city=COALESCE(?, city)
      WHERE id=? AND user_id=? AND status='entwurf'`,
     [
       v.kennzeichen ? v.kennzeichen.toUpperCase().trim() : null,
@@ -168,6 +172,7 @@ async function persistFields(
       behinderung,
       behinderungText,
       fahrzeugVerlassen,
+      city,
       reportId,
       userId,
     ]
@@ -193,6 +198,22 @@ export async function isProfileComplete(userId: number): Promise<boolean> {
 export async function regeneratePdf(reportId: string | number, userId: number): Promise<void> {
   const report = await loadReport(reportId, userId)
   if (!report) return
+
+  // Städte ohne amtliches Formular (z.B. Bad Soden-Salmünster) werden als rohe
+  // E-Mail versendet – kein PDF. Ein evtl. früher (als andere Stadt) erzeugtes PDF
+  // wird entfernt, damit nichts Verwaistes zurückbleibt.
+  if (!hasPdfForm(getCity(report.city))) {
+    if (report.pdf_filename) {
+      try {
+        await fs.rm(path.join(PDF_DIR, String(userId), report.pdf_filename), { force: true })
+      } catch {
+        /* egal */
+      }
+      await pool.execute('UPDATE reports SET pdf_filename=NULL WHERE id=?', [reportId])
+    }
+    return
+  }
+
   const [uRows] = await pool.execute<mysql.RowDataPacket[]>(
     'SELECT * FROM users WHERE id = ?',
     [userId]
@@ -310,6 +331,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
       report,
       images,
       city: getCity(report.city),
+      // Empfänger-Adressen (aus districts.csv) an die Optionen/den Hinweis hängen.
+      cities: unlockedCities().map((c) => ({ ...c, email: cityEmail(c) || '' })),
+      cityEmail: cityEmail(getCity(report.city)) || '',
       firstImageUrl,
       queue,
       otherDrafts,
@@ -842,6 +866,20 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!(await isProfileComplete(userId))) {
       setFlash(reply, 'error', 'Bitte zuerst dein Profil vervollständigen (Name und Anschrift) – anonyme Anzeigen werden vom Ordnungsamt nicht bearbeitet.')
       return reply.redirect('/einstellungen')
+    }
+
+    // Nur freigeschaltete Orte: aus dem Tatort das zuständige Amt ableiten. Liegt
+    // der Tatort in einem (noch) nicht freigeschalteten Ort, wird abgewiesen.
+    const gate = resolveSendCity(report.tatort, report.city)
+    if (!gate.ok) {
+      setFlash(reply, 'error', gate.message)
+      return reply.redirect(`/anzeige/${az}/bearbeiten`)
+    }
+    // Zuständige Stadt festschreiben (Tatort ist maßgeblich) – vor der PDF-/E-Mail-
+    // Erzeugung, damit Formularwahl und Empfänger konsistent sind.
+    if (gate.cityId !== report.city) {
+      await pool.execute('UPDATE reports SET city=? WHERE id=?', [gate.cityId, report.id])
+      report.city = gate.cityId
     }
 
     // PDF auf den letzten Stand bringen; eine frühere Ablehnung ist damit erledigt.

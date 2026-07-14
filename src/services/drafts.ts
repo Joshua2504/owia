@@ -6,6 +6,7 @@ import path from 'path'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { DEFAULT_CITY_ID } from '../config/cities'
+import { detectCityByLabel } from './districts'
 
 export const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 
@@ -39,6 +40,12 @@ export async function createDraft(
   userId: number,
   fields: DraftFields = {}
 ): Promise<{ id: number; aktenzeichen: string }> {
+  // Zuständige Stadt aus dem (beim Import bereits reverse-geocodierten) Tatort
+  // ableiten, sonst Default. So landet ein importierter Bad-Soden-Entwurf sofort
+  // bei der richtigen Stadt; der Nutzer kann im Formular weiterhin umstellen.
+  const det = detectCityByLabel(fields.tatort)
+  const initialCity = det.status === 'unlocked' ? det.city.id : DEFAULT_CITY_ID
+
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidate = generateAktenzeichen()
     try {
@@ -57,7 +64,7 @@ export async function createDraft(
           fields.tatortLon ?? null,
           fields.intakeBatchId ?? null,
           candidate,
-          DEFAULT_CITY_ID,
+          initialCity,
         ]
       )
       return { id: result.insertId, aktenzeichen: candidate }

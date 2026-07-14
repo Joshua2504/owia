@@ -16,9 +16,14 @@ function hhmm(time: unknown): string {
 const RESOURCES_DIR = path.join(process.cwd(), 'resources')
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
-/** Pfad zum amtlichen Formular der jeweiligen Stadt. */
+/** Pfad zum amtlichen Formular der jeweiligen Stadt. Städte ohne Formular werden
+ *  als rohe E-Mail versendet – hier darf der PDF-Service dann nicht landen. */
 function formPath(cityId?: string | null): string {
-  return path.join(RESOURCES_DIR, getCity(cityId).pdfForm)
+  const city = getCity(cityId)
+  if (!city.pdfForm) {
+    throw new Error(`Stadt „${city.id}" hat kein PDF-Formular (Versand erfolgt als rohe E-Mail).`)
+  }
+  return path.join(RESOURCES_DIR, city.pdfForm)
 }
 
 export const PdfService = {

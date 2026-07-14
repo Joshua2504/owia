@@ -177,5 +177,15 @@
       thumbUrl = (e.detail && e.detail.url) || null
       if (marker) marker.setIcon(thumbUrl ? imageIcon(thumbUrl) : new L.Icon.Default())
     })
+
+    // Stadt im Dropdown gewechselt (report-form.js) -> Karte auf die neue Stadt
+    // zentrieren, solange noch kein Tatort-Marker gesetzt ist (sonst nicht stören).
+    document.addEventListener('city:changed', (e) => {
+      const d = e.detail || {}
+      const lat = num(d.lat)
+      const lon = num(d.lon)
+      if (lat === null || lon === null || marker) return
+      map.setView([lat, lon], 13)
+    })
   })
 })()

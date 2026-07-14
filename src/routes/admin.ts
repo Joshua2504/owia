@@ -9,6 +9,7 @@ import { pool } from '../db/connection'
 import { requireAdmin, viewData, setFlash } from '../middleware/auth'
 import { MailService } from '../services/mail'
 import { replyAttachmentPath } from '../services/mailInbox'
+import { resolveSendCity } from '../services/districts'
 import { regeneratePdf, isProfileComplete } from './reports'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
@@ -156,6 +157,17 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!(await isProfileComplete(loaded.report.user_id))) {
       setFlash(reply, 'error', `Profil von ${loaded.user.email} ist unvollständig – Anzeige nicht versendet (ggf. ablehnen).`)
       return reply.redirect('/admin/anzeigen')
+    }
+
+    // Nur freigeschaltete Orte versenden (Tatort bestimmt das zuständige Amt).
+    const gate = resolveSendCity(loaded.report.tatort, loaded.report.city)
+    if (!gate.ok) {
+      setFlash(reply, 'error', `${loaded.report.aktenzeichen}: ${gate.message}`)
+      return reply.redirect('/admin/anzeigen')
+    }
+    if (gate.cityId !== loaded.report.city) {
+      await pool.execute('UPDATE reports SET city=? WHERE id=?', [gate.cityId, loaded.report.id])
+      loaded.report.city = gate.cityId
     }
 
     try {

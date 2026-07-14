@@ -64,7 +64,7 @@ function sanitizeAttachmentName(name: string | undefined): { display: string; ex
  *  Teil des Mail-Verlaufs. Verhindert, dass Fremde mit einem erratenen/geleakten
  *  Aktenzeichen gefälschte "Amts-Antworten" in Nutzerkonten einschleusen. */
 function trustedSenderDomains(): string[] {
-  return (process.env.REPLY_TRUSTED_DOMAINS || 'stadt-frankfurt.de')
+  return (process.env.REPLY_TRUSTED_DOMAINS || 'stadt-frankfurt.de,badsoden-salmuenster.de')
     .split(',')
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean)
