@@ -5,4 +5,8 @@ data/uploads/
 data/photon/
 .env
 dist/
+# Erzeugte PDFs ignorieren – aber die amtlichen Formulare in resources/ müssen
+# versioniert sein (der Deploy synct nur den Git-Stand; ohne sie schlägt die
+# PDF-Erzeugung in Produktion fehl).
 *.pdf
+!resources/*.pdf
