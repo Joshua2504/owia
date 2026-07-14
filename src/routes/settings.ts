@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
-import { requireAuth, viewData } from '../middleware/auth'
+import { requireAuth, viewData, setFlash } from '../middleware/auth'
 
 export default async function settingsRoutes(app: FastifyInstance) {
   app.get('/settings', { preHandler: requireAuth }, async (request, reply) => {
@@ -27,8 +27,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
 
     const name = [vorname, nachname].filter(Boolean).join(' ')
     request.session.userName = name || request.session.userEmail
-    request.session.flash = { type: 'success', message: 'Einstellungen gespeichert.' }
-    await request.session.save()
+    setFlash(reply, 'success', 'Einstellungen gespeichert.')
     return reply.redirect('/settings')
   })
 }

@@ -6,7 +6,7 @@ import mysql from 'mysql2/promise'
 import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
-import { requireAdmin, viewData } from '../middleware/auth'
+import { requireAdmin, viewData, setFlash } from '../middleware/auth'
 import { MailService } from '../services/mail'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
@@ -89,18 +89,11 @@ export default async function adminRoutes(app: FastifyInstance) {
         "UPDATE reports SET status='versendet', versand_art='system_email' WHERE id=?",
         [loaded.report.id]
       )
-      request.session.flash = {
-        type: 'success',
-        message: `Anzeige ${loaded.report.aktenzeichen} freigegeben und ans Ordnungsamt verschickt.`,
-      }
+      setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} freigegeben und ans Ordnungsamt verschickt.`)
     } catch (err) {
       app.log.error({ err }, 'Versand nach Freigabe fehlgeschlagen')
-      request.session.flash = {
-        type: 'error',
-        message: `Versand von ${loaded.report.aktenzeichen} fehlgeschlagen – Anzeige bleibt eingereicht.`,
-      }
+      setFlash(reply, 'error', `Versand von ${loaded.report.aktenzeichen} fehlgeschlagen – Anzeige bleibt eingereicht.`)
     }
-    await request.session.save()
     return reply.redirect('/admin/anzeigen')
   })
 
@@ -109,8 +102,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const grund = String((request.body as { grund?: string })?.grund || '').trim()
     if (!grund) {
-      request.session.flash = { type: 'error', message: 'Bitte eine Begründung angeben.' }
-      await request.session.save()
+      setFlash(reply, 'error', 'Bitte eine Begründung angeben.')
       return reply.redirect('/admin/anzeigen')
     }
 
@@ -127,11 +119,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     } catch (err) {
       app.log.error({ err }, 'Ablehnungs-Mail fehlgeschlagen')
     }
-    request.session.flash = {
-      type: 'success',
-      message: `Anzeige ${loaded.report.aktenzeichen} abgelehnt – der Nutzer wurde informiert.`,
-    }
-    await request.session.save()
+    setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} abgelehnt – der Nutzer wurde informiert.`)
     return reply.redirect('/admin/anzeigen')
   })
 }

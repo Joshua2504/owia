@@ -8,7 +8,7 @@ import mysql from 'mysql2/promise'
 import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
-import { requireAuth, viewData } from '../middleware/auth'
+import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { prepareImage, writePreparedImage } from '../services/images'
 import { extractPhotoMeta } from '../services/exif'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
@@ -433,7 +433,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
 
     await pool.execute('DELETE FROM intake_batches WHERE id = ?', [batch.id])
     await fs.rm(intakeDir(userId, batch.id), { recursive: true, force: true })
-    request.session.flash = { type: 'success', message: 'Foto-Import verworfen.' }
+    setFlash(reply, 'success', 'Foto-Import verworfen.')
     return reply.send({ redirect: '/intake' })
   })
 }

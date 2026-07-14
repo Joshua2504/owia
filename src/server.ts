@@ -88,6 +88,17 @@ async function main() {
     defaultContext: { isAdmin: false },
   })
 
+  // Flash-Cookie nach dem Ausliefern einer HTML-Seite löschen (die Seite hat
+  // die Meldung dann angezeigt). Redirects (302) und Nicht-HTML-Antworten
+  // (Bilder, PDF-iframe) lassen das Cookie unangetastet.
+  app.addHook('onSend', async (request, reply, payload) => {
+    const isHtml = String(reply.getHeader('content-type') || '').includes('text/html')
+    if (request.cookies?.flash && isHtml && reply.statusCode < 300) {
+      reply.clearCookie('flash', { path: '/' })
+    }
+    return payload
+  })
+
   await app.register(authRoutes)
   await app.register(dashboardRoutes)
   await app.register(reportsRoutes)

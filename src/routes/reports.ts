@@ -4,7 +4,7 @@ import crypto from 'crypto'
 import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
-import { requireAuth, viewData } from '../middleware/auth'
+import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
 import { getCity, DEFAULT_CITY_ID } from '../config/cities'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
@@ -549,14 +549,12 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const queueId = Number(body.queue)
     if (Number.isInteger(queueId) && queueId > 0 && queueId === report.intake_batch_id) {
       const queue = await loadQueueContext(queueId, userId, az)
-      request.session.flash = { type: 'success', message: `Entwurf ${az} gespeichert.` }
-      await request.session.save()
+      setFlash(reply, 'success', `Entwurf ${az} gespeichert.`)
       if (queue?.nextAz) return reply.redirect(`/report/${queue.nextAz}/edit?queue=${queueId}`)
       return reply.redirect(`/intake/${queueId}`)
     }
 
-    request.session.flash = { type: 'success', message: 'Entwurf gespeichert.' }
-    await request.session.save()
+    setFlash(reply, 'success', 'Entwurf gespeichert.')
     return reply.redirect(`/report/${az}`)
   })
 
@@ -582,8 +580,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       }
     }
 
-    request.session.flash = { type: 'success', message: 'Entwurf verworfen.' }
-    await request.session.save()
+    setFlash(reply, 'success', 'Entwurf verworfen.')
     return reply.redirect('/dashboard')
   })
 
@@ -706,8 +703,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.redirect(`/report/${az}`)
 
     if (!isComplete(report)) {
-      request.session.flash = { type: 'error', message: 'Bitte zuerst alle Pflichtfelder ausfüllen.' }
-      await request.session.save()
+      setFlash(reply, 'error', 'Bitte zuerst alle Pflichtfelder ausfüllen.')
       return reply.redirect(`/report/${az}/edit`)
     }
 
@@ -717,11 +713,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL WHERE id=?",
       [report.id]
     )
-    request.session.flash = {
-      type: 'success',
-      message: 'Anzeige eingereicht – sie wird geprüft und dann ans Ordnungsamt verschickt.',
-    }
-    await request.session.save()
+    setFlash(reply, 'success', 'Anzeige eingereicht – sie wird geprüft und dann ans Ordnungsamt verschickt.')
     return reply.redirect(`/report/${az}`)
   })
 
@@ -736,8 +728,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     await pool.execute("UPDATE reports SET status='entwurf', eingereicht_at=NULL WHERE id=?", [
       report.id,
     ])
-    request.session.flash = { type: 'success', message: 'Anzeige zurückgezogen – sie ist wieder ein Entwurf.' }
-    await request.session.save()
+    setFlash(reply, 'success', 'Anzeige zurückgezogen – sie ist wieder ein Entwurf.')
     return reply.redirect(`/report/${az}/edit`)
   })
 }

@@ -5,6 +5,5 @@ declare module '@fastify/session' {
     userId?: number
     userEmail?: string
     userName?: string
-    flash?: { type: 'success' | 'error'; message: string }
   }
 }
