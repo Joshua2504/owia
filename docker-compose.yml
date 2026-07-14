@@ -144,6 +144,30 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  # Kennzeichenerkennung (YOLOv11 + PaddleOCR) für hochgeladene Beweisfotos.
+  # Läuft in Produktion automatisch mit; in der Entwicklung opt-in über
+  # COMPOSE_PROFILES=alpr (plus ALPR_ENABLED=on in der .env). Die App spricht
+  # den Dienst intern über "alpr:8000" an und degradiert ohne ihn graceful
+  # (Kennzeichen-Feld bleibt dann einfach leer). Kein Port nach außen; die
+  # Fotos verlassen den Host nie. CPU-only, Modelle sind ins Image gebacken.
+  alpr:
+    build: ./docker/alpr
+    profiles: [production, alpr]
+    # Produktionshost ist x86_64; auf aarch64 (Apple-Silicon-Dev) segfaultet
+    # paddlepaddle sobald torch im selben Prozess Inferenz gemacht hat. Daher
+    # fest auf amd64 gepinnt – auf dem Host nativ, lokal nur emuliert (und dank
+    # Profil-Gating im Dev-Alltag gar nicht gestartet).
+    platform: linux/amd64
+    mem_limit: 2g
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
 volumes:
   caddy_data:
   caddy_config:

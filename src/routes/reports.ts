@@ -13,6 +13,8 @@ import { prepareImage, writePreparedImage, removeImagePair, PreparedImage } from
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
 import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
 import { extractPhotoMeta } from '../services/exif'
+import { alprEnabled, ALPR_MIN_CONFIDENCE } from '../services/alpr'
+import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { replyAttachmentPath } from '../services/mailInbox'
 import { MailService } from '../services/mail'
 import { adminEmails } from '../config/admin'
@@ -387,6 +389,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
         try {
           const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
           const row = await saveImageToReport(userId, reportId, prepared)
+          // Kennzeichen im Hintergrund erkennen; Ergebnis holt das Formular per Poll.
+          queuePlateAnalysis(userId, reportId, row.id, row.filename, prepared.mimetype)
           saved.push({ id: row.id, url: `/anzeige/${az}/image/${row.id}`, capturedAt: row.capturedAt })
           count++
         } catch {
@@ -426,7 +430,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.original_filename, r.id AS report_id
+      `SELECT ri.filename, ri.original_filename, ri.detected_plate, r.id AS report_id
        FROM report_images ri
        JOIN reports r ON r.id = ri.report_id
        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
@@ -460,7 +464,54 @@ export default async function reportsRoutes(app: FastifyInstance) {
     )
     await removeImageFiles(userId, old.report_id, old.filename, old.original_filename)
 
+    // Neu analysieren nur, wenn dieses Bild noch keine erfolgreiche Erkennung
+    // hatte: PUT feuert bei jedem Schwärzungs-Save, und in der ersetzten Fassung
+    // ist das Kennzeichen typischerweise gerade unkenntlich gemacht.
+    if (old.detected_plate === null) {
+      await pool.execute(
+        `UPDATE report_images
+           SET detected_plate=NULL, plate_confidence=NULL, analysis_status=NULL, analyzed_at=NULL
+         WHERE id=?`,
+        [imageId]
+      )
+      queuePlateAnalysis(userId, old.report_id, Number(imageId), filename, prepared.mimetype)
+    }
+
     return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` } })
+  })
+
+  // Ergebnis der Kennzeichen-Erkennung für das Bearbeiten-Formular (Poll).
+  // status 'pending', solange mindestens ein Bild noch nicht analysiert ist.
+  app.get('/anzeige/:az/analysis', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send({ error: 'not found' })
+
+    // Analyse deaktiviert (z.B. Entwicklung): sofort fertig melden, damit das
+    // Formular gar nicht erst weiterpollt.
+    if (!alprEnabled()) {
+      return reply.send({ status: 'done', suggestions: { kennzeichen: null, confidence: null } })
+    }
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT analysis_status, detected_plate, plate_confidence FROM report_images WHERE report_id = ?',
+      [report.id]
+    )
+    const pending = rows.some((r) => r.analysis_status === null || r.analysis_status === 'pending')
+    // Vorschlag = sicherste Lesung über alle Bilder; unsichere Lesungen (unter
+    // der Prefill-Schwelle) werden dem Nutzer gar nicht erst vorgeschlagen.
+    let best: { plate: string; confidence: number } | null = null
+    for (const r of rows) {
+      if (!r.detected_plate || r.plate_confidence === null) continue
+      const confidence = Number(r.plate_confidence)
+      if (confidence < ALPR_MIN_CONFIDENCE) continue
+      if (!best || confidence > best.confidence) best = { plate: r.detected_plate, confidence }
+    }
+    return reply.send({
+      status: pending ? 'pending' : 'done',
+      suggestions: { kennzeichen: best?.plate ?? null, confidence: best?.confidence ?? null },
+    })
   })
 
   // Bildreihenfolge speichern (Nutzer sortiert per ◀ ▶). Das erste Bild dient u.a. als

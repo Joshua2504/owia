@@ -740,6 +740,8 @@
       if (!savedId) throw new Error('not saved')
       item.serverImageId = savedId
       setItemStatus(item, 'Gespeichert ✓')
+      // Server erkennt das Kennzeichen im Hintergrund – Ergebnis abholen.
+      bumpAnalysisPolling()
       // Bild ist gespeichert -> es kann in eine andere Anzeige verschoben werden.
       if (item.els && item.els.moveSel) item.els.moveSel.disabled = false
       updateMoveButtons()
@@ -961,6 +963,87 @@
         status.textContent = 'Übernommen: ' + span + ' – bitte prüfen.'
       }
     })
+  }
+
+  // ---------------------------------------------------------------------------
+  // Kennzeichen-Erkennung: Der Server analysiert hochgeladene Fotos im
+  // Hintergrund (YOLO + OCR im alpr-Container); das Formular pollt das Ergebnis
+  // und befüllt ein noch leeres, unangefasstes Kennzeichen-Feld vor. Manuelle
+  // Eingaben werden nie überschrieben – der Nutzer prüft und speichert wie gewohnt.
+  // ---------------------------------------------------------------------------
+
+  let plateTouched = false // Nutzer hat das Feld selbst geändert (nur echte Events)
+  let plateForm = null
+  let plateTimer = null
+  let plateStopAt = 0
+
+  function setPlateStatus(text) {
+    const box = document.querySelector('#alpr-status')
+    if (box) box.textContent = text || ''
+  }
+
+  // Manuelle Eingaben merken (isTrusted nur bei echten Nutzer-Events), damit die
+  // Erkennung nichts überschreibt, was der Nutzer selbst getippt hat.
+  function initPlateTouchTracking(form) {
+    const el = form.elements['kennzeichen']
+    if (!el || typeof el.addEventListener !== 'function') return
+    const mark = (e) => {
+      if (e.isTrusted) plateTouched = true
+    }
+    el.addEventListener('input', mark)
+    el.addEventListener('change', mark)
+  }
+
+  function applyPlateSuggestion(form, suggestions) {
+    const el = form.elements['kennzeichen']
+    const val = suggestions && suggestions.kennzeichen
+    if (!el || !val || plateTouched || String(el.value || '').trim()) return false
+    el.value = val
+    // Programmatische Events lösen Formatierung + Autosave aus; isTrusted=false,
+    // daher wird das Feld nicht fälschlich als „vom Nutzer angefasst" markiert.
+    el.dispatchEvent(new Event('input'))
+    el.dispatchEvent(new Event('change'))
+    el.classList.remove('alpr-filled')
+    void el.offsetWidth // Reflow, damit die Animation erneut startet
+    el.classList.add('alpr-filled')
+    const pct =
+      typeof suggestions.confidence === 'number' ? Math.round(suggestions.confidence * 100) : null
+    setPlateStatus(
+      'Kennzeichen aus den Fotos erkannt' + (pct !== null ? ' (' + pct + ' %)' : '') + ' – bitte prüfen.'
+    )
+    return true
+  }
+
+  async function pollAnalysisOnce(form) {
+    try {
+      const res = await fetch('/anzeige/' + reportId + '/analysis', {
+        headers: { Accept: 'application/json' },
+      })
+      if (!res.ok) return { status: 'done' }
+      const data = await res.json()
+      if (data && data.suggestions) applyPlateSuggestion(form, data.suggestions)
+      return data || { status: 'done' }
+    } catch (_) {
+      return { status: 'done' }
+    }
+  }
+
+  // Polling starten bzw. „verlängern" (z.B. nach einem weiteren Upload).
+  function bumpAnalysisPolling() {
+    const form = plateForm || document.querySelector('#report-form[data-report-id]')
+    if (!form || !reportId) return
+    plateForm = form
+    plateStopAt = Date.now() + 120000 // höchstens 2 Minuten pollen
+    if (plateTimer) return // läuft bereits
+    const tick = async () => {
+      const data = await pollAnalysisOnce(form)
+      if (data.status === 'done' || Date.now() > plateStopAt) {
+        clearInterval(plateTimer)
+        plateTimer = null
+      }
+    }
+    plateTimer = setInterval(tick, 3000)
+    tick()
   }
 
   // ---------------------------------------------------------------------------
@@ -1197,6 +1280,10 @@
     initBehinderung(form)
     initPhotoTimes(form)
     initKennzeichenFormat(form)
+    initPlateTouchTracking(form)
     initCity()
+    // Beim Laden einmal pollen: Ergebnisse können seit dem letzten Besuch fertig
+    // sein, oder ein gerade hochgeladenes Bild wird noch analysiert.
+    bumpAnalysisPolling()
   })
 })()

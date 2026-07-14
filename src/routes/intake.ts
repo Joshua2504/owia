@@ -13,6 +13,7 @@ import { prepareImage, writePreparedImage } from '../services/images'
 import { extractPhotoMeta } from '../services/exif'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
 import { createDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
+import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
 
@@ -223,7 +224,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
             const p = byId.get(chunkIds[s])
             if (!p) continue
             await movePhotoFiles(userId, batch.id, draft.id, p.filename, p.original_filename)
-            await insertImageRow(draft.id, {
+            const imageId = await insertImageRow(draft.id, {
               filename: p.filename,
               mimetype: p.mimetype,
               originalFilename: p.original_filename,
@@ -233,6 +234,8 @@ export default async function intakeRoutes(app: FastifyInstance) {
               gpsLat: p.gps_lat !== null ? Number(p.gps_lat) : null,
               gpsLon: p.gps_lon !== null ? Number(p.gps_lon) : null,
             })
+            // Kennzeichen im Hintergrund erkennen (füllt das leere Feld des Entwurfs).
+            queuePlateAnalysis(userId, draft.id, imageId, p.filename, p.mimetype)
             await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [
               draft.id,
               p.id,
@@ -409,7 +412,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
       'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
       [reportId]
     )
-    await insertImageRow(reportId, {
+    const imageId = await insertImageRow(reportId, {
       filename: photo.filename,
       mimetype: photo.mimetype,
       originalFilename: photo.original_filename,
@@ -419,6 +422,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
       gpsLat: photo.gps_lat !== null ? Number(photo.gps_lat) : null,
       gpsLon: photo.gps_lon !== null ? Number(photo.gps_lon) : null,
     })
+    queuePlateAnalysis(userId, reportId, imageId, photo.filename, photo.mimetype)
     await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [reportId, photo.id])
     return reply.send({ ok: true })
   })
