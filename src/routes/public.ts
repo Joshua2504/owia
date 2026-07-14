@@ -58,6 +58,15 @@ export default async function publicRoutes(app: FastifyInstance) {
     }))
   })
 
+  // Favicon für Clients/Crawler, die stur /favicon.ico anfragen (das Layout
+  // liefert modernen Browsern ein SVG-Emoji per <link rel="icon">).
+  app.get('/favicon.ico', async (_request, reply) => {
+    return reply
+      .header('Content-Type', 'image/svg+xml')
+      .header('Cache-Control', 'public, max-age=86400')
+      .send(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🚗</text></svg>`)
+  })
+
   // SEO: Crawler-Regeln (nur öffentliche Seiten indexieren) + Sitemap.
   app.get('/robots.txt', async (_request, reply) => {
     const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
