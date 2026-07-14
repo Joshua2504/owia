@@ -35,13 +35,10 @@ ADMIN_EMAILS=<admin@...>       # leer = NIEMAND kann Anzeigen freigeben!
 
 ## Einmalig auf dem Server einrichten
 
-1. **Backup-Cron** (Pflicht — ohne Backup ist ein Plattendefekt Totalverlust aller
-   Anzeigen und Beweisfotos):
-   ```
-   30 3 * * * cd /pfad/zum/projekt && BACKUP_DIR=/var/backups/owia ./scripts/backup.sh >> /var/log/owia-backup.log 2>&1
-   ```
-   `BACKUP_DIR` sollte auf einem anderen Datenträger liegen oder anschließend
-   extern gesynct werden (rsync/rclone).
+1. **Backups** laufen extern (bestehender Mechanismus). Wichtig: `data/mysql`,
+   `data/uploads` und `data/pdfs` müssen abgedeckt sein — für einen konsistenten
+   DB-Stand idealerweise per `mariadb-dump` statt Datei-Kopie des laufenden
+   `data/mysql`.
 2. **Firewall**: nur 80/443 öffentlich; 3000/8025 sind mit den Bindings oben
    ohnehin nur noch lokal erreichbar.
 3. Optional: externes Uptime-Monitoring auf `https://<domain>/health`.
