@@ -17,7 +17,6 @@ import intakeRoutes from './routes/intake'
 import settingsRoutes from './routes/settings'
 import geoRoutes from './routes/geo'
 import tilesRoutes from './routes/tiles'
-import satRoutes from './routes/sat'
 import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
 import adminRoutes from './routes/admin'
@@ -167,7 +166,6 @@ async function main() {
   await app.register(settingsRoutes)
   await app.register(geoRoutes)
   await app.register(tilesRoutes)
-  await app.register(satRoutes)
   await app.register(publicRoutes)
   await app.register(legalRoutes)
   await app.register(adminRoutes)
