@@ -55,6 +55,14 @@
 
   var speedSamples = [] // { t, bytes } – Fenster für die Momentan-Geschwindigkeit
 
+  // Solange der Upload läuft, warnt der Browser beim Schließen/Verlassen der Seite.
+  var uploading = false
+  window.addEventListener('beforeunload', function (e) {
+    if (!uploading) return
+    e.preventDefault()
+    e.returnValue = '' // Chrome/Firefox zeigen dann den Standard-Bestätigungsdialog
+  })
+
   function currentSpeed(uploadedBytes) {
     var now = Date.now()
     speedSamples.push({ t: now, bytes: uploadedBytes })
@@ -119,6 +127,7 @@
     hideErrors()
     picker.classList.add('d-none')
     progress.classList.remove('d-none')
+    uploading = true
 
     var allErrors = []
     var done = 0
@@ -169,6 +178,7 @@
       })
       .then(function (res) { return res.json() })
       .then(function (data) {
+        uploading = false // fertig – die Weiterleitung darf keinen Dialog auslösen
         if (allErrors.length) showErrors(allErrors)
         if (data.redirect) {
           location.href = data.redirect
@@ -177,6 +187,7 @@
         }
       })
       .catch(function () {
+        uploading = false
         allErrors.push('Upload fehlgeschlagen – bitte erneut versuchen. Bereits hochgeladene Fotos findest du unter „Bisherige Importe".')
         showErrors(allErrors)
         progress.classList.add('d-none')
