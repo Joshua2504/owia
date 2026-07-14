@@ -119,11 +119,20 @@
         })
         if (!res.ok) return
         const data = await res.json()
-        const label = data.result && data.result.label
+        const result = data.result
+        const label = result && result.label
         if (label && tatortInput) {
           tatortInput.value = label
           tatortInput.dispatchEvent(new Event('input', { bubbles: true }))
           tatortInput.dispatchEvent(new Event('change', { bubbles: true }))
+          // Adresse hat sich geändert (Marker verschoben) -> Stadt-Erkennung in
+          // report-form.js neu anstoßen. Bewusst NICHT über 'address:selected',
+          // damit die Karte nicht neu zentriert (der Marker bleibt, wo er ist).
+          document.dispatchEvent(
+            new CustomEvent('tatort:changed', {
+              detail: { lat: lat, lon: lon, label: label, postcode: result.postcode, city: result.city },
+            })
+          )
         }
       } catch (_) {
         /* Photon nicht erreichbar – Marker bleibt, Adresse unverändert */
@@ -140,13 +149,9 @@
         marker.on('dragend', () => {
           const p = marker.getLatLng()
           writeInputs(p.lat, p.lng)
-          // Adresse nur automatisch ermitteln, wenn das Feld noch leer ist. Sonst
-          // würde das Feinjustieren des Markers (Hausnummer-Koordinate liegt oft
-          // etwas neben der Straße) eine bereits gewählte Adresse mit Hausnummer
-          // überschreiben. Position/Koordinaten werden trotzdem aktualisiert.
-          if (tatortInput && !tatortInput.value.trim()) {
-            reverseFill(p.lat, p.lng)
-          }
+          // Marker verschoben -> Adresse des Tatorts per Reverse-Geocoding
+          // aktualisieren (und darüber die Stadt-Erkennung neu anstoßen).
+          reverseFill(p.lat, p.lng)
         })
       }
     }

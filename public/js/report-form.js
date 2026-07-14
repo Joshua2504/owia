@@ -1103,7 +1103,7 @@
       updateHint()
     })
 
-    document.addEventListener('address:selected', async (e) => {
+    async function handleLocation(e) {
       const plz = plzFrom(e.detail || {})
       if (!plz) return showWarning(null)
       let data
@@ -1135,7 +1135,11 @@
       } else {
         showWarning(null)
       }
-    })
+    }
+    // Adresse neu gewählt (Autocomplete/Standort/Foto) ODER Marker verschoben:
+    // beides ändert den Tatort -> zuständiges Amt neu erkennen.
+    document.addEventListener('address:selected', handleLocation)
+    document.addEventListener('tatort:changed', handleLocation)
 
     updateHint()
   }
