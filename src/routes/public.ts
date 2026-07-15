@@ -45,9 +45,9 @@ export default async function publicRoutes(app: FastifyInstance) {
     return reply.view('/public/index.ejs', viewData(request, {
       title: 'Übersicht',
       // SEO: sprechender Titel + Beschreibung für Suchmaschinen und Vorschauen.
-      pageTitle: 'Falschparker melden in Frankfurt – kostenlos Anzeige erstatten | OWiA-Anzeiger',
+      pageTitle: 'Falschparker melden – kostenlos Anzeige erstatten | OWiA-Anzeiger',
       metaDescription:
-        'Falschparker in Frankfurt anzeigen: Fotos hochladen, Tatort und Zeit automatisch aus den Bildern, fertiges PDF fürs Ordnungsamt – kostenlos und in wenigen Minuten. Gehweg, Radweg oder Feuerwehrzufahrt zugeparkt? Jetzt Ordnungswidrigkeit melden.',
+        'Falschparker anzeigen: Fotos hochladen, Tatort und Zeit automatisch aus den Bildern, fertige Anzeige fürs zuständige Ordnungsamt – kostenlos und in wenigen Minuten. Gehweg, Radweg oder Feuerwehrzufahrt zugeparkt? Jetzt Ordnungswidrigkeit melden – in immer mehr Städten.',
       canonical: `${appUrl}/`,
       appUrl,
       centerLat: geo.biasLat,
