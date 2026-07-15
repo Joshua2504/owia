@@ -95,6 +95,29 @@ export const CITIES: Record<string, City> = {
       mapLon: 9.3669,
     },
   },
+  // Hanau (Main-Kinzig-Kreis, Hessen). Kein amtliches PDF-Formular -> Versand als
+  // rohe E-Mail. Empfänger-Adresse kommt (wie bei allen Städten) aus districts.csv
+  // (PLZ 63450–63457 -> verwarngeldstelle@hanau.de).
+  hanau: {
+    id: 'hanau',
+    // Exakt wie in districts.csv, damit die PLZ-Erkennung (63450 …) greift.
+    name: 'Hanau',
+    ordnungsamt: 'Ordnungsamt der Stadt Hanau',
+    // kein pdfForm -> rohe E-Mail
+    geo: {
+      scope: 'hanau',
+      // Gesamtes Stadtgebiet inkl. Stadtteile (Kesselstadt, Steinheim, Großauheim,
+      // Klein-Auheim, Wolfgang, Mittelbuchen, Lamboy …).
+      bbox: '8.85,50.07,9.04,50.20',
+      // Hanau ist als Ortsname distinktiv genug – keine gleichnamigen Nachbarorte.
+      cityMatch: 'hanau',
+      biasLat: 50.1329,
+      biasLon: 8.9170,
+      // Marktplatz/Freiheitsplatz Hanau – Default-Kartenmittelpunkt im Formular.
+      mapLat: 50.1329,
+      mapLon: 8.9170,
+    },
+  },
 }
 
 /** Stadt zu einer ID; fällt bei unbekannter/leerer ID auf die Default-Stadt zurück. */

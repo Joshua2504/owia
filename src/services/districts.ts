@@ -118,11 +118,11 @@ export function districtCount(): number {
   return districts.size
 }
 
-/** Namen aller freigeschalteten Städte als Fließtext ("A und B"). */
+/** Namen aller freigeschalteten Städte als Fließtext ("A", "A und B", "A, B und C"). */
 function unlockedNamesText(): string {
-  return Object.values(CITIES)
-    .map((c) => c.name)
-    .join(' und ')
+  const names = Object.values(CITIES).map((c) => c.name)
+  if (names.length <= 1) return names.join('')
+  return `${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}`
 }
 
 export type SendGate =
