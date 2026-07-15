@@ -396,6 +396,16 @@
     status.className = 'small text-muted mt-1'
     body.appendChild(status)
 
+    // Upload-Fortschritt (nur während des Hochladens sichtbar) – schmaler Balken
+    // wie beim Foto-Import; Prozent/Bytes stehen in der Status-Zeile darüber.
+    const progressWrap = document.createElement('div')
+    progressWrap.className = 'progress mt-1 d-none'
+    progressWrap.style.height = '6px'
+    const progressBar = document.createElement('div')
+    progressBar.className = 'progress-bar'
+    progressWrap.appendChild(progressBar)
+    body.appendChild(progressWrap)
+
     const toolbar = document.createElement('div')
     toolbar.className = 'd-flex flex-wrap gap-2 mt-2'
     body.appendChild(toolbar)
@@ -525,7 +535,7 @@
 
     item.els = {
       col, stage, count, status, date: dateEl, undo, clear, gpsBtn, plateBtn, moveLeft, moveRight,
-      moveSel,
+      moveSel, progressWrap, progressBar,
       toolBtns: { black: toolBlack, pixel: toolPixel, crop: toolCrop },
     }
     return col
@@ -732,6 +742,65 @@
         : ''
   }
 
+  // --- Upload-Fortschritt (wie beim Foto-Import, siehe import-upload.js) ---
+
+  function fmtBytes(b) {
+    if (b >= 1024 * 1024 * 1024) return (b / (1024 * 1024 * 1024)).toFixed(1).replace('.', ',') + ' GB'
+    if (b >= 1024 * 1024) return (b / (1024 * 1024)).toFixed(1).replace('.', ',') + ' MB'
+    return Math.max(1, Math.round(b / 1024)) + ' KB'
+  }
+  function fmtEta(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return ''
+    if (seconds < 60) return '~' + Math.max(1, Math.round(seconds)) + ' s'
+    return '~' + Math.floor(seconds / 60) + ':' + String(Math.round(seconds % 60)).padStart(2, '0') + ' min'
+  }
+
+  // XHR statt fetch: nur so gibt es Upload-Progress-Events (Bytes im Flug).
+  // Löst bei HTTP >= 400 mit Fehler aus (wie zuvor der !res.ok-Throw).
+  function uploadImage(url, method, fd, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open(method, url)
+      xhr.responseType = 'json'
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total)
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 400) resolve(xhr.response || {})
+        else reject(new Error('http ' + xhr.status))
+      }
+      xhr.onerror = () => reject(new Error('network'))
+      xhr.ontimeout = () => reject(new Error('timeout'))
+      xhr.send(fd)
+    })
+  }
+
+  // Fortschritt an der Bild-Karte anzeigen: Balken einblenden, Status-Zeile mit
+  // Prozent/Bytes und – sobald messbar – Geschwindigkeit und Restzeit beschriften.
+  function itemProgress(item) {
+    const samples = [] // { t, bytes } – Fenster für die Momentan-Geschwindigkeit
+    return (loaded, total) => {
+      if (!item.els || !item.els.progressBar) return
+      item.els.progressWrap.classList.remove('d-none')
+      const pct = total ? Math.round((loaded / total) * 100) : 0
+      item.els.progressBar.style.width = pct + '%'
+
+      const now = Date.now()
+      samples.push({ t: now, bytes: loaded })
+      while (samples.length > 2 && now - samples[0].t > 4000) samples.shift()
+      const dt = (now - samples[0].t) / 1000
+      const speed = dt > 0.3 ? (loaded - samples[0].bytes) / dt : 0
+
+      const parts = ['Lädt hoch … ' + pct + ' %', fmtBytes(loaded) + ' von ' + fmtBytes(total)]
+      if (speed > 1024) {
+        parts.push(fmtBytes(speed) + '/s')
+        const eta = fmtEta((total - loaded) / speed)
+        if (eta) parts.push('noch ' + eta)
+      }
+      setItemStatus(item, parts.join(' · '))
+    }
+  }
+
   // Aktuellen Stand des Bildes (ggf. mit Schwärzungen) zum Entwurf speichern.
   // Erste Speicherung legt das Bild an (POST); spätere ersetzen die Fassung in
   // place (PUT) – so bleibt die Bild-ID stabil und das Limit wird nicht berührt.
@@ -747,20 +816,19 @@
       const file = await exportItem(item)
       const fd = new FormData()
       fd.append('bilder', file, file.name)
+      const onProgress = itemProgress(item)
 
       let savedId
       if (item.serverImageId) {
-        const res = await fetch('/anzeige/' + reportId + '/images/' + item.serverImageId, {
-          method: 'PUT',
-          body: fd,
-        })
-        if (!res.ok) throw new Error('replace failed')
-        const data = await res.json()
+        const data = await uploadImage(
+          '/anzeige/' + reportId + '/images/' + item.serverImageId,
+          'PUT',
+          fd,
+          onProgress
+        )
         savedId = data.image && data.image.id
       } else {
-        const res = await fetch('/anzeige/' + reportId + '/images', { method: 'POST', body: fd })
-        if (!res.ok) throw new Error('upload failed')
-        const data = await res.json()
+        const data = await uploadImage('/anzeige/' + reportId + '/images', 'POST', fd, onProgress)
         if (data.errors && data.errors.length) alert(data.errors[0])
         const newImg = (data.images || [])[0]
         savedId = newImg && newImg.id
@@ -784,6 +852,11 @@
     } catch (_) {
       setItemStatus(item, 'Nicht gespeichert – erneut versuchen.', true)
     } finally {
+      // Fortschrittsbalken wieder ausblenden – der Ausgang steht in der Status-Zeile.
+      if (item.els && item.els.progressWrap) {
+        item.els.progressWrap.classList.add('d-none')
+        item.els.progressBar.style.width = '0%'
+      }
       item.saving = false
       if (item.dirty && !item.removed) {
         item.dirty = false
