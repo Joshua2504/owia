@@ -1,11 +1,14 @@
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
+import crypto from 'crypto'
 import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
-import { viewData } from '../middleware/auth'
+import { viewData, setFlash } from '../middleware/auth'
 import { cachedPixelate } from '../services/pixelate'
-import { getCity, DEFAULT_CITY_ID } from '../config/cities'
+import { getCity, unlockedCities, DEFAULT_CITY_ID } from '../config/cities'
+import { isValidEmail, normalizeEmail } from './auth'
+import { MailService } from '../services/mail'
 
 // Öffentliche, anonyme Übersicht aller versendeter Anzeigen auf einer Karte.
 // Bewusst ohne Auth: Startseite und Daten sind öffentlich sichtbar. Es werden
@@ -55,7 +58,89 @@ export default async function publicRoutes(app: FastifyInstance) {
         fotos: Number(statsRows[0]?.fotos || 0),
         topVerstoss: topRows[0]?.verstoss_art || null,
       },
+      cities: unlockedCities(),
     }))
+  })
+
+  // ---------------------------------------------------------------------------
+  // Newsletter: Benachrichtigung, wenn neue Städte/PLZ freigeschaltet werden.
+  // Double-Opt-In: Anmeldung -> Bestätigungs-Mail -> Klick auf Link. Der Token
+  // dient auch als Abmelde-Link in jeder Ankündigung.
+  // ---------------------------------------------------------------------------
+
+  // Anmeldung (Formular auf der Startseite). Streng rate-limitiert, weil hier
+  // E-Mails an fremde Adressen ausgelöst werden können.
+  app.post('/newsletter', {
+    config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
+  }, async (request, reply) => {
+    const { email } = (request.body || {}) as { email?: string }
+    if (!email || !isValidEmail(email)) {
+      setFlash(reply, 'error', 'Bitte gib eine gültige E-Mail-Adresse ein.')
+      return reply.redirect('/#newsletter')
+    }
+    const normalized = normalizeEmail(email)
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id, token, confirmed_at FROM newsletter_subscribers WHERE email = ?',
+      [normalized]
+    )
+    const existing = rows[0]
+
+    // Immer dieselbe neutrale Antwort (kein Rückschluss, ob eine Adresse
+    // angemeldet ist). Bereits Bestätigte bekommen keine weitere Mail.
+    const message =
+      'Fast geschafft! Falls die Adresse noch nicht angemeldet ist, haben wir dir ' +
+      'eine E-Mail mit einem Bestätigungslink geschickt.'
+
+    try {
+      if (!existing) {
+        const token = crypto.randomBytes(32).toString('hex')
+        await pool.execute(
+          `INSERT INTO newsletter_subscribers (email, token, expires_at)
+           VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 48 HOUR))`,
+          [normalized, token]
+        )
+        const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+        await MailService.sendNewsletterConfirmation(normalized, `${appUrl}/newsletter/bestaetigen/${token}`)
+      } else if (!existing.confirmed_at) {
+        // Erneuter Versuch: Frist verlängern und Bestätigung noch einmal senden.
+        await pool.execute(
+          "UPDATE newsletter_subscribers SET expires_at = DATE_ADD(NOW(), INTERVAL 48 HOUR) WHERE id = ?",
+          [existing.id]
+        )
+        const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+        await MailService.sendNewsletterConfirmation(normalized, `${appUrl}/newsletter/bestaetigen/${existing.token}`)
+      }
+      setFlash(reply, 'success', message)
+    } catch (err) {
+      request.log.error({ err }, 'Newsletter-Anmeldung fehlgeschlagen')
+      setFlash(reply, 'error', 'Anmeldung gerade nicht möglich. Bitte später erneut versuchen.')
+    }
+    return reply.redirect('/#newsletter')
+  })
+
+  // Double-Opt-In-Bestätigung aus der E-Mail.
+  app.get('/newsletter/bestaetigen/:token', async (request, reply) => {
+    const { token } = request.params as { token: string }
+    const [result] = await pool.execute<mysql.ResultSetHeader>(
+      `UPDATE newsletter_subscribers SET confirmed_at = NOW()
+        WHERE token = ? AND confirmed_at IS NULL AND expires_at > NOW()`,
+      [token]
+    )
+    if (result.affectedRows > 0) {
+      setFlash(reply, 'success', 'Anmeldung bestätigt! Wir melden uns, sobald neue Städte dazukommen.')
+    } else {
+      setFlash(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen. Bitte melde dich erneut an.')
+    }
+    return reply.redirect('/#newsletter')
+  })
+
+  // Abmelden (Link in jeder Ankündigungs-Mail). Eintrag wird vollständig gelöscht.
+  app.get('/newsletter/abmelden/:token', async (request, reply) => {
+    const { token } = request.params as { token: string }
+    await pool.execute('DELETE FROM newsletter_subscribers WHERE token = ?', [token])
+    setFlash(reply, 'success', 'Du bist abgemeldet und deine Adresse wurde gelöscht.')
+    return reply.redirect('/')
   })
 
   // Favicon für Clients/Crawler, die stur /favicon.ico anfragen (das Layout

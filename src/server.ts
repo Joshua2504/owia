@@ -183,6 +183,11 @@ async function main() {
       await pool.execute(
         'DELETE FROM login_tokens WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY)'
       )
+      // Nicht bestätigte Newsletter-Anmeldungen nach Ablauf der Frist löschen
+      // (Double-Opt-In: ohne Bestätigung bleibt keine Adresse gespeichert).
+      await pool.execute(
+        'DELETE FROM newsletter_subscribers WHERE confirmed_at IS NULL AND expires_at < NOW()'
+      )
     } catch (err) {
       app.log.warn({ err }, 'Session-/Token-Aufräumen fehlgeschlagen')
     }

@@ -91,6 +91,42 @@
       </div>
     </section>
 
+    <!-- Unterstützte Städte + Newsletter-Anmeldung für neue Städte/PLZ -->
+    <section class="mb-5" id="newsletter">
+      <h2 class="h4 mb-3 text-center">Unterstützte Städte</h2>
+      <div class="row g-3 justify-content-center">
+        <% (locals.cities || []).forEach((city) => { %>
+          <div class="col-md-4">
+            <div class="card h-100 shadow-sm"><div class="card-body">
+              <h3 class="h6 mb-1">📍 <%= city.name %></h3>
+              <p class="small text-muted mb-0">
+                Anzeigen gehen an: <%= city.ordnungsamt %>
+              </p>
+            </div></div>
+          </div>
+        <% }) %>
+        <div class="col-md-4">
+          <div class="card h-100 shadow-sm border-primary-subtle"><div class="card-body">
+            <h3 class="h6 mb-1">✉️ Deine Stadt fehlt?</h3>
+            <p class="small text-muted mb-2">
+              Wir schalten laufend neue Städte und Postleitzahlgebiete frei. Trag dich
+              ein und wir benachrichtigen dich, sobald es bei dir losgeht.
+            </p>
+            <form method="post" action="/newsletter" class="d-flex gap-2">
+              <input type="email" name="email" class="form-control form-control-sm"
+                     placeholder="deine@email.de" required autocomplete="email"
+                     aria-label="E-Mail-Adresse für Benachrichtigungen">
+              <button type="submit" class="btn btn-primary btn-sm text-nowrap">Eintragen</button>
+            </form>
+            <p class="form-text small mt-2 mb-0">
+              Mit Klick auf „Eintragen" bekommst du eine Bestätigungs-Mail (Double-Opt-In).
+              Abmeldung jederzeit über den Link in jeder E-Mail.
+            </p>
+          </div></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Karte darunter -->
     <h2 class="h5 mb-1">Öffentliche Übersicht</h2>
     <p class="text-muted small mb-3">
@@ -148,7 +184,7 @@
           applicationCategory: 'UtilityApplication',
           operatingSystem: 'Web',
           offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
-          areaServed: { '@type': 'City', name: 'Frankfurt am Main' },
+          areaServed: (locals.cities || []).map((c) => ({ '@type': 'City', name: c.name })),
           inLanguage: 'de',
         },
         {

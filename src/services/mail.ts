@@ -303,6 +303,55 @@ export const MailService = {
     })
   },
 
+  /** Double-Opt-In: Bestätigungslink für die Newsletter-Anmeldung (neue Städte/PLZ). */
+  async sendNewsletterConfirmation(to: string, confirmLink: string): Promise<void> {
+    const transport = createTransport()
+    await transport.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      to,
+      subject: 'Newsletter-Anmeldung bestätigen',
+      text: [
+        'Hallo,',
+        '',
+        'du möchtest benachrichtigt werden, sobald der OWiA-Anzeiger in neuen',
+        'Städten und Postleitzahlgebieten verfügbar ist. Klicke zum Bestätigen',
+        'auf diesen Link:',
+        '',
+        confirmLink,
+        '',
+        'Der Link ist 48 Stunden gültig. Wenn du das nicht warst, ignoriere',
+        'diese E-Mail – ohne Bestätigung bekommst du keine weiteren Nachrichten.',
+        '',
+        'Viele Grüße',
+        'OWiA-Anzeiger',
+      ].join('\n'),
+    })
+  },
+
+  /** Newsletter-Ankündigung (z.B. neue Stadt freigeschaltet) an einen Abonnenten. */
+  async sendNewsletterAnnouncement(
+    to: string,
+    subject: string,
+    text: string,
+    unsubscribeLink: string
+  ): Promise<void> {
+    const transport = createTransport()
+    await transport.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      to,
+      subject,
+      text: [
+        text.trim(),
+        '',
+        '--',
+        'Du erhältst diese E-Mail, weil du dich für Neuigkeiten des',
+        'OWiA-Anzeigers angemeldet hast. Abmelden:',
+        unsubscribeLink,
+      ].join('\n'),
+      headers: { 'List-Unsubscribe': `<${unsubscribeLink}>` },
+    })
+  },
+
   /** Hinweis an die Admins: eine neue Anzeige wartet auf Prüfung. */
   async sendSubmitNotification(
     adminAddresses: string[],

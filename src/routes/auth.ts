@@ -10,11 +10,11 @@ const MAX_ATTEMPTS = 5
 // „Angemeldet bleiben": Cookie-Lebensdauer, sonst gilt der Default aus server.ts.
 const REMEMBER_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
-function normalizeEmail(email: string): string {
+export function normalizeEmail(email: string): string {
   return email.toLowerCase().trim()
 }
 
-function isValidEmail(email: string): boolean {
+export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 

@@ -225,4 +225,64 @@ export default async function adminRoutes(app: FastifyInstance) {
     setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} abgelehnt – der Nutzer wurde informiert.`)
     return reply.redirect('/admin/anzeigen')
   })
+
+  // ---------------------------------------------------------------------------
+  // Newsletter-Ankündigungen (z.B. neue Stadt/PLZ freigeschaltet) an alle
+  // bestätigten Abonnenten. Anmeldung/Abmeldung läuft öffentlich (routes/public.ts).
+  // ---------------------------------------------------------------------------
+
+  app.get('/admin/newsletter', { preHandler: requireAdmin }, async (request, reply) => {
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT
+         SUM(confirmed_at IS NOT NULL) AS confirmed,
+         SUM(confirmed_at IS NULL) AS pending
+       FROM newsletter_subscribers`
+    )
+    return reply.view('/admin/newsletter.ejs', viewData(request, {
+      title: 'Newsletter',
+      confirmed: Number(rows[0]?.confirmed || 0),
+      pendingCount: Number(rows[0]?.pending || 0),
+    }))
+  })
+
+  app.post('/admin/newsletter/announce', { preHandler: requireAdmin }, async (request, reply) => {
+    const { subject, text } = (request.body || {}) as { subject?: string; text?: string }
+    if (!subject?.trim() || !text?.trim()) {
+      setFlash(reply, 'error', 'Betreff und Text dürfen nicht leer sein.')
+      return reply.redirect('/admin/newsletter')
+    }
+
+    const [subscribers] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT email, token FROM newsletter_subscribers WHERE confirmed_at IS NOT NULL'
+    )
+    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+
+    // Seriell versenden; einzelne Fehler (z.B. ungültig gewordene Adresse)
+    // brechen den Versand an die übrigen Abonnenten nicht ab.
+    let sent = 0
+    let failed = 0
+    for (const sub of subscribers) {
+      try {
+        await MailService.sendNewsletterAnnouncement(
+          sub.email,
+          subject.trim(),
+          text,
+          `${appUrl}/newsletter/abmelden/${sub.token}`
+        )
+        sent++
+      } catch (err) {
+        failed++
+        app.log.error({ err, email: sub.email }, 'Newsletter-Versand fehlgeschlagen')
+      }
+    }
+
+    setFlash(
+      reply,
+      failed ? 'error' : 'success',
+      failed
+        ? `Versendet an ${sent} Abonnenten, ${failed} fehlgeschlagen (siehe Log).`
+        : `Ankündigung an ${sent} Abonnenten versendet.`
+    )
+    return reply.redirect('/admin/newsletter')
+  })
 }

@@ -1,0 +1,32 @@
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0">Newsletter</h2>
+  <div class="text-muted small">
+    <%= confirmed %> bestätigte Abonnenten<% if (pendingCount) { %>, <%= pendingCount %> unbestätigt<% } %>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h3 class="h6 mb-3">Ankündigung versenden</h3>
+    <p class="text-muted small">
+      Geht an alle bestätigten Abonnenten (z.&nbsp;B. „Neue Stadt freigeschaltet: …").
+      Der Abmelde-Link wird automatisch an jede E-Mail angehängt.
+    </p>
+    <form method="post" action="/admin/newsletter/announce"
+          onsubmit="return confirm('Ankündigung jetzt an <%= confirmed %> Abonnenten versenden?')">
+      <div class="mb-3">
+        <label class="form-label" for="nl-subject">Betreff</label>
+        <input type="text" name="subject" id="nl-subject" class="form-control" required
+               placeholder="Neue Stadt freigeschaltet: …">
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="nl-text">Text</label>
+        <textarea name="text" id="nl-text" class="form-control" rows="8" required
+                  placeholder="Ab sofort könnt ihr auch in … Falschparker melden. …"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary" <%= confirmed ? '' : 'disabled' %>>
+        An <%= confirmed %> Abonnenten senden
+      </button>
+    </form>
+  </div>
+</div>
