@@ -67,6 +67,23 @@
     })
   }
 
+  // Grenzen der freigeschalteten Städte als Umriss einzeichnen (GeoJSON aus
+  // OSM-Verwaltungsgrenzen, /api/geo/boundaries) – zeigt, in welchen Gebieten
+  // der Tatort liegen darf. Nicht interaktiv, damit Marker-Drag und Klicks
+  // ungestört bleiben; ohne erreichbaren Endpoint einfach keine Umrisse.
+  async function drawCityBoundaries(map) {
+    try {
+      const res = await fetch('/api/geo/boundaries', { headers: { Accept: 'application/json' } })
+      if (!res.ok) return
+      L.geoJSON(await res.json(), {
+        interactive: false,
+        style: { color: '#6f42c1', weight: 2.5, dashArray: '6 4', fillColor: '#6f42c1', fillOpacity: 0.05 },
+      }).addTo(map)
+    } catch (_) {
+      /* Grenzen nicht ladbar – Karte funktioniert auch ohne */
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('tatort-map')
     if (!el || !window.L) return
@@ -93,6 +110,7 @@
       attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map)
     attachTileStatus(el, tiles)
+    drawCityBoundaries(map)
 
     // Leaflet rendert in Containern, die beim Init evtl. noch kein finales
     // Layout haben, sonst grau – nach kurzem Tick neu vermessen.

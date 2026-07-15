@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth'
 import { City, getCityByScope, unlockedCities } from '../config/cities'
@@ -78,6 +80,28 @@ function isAddress(p: PhotonFeature['properties']): boolean {
     return name === '' || name === (p.street || '')
   }
   return false
+}
+
+// Stadtgrenzen der freigeschalteten Städte (resources/boundaries/<cityId>.geojson,
+// OSM-Verwaltungsgrenzen). Einmalig beim ersten Zugriff gelesen und gecacht –
+// die Dateien ändern sich nur bei Deploys. Städte ohne Grenz-Datei werden
+// stillschweigend übersprungen, damit eine frisch freigeschaltete Stadt die
+// Karten nicht bricht, solange ihre Grenze noch fehlt.
+let boundaryCache: { type: 'FeatureCollection'; features: unknown[] } | null = null
+
+function cityBoundaries(): { type: 'FeatureCollection'; features: unknown[] } {
+  if (boundaryCache) return boundaryCache
+  const features: unknown[] = []
+  for (const city of unlockedCities()) {
+    const file = path.join(process.cwd(), 'resources', 'boundaries', `${city.id}.geojson`)
+    try {
+      features.push(JSON.parse(fs.readFileSync(file, 'utf8')))
+    } catch {
+      /* keine Grenz-Datei für diese Stadt – ohne Umriss weitermachen */
+    }
+  }
+  boundaryCache = { type: 'FeatureCollection', features }
+  return boundaryCache
 }
 
 export default async function geoRoutes(app: FastifyInstance) {
@@ -165,5 +189,15 @@ export default async function geoRoutes(app: FastifyInstance) {
       })
     }
     return reply.send({ status: 'unknown' })
+  })
+
+  // Grenzen aller freigeschalteten Städte als GeoJSON-FeatureCollection – die
+  // Karten zeichnen damit die Umrisse der unterstützten Gebiete. Bewusst OHNE
+  // Login (die Übersichtskarte auf der Startseite ist öffentlich); die Daten
+  // sind ohnehin öffentlich (OSM-Verwaltungsgrenzen).
+  app.get('/api/geo/boundaries', async (_request, reply) => {
+    return reply
+      .header('Cache-Control', 'public, max-age=86400')
+      .send(cityBoundaries())
   })
 }

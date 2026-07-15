@@ -15,6 +15,12 @@
 // exakt wie in districts.csv schreiben (damit PLZ-Erkennung und Empfänger-Adresse
 // greifen), optional ein PDF-Formular unter resources/ ablegen. Die Empfänger-
 // Adresse wird nicht hier gepflegt, sondern aus districts.csv gelesen.
+//
+// Außerdem die Stadtgrenze als resources/boundaries/<id>.geojson ablegen (ein
+// GeoJSON-Feature mit der OSM-Verwaltungsgrenze; Bezug z.B. über Nominatim:
+// /lookup?osm_ids=R<relation-id>&format=jsonv2&polygon_geojson=1). Die Karten
+// zeichnen daraus den Umriss der freigeschalteten Gebiete (/api/geo/boundaries);
+// fehlt die Datei, erscheint die Stadt schlicht ohne Umriss.
 
 export interface CityGeo {
   /** Photon-Scope-Kennung; entspricht data-geo-scope im Formular. */

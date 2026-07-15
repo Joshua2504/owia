@@ -64,6 +64,23 @@
     })
   }
 
+  // Grenzen der freigeschalteten Städte als Umriss einzeichnen (GeoJSON aus
+  // OSM-Verwaltungsgrenzen, /api/geo/boundaries) – zeigt, in welchen Gebieten
+  // Anzeigen möglich sind. Nicht interaktiv, damit Marker-Klicks ungestört
+  // bleiben; ohne erreichbaren Endpoint einfach keine Umrisse.
+  async function drawCityBoundaries(map) {
+    try {
+      const res = await fetch('/api/geo/boundaries', { headers: { Accept: 'application/json' } })
+      if (!res.ok) return
+      L.geoJSON(await res.json(), {
+        interactive: false,
+        style: { color: '#6f42c1', weight: 2.5, dashArray: '6 4', fillColor: '#6f42c1', fillOpacity: 0.05 },
+      }).addTo(map)
+    } catch (_) {
+      /* Grenzen nicht ladbar – Karte funktioniert auch ohne */
+    }
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -119,6 +136,7 @@
       attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map)
     attachTileStatus(el, tiles)
+    drawCityBoundaries(map)
     setTimeout(() => map.invalidateSize(), 200)
 
     let reports = []
