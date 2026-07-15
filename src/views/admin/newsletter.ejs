@@ -5,6 +5,22 @@
   </div>
 </div>
 
+<% if ((locals.plzDemand || []).length) { %>
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h3 class="h6 mb-2">Nachfrage nach PLZ</h3>
+      <p class="text-muted small mb-2">
+        Bestätigte Abonnenten mit angegebener PLZ – wo lohnt sich die nächste Freischaltung?
+      </p>
+      <div class="d-flex flex-wrap gap-2">
+        <% plzDemand.forEach((p) => { %>
+          <span class="badge text-bg-light border fs-6 fw-normal"><%= p.plz %> <span class="fw-semibold">×<%= p.count %></span></span>
+        <% }) %>
+      </div>
+    </div>
+  </div>
+<% } %>
+
 <div class="card shadow-sm">
   <div class="card-body">
     <h3 class="h6 mb-3">Ankündigung versenden</h3>

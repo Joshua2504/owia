@@ -73,11 +73,13 @@ export default async function publicRoutes(app: FastifyInstance) {
   app.post('/newsletter', {
     config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
   }, async (request, reply) => {
-    const { email } = (request.body || {}) as { email?: string }
+    const { email, plz } = (request.body || {}) as { email?: string; plz?: string }
     if (!email || !isValidEmail(email)) {
       setFlash(reply, 'error', 'Bitte gib eine gültige E-Mail-Adresse ein.')
       return reply.redirect('/#newsletter')
     }
+    // PLZ ist optional (zeigt, wo Nachfrage sitzt); alles außer 5 Ziffern -> NULL.
+    const plzValue = /^\d{5}$/.test((plz || '').trim()) ? (plz || '').trim() : null
     const normalized = normalizeEmail(email)
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -96,17 +98,20 @@ export default async function publicRoutes(app: FastifyInstance) {
       if (!existing) {
         const token = crypto.randomBytes(32).toString('hex')
         await pool.execute(
-          `INSERT INTO newsletter_subscribers (email, token, expires_at)
-           VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 48 HOUR))`,
-          [normalized, token]
+          `INSERT INTO newsletter_subscribers (email, token, plz, expires_at)
+           VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 48 HOUR))`,
+          [normalized, token, plzValue]
         )
         const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
         await MailService.sendNewsletterConfirmation(normalized, `${appUrl}/newsletter/bestaetigen/${token}`)
       } else if (!existing.confirmed_at) {
-        // Erneuter Versuch: Frist verlängern und Bestätigung noch einmal senden.
+        // Erneuter Versuch: Frist verlängern, PLZ ggf. aktualisieren und die
+        // Bestätigung noch einmal senden.
         await pool.execute(
-          "UPDATE newsletter_subscribers SET expires_at = DATE_ADD(NOW(), INTERVAL 48 HOUR) WHERE id = ?",
-          [existing.id]
+          `UPDATE newsletter_subscribers
+              SET expires_at = DATE_ADD(NOW(), INTERVAL 48 HOUR), plz = COALESCE(?, plz)
+            WHERE id = ?`,
+          [plzValue, existing.id]
         )
         const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
         await MailService.sendNewsletterConfirmation(normalized, `${appUrl}/newsletter/bestaetigen/${existing.token}`)

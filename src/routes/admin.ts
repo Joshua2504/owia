@@ -238,10 +238,18 @@ export default async function adminRoutes(app: FastifyInstance) {
          SUM(confirmed_at IS NULL) AS pending
        FROM newsletter_subscribers`
     )
+    // Nachfrage nach PLZ (nur bestätigte): zeigt, welche Gebiete sich als
+    // Nächstes lohnen.
+    const [plzRows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT plz, COUNT(*) AS c FROM newsletter_subscribers
+        WHERE confirmed_at IS NOT NULL AND plz IS NOT NULL
+        GROUP BY plz ORDER BY c DESC, plz LIMIT 25`
+    )
     return reply.view('/admin/newsletter.ejs', viewData(request, {
       title: 'Newsletter',
       confirmed: Number(rows[0]?.confirmed || 0),
       pendingCount: Number(rows[0]?.pending || 0),
+      plzDemand: plzRows.map((r) => ({ plz: r.plz, count: Number(r.c) })),
     }))
   })
 
