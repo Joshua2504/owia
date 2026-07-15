@@ -580,6 +580,7 @@
       if (i >= 0) items.splice(i, 1)
       if (item.els && item.els.col) item.els.col.remove()
       if (item.takenAt) refreshPhotoTimes(false)
+      refreshPhotoGeo()
       updateMoveButtons()
       announceFirstImage()
     } catch (_) {
@@ -615,6 +616,7 @@
         if (g && Number.isFinite(g.latitude) && Number.isFinite(g.longitude)) {
           item.gps = g
           item.els.gpsBtn.style.display = ''
+          refreshPhotoGeo() // "Tatort aus Fotos übernehmen" neben dem Tatort-Feld
         }
       } catch (_) {
         /* keine GPS-Daten */
@@ -663,6 +665,13 @@
     container.appendChild(buildCard(item))
     setItemDate(item) // Aufnahmedatum auf der Karte anzeigen
     setItemPlate(item, image.detectedPlate) // "Kennzeichen übernehmen"-Button
+    // GPS aus der DB (beim Upload aus dem Original gelesen): Die gespeicherte
+    // Fassung hat nach HEIC-Konvertierung/Schwärzung oft kein EXIF mehr.
+    if (Number.isFinite(image.gpsLat) && Number.isFinite(image.gpsLon)) {
+      item.gps = { latitude: image.gpsLat, longitude: image.gpsLon }
+      item.els.gpsBtn.style.display = ''
+      refreshPhotoGeo()
+    }
     refreshPhotoTimes(false) // nur „Aus den Fotos: …" anzeigen, Felder nicht überschreiben
     item.els.stage.textContent = 'lädt …'
 
@@ -791,6 +800,7 @@
     if (i >= 0) items.splice(i, 1)
     if (item.els && item.els.col) item.els.col.remove()
     if (item.takenAt) refreshPhotoTimes(false) // Zeitspanne ohne dieses Foto neu anzeigen
+    refreshPhotoGeo() // Tatort-Button ggf. ausblenden
     if (item.serverImageId) {
       fetch('/anzeige/' + reportId + '/images/' + item.serverImageId, { method: 'DELETE' }).catch(
         () => {}
@@ -964,6 +974,52 @@
     } else if (status) {
       status.textContent = 'Aus den Fotos: ' + span
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tatort aus den GPS-Daten der Fotos übernehmen (Button neben dem Tatort-Feld;
+  // pro Foto gibt es zusätzlich den Karten-Button "Standort & Zeit aus Foto").
+  // ---------------------------------------------------------------------------
+
+  // Erstes Foto (in Anzeige-Reihenfolge) mit GPS-Daten.
+  function getPhotoGpsItem() {
+    for (const it of items) {
+      const g = it.gps
+      if (g && Number.isFinite(g.latitude) && Number.isFinite(g.longitude)) return it
+    }
+    return null
+  }
+
+  // Button nur zeigen, wenn mindestens ein Foto GPS-Daten hat.
+  function refreshPhotoGeo() {
+    const btn = document.querySelector('#btn-photo-geo')
+    if (btn) btn.classList.toggle('d-none', !getPhotoGpsItem())
+  }
+
+  function initPhotoGeo() {
+    const btn = document.querySelector('#btn-photo-geo')
+    if (!btn) return
+    btn.addEventListener('click', async () => {
+      const item = getPhotoGpsItem()
+      if (!item) return
+      btn.disabled = true
+      const status = document.querySelector('#geo-status')
+      try {
+        const s = await reverseGeocode(item.gps.latitude, item.gps.longitude)
+        if (s && s.label) {
+          setTatort(s.label)
+          announceLocation(item.gps.latitude, item.gps.longitude, s.label)
+          if (status) status.textContent = 'Adresse aus Foto übernommen – bitte prüfen.'
+        } else if (status) {
+          status.textContent = 'Zu den Foto-Koordinaten wurde keine Adresse gefunden.'
+        }
+      } catch (_) {
+        if (status) status.textContent = 'Adresse konnte nicht ermittelt werden.'
+      } finally {
+        btn.disabled = false
+      }
+    })
+    refreshPhotoGeo()
   }
 
   function initPhotoTimes(form) {
@@ -1338,6 +1394,7 @@
     initAutosave(form)
     initBehinderung(form)
     initPhotoTimes(form)
+    initPhotoGeo()
     initKennzeichenFormat(form)
     initPlateTouchTracking(form)
     initCity()

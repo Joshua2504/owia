@@ -7,10 +7,17 @@
 // Die Verarbeitung läuft SERIELL über eine einfache Promise-Kette: die
 // CPU-Inferenz teilt sich die Maschine mit dem Tileserver – mehrere Bilder
 // gleichzeitig würden die CPU sättigen (der Dienst serialisiert zusätzlich).
+import fs from 'fs/promises'
 import path from 'path'
 import { pool } from '../db/connection'
 import { alprEnabled, recognizePlate, ALPR_MIN_CONFIDENCE } from './alpr'
 import { reportDir } from './drafts'
+
+/** Dateiname des gespeicherten Kennzeichen-Ausschnitts eines Fotos
+ *  (Ablage neben dem Foto, Konvention wie `.thumb.jpg`/`.pixel.jpg`). */
+export function plateCropName(filename: string): string {
+  return `${filename}.plate.jpg`
+}
 
 let queue: Promise<void> = Promise.resolve()
 
@@ -82,6 +89,16 @@ async function runAnalysis(
        WHERE id=?`,
       [best?.plate ?? null, best?.confidence ?? null, imageId]
     )
+
+    // Kennzeichen-Ausschnitt als eigene Datei neben dem Foto ablegen (Beleg,
+    // welcher Bildbereich gelesen wurde; abrufbar über .../image/:id/plate.jpg).
+    if (best?.cropJpeg) {
+      try {
+        await fs.writeFile(path.join(reportDir(userId, reportId), plateCropName(filename)), best.cropJpeg)
+      } catch {
+        /* Crop ist verzichtbar – Kennzeichen-Text ist gespeichert */
+      }
+    }
 
     // Leeres Kennzeichen-Feld der Anzeige vorbefüllen – nur bei sicherer,
     // aufs deutsche Format normalisierter Lesung und nur solange Entwurf.

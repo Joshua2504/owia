@@ -14,7 +14,7 @@ import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
 import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
 import { extractPhotoMeta } from '../services/exif'
 import { alprEnabled, ALPR_MIN_CONFIDENCE } from '../services/alpr'
-import { queuePlateAnalysis } from '../services/plateAnalysis'
+import { queuePlateAnalysis, plateCropName } from '../services/plateAnalysis'
 import { replyAttachmentPath } from '../services/mailInbox'
 import { MailService } from '../services/mail'
 import { adminEmails } from '../config/admin'
@@ -306,7 +306,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, filename, original_filename, detected_plate,
+      `SELECT id, filename, original_filename, detected_plate, gps_lat, gps_lon,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at
          FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
@@ -463,6 +463,17 @@ export default async function reportsRoutes(app: FastifyInstance) {
       [filename, prepared.mimetype, originalFilename, prepared.originalMimetype, imageId]
     )
     await removeImageFiles(userId, old.report_id, old.filename, old.original_filename)
+
+    // Gespeicherten Kennzeichen-Ausschnitt zur neuen Fassung mitnehmen, bevor
+    // removeImageFiles ihn mit den alten Dateien wegräumt (die Erkennung lief
+    // gegen das alte, ungeschwärzte Bild – der Beleg bleibt gültig).
+    if (old.detected_plate !== null) {
+      const dir = reportDir(userId, old.report_id)
+      await fs.rename(
+        path.join(dir, plateCropName(old.filename)),
+        path.join(dir, plateCropName(filename))
+      ).catch(() => {})
+    }
 
     // Neu analysieren nur, wenn dieses Bild noch keine erfolgreiche Erkennung
     // hatte: PUT feuert bei jedem Schwärzungs-Save, und in der ersetzten Fassung
@@ -891,6 +902,35 @@ export default async function reportsRoutes(app: FastifyInstance) {
         .send(buffer)
     } catch {
       return reply.status(404).send('Bilddatei nicht gefunden.')
+    }
+  })
+
+  // Gespeicherter Kennzeichen-Ausschnitt eines Fotos (von der Hintergrund-Analyse
+  // neben dem Foto abgelegt); 404, wenn für das Bild nichts erkannt wurde.
+  app.get('/anzeige/:az/image/:imageId/plate.jpg', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const userId = request.session.userId as number
+
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.filename, r.id AS report_id
+         FROM report_images ri
+         JOIN reports r ON r.id = ri.report_id
+        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
+      [imageId, az, userId]
+    )
+    const image = rows[0]
+    if (!image) return reply.status(404).send('Bild nicht gefunden.')
+
+    try {
+      const buffer = await fs.readFile(
+        path.join(reportDir(userId, image.report_id), plateCropName(image.filename))
+      )
+      return reply
+        .header('Content-Type', 'image/jpeg')
+        .header('Cache-Control', 'private, max-age=3600')
+        .send(buffer)
+    } catch {
+      return reply.status(404).send('Kein Kennzeichen-Ausschnitt vorhanden.')
     }
   })
 

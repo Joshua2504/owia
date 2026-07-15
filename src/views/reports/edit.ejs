@@ -71,7 +71,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               Bereiche (z.&nbsp;B. Personen) kannst du schwärzen – wird automatisch gespeichert.
             </div>
             <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
-            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/anzeige/${r.aktenzeichen}/image/${img.id}`, capturedAt: img.captured_at || null, detectedPlate: img.detected_plate || null }))) %></script>
+            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/anzeige/${r.aktenzeichen}/image/${img.id}`, capturedAt: img.captured_at || null, detectedPlate: img.detected_plate || null, gpsLat: img.gps_lat !== null ? Number(img.gps_lat) : null, gpsLon: img.gps_lon !== null ? Number(img.gps_lon) : null }))) %></script>
             <div id="image-editor" class="row g-3 mt-1"></div>
           </div>
 
@@ -133,6 +133,11 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-current-location">
                   📍 Aktuellen Standort verwenden
+                </button>
+                <!-- Erscheint nur, wenn mindestens ein Foto GPS-Daten enthält
+                     (Befüllung in public/js/report-form.js). -->
+                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btn-photo-geo">
+                  🖼️ Tatort aus Fotos übernehmen
                 </button>
                 <span id="geo-status" class="form-text m-0"></span>
               </div>

@@ -23,7 +23,13 @@ export function alprEnabled(): boolean {
   return process.env.NODE_ENV === 'production'
 }
 
-export type PlateResult = { plate: string; confidence: number; normalized: boolean }
+export type PlateResult = {
+  plate: string
+  confidence: number
+  normalized: boolean
+  /** Kennzeichen-Ausschnitt als JPEG (vom Dienst mitgeliefert), null wenn keiner kam. */
+  cropJpeg: Buffer | null
+}
 
 /** Erfolgreiche Analyse; best=null heißt "kein Kennzeichen im Bild gefunden". */
 export type RecognizeResult = { best: PlateResult | null }
@@ -60,15 +66,29 @@ export async function recognizePlate(
 
     if (!res.ok) return null
     const data = (await res.json()) as {
-      best?: { text?: string | null; confidence?: number | null; normalized?: boolean } | null
+      best?: {
+        text?: string | null
+        confidence?: number | null
+        normalized?: boolean
+        crop?: string | null
+      } | null
     }
     const best = data.best
     if (!best?.text) return { best: null }
+    let cropJpeg: Buffer | null = null
+    if (best.crop) {
+      try {
+        cropJpeg = Buffer.from(best.crop, 'base64')
+      } catch {
+        /* defekter Crop ist verzichtbar – Kennzeichen-Text reicht */
+      }
+    }
     return {
       best: {
         plate: String(best.text).toUpperCase().trim().slice(0, 20),
         confidence: typeof best.confidence === 'number' ? best.confidence : 0,
         normalized: best.normalized === true,
+        cropJpeg,
       },
     }
   } catch {

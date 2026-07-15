@@ -102,9 +102,11 @@ export async function removeImagePair(
     if (originalFilename && originalFilename !== filename) {
       await fs.rm(path.join(dir, originalFilename), { force: true })
     }
-    // Gecachte Vorschau-/Pixelbilder (siehe services/pixelate.ts) mit aufräumen.
+    // Gecachte Vorschau-/Pixelbilder (services/pixelate.ts) und den gespeicherten
+    // Kennzeichen-Ausschnitt (services/plateAnalysis.ts) mit aufräumen.
     await fs.rm(path.join(dir, `${filename}.thumb.jpg`), { force: true })
     await fs.rm(path.join(dir, `${filename}.pixel.jpg`), { force: true })
+    await fs.rm(path.join(dir, `${filename}.plate.jpg`), { force: true })
   } catch {
     /* Dateien evtl. schon weg */
   }

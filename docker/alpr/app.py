@@ -3,6 +3,7 @@
 # und liefert die erkannten Kennzeichen als JSON. Läuft selbst-gehostet im
 # Docker-Netz; das Bild verlässt den Host nie. Bewusst ohne torch/paddle
 # (Begründung in detector.py).
+import base64
 import threading
 
 import cv2
@@ -41,6 +42,13 @@ def crop_plate(img: np.ndarray, xyxy: list) -> tuple:
     x1, y1 = max(0, int(xyxy[0])), max(0, int(xyxy[1]))
     x2, y2 = min(w, int(xyxy[2])), min(h, int(xyxy[3]))
     return img[y1:y2, x1:x2], [x1, y1, x2, y2]
+
+
+def encode_crop(crop: np.ndarray) -> str | None:
+    """Kennzeichen-Ausschnitt als Base64-JPEG (wird von der App pro Bild als
+    eigene Beweisdatei neben dem Foto gespeichert)."""
+    ok, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    return base64.b64encode(buf.tobytes()).decode("ascii") if ok else None
 
 
 def read_text(crop: np.ndarray) -> tuple:
@@ -114,6 +122,7 @@ async def recognize(file: UploadFile = File(...)):
                 "ocr_confidence": round(reading["ocr_confidence"], 3),
                 "confidence": round(confidence, 3),
                 "bbox": [int(v) for v in bbox],
+                "crop": encode_crop(crop),
             })
 
     plates.sort(key=lambda p: p["confidence"], reverse=True)
