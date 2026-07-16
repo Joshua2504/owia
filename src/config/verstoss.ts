@@ -51,8 +51,16 @@ try {
 /** Vollständiger Tatbestandskatalog (Reihenfolge wie in der CSV). */
 export const VERSTOESSE: Verstoss[] = verstoesse
 
-/** Alle wählbaren Tatbestand-Texte (dedupliziert) – Quelle der Formular-Auswahl. */
-export const VERSTOSS_ARTEN: string[] = Array.from(new Set(verstoesse.map((v) => v.text)))
+/** Anzeige-/Speicher-Label eines Tatbestands: „TBNR – Text". Die generische
+ *  Sammelnummer „000000" (Sonstige Vergehen) bekommt kein Nummern-Präfix. */
+export function verstossLabel(v: Verstoss): string {
+  return v.tbnr && v.tbnr !== '000000' ? `${v.tbnr} – ${v.text}` : v.text
+}
+
+/** Alle wählbaren Verstöße als Label „TBNR – Text" (dedupliziert) – Quelle der
+ *  Formular-Auswahl. Genau dieser String wird in reports.verstoss_art gespeichert
+ *  und unverändert in PDF/E-Mail/Anzeige-Ansicht weiterverwendet (TBNR inklusive). */
+export const VERSTOSS_ARTEN: string[] = Array.from(new Set(verstoesse.map(verstossLabel)))
 
 // Kuratierte „häufig verwendete" Verstöße als Cold-Start-Reihenfolge oben in der
 // Auswahl (per TBNR, damit unabhängig von Textänderungen). Die tatsächliche
@@ -72,8 +80,9 @@ const HAEUFIG_TBNR = [
   '141292', // Parken auf einem Fußgängerüberweg
 ]
 
-/** Kuratierte häufige Verstöße als Texte (nur die tatsächlich im Katalog
- *  gefundenen), in obiger Reihenfolge. */
-export const VERSTOSS_HAEUFIG: string[] = HAEUFIG_TBNR.map(
-  (tbnr) => verstoesse.find((v) => v.tbnr === tbnr)?.text
-).filter((t): t is string => !!t)
+/** Kuratierte häufige Verstöße als Label „TBNR – Text" (nur die tatsächlich im
+ *  Katalog gefundenen), in obiger Reihenfolge. */
+export const VERSTOSS_HAEUFIG: string[] = HAEUFIG_TBNR.map((tbnr) => {
+  const v = verstoesse.find((x) => x.tbnr === tbnr)
+  return v ? verstossLabel(v) : undefined
+}).filter((t): t is string => !!t)
