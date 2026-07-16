@@ -184,13 +184,19 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
               <input type="hidden" name="tatort_lon" value="<%= r.tatort_lon || '' %>">
             </div>
             <div class="col-sm-12">
-              <label class="form-label">Verstoßart <span class="text-danger">*</span></label>
-              <select name="verstoss_art" class="form-select">
-                <option value="">– bitte wählen –</option>
-                <% for (const art of verstossArten) { %>
-                  <option value="<%= art %>" <%= r.verstoss_art === art ? 'selected' : '' %>><%= art %></option>
-                <% } %>
-              </select>
+              <label class="form-label" for="verstoss-input">Verstoßart <span class="text-danger">*</span></label>
+              <!-- Durchsuchbare Auswahl (public/js/verstoss-select.js): sichtbares
+                   Suchfeld + verstecktes Feld „verstoss_art" (der gespeicherte Wert).
+                   Häufige Verstöße stehen oben, darunter der ganze Tatbestandskatalog. -->
+              <div data-verstoss-select class="position-relative">
+                <input type="hidden" name="verstoss_art" value="<%= r.verstoss_art || '' %>">
+                <input type="text" id="verstoss-input" class="form-control" data-verstoss-input
+                       autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
+                       placeholder="Verstoß suchen oder aus der Liste wählen …"
+                       value="<%= r.verstoss_art || '' %>">
+                <script type="application/json" data-verstoss-data><%- JSON.stringify({ haeufig: verstossHaeufig, alle: verstossAlle }).replace(/</g, '\\u003c') %></script>
+              </div>
+              <div class="form-text">Alle amtlichen Tatbestände durchsuchbar; häufig genutzte stehen oben.</div>
             </div>
             <div class="col-sm-12">
               <label class="form-label">Beschreibung</label>
@@ -279,3 +285,4 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 <script src="/public/vendor/leaflet.js"></script>
 <script src="/public/js/report-form.js"></script>
 <script src="/public/js/report-map.js"></script>
+<script src="/public/js/verstoss-select.js"></script>

@@ -8,7 +8,7 @@ import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
 import { getCity, CITIES, unlockedCities, hasPdfForm } from '../config/cities'
 import { resolveSendCity, cityEmail } from '../services/districts'
-import { VERSTOSS_ARTEN } from '../config/verstoss'
+import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
 import { prepareImage, writePreparedImage, removeImagePair, PreparedImage } from '../services/images'
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
 import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
@@ -186,6 +186,31 @@ function isComplete(r: mysql.RowDataPacket): boolean {
   return !!(r.kennzeichen && r.tattag && r.tatzeit_von && r.tatort && r.verstoss_art)
 }
 
+/** Häufig verwendete Verstöße für die Auswahl-Liste: tatsächliche Nutzung aus der
+ *  DB (nur Einträge, die noch im aktuellen Katalog stehen) zuerst, aufgefüllt mit
+ *  den kuratierten Defaults (VERSTOSS_HAEUFIG) – so ist die „Häufig"-Gruppe auch
+ *  ohne Nutzungshistorie sinnvoll gefüllt. */
+async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
+  const catalog = new Set(VERSTOSS_ARTEN)
+  let used: string[] = []
+  try {
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT verstoss_art, COUNT(*) AS c FROM reports
+        WHERE verstoss_art IS NOT NULL AND verstoss_art <> ''
+        GROUP BY verstoss_art ORDER BY c DESC LIMIT 30`
+    )
+    used = rows.map((r) => String(r.verstoss_art)).filter((a) => catalog.has(a))
+  } catch {
+    used = [] // ohne DB/History einfach die kuratierten Defaults verwenden
+  }
+  const out: string[] = []
+  for (const t of [...used, ...VERSTOSS_HAEUFIG]) {
+    if (!out.includes(t)) out.push(t)
+    if (out.length >= limit) break
+  }
+  return out
+}
+
 /** Profil vollständig? Das Ordnungsamt bearbeitet anonyme Anzeigen nicht –
  *  Name und Anschrift des Anzeigenerstatters müssen im PDF stehen. */
 export async function isProfileComplete(userId: number): Promise<boolean> {
@@ -334,7 +359,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
     return reply.view('/reports/edit.ejs', viewData(request, {
       title: 'Entwurf bearbeiten',
-      verstossArten: VERSTOSS_ARTEN,
+      verstossAlle: VERSTOSS_ARTEN,
+      verstossHaeufig: await mostUsedVerstoesse(),
       report,
       images,
       city: getCity(report.city),

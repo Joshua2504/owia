@@ -41,6 +41,38 @@ code {
   touch-action: none; /* Wischgesten nicht scrollen, sondern zum Schwärzen nutzen */
 }
 
+/* Foto-Werkzeugleiste (Beweisfoto-Karten) – mobile-first: Die meisten Nutzer
+   laden per Handy hoch. Auf schmalen Screens große, gut tappbare Buttons, die
+   sich gleichmäßig über die Kartenbreite verteilen und lange Labels umbrechen
+   statt zu überlaufen. Ab sm (Tablet/Desktop, Maus) wieder kompakt in einer
+   Reihe wie zuvor. */
+.redact-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.redact-toolbar > .btn,
+.redact-toolbar > .form-select {
+  flex: 1 1 auto;
+  min-width: 30%; /* mind. ~3 pro Reihe; kurze Buttons packen dichter, lange nehmen mehr */
+  min-height: 2.75rem; /* ~44px komfortables Touch-Ziel */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: normal;
+  line-height: 1.15;
+}
+
+@media (min-width: 576px) {
+  .redact-toolbar > .btn,
+  .redact-toolbar > .form-select {
+    flex: 0 0 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+}
+
 /* Karten-Marker, der das erste Beweisfoto als Vorschaubild zeigt (kein weißer
    Leaflet-Standardkasten hinter dem abgerundeten Bild). */
 .photo-marker {

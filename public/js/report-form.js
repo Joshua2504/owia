@@ -407,7 +407,8 @@
     body.appendChild(progressWrap)
 
     const toolbar = document.createElement('div')
-    toolbar.className = 'd-flex flex-wrap gap-2 mt-2'
+    // Layout via CSS (.redact-toolbar): mobile-first große Tap-Ziele, ab sm kompakt.
+    toolbar.className = 'redact-toolbar mt-2'
     body.appendChild(toolbar)
 
     // Werkzeuge: Schwärzen (Standard), Verpixeln, Zuschneiden + Drehen-Aktion.
