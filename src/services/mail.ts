@@ -383,6 +383,7 @@ export const MailService = {
     grund: string
   ): Promise<void> {
     const transport = createTransport()
+    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
     await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
       to: user.email,
@@ -394,7 +395,8 @@ export const MailService = {
         '',
         grund,
         '',
-        'Die Anzeige ist wieder ein Entwurf – bitte passe sie an und reiche sie erneut ein.',
+        'Die Anzeige ist wieder ein Entwurf – bitte passe sie an und reiche sie erneut ein:',
+        `${base}/anzeige/${report.aktenzeichen}`,
         '',
         'Viele Grüße',
         'OWiA-Anzeiger',
