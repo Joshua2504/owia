@@ -1,6 +1,7 @@
-// Verhalten der gemeinsamen Anzeigen-Liste (src/views/partials/report-table.ejs):
+// Verhalten der gemeinsamen Anzeigen-Tabelle (src/views/partials/report-table.ejs):
 // - Thumbnails per Drag & Drop zwischen Entwürfen (oder in eine neue Anzeige) verschieben
 // - Klick auf ein Thumbnail öffnet die Lightbox (gilt für alle [data-full-src] der Seite)
+// - Hover-Lupe zum Kennzeichen-Prüfen: siehe public/js/image-loupe.js
 ;(function () {
   var dragged = null // { imageId, az }
 
