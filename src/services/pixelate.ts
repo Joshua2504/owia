@@ -150,6 +150,81 @@ export function thumbFilename(filename: string): string {
   return `${filename}.thumb.jpg`
 }
 
+// Versandfassung der Beweisfotos (PDF-Einbettung + Mail-Anhänge): Behörden-
+// Postfächer nehmen oft nur ~15 MB an (Frankfurt), Base64 bläht Anhänge um
+// weitere ~37 % auf. Original-Handyfotos (3–8 MB) sprengen das ab wenigen
+// Bildern – daher auf MAIL_MAX px verkleinern und als JPEG neu kodieren.
+// 2200 px reichen, um Kennzeichen und Beschilderung sicher zu lesen.
+// Das Original auf Platte bleibt immer unangetastet.
+const MAIL_MAX = 2200
+const MAIL_QUALITY = 80
+// JPEGs unterhalb dieser Größe unverändert lassen (EXIF bleibt dann erhalten) –
+// Neukodieren würde nur Qualität kosten, ohne nennenswert Platz zu sparen.
+const MAIL_SKIP_BYTES = 1024 * 1024
+
+/**
+ * Verkleinerte Versandfassung eines Beweisfotos. Kleine JPEGs kommen
+ * unverändert zurück; PNGs werden immer nach JPEG gewandelt (Fotos als PNG
+ * sind riesig). Die EXIF-Orientation wird beim Neukodieren in die Pixel
+ * eingebacken (das Ergebnis hat kein EXIF mehr, gilt also als Orientation 1).
+ * Wirft, wenn das Bild nicht dekodiert werden kann.
+ */
+export function mailVariant(
+  buffer: Buffer,
+  mimetype: string,
+  orientation = 1
+): { buffer: Buffer; type: string } {
+  if (mimetype !== 'image/png' && buffer.length <= MAIL_SKIP_BYTES) {
+    return { buffer, type: mimetype || 'image/jpeg' }
+  }
+  const src = decode(buffer, mimetype)
+  const scale = Math.min(1, MAIL_MAX / Math.max(src.width, src.height))
+  const outW = Math.max(1, Math.round(src.width * scale))
+  const outH = Math.max(1, Math.round(src.height * scale))
+  const oriented = applyOrientation(
+    { data: downsample(src, outW, outH), width: outW, height: outH },
+    orientation
+  )
+  const encoded = jpeg.encode(
+    { data: oriented.data, width: oriented.width, height: oriented.height },
+    MAIL_QUALITY
+  )
+  const out = Buffer.from(encoded.data)
+  // Neukodieren kann kleine Bilder auch vergrößern – dann Original behalten.
+  return out.length < buffer.length
+    ? { buffer: out, type: 'image/jpeg' }
+    : { buffer, type: mimetype || 'image/jpeg' }
+}
+
+/**
+ * Versandfassung mit Datei-Cache ("bild-x.jpg.mail.jpg"): einmal berechnet,
+ * danach direkt von Platte. Fällt aufs Original zurück, wenn das Bild nicht
+ * dekodierbar ist (dann ohne Cache – besser groß versenden als gar nicht).
+ */
+export async function cachedMailVariant(
+  dir: string,
+  filename: string,
+  mimetype: string
+): Promise<{ buffer: Buffer; type: string }> {
+  const cachePath = path.join(dir, `${filename}.mail.jpg`)
+  try {
+    return { buffer: await fs.readFile(cachePath), type: 'image/jpeg' }
+  } catch {
+    /* noch nicht gecacht */
+  }
+
+  const original = await fs.readFile(path.join(dir, filename))
+  try {
+    const out = mailVariant(original, mimetype || 'image/jpeg', await readOrientation(original))
+    // Nur echte Umkodierungen cachen; unveränderte Originale sind ohne
+    // Decode-Aufwand erkannt und brauchen keine Kopie auf Platte.
+    if (out.buffer !== original) fs.writeFile(cachePath, out.buffer).catch(() => {})
+    return out
+  } catch {
+    return { buffer: original, type: mimetype || 'application/octet-stream' }
+  }
+}
+
 /**
  * Verpixeltes Bild (öffentliche Karte) mit Datei-Cache: einmal berechnet,
  * danach direkt von Platte. Wirft, wenn das Bild nicht dekodierbar ist.

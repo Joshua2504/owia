@@ -11,7 +11,7 @@ import { getCity, CITIES, unlockedCities, hasPdfForm } from '../config/cities'
 import { resolveSendCity, cityEmail } from '../services/districts'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
 import { prepareImage, writePreparedImage, removeImagePair, PreparedImage } from '../services/images'
-import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
+import { cachedThumbnail, writeThumbnailCache, cachedMailVariant } from '../services/pixelate'
 import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
 import { extractPhotoMeta } from '../services/exif'
 import { alprEnabled, ALPR_MIN_CONFIDENCE } from '../services/alpr'
@@ -263,8 +263,10 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
   const images: ReportImage[] = []
   for (const row of imgRows) {
     try {
-      const buffer = await fs.readFile(path.join(dir, row.filename))
-      images.push({ mimetype: row.mimetype, buffer, capturedAt: row.captured_at })
+      // Versandfassung statt Original einbetten: Behörden-Postfächer haben
+      // Größenlimits (Frankfurt ~15 MB); das Original auf Platte bleibt erhalten.
+      const { buffer, type } = await cachedMailVariant(dir, row.filename, row.mimetype)
+      images.push({ mimetype: type, buffer, capturedAt: row.captured_at })
     } catch {
       // Datei fehlt – überspringen
     }

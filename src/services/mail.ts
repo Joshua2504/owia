@@ -5,6 +5,7 @@ import mysql from 'mysql2/promise'
 import { getCity, hasPdfForm } from '../config/cities'
 import { pool } from '../db/connection'
 import { reportDir } from './drafts'
+import { cachedMailVariant } from './pixelate'
 import { renderTatortMap } from './staticmap'
 import { recipientEmailForReport } from './districts'
 
@@ -113,14 +114,16 @@ async function buildEvidenceAttachments(
   let n = 0
   for (const img of images) {
     try {
-      const buffer = await fs.readFile(path.join(dir, img.filename))
+      // Versandfassung statt Original: Behörden-Postfächer haben Größenlimits
+      // (~15 MB); das Original auf Platte bleibt erhalten.
+      const { buffer, type } = await cachedMailVariant(dir, img.filename, img.mimetype)
       n++
-      const ext = (img.mimetype === 'image/png' ? 'png' : 'jpg')
+      const ext = type === 'image/png' ? 'png' : 'jpg'
       const name = `Beweisfoto-${n}.${ext}`
       attachments.push({
         filename: name,
         content: buffer,
-        contentType: img.mimetype || 'application/octet-stream',
+        contentType: type,
       })
       photoLines.push(
         img.captured_at ? `${name} – aufgenommen: ${img.captured_at} Uhr` : `${name} – Aufnahmezeit unbekannt`

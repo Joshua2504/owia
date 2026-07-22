@@ -107,6 +107,7 @@ export async function removeImagePair(
     await fs.rm(path.join(dir, `${filename}.thumb.jpg`), { force: true })
     await fs.rm(path.join(dir, `${filename}.pixel.jpg`), { force: true })
     await fs.rm(path.join(dir, `${filename}.plate.jpg`), { force: true })
+    await fs.rm(path.join(dir, `${filename}.mail.jpg`), { force: true })
   } catch {
     /* Dateien evtl. schon weg */
   }

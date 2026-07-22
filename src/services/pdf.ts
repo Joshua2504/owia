@@ -346,6 +346,14 @@ export const PdfService = {
 
     const filled = await doc.save()
 
+    // Base64 im Mailversand bläht um ~37 % auf: ab ~10 MB PDF wird ein 15-MB-
+    // Postfach-Limit der Behörde (Frankfurt) knapp – im Log sichtbar machen.
+    if (filled.length > 10 * 1024 * 1024) {
+      console.warn(
+        `PDF für Anzeige ${report.aktenzeichen || report.id} ist ${(filled.length / 1024 / 1024).toFixed(1)} MB groß – Mail-Limit der Behörde (~15 MB) könnte überschritten werden`
+      )
+    }
+
     // Dateiname = Präfix-Tattag-Nummer (z.B. "OWiA-2026-07-14-123456.pdf"):
     // sortiert sich chronologisch und trägt das Aktenzeichen. Tattag bewusst
     // aus den lokalen Datums-Komponenten (kein toISOString – das würde je nach
