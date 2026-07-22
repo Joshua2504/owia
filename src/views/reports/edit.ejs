@@ -258,8 +258,8 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
           <div class="d-flex justify-content-between align-items-center">
             <span id="save-status" class="text-muted small"></span>
             <div class="d-flex gap-2">
-              <button type="submit" form="discard-form" class="btn btn-outline-danger"
-                      onclick="return confirm('Entwurf wirklich verwerfen?')">Verwerfen</button>
+              <%# Verwerfen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
+              <button type="submit" form="discard-form" class="btn btn-outline-danger">Verwerfen</button>
               <button type="submit" class="btn btn-primary">Entwurf speichern</button>
             </div>
           </div>

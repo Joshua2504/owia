@@ -1,0 +1,67 @@
+<%
+// Bestätigungsseite vor dem Löschen eines Entwurfs (POST /anzeige/:az/discard
+// ohne confirmed=1). Erst der bestätigte POST löscht wirklich.
+const r = report
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '')
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '')
+let zeit = fmtDate(r.tattag)
+if (r.tattag_bis && fmtDate(r.tattag_bis) !== fmtDate(r.tattag)) zeit += ' – ' + fmtDate(r.tattag_bis)
+const von = hhmm(r.tatzeit_von), bis = hhmm(r.tatzeit_bis)
+if (von) zeit += ', ' + von + (bis && bis !== von ? ' – ' + bis : '') + ' Uhr'
+const ids = locals.imageIds || []
+%>
+
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <h2 class="mb-4">Entwurf löschen?</h2>
+
+    <div class="card shadow-sm border-danger mb-4">
+      <div class="card-body">
+        <p>
+          Der Entwurf <code><%= r.aktenzeichen %></code> wird
+          <strong>unwiderruflich gelöscht</strong> – einschließlich
+          <%= ids.length %> Beweisfoto<%= ids.length === 1 ? '' : 's' %> und des erzeugten PDFs.
+        </p>
+
+        <dl class="row small mb-3">
+          <% if (r.kennzeichen) { %>
+            <dt class="col-sm-4">Kennzeichen</dt>
+            <dd class="col-sm-8"><code><%= r.kennzeichen %></code></dd>
+          <% } %>
+          <% if (zeit) { %>
+            <dt class="col-sm-4">Tattag / Zeit</dt>
+            <dd class="col-sm-8"><%= zeit %></dd>
+          <% } %>
+          <% if (r.tatort) { %>
+            <dt class="col-sm-4">Tatort</dt>
+            <dd class="col-sm-8"><%= r.tatort %></dd>
+          <% } %>
+          <% if (r.verstoss_art) { %>
+            <dt class="col-sm-4">Verstoß</dt>
+            <dd class="col-sm-8"><%= r.verstoss_art %></dd>
+          <% } %>
+        </dl>
+
+        <% if (ids.length) { %>
+          <div class="d-flex flex-wrap gap-1 mb-3">
+            <% for (const imgId of ids) { %>
+              <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt="Beweisfoto"
+                   class="rounded border" style="width:64px;height:48px;object-fit:cover"
+                   loading="lazy" decoding="async">
+            <% } %>
+          </div>
+        <% } %>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0">
+            <input type="hidden" name="confirmed" value="1">
+            <button type="submit" class="btn btn-danger">Ja, Entwurf löschen</button>
+          </form>
+          <a href="<%= r.intake_batch_id ? `/import/${r.intake_batch_id}` : '/anzeigen' %>"
+             class="btn btn-outline-secondary">Abbrechen</a>
+          <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten" class="btn btn-outline-secondary">Zum Entwurf</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

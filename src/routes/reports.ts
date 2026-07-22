@@ -716,6 +716,21 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
     const reportId = report.id
 
+    // Löschen verlangt eine explizite Bestätigung: erster POST (ohne confirmed)
+    // zeigt eine Bestätigungsseite mit den Eckdaten – serverseitig erzwungen,
+    // ein reiner JS-confirm-Dialog wäre umgehbar/übersehbar.
+    if (String((request.body as { confirmed?: string })?.confirmed || '') !== '1') {
+      const [images] = await pool.execute<mysql.RowDataPacket[]>(
+        'SELECT id FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+        [reportId]
+      )
+      return reply.view('/reports/discard-confirm.ejs', viewData(request, {
+        title: 'Entwurf löschen',
+        report,
+        imageIds: images.map((i) => i.id),
+      }))
+    }
+
     await pool.execute('DELETE FROM reports WHERE id = ? AND user_id = ?', [reportId, userId])
     try {
       await fs.rm(path.join(UPLOAD_DIR, String(userId), String(reportId)), { recursive: true, force: true })
@@ -731,7 +746,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
 
     setFlash(reply, 'success', 'Entwurf verworfen.')
-    return reply.redirect('/anzeigen')
+    // Import-Entwürfe zurück zur Batch-Übersicht, sonst zur Anzeigenliste.
+    return reply.redirect(report.intake_batch_id ? `/import/${report.intake_batch_id}` : '/anzeigen')
   })
 
   // ---------------------------------------------------------------------------

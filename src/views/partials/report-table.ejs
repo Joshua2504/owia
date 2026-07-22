@@ -100,8 +100,8 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
             <div class="d-flex gap-2 justify-content-end">
               <% if (r.status === 'entwurf') { %>
                 <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
-                <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0"
-                      onsubmit="return confirm('Entwurf wirklich löschen?')">
+                <%# Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
+                <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0">
                   <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
                 </form>
               <% } else { %>
