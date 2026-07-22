@@ -1,6 +1,6 @@
 <%
-// Gemeinsame Anzeigen-Liste für Dashboard und Foto-Import-Übersicht: alle
-// Details read-only im Block; bearbeitet wird ausschließlich auf der
+// Gemeinsame Anzeigen-Tabelle für Dashboard und Foto-Import-Übersicht.
+// Alle Details stehen in der Tabelle; bearbeitet wird ausschließlich auf der
 // Anzeigen-Seite (Link "Bearbeiten" bei Entwürfen).
 // Erwartet: reports (Felder s.u. inkl. status), imagesByReport
 // ({ reportId: [imageIds] }), optional queueId (Edit-Links öffnen die
@@ -12,101 +12,114 @@ const _hhmm = (t) => (t ? String(t).slice(0, 5) : '')
 const _queue = typeof queueId !== 'undefined' && queueId ? '?queue=' + queueId : ''
 const _hasDrafts = reports.some((r) => r.status === 'entwurf')
 %>
-
-<div class="list-group list-group-flush">
-  <% for (const r of reports) { %>
-    <% const imgIds = (typeof imagesByReport !== 'undefined' && imagesByReport && imagesByReport[r.id]) || [] %>
-    <% const isDraft = r.status === 'entwurf' %>
-    <div class="list-group-item py-3" <% if (isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
-
-      <!-- Kopfzeile: Aktenzeichen, Status, Antworten, Aktionen -->
-      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <code class="small"><%= r.aktenzeichen || '—' %></code>
-          <% if (r.status === 'versendet') { %>
-            <span class="badge bg-success">Versendet</span>
-          <% } else if (isDraft) { %>
-            <span class="badge text-bg-warning">Entwurf</span>
-          <% } else { %>
-            <span class="badge bg-info">Eingereicht</span>
-          <% } %>
-          <%# Antwort des Ordnungsamts liegt vor (Spalten liefert nur das Dashboard). %>
-          <% if (r.reply_count) { %>
-            <a href="/anzeige/<%= r.aktenzeichen %>" class="badge text-bg-primary text-decoration-none"
-               title="Antwort des Ordnungsamts ansehen">
-              📨 Antwort<%= r.reply_count > 1 ? ' (' + r.reply_count + ')' : '' %><%= r.unread_reply_count > 0 ? ' • neu' : '' %>
-            </a>
-          <% } %>
-        </div>
-        <div class="d-flex gap-2">
-          <% if (isDraft) { %>
-            <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
-            <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0"
-                  onsubmit="return confirm('Entwurf wirklich löschen?')">
-              <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
-            </form>
-          <% } else { %>
-            <a href="/anzeige/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
-          <% } %>
-        </div>
-      </div>
-
-      <% if (imgIds.length) { %>
-        <div class="d-flex flex-wrap gap-1 mb-2">
-          <% for (const imgId of imgIds) { %>
-            <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt=""
-                 class="rounded border" style="width:96px;height:72px;object-fit:cover;cursor:zoom-in"
-                 loading="lazy" decoding="async"
-                 data-full-src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>"
-                 <% if (isDraft) { %>
-                   draggable="true" data-drag-image="<%= imgId %>" data-drag-az="<%= r.aktenzeichen %>"
-                   title="Klick: vergrößern · Ziehen: in anderen Entwurf verschieben"
-                 <% } else { %>
-                   title="Klick: vergrößern"
-                 <% } %>>
-          <% } %>
-        </div>
+<div class="table-responsive">
+  <table class="table table-sm table-hover align-middle mb-0">
+    <thead class="table-light">
+      <tr>
+        <th>Fotos</th>
+        <th>Aktenzeichen</th>
+        <th>Kennzeichen</th>
+        <th>Tattag / Zeit</th>
+        <th>Tatort</th>
+        <th>Verstoß</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% for (const r of reports) { %>
+        <% const imgIds = (typeof imagesByReport !== 'undefined' && imagesByReport && imagesByReport[r.id]) || [] %>
+        <tr <% if (r.status === 'entwurf') { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
+          <td style="min-width:100px;max-width:300px">
+            <div class="d-flex flex-wrap gap-1">
+              <% for (const imgId of imgIds) { %>
+                <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt=""
+                     class="rounded border" style="width:96px;height:72px;object-fit:cover;cursor:zoom-in"
+                     loading="lazy" decoding="async"
+                     data-full-src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>"
+                     <% if (r.status === 'entwurf') { %>
+                       draggable="true" data-drag-image="<%= imgId %>" data-drag-az="<%= r.aktenzeichen %>"
+                       title="Klick: vergrößern · Ziehen: in anderen Entwurf verschieben"
+                     <% } else { %>
+                       title="Klick: vergrößern"
+                     <% } %>>
+              <% } %>
+            </div>
+          </td>
+          <td class="text-nowrap"><code class="small"><%= r.aktenzeichen || '—' %></code></td>
+          <td>
+            <% if (r.kennzeichen) { %>
+              <span class="plate-badge"><%- include('euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
+            <% } %>
+            <% if (r.fahrzeug_marke) { %>
+              <div class="text-muted small"><%= r.fahrzeug_marke %></div>
+            <% } %>
+          </td>
+          <td class="text-nowrap">
+            <%= _fmtDate(r.tattag) || '—' %><% if (r.tattag_bis && _fmtDate(r.tattag_bis) !== _fmtDate(r.tattag)) { %> – <%= _fmtDate(r.tattag_bis) %><% } %>
+            <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
+            <% if (von) { %>
+              <div class="text-muted small">
+                <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr
+              </div>
+            <% } %>
+          </td>
+          <td class="small" style="max-width:200px">
+            <%= r.tatort || '' %><% if (!r.tatort && r.status === 'entwurf') { %><span class="text-muted">– bitte prüfen –</span><% } %>
+          </td>
+          <td class="small" style="max-width:220px">
+            <div class="text-truncate" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '' %></div>
+            <%
+            // Weitere Details kompakt darunter (nur befüllte Felder).
+            const extras = []
+            if (r.fahrzeug_verlassen === 1) extras.push('Fahrzeug war verlassen')
+            if (r.behinderung === 1) extras.push('Behinderung: ' + (r.behinderung_text || 'ja'))
+            if (r.beschreibung) extras.push(r.beschreibung)
+            %>
+            <% if (extras.length) { %>
+              <div class="text-muted small text-truncate" title="<%= extras.join(' · ') %>"><%= extras.join(' · ') %></div>
+            <% } %>
+          </td>
+          <td>
+            <% if (r.status === 'versendet') { %>
+              <span class="badge bg-success">Versendet</span>
+            <% } else if (r.status === 'entwurf') { %>
+              <span class="badge text-bg-warning">Entwurf</span>
+            <% } else { %>
+              <span class="badge bg-info">Eingereicht</span>
+            <% } %>
+            <%# Antwort des Ordnungsamts liegt vor (Spalten liefert nur das Dashboard). %>
+            <% if (r.reply_count) { %>
+              <a href="/anzeige/<%= r.aktenzeichen %>" class="badge text-bg-primary text-decoration-none"
+                 title="Antwort des Ordnungsamts ansehen">
+                📨 Antwort<%= r.reply_count > 1 ? ' (' + r.reply_count + ')' : '' %><%= r.unread_reply_count > 0 ? ' • neu' : '' %>
+              </a>
+            <% } %>
+          </td>
+          <td>
+            <div class="d-flex gap-2 justify-content-end">
+              <% if (r.status === 'entwurf') { %>
+                <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+                <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0"
+                      onsubmit="return confirm('Entwurf wirklich löschen?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+                </form>
+              <% } else { %>
+                <a href="/anzeige/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
+              <% } %>
+            </div>
+          </td>
+        </tr>
       <% } %>
-
-      <!-- Alle Details auf einen Blick (Bearbeitung nur auf der Anzeigen-Seite). -->
-      <div class="row g-2 small">
-        <div class="col-sm-6 col-lg-3">
-          <div class="text-muted">Kennzeichen</div>
-          <% if (r.kennzeichen) { %>
-            <span class="plate-badge"><%- include('euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
-          <% } else { %>—<% } %>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="text-muted">Fahrzeug</div>
-          <%= r.fahrzeug_marke || '—' %>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="text-muted">Tattag / Zeit</div>
-          <%= _fmtDate(r.tattag) || '—' %><% if (r.tattag_bis && _fmtDate(r.tattag_bis) !== _fmtDate(r.tattag)) { %> – <%= _fmtDate(r.tattag_bis) %><% } %>
-          <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
-          <% if (von) { %>, <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr<% } %>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="text-muted">Tatort</div>
-          <%= r.tatort || '—' %><% if (!r.tatort && isDraft) { %><span class="text-muted">– bitte prüfen –</span><% } %>
-        </div>
-        <div class="col-lg-6">
-          <div class="text-muted">Verstoß</div>
-          <%= r.verstoss_art || '—' %><% if (r.fahrzeug_verlassen === 1) { %> · Fahrzeug war verlassen<% } %>
-        </div>
-        <div class="col-lg-6">
-          <div class="text-muted">Beschreibung / Behinderung</div>
-          <%= r.beschreibung || '—' %><% if (r.behinderung === 1) { %> · Behinderung: <%= r.behinderung_text || 'ja' %><% } %>
-        </div>
-      </div>
-    </div>
-  <% } %>
+    </tbody>
+  </table>
 </div>
-
 <% if (_hasDrafts) { %>
-  <!-- Drop-Ziel: Foto hierher ziehen, um dafür eine neue Anzeige anzulegen. -->
+  <!-- Drop-Ziel: Foto hierher ziehen, um dafür eine neue Anzeige anzulegen.
+       (report-table.js zieht es beim Drag-Start als Zwischenzeile direkt unter
+       den Quell-Eintrag.) -->
   <div id="drop-new-draft"
-       class="border border-2 border-dashed rounded text-center text-muted py-3 mt-2 mx-3 mb-3 small">
+       class="border border-2 border-dashed rounded text-center text-muted py-2 mt-2 mx-3 mb-3 small">
     ➕ Foto hierher ziehen, um eine <strong>neue Anzeige</strong> daraus zu erstellen
   </div>
 <% } %>

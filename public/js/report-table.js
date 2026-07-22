@@ -50,18 +50,33 @@
       e.dataTransfer.effectAllowed = 'move'
       img.style.opacity = '0.4'
       // Das Drop-Ziel "neue Anzeige" direkt unter den Quell-Eintrag holen –
-      // kurzer Weg statt ans Listenende ziehen. Verzögert, weil DOM-Änderungen
-      // während dragstart den Drag in manchen Browsern abbrechen würden.
+      // kurzer Weg statt ans Listenende ziehen. Bei Tabellenzeilen wird es in
+      // eine eingeschobene Zwischenzeile (colspan über alle Spalten) gesetzt.
+      // Verzögert, weil DOM-Änderungen während dragstart den Drag in manchen
+      // Browsern abbrechen würden.
       setTimeout(function () {
         var dropNew = document.getElementById('drop-new-draft')
         var source = dragged && document.querySelector('[data-drop-az="' + dragged.az + '"]')
-        if (dropNew && source) source.parentNode.insertBefore(dropNew, source.nextSibling)
+        if (!dropNew || !source) return
+        if (source.tagName === 'TR') {
+          var row = document.getElementById('drop-new-draft-row')
+          if (!row) {
+            row = document.createElement('tr')
+            row.id = 'drop-new-draft-row'
+            row.appendChild(document.createElement('td'))
+          }
+          row.firstChild.colSpan = source.children.length
+          row.firstChild.appendChild(dropNew)
+          source.parentNode.insertBefore(row, source.nextSibling)
+        } else {
+          source.parentNode.insertBefore(dropNew, source.nextSibling)
+        }
       }, 0)
     })
     img.addEventListener('dragend', function () {
       img.style.opacity = ''
       document.querySelectorAll('[data-drop-az]').forEach(function (row) {
-        row.classList.remove('bg-primary-subtle')
+        row.classList.remove('table-primary', 'bg-primary-subtle')
       })
       var dropNew = document.getElementById('drop-new-draft')
       if (dropNew) dropNew.classList.remove('border-primary', 'text-primary')
@@ -89,10 +104,10 @@
       if (!dragged || dragged.az === az) return
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
-      row.classList.add('bg-primary-subtle')
+      row.classList.add(row.tagName === 'TR' ? 'table-primary' : 'bg-primary-subtle')
     })
     row.addEventListener('dragleave', function () {
-      row.classList.remove('bg-primary-subtle')
+      row.classList.remove('table-primary', 'bg-primary-subtle')
     })
     row.addEventListener('drop', function (e) {
       if (!dragged || dragged.az === az) return
