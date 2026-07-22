@@ -4,6 +4,46 @@
 ;(function () {
   var dragged = null // { imageId, az }
 
+  // Per Drag & Drop neu erstellte Entwürfe direkt UNTER ihrem Quell-Eintrag
+  // einsortieren (statt der Server-Sortierung), damit man bequem weitere Fotos
+  // aus derselben Anzeige hinüberziehen kann. Die Zuordnung (neues AZ -> Quell-AZ)
+  // liegt pro Seite in der sessionStorage und wird nach jedem Reload wieder
+  // angewendet, solange beide Einträge noch als Entwurf in der Liste stehen.
+  var PLACE_KEY = 'draftPlacement:' + location.pathname
+  function loadPlacements() {
+    try {
+      return JSON.parse(sessionStorage.getItem(PLACE_KEY)) || {}
+    } catch (_) {
+      return {}
+    }
+  }
+  function rememberPlacement(newAz, afterAz) {
+    var map = loadPlacements()
+    map[newAz] = afterAz
+    try {
+      sessionStorage.setItem(PLACE_KEY, JSON.stringify(map))
+    } catch (_) {}
+  }
+  function applyPlacements() {
+    var map = loadPlacements()
+    var changed = false
+    Object.keys(map).forEach(function (newAz) {
+      var source = document.querySelector('[data-drop-az="' + map[newAz] + '"]')
+      var created = document.querySelector('[data-drop-az="' + newAz + '"]')
+      if (source && created && source.parentNode === created.parentNode) {
+        source.parentNode.insertBefore(created, source.nextSibling)
+      } else {
+        delete map[newAz] // Eintrag weg oder kein Entwurf mehr – Zuordnung vergessen
+        changed = true
+      }
+    })
+    if (changed) {
+      try {
+        sessionStorage.setItem(PLACE_KEY, JSON.stringify(map))
+      } catch (_) {}
+    }
+  }
+
   document.querySelectorAll('[data-drag-image]').forEach(function (img) {
     img.addEventListener('dragstart', function (e) {
       dragged = { imageId: img.getAttribute('data-drag-image'), az: img.getAttribute('data-drag-az') }
@@ -29,6 +69,7 @@
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
       .then(function (res) {
         if (!res.ok) { alert(res.d.error || 'Verschieben fehlgeschlagen.'); return }
+        if (body.newDraft && res.d.targetAz) rememberPlacement(res.d.targetAz, moved.az)
         location.reload()
       })
       .catch(function () { alert('Verschieben fehlgeschlagen.') })
@@ -75,6 +116,9 @@
       moveDragged(moved, { newDraft: true })
     })
   }
+
+  // Neu erstellte Entwürfe nach dem Reload wieder unter ihren Quell-Eintrag hängen.
+  applyPlacements()
 
   // Lightbox: Klick auf ein Thumbnail zeigt das Bild in groß.
   var justDragged = false
