@@ -48,6 +48,16 @@
               <input type="email" class="form-control" value="<%= user.email %>" disabled>
               <div class="form-text">Änderbar weiter unten – mit Bestätigung an die neue Adresse.</div>
             </div>
+            <div class="col-sm-12">
+              <div class="form-check form-switch">
+                <input type="checkbox" name="cc_self" value="1" class="form-check-input"
+                       id="cc_self" <%= user.cc_self === 0 ? '' : 'checked' %>>
+                <label class="form-check-label" for="cc_self">
+                  Kopie an mich: E-Mails ans Ordnungsamt (Anzeige und eigene Antworten)
+                  zusätzlich in CC an meine E-Mail-Adresse senden
+                </label>
+              </div>
+            </div>
           </div>
 
           <button type="submit" class="btn btn-primary mt-4">Speichern</button>

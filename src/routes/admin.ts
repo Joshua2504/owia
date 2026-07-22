@@ -1,5 +1,5 @@
 // Admin-Prüfung: Nutzer reichen Anzeigen ein (status 'eingereicht'), ein Admin
-// gibt sie hier frei (Versand ans Ordnungsamt per E-Mail, Nutzer in Kopie) oder
+// gibt sie hier frei (Versand ans Ordnungsamt per E-Mail, Nutzer optional in Kopie) oder
 // lehnt sie mit Begründung ab (zurück in den Entwurf + Info-Mail an den Nutzer).
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
@@ -144,7 +144,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     }
   })
 
-  // Freigeben: Anzeige ans Ordnungsamt verschicken (Nutzer in Kopie).
+  // Freigeben: Anzeige ans Ordnungsamt verschicken (Nutzer je nach Einstellung in Kopie).
   app.post('/admin/anzeigen/:id/approve', { preHandler: requireAdmin }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const loaded = await loadReportWithUser(id)

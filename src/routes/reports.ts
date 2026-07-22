@@ -768,6 +768,11 @@ export default async function reportsRoutes(app: FastifyInstance) {
       )
     }
 
+    const [ccRows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT cc_self FROM users WHERE id = ?',
+      [userId]
+    )
+
     return reply.view('/reports/show.ejs', viewData(request, {
       title: `Anzeige ${report.aktenzeichen || ''}`,
       report,
@@ -778,6 +783,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       profileComplete: await isProfileComplete(userId),
       mailFrom: process.env.MAIL_FROM || null,
       city: getCity(report.city),
+      ccSelf: ccRows[0]?.cc_self !== 0,
     }))
   })
 
@@ -834,7 +840,13 @@ export default async function reportsRoutes(app: FastifyInstance) {
           text,
         ]
       )
-      setFlash(reply, 'success', 'Nachricht ans Ordnungsamt gesendet (du bist in Kopie).')
+      setFlash(
+        reply,
+        'success',
+        users[0].cc_self === 0
+          ? 'Nachricht ans Ordnungsamt gesendet.'
+          : 'Nachricht ans Ordnungsamt gesendet (du bist in Kopie).'
+      )
     } catch (err) {
       app.log.error({ err }, 'Nutzer-Nachricht ans Ordnungsamt fehlgeschlagen')
       setFlash(reply, 'error', 'Senden fehlgeschlagen – bitte später erneut versuchen.')

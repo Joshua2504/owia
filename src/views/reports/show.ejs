@@ -201,7 +201,7 @@ const versandLabel = {
                       onclick="return confirm('Nachricht jetzt ans Ordnungsamt senden?')">
                 📤 Senden
               </button>
-              <span class="form-text ms-2">Wird von <%= locals.mailFrom || 'unserem Postfach' %> gesendet, du erhältst eine Kopie.</span>
+              <span class="form-text ms-2">Wird von <%= locals.mailFrom || 'unserem Postfach' %> gesendet<%= locals.ccSelf ? ', du erhältst eine Kopie' : '' %>.</span>
             </form>
           <% } %>
         </div>
@@ -238,8 +238,7 @@ const versandLabel = {
             <p class="small text-muted mb-1">
               Die Anzeige wird von uns geprüft und danach per E-Mail an das
               <%= city.ordnungsamt %> verschickt –
-              <%= hasForm ? 'mit ausgefülltem PDF-Formular' : 'mit den Beweisfotos im Anhang' %>
-              (du erhältst eine Kopie).
+              <%= hasForm ? 'mit ausgefülltem PDF-Formular' : 'mit den Beweisfotos im Anhang' %><%= locals.ccSelf ? ' (du erhältst eine Kopie)' : '' %>.
             </p>
             <p class="small text-danger mb-0">
               ⚠️ Wissentlich falsche Anzeigen sind strafbar (falsche Verdächtigung,
@@ -261,7 +260,7 @@ const versandLabel = {
             <h6 class="mb-1">Wird geprüft</h6>
             <p class="small text-muted mb-0">
               Die Anzeige ist eingereicht. Nach der Freigabe verschicken wir sie ans
-              Ordnungsamt – du erhältst die E-Mail in Kopie.
+              Ordnungsamt<%= locals.ccSelf ? ' – du erhältst die E-Mail in Kopie' : '' %>.
             </p>
           </div>
           <form method="post" action="/anzeige/<%= report.aktenzeichen %>/withdraw"

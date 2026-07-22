@@ -33,7 +33,7 @@ function fmtDate(v: unknown): string {
 export default async function settingsRoutes(app: FastifyInstance) {
   app.get('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT email, vorname, nachname, strasse, plz, ort, telefon FROM users WHERE id = ?',
+      'SELECT email, vorname, nachname, strasse, plz, ort, telefon, cc_self FROM users WHERE id = ?',
       [request.session.userId as number]
     )
     return reply.view('/settings/index.ejs', viewData(request, {
@@ -43,13 +43,13 @@ export default async function settingsRoutes(app: FastifyInstance) {
   })
 
   app.post('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
-    const { vorname, nachname, strasse, plz, ort, telefon } =
+    const { vorname, nachname, strasse, plz, ort, telefon, cc_self } =
       request.body as Record<string, string>
 
     await pool.execute(
-      `UPDATE users SET vorname=?, nachname=?, strasse=?, plz=?, ort=?, telefon=?
+      `UPDATE users SET vorname=?, nachname=?, strasse=?, plz=?, ort=?, telefon=?, cc_self=?
        WHERE id = ?`,
-      [vorname, nachname, strasse, plz, ort, telefon, request.session.userId as number]
+      [vorname, nachname, strasse, plz, ort, telefon, cc_self ? 1 : 0, request.session.userId as number]
     )
 
     const name = [vorname, nachname].filter(Boolean).join(' ')

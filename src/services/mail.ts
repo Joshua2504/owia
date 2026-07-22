@@ -221,7 +221,7 @@ export const MailService = {
     const info = await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
       to,
-      cc: user.email,
+      cc: user.cc_self === 0 ? undefined : user.email,
       subject,
       text,
       attachments,
@@ -245,7 +245,7 @@ export const MailService = {
     const info = await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
       to,
-      cc: user.email,
+      cc: user.cc_self === 0 ? undefined : user.email,
       subject,
       text,
       inReplyTo: thread.inReplyTo || undefined,
