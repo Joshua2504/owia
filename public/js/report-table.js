@@ -49,6 +49,14 @@
       dragged = { imageId: img.getAttribute('data-drag-image'), az: img.getAttribute('data-drag-az') }
       e.dataTransfer.effectAllowed = 'move'
       img.style.opacity = '0.4'
+      // Das Drop-Ziel "neue Anzeige" direkt unter den Quell-Eintrag holen –
+      // kurzer Weg statt ans Listenende ziehen. Verzögert, weil DOM-Änderungen
+      // während dragstart den Drag in manchen Browsern abbrechen würden.
+      setTimeout(function () {
+        var dropNew = document.getElementById('drop-new-draft')
+        var source = dragged && document.querySelector('[data-drop-az="' + dragged.az + '"]')
+        if (dropNew && source) source.parentNode.insertBefore(dropNew, source.nextSibling)
+      }, 0)
     })
     img.addEventListener('dragend', function () {
       img.style.opacity = ''
