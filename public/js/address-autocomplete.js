@@ -5,8 +5,6 @@
 //   data-fill="street"          -> nur "Straße Hausnr." ins Feld (z.B. Einstellungen)
 //   data-target-plz="#plz"      -> bei Auswahl PLZ in dieses Feld
 //   data-target-ort="#ort"      -> bei Auswahl Ort in dieses Feld
-//   data-target-lat="#lat"      -> bei Auswahl Breitengrad in dieses Feld
-//   data-target-lon="#lon"      -> bei Auswahl Längengrad in dieses Feld
 //   data-geo-scope="ffm"        -> Treffer auf Frankfurt am Main begrenzen
 (function () {
   const MIN_CHARS = 3
@@ -58,12 +56,6 @@
       }
       fill(input.dataset.targetPlz, s.postcode)
       fill(input.dataset.targetOrt, s.city)
-      // Koordinaten in Hidden-Felder übernehmen (Inline-Bearbeitung in der
-      // Anzeigenliste: dort gibt es keine Karte, die sie setzen könnte).
-      if (Number.isFinite(s.lat) && Number.isFinite(s.lon)) {
-        fill(input.dataset.targetLat, String(s.lat))
-        fill(input.dataset.targetLon, String(s.lon))
-      }
       // Koordinaten an die Karte melden (falls vorhanden) – siehe report-map.js.
       // postcode/city zusätzlich, damit report-form.js das zuständige Amt erkennt.
       if (Number.isFinite(s.lat) && Number.isFinite(s.lon)) {

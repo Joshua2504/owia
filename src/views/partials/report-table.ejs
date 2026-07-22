@@ -1,33 +1,17 @@
 <%
-// Gemeinsame Anzeigen-Liste für Dashboard und Foto-Import-Übersicht.
-// Entwürfe sind DIREKT in der Liste bearbeitbar (alle Felder, Speichern pro
-// Anzeige); eingereichte/versendete Anzeigen zeigen alle Details read-only.
-// Erwartet: reports (alle Felder aus persistFields + status), imagesByReport
-// ({ reportId: [imageIds] }), optional queueId (Import-Batch; Speichern kehrt
-// dann zur Batch-Übersicht zurück), verstossHaeufig/verstossAlle (Katalog für
-// die durchsuchbare Verstoß-Auswahl).
-// Thumbnails: Klick = Lightbox, Ziehen = in anderen Entwurf verschieben.
-// Benötigte Scripts auf der Seite: report-table.js, verstoss-select.js
-// (address-autocomplete.js kommt aus dem Layout).
+// Gemeinsame Anzeigen-Liste für Dashboard und Foto-Import-Übersicht: alle
+// Details read-only im Block; bearbeitet wird ausschließlich auf der
+// Anzeigen-Seite (Link "Bearbeiten" bei Entwürfen).
+// Erwartet: reports (Felder s.u. inkl. status), imagesByReport
+// ({ reportId: [imageIds] }), optional queueId (Edit-Links öffnen die
+// Review-Queue des Batches).
+// Thumbnails: Klick = Lightbox, Ziehen = in anderen Entwurf verschieben
+// (public/js/report-table.js muss auf der Seite eingebunden sein).
 const _fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '')
 const _hhmm = (t) => (t ? String(t).slice(0, 5) : '')
-const _pad = (n) => String(n).padStart(2, '0')
-const _dateInput = (d) => {
-  if (!d) return ''
-  const dt = new Date(d)
-  return isNaN(dt) ? '' : `${dt.getFullYear()}-${_pad(dt.getMonth() + 1)}-${_pad(dt.getDate())}`
-}
-const _queueId = typeof queueId !== 'undefined' && queueId ? queueId : null
-const _returnTo = _queueId ? `/import/${_queueId}` : '/anzeigen'
-const _editQuery = _queueId ? `?queue=${_queueId}` : ''
+const _queue = typeof queueId !== 'undefined' && queueId ? '?queue=' + queueId : ''
 const _hasDrafts = reports.some((r) => r.status === 'entwurf')
 %>
-
-<%# Verstoß-Katalog EINMAL pro Seite einbetten; die Instanzen in den Zeilen
-    greifen darauf zurück (verstoss-select.js: globaler Fallback). %>
-<% if (_hasDrafts && typeof verstossAlle !== 'undefined') { %>
-  <script type="application/json" id="verstoss-catalog-data"><%- JSON.stringify({ haeufig: (typeof verstossHaeufig !== 'undefined' ? verstossHaeufig : []), alle: verstossAlle }).replace(/</g, '\\u003c') %></script>
-<% } %>
 
 <div class="list-group list-group-flush">
   <% for (const r of reports) { %>
@@ -35,7 +19,7 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
     <% const isDraft = r.status === 'entwurf' %>
     <div class="list-group-item py-3" <% if (isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
 
-      <!-- Kopfzeile: Aktenzeichen, Status, Antworten, Fotos -->
+      <!-- Kopfzeile: Aktenzeichen, Status, Antworten, Aktionen -->
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
         <div class="d-flex align-items-center gap-2 flex-wrap">
           <code class="small"><%= r.aktenzeichen || '—' %></code>
@@ -56,12 +40,11 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
         </div>
         <div class="d-flex gap-2">
           <% if (isDraft) { %>
-            <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _editQuery %>"
-               class="btn btn-sm btn-outline-secondary" title="Vollständiger Editor mit Karte und Foto-Bearbeitung">
-              🗺️ Karte &amp; Fotos
-            </a>
-            <button type="submit" form="discard-<%= r.id %>" class="btn btn-sm btn-outline-danger"
-                    onclick="return confirm('Entwurf wirklich löschen?')">Löschen</button>
+            <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+            <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0"
+                  onsubmit="return confirm('Entwurf wirklich löschen?')">
+              <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+            </form>
           <% } else { %>
             <a href="/anzeige/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>
           <% } %>
@@ -85,128 +68,37 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
         </div>
       <% } %>
 
-      <% if (isDraft) { %>
-        <!-- Inline-Bearbeitung: sendet ALLE Felder (persistFields überschreibt
-             beim Speichern jedes Feld); Koordinaten laufen als Hidden-Felder mit
-             und werden bei Auswahl eines Adress-Vorschlags aktualisiert. -->
-        <form method="post" action="/anzeige/<%= r.aktenzeichen %>/save" class="m-0">
-          <input type="hidden" name="return_to" value="<%= _returnTo %>">
-          <input type="hidden" name="tatort_lat" id="tatort-lat-<%= r.id %>" value="<%= r.tatort_lat || '' %>">
-          <input type="hidden" name="tatort_lon" id="tatort-lon-<%= r.id %>" value="<%= r.tatort_lon || '' %>">
-          <div class="row g-2">
-            <div class="col-sm-6 col-lg-3">
-              <label class="form-label small mb-1" for="kennzeichen-<%= r.id %>">Kennzeichen <span class="text-danger">*</span></label>
-              <div class="plate-input">
-                <%- include('euband', { land: r.kennzeichen_land || 'D', landInput: true }) %>
-                <input type="text" name="kennzeichen" id="kennzeichen-<%= r.id %>"
-                       value="<%= r.kennzeichen || '' %>"
-                       placeholder="F-AB 1234" autocomplete="off" spellcheck="false">
-              </div>
-            </div>
-            <div class="col-sm-6 col-lg-3">
-              <label class="form-label small mb-1">Fahrzeugmarke / -farbe</label>
-              <input type="text" name="fahrzeug_marke" class="form-control form-control-sm"
-                     value="<%= r.fahrzeug_marke || '' %>" placeholder="z.B. VW Golf, grau">
-            </div>
-            <div class="col-4 col-lg-2">
-              <label class="form-label small mb-1">Tattag <span class="text-danger">*</span></label>
-              <input type="date" name="tattag" class="form-control form-control-sm"
-                     value="<%= _dateInput(r.tattag) %>">
-            </div>
-            <div class="col-4 col-lg-2">
-              <label class="form-label small mb-1">Von <span class="text-danger">*</span></label>
-              <input type="time" name="tatzeit_von" class="form-control form-control-sm"
-                     value="<%= _hhmm(r.tatzeit_von) %>">
-            </div>
-            <div class="col-4 col-lg-2">
-              <label class="form-label small mb-1">Bis</label>
-              <input type="time" name="tatzeit_bis" class="form-control form-control-sm"
-                     value="<%= _hhmm(r.tatzeit_bis) %>">
-            </div>
-            <div class="col-lg-6">
-              <label class="form-label small mb-1">Tatort <span class="text-danger">*</span></label>
-              <input type="text" name="tatort" class="form-control form-control-sm"
-                     value="<%= r.tatort || '' %>"
-                     data-address-autocomplete data-fill="full" data-geo-scope="unlocked"
-                     data-target-lat="#tatort-lat-<%= r.id %>" data-target-lon="#tatort-lon-<%= r.id %>"
-                     placeholder="Adresse eingeben und aus der Liste wählen …">
-            </div>
-            <div class="col-lg-6">
-              <label class="form-label small mb-1">Verstoßart <span class="text-danger">*</span></label>
-              <div data-verstoss-select class="position-relative">
-                <input type="hidden" name="verstoss_art" value="<%= r.verstoss_art || '' %>">
-                <input type="text" class="form-control form-control-sm" data-verstoss-input
-                       autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
-                       placeholder="Verstoß suchen oder aus der Liste wählen …"
-                       value="<%= r.verstoss_art || '' %>">
-              </div>
-            </div>
-            <div class="col-lg-6">
-              <label class="form-label small mb-1">Beschreibung</label>
-              <textarea name="beschreibung" class="form-control form-control-sm" rows="2"
-                        placeholder="Optionale Schilderung des Vorfalls"><%= r.beschreibung || '' %></textarea>
-            </div>
-            <div class="col-lg-6">
-              <div class="form-check mt-1">
-                <input type="checkbox" class="form-check-input" name="fahrzeug_verlassen"
-                       id="verlassen-<%= r.id %>" value="1" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>>
-                <label class="form-check-label small" for="verlassen-<%= r.id %>">Das Fahrzeug war verlassen</label>
-              </div>
-              <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-                <span class="small">Behinderung:</span>
-                <div class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">
-                  <input type="radio" class="btn-check" name="behinderung" id="behinderung-ja-<%= r.id %>"
-                         value="ja" <%= r.behinderung === 1 ? 'checked' : '' %>>
-                  <label class="btn btn-outline-secondary" for="behinderung-ja-<%= r.id %>">Ja</label>
-                  <input type="radio" class="btn-check" name="behinderung" id="behinderung-nein-<%= r.id %>"
-                         value="nein" <%= r.behinderung !== 1 ? 'checked' : '' %>>
-                  <label class="btn btn-outline-secondary" for="behinderung-nein-<%= r.id %>">Nein</label>
-                </div>
-              </div>
-              <input type="text" name="behinderung_text" class="form-control form-control-sm mt-1"
-                     value="<%= r.behinderung_text || '' %>"
-                     placeholder="Bei Ja: wer wurde wie behindert?">
-            </div>
-            <div class="col-12 d-flex justify-content-end">
-              <button type="submit" class="btn btn-sm btn-primary">Speichern</button>
-            </div>
-          </div>
-        </form>
-        <!-- Löschen separat (kein verschachteltes Formular); Button steht oben. -->
-        <form id="discard-<%= r.id %>" method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="d-none"></form>
-      <% } else { %>
-        <!-- Alle Details read-only (Bearbeitung nur im Entwurfs-Status möglich). -->
-        <div class="row g-2 small">
-          <div class="col-sm-6 col-lg-3">
-            <div class="text-muted">Kennzeichen</div>
-            <% if (r.kennzeichen) { %>
-              <span class="plate-badge"><%- include('euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
-            <% } else { %>—<% } %>
-          </div>
-          <div class="col-sm-6 col-lg-3">
-            <div class="text-muted">Fahrzeug</div>
-            <%= r.fahrzeug_marke || '—' %>
-          </div>
-          <div class="col-sm-6 col-lg-3">
-            <div class="text-muted">Tattag / Zeit</div>
-            <%= _fmtDate(r.tattag) || '—' %>
-            <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
-            <% if (von) { %>, <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr<% } %>
-          </div>
-          <div class="col-sm-6 col-lg-3">
-            <div class="text-muted">Tatort</div>
-            <%= r.tatort || '—' %>
-          </div>
-          <div class="col-lg-6">
-            <div class="text-muted">Verstoß</div>
-            <%= r.verstoss_art || '—' %><% if (r.fahrzeug_verlassen === 1) { %> · Fahrzeug war verlassen<% } %>
-          </div>
-          <div class="col-lg-6">
-            <div class="text-muted">Beschreibung / Behinderung</div>
-            <%= r.beschreibung || '—' %><% if (r.behinderung === 1) { %> · Behinderung: <%= r.behinderung_text || 'ja' %><% } %>
-          </div>
+      <!-- Alle Details auf einen Blick (Bearbeitung nur auf der Anzeigen-Seite). -->
+      <div class="row g-2 small">
+        <div class="col-sm-6 col-lg-3">
+          <div class="text-muted">Kennzeichen</div>
+          <% if (r.kennzeichen) { %>
+            <span class="plate-badge"><%- include('euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
+          <% } else { %>—<% } %>
         </div>
-      <% } %>
+        <div class="col-sm-6 col-lg-3">
+          <div class="text-muted">Fahrzeug</div>
+          <%= r.fahrzeug_marke || '—' %>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="text-muted">Tattag / Zeit</div>
+          <%= _fmtDate(r.tattag) || '—' %><% if (r.tattag_bis && _fmtDate(r.tattag_bis) !== _fmtDate(r.tattag)) { %> – <%= _fmtDate(r.tattag_bis) %><% } %>
+          <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
+          <% if (von) { %>, <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr<% } %>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="text-muted">Tatort</div>
+          <%= r.tatort || '—' %><% if (!r.tatort && isDraft) { %><span class="text-muted">– bitte prüfen –</span><% } %>
+        </div>
+        <div class="col-lg-6">
+          <div class="text-muted">Verstoß</div>
+          <%= r.verstoss_art || '—' %><% if (r.fahrzeug_verlassen === 1) { %> · Fahrzeug war verlassen<% } %>
+        </div>
+        <div class="col-lg-6">
+          <div class="text-muted">Beschreibung / Behinderung</div>
+          <%= r.beschreibung || '—' %><% if (r.behinderung === 1) { %> · Behinderung: <%= r.behinderung_text || 'ja' %><% } %>
+        </div>
+      </div>
     </div>
   <% } %>
 </div>

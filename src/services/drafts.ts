@@ -26,6 +26,7 @@ export function reportDir(userId: number, reportId: number | string): string {
 
 export type DraftFields = {
   tattag?: string | null // 'YYYY-MM-DD'
+  tattagBis?: string | null // Ende an einem anderen Tag (über Mitternacht)
   tatzeitVon?: string | null // 'HH:MM' oder 'HH:MM:SS'
   tatzeitBis?: string | null
   tatort?: string | null
@@ -51,12 +52,13 @@ export async function createDraft(
     try {
       const [result] = await pool.execute<mysql.ResultSetHeader>(
         `INSERT INTO reports
-           (user_id, status, tattag, tatzeit_von, tatzeit_bis, tatort, tatort_lat, tatort_lon,
+           (user_id, status, tattag, tattag_bis, tatzeit_von, tatzeit_bis, tatort, tatort_lat, tatort_lon,
             intake_batch_id, aktenzeichen, city)
-         VALUES (?, 'entwurf', COALESCE(?, CURDATE()), COALESCE(?, CURTIME()), ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, 'entwurf', COALESCE(?, CURDATE()), ?, COALESCE(?, CURTIME()), ?, ?, ?, ?, ?, ?, ?)`,
         [
           userId,
           fields.tattag ?? null,
+          fields.tattagBis ?? null,
           fields.tatzeitVon ?? null,
           fields.tatzeitBis ?? null,
           fields.tatort ?? null,

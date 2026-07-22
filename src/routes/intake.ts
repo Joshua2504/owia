@@ -16,8 +16,6 @@ import { createDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
-import { VERSTOSS_ARTEN } from '../config/verstoss'
-import { mostUsedVerstoesse } from './reports'
 
 // Muss zur Chunk-Größe in public/js/import-upload.js passen und unter dem
 // globalen Multipart-Limit (files: 10, src/server.ts) bleiben.
@@ -215,6 +213,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
           const chunkIds = incident.photoIds.slice(i, i + MAX_IMAGES_PER_REPORT)
           const draft = await createDraft(userId, {
             tattag: incident.day,
+            tattagBis: incident.dayTo,
             tatzeitVon: incident.timeFrom,
             tatzeitBis: incident.timeTo,
             tatort: address?.label ?? null,
@@ -269,8 +268,8 @@ export default async function intakeRoutes(app: FastifyInstance) {
     if (batch.status === 'open') return reply.redirect('/import')
 
     const [drafts] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.id, r.aktenzeichen, r.status, r.tattag, r.tatzeit_von, r.tatzeit_bis,
-              r.tatort, r.tatort_lat, r.tatort_lon, r.verstoss_art, r.kennzeichen, r.kennzeichen_land,
+      `SELECT r.id, r.aktenzeichen, r.status, r.tattag, r.tattag_bis, r.tatzeit_von, r.tatzeit_bis,
+              r.tatort, r.verstoss_art, r.kennzeichen, r.kennzeichen_land,
               r.fahrzeug_marke, r.beschreibung, r.fahrzeug_verlassen, r.behinderung, r.behinderung_text,
               DATE_FORMAT(r.tattag, '%d.%m.%Y') AS tattag_fmt,
               TIME_FORMAT(r.tatzeit_von, '%H:%i') AS von_fmt,
@@ -307,9 +306,6 @@ export default async function intakeRoutes(app: FastifyInstance) {
       unassigned,
       firstOpenAz: openDrafts.length ? openDrafts[0].aktenzeichen : null,
       openCount: openDrafts.length,
-      // Für die Inline-Bearbeitung der Entwürfe direkt in der Liste.
-      verstossAlle: VERSTOSS_ARTEN,
-      verstossHaeufig: await mostUsedVerstoesse(),
     }))
   })
 

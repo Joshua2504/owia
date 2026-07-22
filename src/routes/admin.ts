@@ -34,7 +34,7 @@ async function loadReportWithUser(
 export default async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/anzeigen', { preHandler: requireAdmin }, async (request, reply) => {
     const [pending] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.kennzeichen_land, r.tattag,
+      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.kennzeichen_land, r.tattag, r.tattag_bis,
               r.tatzeit_von, r.tatzeit_bis, r.tatort, r.verstoss_art, r.beschreibung,
               r.behinderung, r.behinderung_text, r.fahrzeug_verlassen,
               DATE_FORMAT(r.eingereicht_at, '%d.%m.%Y %H:%i') AS eingereicht_fmt,

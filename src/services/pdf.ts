@@ -50,9 +50,17 @@ export const PdfService = {
     const doc = await PDFDocument.load(bytes)
     const form = doc.getForm()
 
+    const fmtDate = (d: Date) =>
+      d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
     const tattag = report.tattag ? new Date(report.tattag) : null
+    const tattagBis = report.tattag_bis ? new Date(report.tattag_bis) : null
+    // Tatzeitraum über Mitternacht (z.B. Dauerparken über Nacht): das Formular
+    // hat nur EIN Tattag-Feld – dort steht dann der Datumsbereich; zusammen mit
+    // der Uhrzeit "von – bis" ist der Zeitraum eindeutig.
     const tatwdate = tattag
-      ? tattag.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      ? tattagBis && fmtDate(tattagBis) !== fmtDate(tattag)
+        ? `${fmtDate(tattag)} – ${fmtDate(tattagBis)}`
+        : fmtDate(tattag)
       : ''
     const von = hhmm(report.tatzeit_von)
     const bis = hhmm(report.tatzeit_bis)

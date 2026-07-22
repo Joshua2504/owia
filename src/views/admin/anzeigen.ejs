@@ -30,7 +30,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
           <dl class="row small mb-3">
             <dt class="col-sm-4">Tattag / Zeit</dt>
             <dd class="col-sm-8">
-              <%= fmtDate(r.tattag) %>
+              <%= fmtDate(r.tattag) %><% if (r.tattag_bis && fmtDate(r.tattag_bis) !== fmtDate(r.tattag)) { %> – <%= fmtDate(r.tattag_bis) %><% } %>
               <% const von = hhmm(r.tatzeit_von), bis = hhmm(r.tatzeit_bis) %>
               <% if (von) { %>, <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr<% } %>
             </dd>

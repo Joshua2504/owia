@@ -33,9 +33,14 @@ export function buildReportMail(
   user: mysql.RowDataPacket,
   photoLines: string[] = []
 ): { subject: string; text: string } {
-  const tattag = report.tattag
+  const tattagVon = report.tattag
     ? new Date(report.tattag).toLocaleDateString('de-DE')
     : 'unbekannt'
+  const tattagBis = report.tattag_bis
+    ? new Date(report.tattag_bis).toLocaleDateString('de-DE')
+    : ''
+  // Tatzeitraum über Mitternacht: Tattag als Datumsbereich ausgeben.
+  const tattag = tattagBis && tattagBis !== tattagVon ? `${tattagVon} – ${tattagBis}` : tattagVon
   const von = report.tatzeit_von ? String(report.tatzeit_von).slice(0, 5) : ''
   const bis = report.tatzeit_bis ? String(report.tatzeit_bis).slice(0, 5) : ''
   const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `${von} Uhr` : bis ? `${bis} Uhr` : ''

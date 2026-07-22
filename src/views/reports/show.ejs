@@ -1,7 +1,11 @@
 <%
 const hhmm = (t) => t ? String(t).slice(0, 5) : ''
+const _langDatum = (d) => new Date(d).toLocaleDateString('de-DE', { dateStyle: 'long' })
 const tattag = report.tattag
-  ? new Date(report.tattag).toLocaleDateString('de-DE', { dateStyle: 'long' })
+  ? _langDatum(report.tattag) +
+    (report.tattag_bis && _langDatum(report.tattag_bis) !== _langDatum(report.tattag)
+      ? ` – ${_langDatum(report.tattag_bis)}`
+      : '')
   : '—'
 const von = hhmm(report.tatzeit_von)
 const bis = hhmm(report.tatzeit_bis)

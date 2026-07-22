@@ -1015,16 +1015,32 @@
   }
 
   // Tattag/Uhrzeit aus den Fotos setzen: von = frühestes, bis = spätestes Foto.
-  // bis bleibt leer, wenn alle Fotos in dieselbe Minute fallen.
+  // bis bleibt leer, wenn alle Fotos in dieselbe Minute fallen. Fällt das späteste
+  // Foto auf einen anderen Tag (z.B. Dauerparken über Nacht), wird zusätzlich
+  // "Tattag bis" gesetzt.
   function applyPhotoTimes() {
     const range = getPhotoTimeRange()
     const form = document.querySelector('#report-form')
     if (!range || !form) return
     const von = toHHMM(range.min)
     const bis = toHHMM(range.max)
-    setFieldValue(form.elements['tattag'], toDateValue(range.min))
+    const vonTag = toDateValue(range.min)
+    const bisTag = toDateValue(range.max)
+    setFieldValue(form.elements['tattag'], vonTag)
     setFieldValue(form.elements['tatzeit_von'], von)
-    if (bis !== von) setFieldValue(form.elements['tatzeit_bis'], bis)
+    if (bisTag !== vonTag) setFieldValue(form.elements['tattag_bis'], bisTag)
+    if (bis !== von || bisTag !== vonTag) setFieldValue(form.elements['tatzeit_bis'], bis)
+  }
+
+  // Zeitspanne der Fotos als Text, bei Tageswechsel mit Datum des Endes.
+  function photoTimeSpanText(range) {
+    const von = toHHMM(range.min)
+    const bis = toHHMM(range.max)
+    if (toDateValue(range.min) !== toDateValue(range.max)) {
+      const d = range.max
+      return von + ' – ' + pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1) + '.' + d.getFullYear() + ', ' + bis
+    }
+    return bis !== von ? von + ' – ' + bis : von
   }
 
   // Button/Hinweis aktualisieren; bei allowAuto zusätzlich automatisch befüllen,
@@ -1039,9 +1055,7 @@
       return
     }
     if (row) row.classList.remove('d-none')
-    const von = toHHMM(range.min)
-    const bis = toHHMM(range.max)
-    const span = bis !== von ? von + ' – ' + bis : von
+    const span = photoTimeSpanText(range)
     if (allowAuto && !userEditedTimes) {
       applyPhotoTimes()
       if (status) status.textContent = 'Aus den Fotos übernommen (' + span + ') – bitte prüfen.'
@@ -1099,7 +1113,7 @@
   function initPhotoTimes(form) {
     // Echte Nutzereingaben (isTrusted) markieren die Felder als manuell gepflegt;
     // programmatische input-Events aus setFieldValue lösen das nicht aus.
-    ;['tattag', 'tatzeit_von', 'tatzeit_bis'].forEach((name) => {
+    ;['tattag', 'tattag_bis', 'tatzeit_von', 'tatzeit_bis'].forEach((name) => {
       const el = form.elements[name]
       if (!el) return
       el.addEventListener('input', (e) => {
@@ -1113,10 +1127,7 @@
       const status = document.querySelector('#photo-time-status')
       const range = getPhotoTimeRange()
       if (status && range) {
-        const von = toHHMM(range.min)
-        const bis = toHHMM(range.max)
-        const span = bis !== von ? von + ' – ' + bis : von
-        status.textContent = 'Übernommen: ' + span + ' – bitte prüfen.'
+        status.textContent = 'Übernommen: ' + photoTimeSpanText(range) + ' – bitte prüfen.'
       }
     })
   }
@@ -1244,6 +1255,7 @@
     'kennzeichen_land',
     'fahrzeug_marke',
     'tattag',
+    'tattag_bis',
     'tatzeit_von',
     'tatzeit_bis',
     'tatort',

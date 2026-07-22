@@ -376,7 +376,7 @@ ${reports
 <h3>${esc(r.aktenzeichen)} <span class="badge">${esc(statusLabel[r.status] || r.status)}</span></h3>
 <table>
 <tr><td>Kennzeichen</td><td>${esc(r.kennzeichen || '—')}${r.kennzeichen_land && r.kennzeichen_land !== 'D' ? ` (${esc(r.kennzeichen_land)})` : ''}</td></tr>
-<tr><td>Tattag / Zeit</td><td>${esc(r.tattag ? new Date(r.tattag).toLocaleDateString('de-DE') : '—')}${r.tatzeit_von ? `, ${esc(String(r.tatzeit_von).slice(0, 5))}${r.tatzeit_bis ? ` – ${esc(String(r.tatzeit_bis).slice(0, 5))}` : ''} Uhr` : ''}</td></tr>
+<tr><td>Tattag / Zeit</td><td>${esc(r.tattag ? new Date(r.tattag).toLocaleDateString('de-DE') : '—')}${r.tattag_bis ? ` – ${esc(new Date(r.tattag_bis).toLocaleDateString('de-DE'))}` : ''}${r.tatzeit_von ? `, ${esc(String(r.tatzeit_von).slice(0, 5))}${r.tatzeit_bis ? ` – ${esc(String(r.tatzeit_bis).slice(0, 5))}` : ''} Uhr` : ''}</td></tr>
 <tr><td>Tatort</td><td>${esc(r.tatort || '—')}</td></tr>
 <tr><td>Verstoß</td><td>${esc(r.verstoss_art || '—')}${r.fahrzeug_verlassen === 1 ? ' · Fahrzeug war verlassen' : ''}</td></tr>
 ${r.beschreibung ? `<tr><td>Beschreibung</td><td>${esc(r.beschreibung)}</td></tr>` : ''}

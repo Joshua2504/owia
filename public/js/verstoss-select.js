@@ -24,12 +24,7 @@
   function initOne(root) {
     const hidden = root.querySelector('input[type="hidden"]')
     const input = root.querySelector('[data-verstoss-input]')
-    // Katalog: eigenes <script data-verstoss-data> im Container oder – für viele
-    // Instanzen auf einer Seite (Anzeigenliste) – EIN gemeinsames
-    // <script id="verstoss-catalog-data"> pro Seite.
-    const dataEl =
-      root.querySelector('[data-verstoss-data]') ||
-      document.getElementById('verstoss-catalog-data')
+    const dataEl = root.querySelector('[data-verstoss-data]')
     if (!hidden || !input || !dataEl) return
 
     let data

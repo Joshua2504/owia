@@ -99,20 +99,31 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 
           <h5 class="mb-3">Tat</h5>
           <div class="row g-3 mb-4">
-            <div class="col-sm-4">
+            <div class="col-sm-3">
               <label class="form-label">Tattag <span class="text-danger">*</span></label>
               <input type="date" name="tattag" class="form-control"
                      value="<%= toDateInput(r.tattag) || today %>">
             </div>
-            <div class="col-sm-4">
+            <div class="col-sm-3">
               <label class="form-label">Uhrzeit von <span class="text-danger">*</span></label>
               <input type="time" name="tatzeit_von" class="form-control"
                      value="<%= hhmm(r.tatzeit_von) || nowTime %>">
             </div>
-            <div class="col-sm-4">
+            <div class="col-sm-3">
+              <label class="form-label">Tattag bis</label>
+              <input type="date" name="tattag_bis" class="form-control"
+                     value="<%= toDateInput(r.tattag_bis) %>">
+            </div>
+            <div class="col-sm-3">
               <label class="form-label">Uhrzeit bis</label>
               <input type="time" name="tatzeit_bis" class="form-control"
                      value="<%= hhmm(r.tatzeit_bis) %>">
+            </div>
+            <div class="col-sm-12 mt-1">
+              <div class="form-text mt-0">
+                „Tattag bis" nur angeben, wenn der Verstoß über Mitternacht hinaus andauerte
+                (z.&nbsp;B. Dauerparken über Nacht) – sonst leer lassen.
+              </div>
             </div>
             <!-- Uhrzeit (von = frühestes, bis = spätestes Foto) aus den EXIF-Daten der
                  hochgeladenen Fotos übernehmen. Erscheint nur, wenn mindestens ein Foto

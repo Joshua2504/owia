@@ -146,6 +146,9 @@ async function persistFields(
   const fahrzeugVerlassen = v.fahrzeug_verlassen && v.fahrzeug_verlassen !== '0' ? 1 : 0
   // Länderkürzel des Kennzeichens (blaues Band): 1-3 Buchstaben, Default 'D'.
   const land = (v.kennzeichen_land || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'D'
+  // Tatzeitraum über Mitternacht: tattag_bis nur speichern, wenn er sich vom
+  // Tattag unterscheidet (gleicher Tag = normaler Fall, Feld bleibt leer).
+  const tattagBis = v.tattag_bis && v.tattag_bis !== v.tattag ? v.tattag_bis : null
   // Tatort-Koordinaten (Karte/Marker) nur übernehmen, wenn beide gültig sind.
   const lat = Number(v.tatort_lat)
   const lon = Number(v.tatort_lon)
@@ -156,7 +159,7 @@ async function persistFields(
   const city = v.city && CITIES[v.city] ? v.city : null
   await pool.execute(
     `UPDATE reports
-       SET kennzeichen=?, kennzeichen_land=?, fahrzeug_marke=?, tattag=?, tatzeit_von=?, tatzeit_bis=?,
+       SET kennzeichen=?, kennzeichen_land=?, fahrzeug_marke=?, tattag=?, tattag_bis=?, tatzeit_von=?, tatzeit_bis=?,
            tatort=?, tatort_lat=?, tatort_lon=?, verstoss_art=?, beschreibung=?,
            behinderung=?, behinderung_text=?, fahrzeug_verlassen=?, city=COALESCE(?, city)
      WHERE id=? AND user_id=? AND status='entwurf'`,
@@ -165,6 +168,7 @@ async function persistFields(
       land,
       v.fahrzeug_marke || null,
       v.tattag || null,
+      tattagBis,
       v.tatzeit_von || null,
       v.tatzeit_bis || null,
       v.tatort || null,
@@ -190,7 +194,7 @@ function isComplete(r: mysql.RowDataPacket): boolean {
  *  DB (nur Einträge, die noch im aktuellen Katalog stehen) zuerst, aufgefüllt mit
  *  den kuratierten Defaults (VERSTOSS_HAEUFIG) – so ist die „Häufig"-Gruppe auch
  *  ohne Nutzungshistorie sinnvoll gefüllt. */
-export async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
+async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
   const catalog = new Set(VERSTOSS_ARTEN)
   let used: string[] = []
   try {
@@ -689,14 +693,6 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const body = (request.body || {}) as Record<string, string>
     await persistFields(report.id, userId, body)
     await regeneratePdf(report.id, userId)
-
-    // Inline-Speichern aus einer Anzeigenliste: zurück zur Liste (nur bekannte
-    // eigene Listen-URLs zulassen, kein freies Redirect-Ziel).
-    const returnTo = String(body.return_to || '')
-    if (/^\/(anzeigen|import\/\d+)$/.test(returnTo)) {
-      setFlash(reply, 'success', `Entwurf ${az} gespeichert.`)
-      return reply.redirect(returnTo)
-    }
 
     // In der Review-Queue des Foto-Imports: direkt zum nächsten offenen Entwurf,
     // nach dem letzten zurück zur Batch-Übersicht.
