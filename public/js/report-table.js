@@ -1,4 +1,4 @@
-// Verhalten der gemeinsamen Anzeigen-Tabelle (src/views/partials/report-table.ejs):
+// Verhalten der gemeinsamen Anzeigen-Liste (src/views/partials/report-table.ejs):
 // - Thumbnails per Drag & Drop zwischen Entwürfen (oder in eine neue Anzeige) verschieben
 // - Klick auf ein Thumbnail öffnet die Lightbox (gilt für alle [data-full-src] der Seite)
 ;(function () {
@@ -13,7 +13,7 @@
     img.addEventListener('dragend', function () {
       img.style.opacity = ''
       document.querySelectorAll('[data-drop-az]').forEach(function (row) {
-        row.classList.remove('table-primary')
+        row.classList.remove('bg-primary-subtle')
       })
       var dropNew = document.getElementById('drop-new-draft')
       if (dropNew) dropNew.classList.remove('border-primary', 'text-primary')
@@ -40,10 +40,10 @@
       if (!dragged || dragged.az === az) return
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
-      row.classList.add('table-primary')
+      row.classList.add('bg-primary-subtle')
     })
     row.addEventListener('dragleave', function () {
-      row.classList.remove('table-primary')
+      row.classList.remove('bg-primary-subtle')
     })
     row.addEventListener('drop', function (e) {
       if (!dragged || dragged.az === az) return

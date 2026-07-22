@@ -190,7 +190,7 @@ function isComplete(r: mysql.RowDataPacket): boolean {
  *  DB (nur Einträge, die noch im aktuellen Katalog stehen) zuerst, aufgefüllt mit
  *  den kuratierten Defaults (VERSTOSS_HAEUFIG) – so ist die „Häufig"-Gruppe auch
  *  ohne Nutzungshistorie sinnvoll gefüllt. */
-async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
+export async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
   const catalog = new Set(VERSTOSS_ARTEN)
   let used: string[] = []
   try {
@@ -689,6 +689,14 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const body = (request.body || {}) as Record<string, string>
     await persistFields(report.id, userId, body)
     await regeneratePdf(report.id, userId)
+
+    // Inline-Speichern aus einer Anzeigenliste: zurück zur Liste (nur bekannte
+    // eigene Listen-URLs zulassen, kein freies Redirect-Ziel).
+    const returnTo = String(body.return_to || '')
+    if (/^\/(anzeigen|import\/\d+)$/.test(returnTo)) {
+      setFlash(reply, 'success', `Entwurf ${az} gespeichert.`)
+      return reply.redirect(returnTo)
+    }
 
     // In der Review-Queue des Foto-Imports: direkt zum nächsten offenen Entwurf,
     // nach dem letzten zurück zur Batch-Übersicht.
