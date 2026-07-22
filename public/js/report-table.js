@@ -1,53 +1,25 @@
 // Verhalten der gemeinsamen Anzeigen-Tabelle (src/views/partials/report-table.ejs):
-// - Thumbnails per Drag & Drop zwischen Entwürfen (oder in eine neue Anzeige) verschieben
+// - Thumbnails per Drag & Drop zwischen Entwürfen (oder in eine neue Anzeige) verschieben.
+//   Alle Änderungen passieren OHNE Seiten-Reload direkt im DOM (das Thumbnail
+//   wandert in die Ziel-Zeile; eine neue Anzeige kommt als serverseitig
+//   gerenderte Zeile von /anzeige/:az/listenzeile) – die Tabelle bleibt ruhig
+//   und die Scroll-Position erhalten.
 // - Klick auf ein Thumbnail öffnet die Lightbox (gilt für alle [data-full-src] der Seite)
 // - Hover-Lupe zum Kennzeichen-Prüfen: siehe public/js/image-loupe.js
 ;(function () {
-  var dragged = null // { imageId, az }
+  var dragged = null // { imageId, az, el }
 
-  // Per Drag & Drop neu erstellte Entwürfe direkt UNTER ihrem Quell-Eintrag
-  // einsortieren (statt der Server-Sortierung), damit man bequem weitere Fotos
-  // aus derselben Anzeige hinüberziehen kann. Die Zuordnung (neues AZ -> Quell-AZ)
-  // liegt pro Seite in der sessionStorage und wird nach jedem Reload wieder
-  // angewendet, solange beide Einträge noch als Entwurf in der Liste stehen.
-  var PLACE_KEY = 'draftPlacement:' + location.pathname
-  function loadPlacements() {
-    try {
-      return JSON.parse(sessionStorage.getItem(PLACE_KEY)) || {}
-    } catch (_) {
-      return {}
-    }
-  }
-  function rememberPlacement(newAz, afterAz) {
-    var map = loadPlacements()
-    map[newAz] = afterAz
-    try {
-      sessionStorage.setItem(PLACE_KEY, JSON.stringify(map))
-    } catch (_) {}
-  }
-  function applyPlacements() {
-    var map = loadPlacements()
-    var changed = false
-    Object.keys(map).forEach(function (newAz) {
-      var source = document.querySelector('[data-drop-az="' + map[newAz] + '"]')
-      var created = document.querySelector('[data-drop-az="' + newAz + '"]')
-      if (source && created && source.parentNode === created.parentNode) {
-        source.parentNode.insertBefore(created, source.nextSibling)
-      } else {
-        delete map[newAz] // Eintrag weg oder kein Entwurf mehr – Zuordnung vergessen
-        changed = true
-      }
-    })
-    if (changed) {
-      try {
-        sessionStorage.setItem(PLACE_KEY, JSON.stringify(map))
-      } catch (_) {}
-    }
-  }
+  // ---------------------------------------------------------------------------
+  // Drag & Drop
+  // ---------------------------------------------------------------------------
 
-  document.querySelectorAll('[data-drag-image]').forEach(function (img) {
+  function bindDragImage(img) {
     img.addEventListener('dragstart', function (e) {
-      dragged = { imageId: img.getAttribute('data-drag-image'), az: img.getAttribute('data-drag-az') }
+      dragged = {
+        imageId: img.getAttribute('data-drag-image'),
+        az: img.getAttribute('data-drag-az'),
+        el: img,
+      }
       e.dataTransfer.effectAllowed = 'move'
       img.style.opacity = '0.4'
       // Das Drop-Ziel "neue Anzeige" direkt unter den Quell-Eintrag holen –
@@ -79,10 +51,22 @@
       document.querySelectorAll('[data-drop-az]').forEach(function (row) {
         row.classList.remove('table-primary', 'bg-primary-subtle')
       })
-      var dropNew = document.getElementById('drop-new-draft')
-      if (dropNew) dropNew.classList.remove('border-primary', 'text-primary')
+      restoreDropZone()
     })
-  })
+  }
+
+  // Drop-Ziel "neue Anzeige" nach dem Drag zurück an seinen ursprünglichen
+  // Platz unter der Tabelle (die Zwischenzeile verschwindet wieder).
+  var dropNewHome = null // { parent, nextSibling }
+  function restoreDropZone() {
+    var dropNew = document.getElementById('drop-new-draft')
+    var row = document.getElementById('drop-new-draft-row')
+    if (dropNew && dropNewHome && dropNew.parentNode !== dropNewHome.parent) {
+      dropNewHome.parent.insertBefore(dropNew, dropNewHome.nextSibling)
+      dropNew.classList.remove('border-primary', 'text-primary')
+    }
+    if (row) row.remove()
+  }
 
   function moveDragged(moved, body) {
     fetch('/anzeige/' + moved.az + '/images/' + moved.imageId + '/move', {
@@ -93,13 +77,50 @@
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
       .then(function (res) {
         if (!res.ok) { alert(res.d.error || 'Verschieben fehlgeschlagen.'); return }
-        if (body.newDraft && res.d.targetAz) rememberPlacement(res.d.targetAz, moved.az)
-        location.reload()
+        if (body.newDraft) insertNewDraftRow(moved, res.d.targetAz)
+        else adoptImage(moved, res.d.targetAz)
       })
       .catch(function () { alert('Verschieben fehlgeschlagen.') })
   }
 
-  document.querySelectorAll('[data-drop-az]').forEach(function (row) {
+  // Thumbnail ohne Reload in die Ziel-Zeile übernehmen: Element umhängen und
+  // seine URLs/Attribute auf das neue Aktenzeichen umschreiben.
+  function adoptImage(moved, targetAz) {
+    var targetRow = document.querySelector('[data-drop-az="' + targetAz + '"]')
+    var photos = targetRow && targetRow.querySelector('[data-photos]')
+    var img = moved.el
+    if (!photos || !img) { location.reload(); return } // Fallback: alte Ziel-Zeile unbekannt
+    img.src = '/anzeige/' + targetAz + '/image/' + moved.imageId + '/thumb.jpg'
+    img.setAttribute('data-full-src', '/anzeige/' + targetAz + '/image/' + moved.imageId)
+    img.setAttribute('data-drag-az', targetAz)
+    photos.appendChild(img)
+  }
+
+  // Neue Anzeige: fertig gerenderte Zeile vom Server holen und direkt unter der
+  // Quell-Zeile einfügen (das verschobene Foto ist darin bereits enthalten).
+  function insertNewDraftRow(moved, targetAz) {
+    var source = document.querySelector('[data-drop-az="' + moved.az + '"]')
+    var dropNew = document.getElementById('drop-new-draft')
+    var queue = dropNew && dropNew.getAttribute('data-queue')
+    fetch('/anzeige/' + targetAz + '/listenzeile' + (queue ? '?queue=' + queue : ''))
+      .then(function (r) {
+        if (!r.ok) throw new Error()
+        return r.text()
+      })
+      .then(function (html) {
+        if (!source || source.tagName !== 'TR') { location.reload(); return }
+        var tbody = document.createElement('tbody')
+        tbody.innerHTML = html
+        var row = tbody.querySelector('tr')
+        if (!row) { location.reload(); return }
+        source.parentNode.insertBefore(row, source.nextSibling)
+        if (moved.el) moved.el.remove() // Foto hängt jetzt in der neuen Zeile
+        bindRow(row)
+      })
+      .catch(function () { location.reload() }) // Zeile nicht ladbar – Reload als Fallback
+  }
+
+  function bindDropTarget(row) {
     var az = row.getAttribute('data-drop-az')
     row.addEventListener('dragover', function (e) {
       if (!dragged || dragged.az === az) return
@@ -117,12 +138,25 @@
       dragged = null
       moveDragged(moved, { targetAz: az })
     })
-  })
+  }
+
+  // Events einer (neu eingefügten) Zeile verdrahten; für die initiale Seite
+  // übernimmt das der Block ganz unten.
+  function bindRow(row) {
+    row.querySelectorAll('[data-drag-image]').forEach(bindDragImage)
+    if (row.hasAttribute('data-drop-az')) bindDropTarget(row)
+    row.querySelectorAll('[data-full-src]').forEach(bindLightbox)
+    if (window.imageLoupe) row.querySelectorAll('img[data-full-src]').forEach(window.imageLoupe.bind)
+  }
+
+  document.querySelectorAll('[data-drag-image]').forEach(bindDragImage)
+  document.querySelectorAll('[data-drop-az]').forEach(bindDropTarget)
 
   // Drop-Ziel "neue Anzeige": legt einen frischen Entwurf an (EXIF des Fotos
   // als Vorbelegung) und hängt das Foto dort an.
   var dropNew = document.getElementById('drop-new-draft')
   if (dropNew) {
+    dropNewHome = { parent: dropNew.parentNode, nextSibling: dropNew.nextSibling }
     dropNew.addEventListener('dragover', function (e) {
       if (!dragged) return
       e.preventDefault()
@@ -141,10 +175,9 @@
     })
   }
 
-  // Neu erstellte Entwürfe nach dem Reload wieder unter ihren Quell-Eintrag hängen.
-  applyPlacements()
-
+  // ---------------------------------------------------------------------------
   // Lightbox: Klick auf ein Thumbnail zeigt das Bild in groß.
+  // ---------------------------------------------------------------------------
   var justDragged = false
   document.addEventListener('dragend', function () {
     justDragged = true
@@ -167,11 +200,12 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') closeLightbox()
   })
-  document.querySelectorAll('[data-full-src]').forEach(function (img) {
+  function bindLightbox(img) {
     img.addEventListener('click', function () {
       if (justDragged) return // Klick direkt nach Drag & Drop ignorieren
       lightboxImg.src = img.getAttribute('data-full-src')
       lightbox.style.display = 'flex'
     })
-  })
+  }
+  document.querySelectorAll('[data-full-src]').forEach(bindLightbox)
 })()

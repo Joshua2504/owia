@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise'
 import crypto from 'crypto'
 import path from 'path'
 import fs from 'fs/promises'
+import ejs from 'ejs'
 import { pool } from '../db/connection'
 import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
@@ -748,6 +749,41 @@ export default async function reportsRoutes(app: FastifyInstance) {
     setFlash(reply, 'success', 'Entwurf verworfen.')
     // Import-Entwürfe zurück zur Batch-Übersicht, sonst zur Anzeigenliste.
     return reply.redirect(report.intake_batch_id ? `/import/${report.intake_batch_id}` : '/anzeigen')
+  })
+
+  // Einzelne Zeile der Anzeigen-Tabelle als HTML-Fragment (ohne Layout, daher
+  // ejs.renderFile statt reply.view). report-table.js fügt damit nach
+  // Drag & Drop "Foto -> neue Anzeige" die neue Zeile ohne Seiten-Reload ein.
+  app.get('/anzeige/:az/listenzeile', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
+
+    const [images] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+      [report.id]
+    )
+    const [counts] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT COUNT(*) AS reply_count,
+              COALESCE(SUM(read_at IS NULL), 0) AS unread_reply_count
+         FROM report_replies WHERE report_id = ? AND direction = 'in'`,
+      [report.id]
+    )
+    const queueParam = Number((request.query as { queue?: string }).queue)
+    const html = await ejs.renderFile(
+      path.join(__dirname, '../views/partials/report-row.ejs'),
+      {
+        r: {
+          ...report,
+          reply_count: Number(counts[0]?.reply_count) || 0,
+          unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
+        },
+        imgIds: images.map((i) => i.id),
+        queueId: Number.isInteger(queueParam) && queueParam > 0 ? queueParam : null,
+      }
+    )
+    return reply.type('text/html; charset=utf-8').send(html)
   })
 
   // ---------------------------------------------------------------------------

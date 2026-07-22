@@ -6,10 +6,9 @@
 // EXIF-Drehung der Fotos in allen Browsern korrekt angewendet wird.
 // Während eines Drag & Drop feuern keine Maus-Events; zusätzlich blenden
 // dragstart/click (Lightbox) die Lupe explizit aus.
+// Für dynamisch eingefügte Bilder: window.imageLoupe.bind(img) nachrüsten
+// (nutzt report-table.js für ohne Reload ergänzte Tabellenzeilen).
 ;(function () {
-  var targets = document.querySelectorAll('img[data-full-src], img[data-zoom-src]')
-  if (!targets.length) return
-
   var LOUPE_W = 300
   var LOUPE_H = 210
   var LOUPE_DELAY_MS = 150 // kurzes Verweilen nötig – kein Laden beim Vorbeifahren
@@ -62,11 +61,13 @@
     loupe.style.top = Math.max(8, y) + 'px'
   }
 
-  targets.forEach(function (thumb) {
-    var src = thumb.getAttribute('data-full-src') || thumb.getAttribute('data-zoom-src')
-    if (!src) return
+  function bind(thumb) {
     var lastEvent = null
     thumb.addEventListener('mouseenter', function (e) {
+      // URL erst beim Hover lesen – sie kann sich ändern (Foto per Drag & Drop
+      // in eine andere Anzeige verschoben = neues Aktenzeichen in der URL).
+      var src = thumb.getAttribute('data-full-src') || thumb.getAttribute('data-zoom-src')
+      if (!src) return
       lastEvent = e
       clearTimeout(loupeTimer)
       loupeTimer = setTimeout(function () {
@@ -92,5 +93,8 @@
     // Beim Ziehen (Foto verschieben) und in der Lightbox stört die Lupe nur.
     thumb.addEventListener('dragstart', hideLoupe)
     thumb.addEventListener('click', hideLoupe)
-  })
+  }
+
+  document.querySelectorAll('img[data-full-src], img[data-zoom-src]').forEach(bind)
+  window.imageLoupe = { bind: bind }
 })()
