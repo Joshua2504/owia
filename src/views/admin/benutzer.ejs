@@ -34,9 +34,9 @@ const active = users.filter((u) => !u.anonymized_at)
             <td>
               <% if (u.anonymized_at) { %>
                 <span class="badge text-bg-secondary">Konto geschlossen</span>
-                <div class="small text-muted"><%= u.email %></div>
+                <div class="small text-muted"><a href="/admin/benutzer/<%= u.id %>" class="text-muted"><%= u.email %></a></div>
               <% } else { %>
-                <%= u.email %>
+                <a href="/admin/benutzer/<%= u.id %>" class="text-decoration-none"><%= u.email %></a>
               <% } %>
             </td>
             <td><%= [u.vorname, u.nachname].filter(Boolean).join(' ') || '—' %></td>

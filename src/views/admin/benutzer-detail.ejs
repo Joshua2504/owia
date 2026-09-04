@@ -1,0 +1,96 @@
+<%
+// Admin-Detailseite eines Benutzers (GET /admin/benutzer/:id): Stammdaten +
+// alle Anzeigen mit Status. Read-only; eingereichte Anzeigen verlinken zur
+// Prüfung (/admin/anzeigen).
+const u = benutzer
+const name = [u.vorname, u.nachname].filter(Boolean).join(' ')
+const anschrift = [u.strasse, [u.plz, u.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+const counts = { entwurf: 0, eingereicht: 0, versendet: 0 }
+for (const r of reports) if (counts[r.status] !== undefined) counts[r.status]++
+%>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <h2 class="mb-0">Benutzer</h2>
+  <a href="/admin/benutzer" class="btn btn-outline-secondary btn-sm">← Alle Benutzer</a>
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between flex-wrap gap-3">
+      <div>
+        <h3 class="h6 mb-1">
+          <%= u.email %>
+          <% if (u.anonymized_at) { %>
+            <span class="badge text-bg-secondary ms-1">Konto geschlossen</span>
+          <% } %>
+        </h3>
+        <div class="small text-muted">
+          <% if (name) { %><%= name %><% } %>
+          <% if (anschrift) { %> · <%= anschrift %><% } %>
+          <% if (u.telefon) { %> · <%= u.telefon %><% } %>
+        </div>
+        <div class="small text-muted">Registriert: <%= u.created_fmt || '—' %></div>
+      </div>
+      <div class="small text-muted text-end">
+        <%= reports.length %> Anzeige<%= reports.length === 1 ? '' : 'n' %> gesamt<br>
+        <%= counts.entwurf %> Entwürfe · <%= counts.eingereicht %> eingereicht · <%= counts.versendet %> versendet
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <% if (!reports.length) { %>
+    <div class="card-body text-muted small">Keine Anzeigen vorhanden.</div>
+  <% } else { %>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Aktenzeichen</th>
+            <th>Status</th>
+            <th>Kennzeichen</th>
+            <th>Tattag</th>
+            <th>Tatort</th>
+            <th>Verstoß</th>
+            <th class="text-end">Fotos</th>
+            <th>Angelegt</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (const r of reports) { %>
+            <tr>
+              <td class="text-nowrap"><code class="small"><%= r.aktenzeichen || '—' %></code></td>
+              <td class="text-nowrap">
+                <% if (r.status === 'versendet') { %>
+                  <span class="badge bg-success">Versendet</span>
+                <% } else if (r.status === 'eingereicht') { %>
+                  <a href="/admin/anzeigen" class="badge bg-info text-decoration-none"
+                     title="Zur Prüfung">Eingereicht<%= r.eingereicht_fmt ? ' · ' + r.eingereicht_fmt : '' %></a>
+                <% } else { %>
+                  <span class="badge text-bg-warning">Entwurf</span>
+                <% } %>
+                <% if (r.ablehnung_grund) { %>
+                  <span class="badge text-bg-danger" title="<%= r.ablehnung_grund %>">abgelehnt</span>
+                <% } %>
+                <% if (r.reply_count) { %>
+                  <span class="badge text-bg-primary" title="Antworten des Ordnungsamts">📨 <%= r.reply_count %></span>
+                <% } %>
+              </td>
+              <td class="text-nowrap">
+                <% if (r.kennzeichen) { %>
+                  <span class="plate-badge"><%- include('../partials/euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
+                <% } %>
+              </td>
+              <td class="text-nowrap"><%= r.tattag_fmt || '—' %><% if (r.von_fmt) { %> <span class="text-muted small"><%= r.von_fmt %></span><% } %></td>
+              <td class="small" style="max-width:220px"><div class="text-truncate" title="<%= r.tatort || '' %>"><%= r.tatort || '—' %></div></td>
+              <td class="small" style="max-width:220px"><div class="text-truncate" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '—' %></div></td>
+              <td class="text-end"><%= Number(r.image_count) || 0 %></td>
+              <td class="text-nowrap"><%= r.created_fmt || '—' %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>

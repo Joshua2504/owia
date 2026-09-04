@@ -263,6 +263,40 @@ export default async function adminRoutes(app: FastifyInstance) {
     }))
   })
 
+  // Detailseite eines Nutzers: Stammdaten + alle seine Anzeigen mit Status.
+  app.get('/admin/benutzer/:id', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const [users] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id, email, vorname, nachname, strasse, plz, ort, telefon, anonymized_at,
+              DATE_FORMAT(created_at, '%d.%m.%Y') AS created_fmt
+         FROM users WHERE id = ?`,
+      [id]
+    )
+    const user = users[0]
+    if (!user) return reply.status(404).send('Benutzer nicht gefunden.')
+
+    const [reports] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT r.id, r.aktenzeichen, r.status, r.kennzeichen, r.kennzeichen_land,
+              r.tatort, r.verstoss_art, r.ablehnung_grund,
+              DATE_FORMAT(r.tattag, '%d.%m.%Y') AS tattag_fmt,
+              TIME_FORMAT(r.tatzeit_von, '%H:%i') AS von_fmt,
+              DATE_FORMAT(r.created_at, '%d.%m.%Y') AS created_fmt,
+              DATE_FORMAT(r.eingereicht_at, '%d.%m.%Y %H:%i') AS eingereicht_fmt,
+              (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count,
+              (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = r.id AND rr.direction = 'in') AS reply_count
+         FROM reports r
+        WHERE r.user_id = ?
+        ORDER BY r.created_at DESC`,
+      [id]
+    )
+
+    return reply.view('/admin/benutzer-detail.ejs', viewData(request, {
+      title: `Benutzer – ${user.email}`,
+      benutzer: user,
+      reports,
+    }))
+  })
+
   // ---------------------------------------------------------------------------
   // Newsletter-Ankündigungen (z.B. neue Stadt/PLZ freigeschaltet) an alle
   // bestätigten Abonnenten. Anmeldung/Abmeldung läuft öffentlich (routes/public.ts).
