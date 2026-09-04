@@ -9,6 +9,7 @@ import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { reportDir, UPLOAD_DIR } from '../services/drafts'
 import { replyAttachmentPath } from '../services/mailInbox'
 import { MailService } from '../services/mail'
+import { adminEmails } from '../config/admin'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
@@ -73,6 +74,13 @@ export default async function settingsRoutes(app: FastifyInstance) {
       setFlash(reply, 'error', 'Bitte eine gültige E-Mail-Adresse eingeben.')
       return reply.redirect('/einstellungen')
     }
+    // Admin-Adressen sind tabu: Admin-Rechte hängen an der E-Mail (isAdminEmail),
+    // eine noch nie eingeloggte ADMIN_EMAILS-Adresse wäre sonst per Wechsel
+    // übernehmbar (der users-Check unten greift dann nicht).
+    if (adminEmails().includes(neu)) {
+      setFlash(reply, 'error', 'Diese E-Mail-Adresse kann nicht verwendet werden.')
+      return reply.redirect('/einstellungen')
+    }
     const [taken] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id FROM users WHERE email = ?',
       [neu]
@@ -111,6 +119,12 @@ export default async function settingsRoutes(app: FastifyInstance) {
     const user = rows[0]
     if (!user) {
       setFlash(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen.')
+      return reply.redirect('/login')
+    }
+    // Defensiv auch beim Einlösen prüfen: ein schwebender Wechsel könnte von
+    // vor der Admin-Sperre in Schritt 1 stammen.
+    if (adminEmails().includes(String(user.email_change_neu).toLowerCase())) {
+      setFlash(reply, 'error', 'Diese E-Mail-Adresse kann nicht verwendet werden.')
       return reply.redirect('/login')
     }
     // Adresse könnte inzwischen vergeben sein (Race) – Unique-Kollision abfangen.
@@ -193,6 +207,12 @@ export default async function settingsRoutes(app: FastifyInstance) {
     await pool.execute('UPDATE login_tokens SET used_at = NOW() WHERE used_at IS NULL AND email = ?', [
       request.session.userEmail || '',
     ])
+    // ALLE Sessions des Nutzers beenden, nicht nur die aktuelle – ein weiterhin
+    // eingeloggter Zweitbrowser („Angemeldet bleiben", 30 Tage) könnte das
+    // geschlossene Konto sonst unverändert weiterbenutzen. Die sessions-Tabelle
+    // hat keine user_id-Spalte; JSON_EXTRACT über die (kleine, 6h-gepurgte)
+    // Tabelle reicht für diesen seltenen Vorgang.
+    await pool.execute("DELETE FROM sessions WHERE JSON_EXTRACT(data, '$.userId') = ?", [userId])
     await request.session.destroy()
     app.log.info({ userId }, 'Konto anonymisiert (Anzeigen bleiben ohne Personenbezug erhalten)')
     return reply.redirect('/')

@@ -12,7 +12,7 @@ import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { prepareImage, writePreparedImage } from '../services/images'
 import { extractPhotoMeta } from '../services/exif'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
-import { createDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
+import { createDraft, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
@@ -441,5 +441,60 @@ export default async function intakeRoutes(app: FastifyInstance) {
     await fs.rm(intakeDir(userId, batch.id), { recursive: true, force: true })
     setFlash(reply, 'success', 'Foto-Import verworfen.')
     return reply.send({ redirect: '/import' })
+  })
+
+  // Abgeschlossenen Batch samt allen daraus erzeugten Entwürfen löschen.
+  // Zweistufig wie das Entwurf-Verwerfen: erster POST zeigt eine serverseitig
+  // erzwungene Bestätigungsseite, erst confirmed=1 löscht wirklich.
+  app.post('/import/:batchId/loeschen', { preHandler: requireAuth }, async (request, reply) => {
+    const { batchId } = request.params as { batchId: string }
+    const userId = request.session.userId as number
+    const batch = await loadBatch(batchId, userId)
+    if (!batch) return reply.status(404).send('Import nicht gefunden.')
+    // Offene Batches laufen über das bestehende /discard (Upload-Seite).
+    if (batch.status === 'open') return reply.redirect('/import')
+
+    const [reports] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id, aktenzeichen, status, pdf_filename
+         FROM reports WHERE intake_batch_id = ? AND user_id = ?`,
+      [batch.id, userId]
+    )
+    const draftsToDelete = reports.filter((r) => r.status === 'entwurf')
+    const keptCount = reports.length - draftsToDelete.length
+    const unassignedCount = (await loadPhotos(batch.id, true)).length
+
+    if (String((request.body as { confirmed?: string })?.confirmed || '') !== '1') {
+      return reply.view('/intake/delete-confirm.ejs', viewData(request, {
+        title: 'Import löschen',
+        batch,
+        draftCount: draftsToDelete.length,
+        keptCount,
+        unassignedCount,
+      }))
+    }
+
+    // Bewusst sequenziell und ohne Transaktion (Codebase-Stil): bricht es
+    // mittendrin ab, bleibt ein weiterhin löschbarer Batch übrig.
+    for (const r of draftsToDelete) {
+      await deleteDraft(userId, { id: r.id, pdf_filename: r.pdf_filename })
+    }
+    // Eingereichte/versendete Anzeigen bleiben erhalten und werden nur vom
+    // Batch getrennt – intake_batch_id hat keine FK, ein hängender Verweis
+    // würde z.B. den Redirect nach dem Verwerfen ins Leere (404) führen.
+    await pool.execute(
+      'UPDATE reports SET intake_batch_id = NULL WHERE intake_batch_id = ? AND user_id = ?',
+      [batch.id, userId]
+    )
+    // Kaskadiert die restlichen intake_photos-Zeilen; danach die Dateien der
+    // unzugeordneten Fotos (inkl. Thumbnails) mit dem Intake-Verzeichnis entfernen.
+    await pool.execute('DELETE FROM intake_batches WHERE id = ?', [batch.id])
+    await fs.rm(intakeDir(userId, batch.id), { recursive: true, force: true })
+
+    let msg = `Foto-Import gelöscht – ${draftsToDelete.length} ${draftsToDelete.length === 1 ? 'Entwurf' : 'Entwürfe'} entfernt.`
+    if (keptCount > 0) {
+      msg += ` ${keptCount} bereits eingereichte ${keptCount === 1 ? 'Anzeige bleibt' : 'Anzeigen bleiben'} erhalten.`
+    }
+    setFlash(reply, 'success', msg)
+    return reply.redirect('/import')
   })
 }

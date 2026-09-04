@@ -91,6 +91,30 @@ export async function writePreparedImage(
   return { filename, originalFilename }
 }
 
+/** Ersatzfassung (z.B. geschwärzt) schreiben: nur die nutzbare Datei unter neuem
+ *  Namen, niemals eine `-original`-Datei – das aufbewahrte Original des
+ *  Erst-Uploads bleibt unangetastet (Schwärzungen sollen es nicht vernichten). */
+export async function writeReplacementImage(dir: string, p: PreparedImage): Promise<string> {
+  await fs.mkdir(dir, { recursive: true })
+  const filename = `bild-${crypto.randomBytes(6).toString('hex')}.${p.ext}`
+  await fs.writeFile(path.join(dir, filename), p.buffer)
+  return filename
+}
+
+/** Gecachte Ableitungen einer Bilddatei entfernen: Vorschau-/Pixelbilder
+ *  (services/pixelate.ts), Kennzeichen-Ausschnitt (services/plateAnalysis.ts),
+ *  Mail-Variante. */
+export async function removeDerivedFiles(dir: string, filename: string): Promise<void> {
+  try {
+    await fs.rm(path.join(dir, `${filename}.thumb.jpg`), { force: true })
+    await fs.rm(path.join(dir, `${filename}.pixel.jpg`), { force: true })
+    await fs.rm(path.join(dir, `${filename}.plate.jpg`), { force: true })
+    await fs.rm(path.join(dir, `${filename}.mail.jpg`), { force: true })
+  } catch {
+    /* Dateien evtl. schon weg */
+  }
+}
+
 /** Bilddateien (nutzbare Fassung + Original + gecachte Ableitungen) entfernen. */
 export async function removeImagePair(
   dir: string,
@@ -102,12 +126,7 @@ export async function removeImagePair(
     if (originalFilename && originalFilename !== filename) {
       await fs.rm(path.join(dir, originalFilename), { force: true })
     }
-    // Gecachte Vorschau-/Pixelbilder (services/pixelate.ts) und den gespeicherten
-    // Kennzeichen-Ausschnitt (services/plateAnalysis.ts) mit aufräumen.
-    await fs.rm(path.join(dir, `${filename}.thumb.jpg`), { force: true })
-    await fs.rm(path.join(dir, `${filename}.pixel.jpg`), { force: true })
-    await fs.rm(path.join(dir, `${filename}.plate.jpg`), { force: true })
-    await fs.rm(path.join(dir, `${filename}.mail.jpg`), { force: true })
+    await removeDerivedFiles(dir, filename)
   } catch {
     /* Dateien evtl. schon weg */
   }

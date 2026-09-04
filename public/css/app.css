@@ -37,8 +37,14 @@ code {
   height: auto;
   border: 1px solid var(--bs-border-color);
   border-radius: 4px;
+}
+
+/* Wischen scrollt normal; erst mit aktivem Werkzeug (.editing, report-form.js
+   setTool) werden Gesten zum Zeichnen abgefangen – sonst schwärzt jeder
+   Scroll-Versuch über einem Foto versehentlich Bereiche. */
+.img-redact.editing {
   cursor: crosshair;
-  touch-action: none; /* Wischgesten nicht scrollen, sondern zum Schwärzen nutzen */
+  touch-action: none;
 }
 
 /* Foto-Werkzeugleiste (Beweisfoto-Karten) – mobile-first: Die meisten Nutzer

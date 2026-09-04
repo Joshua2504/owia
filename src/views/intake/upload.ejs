@@ -16,9 +16,19 @@
       <input type="file" id="intake-files" class="form-control"
              accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
       <div class="form-text">JPG, PNG oder HEIC/HEIF · max. 20 MB pro Foto.</div>
-      <button type="button" id="intake-start" class="btn btn-primary mt-3" disabled>
-        Fotos hochladen &amp; gruppieren
-      </button>
+      <!-- Direkteinstieg in die Kamera (PWA: App-Icon -> hier -> Kamera = 2 Taps).
+           Eigenes Input, weil capture am Haupt-Input die Galerie-Auswahl
+           verdrängen würde; import-upload.js sammelt die Aufnahmen dort ein. -->
+      <input type="file" id="intake-camera" accept="image/*" capture="environment"
+             multiple hidden aria-hidden="true">
+      <div class="d-flex gap-2 flex-wrap mt-3">
+        <button type="button" id="intake-camera-btn" class="btn btn-outline-primary">
+          📷 Fotos aufnehmen
+        </button>
+        <button type="button" id="intake-start" class="btn btn-primary" disabled>
+          Fotos hochladen &amp; gruppieren
+        </button>
+      </div>
     </div>
 
     <div id="intake-progress" class="d-none">
@@ -75,7 +85,13 @@
                       Verwerfen
                     </button>
                   <% } else { %>
-                    <a class="btn btn-sm btn-outline-secondary" href="/import/<%= b.id %>">Ergebnis ansehen</a>
+                    <div class="d-flex gap-2 justify-content-end">
+                      <a class="btn btn-sm btn-outline-secondary" href="/import/<%= b.id %>">Ergebnis ansehen</a>
+                      <%# Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
+                      <form method="post" action="/import/<%= b.id %>/loeschen" class="m-0">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+                      </form>
+                    </div>
                   <% } %>
                 </td>
               </tr>

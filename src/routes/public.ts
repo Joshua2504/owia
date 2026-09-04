@@ -9,6 +9,7 @@ import { cachedPixelate } from '../services/pixelate'
 import { getCity, unlockedCities, DEFAULT_CITY_ID } from '../config/cities'
 import { isValidEmail, normalizeEmail } from './auth'
 import { MailService } from '../services/mail'
+import { createChallenge, verifyCaptcha } from '../services/captcha'
 
 // Öffentliche, anonyme Übersicht aller versendeter Anzeigen auf einer Karte.
 // Bewusst ohne Auth: Startseite und Daten sind öffentlich sichtbar. Es werden
@@ -68,12 +69,31 @@ export default async function publicRoutes(app: FastifyInstance) {
   // dient auch als Abmelde-Link in jeder Ankündigung.
   // ---------------------------------------------------------------------------
 
+  // Service Worker unter der Root ausliefern: unter /public/ wäre sein Scope
+  // auf /public/ beschränkt und die PWA nicht installierbar (Datei liegt
+  // trotzdem bei den anderen statischen Assets in public/).
+  app.get('/sw.js', async (_request, reply) => {
+    return reply.type('application/javascript; charset=utf-8').sendFile('sw.js')
+  })
+
+  // Captcha-Challenge fürs Altcha-Widget (Login- und Newsletter-Formular).
+  // Rate-limitiert, damit sich niemand Challenges auf Vorrat holt.
+  app.get('/captcha', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (_request, reply) => {
+    return reply.send(createChallenge())
+  })
+
   // Anmeldung (Formular auf der Startseite). Streng rate-limitiert, weil hier
   // E-Mails an fremde Adressen ausgelöst werden können.
   app.post('/newsletter', {
     config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
   }, async (request, reply) => {
-    const { email, plz } = (request.body || {}) as { email?: string; plz?: string }
+    const { email, plz, altcha } = (request.body || {}) as { email?: string; plz?: string; altcha?: string }
+    if (!verifyCaptcha(altcha)) {
+      setFlash(reply, 'error', 'Bitte die Sicherheitsprüfung abschließen und erneut absenden.')
+      return reply.redirect('/#newsletter')
+    }
     if (!email || !isValidEmail(email)) {
       setFlash(reply, 'error', 'Bitte gib eine gültige E-Mail-Adresse ein.')
       return reply.redirect('/#newsletter')

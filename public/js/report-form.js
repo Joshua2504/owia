@@ -244,7 +244,7 @@
     item.canvas.width = w
     item.canvas.height = h
     item.edited = true
-    setTool(item, 'black') // nach dem Zuschnitt zurück zum Standard-Werkzeug
+    setTool(item, null) // nach dem Zuschnitt zurück in den Ansichtsmodus
     redraw(item)
     updateToolbar(item)
     item.saveDebounced()
@@ -263,7 +263,9 @@
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
-    canvas.className = 'img-redact'
+    // Rotieren/Zuschneiden bauen den Canvas neu auf – aktiven Werkzeug-Zustand
+    // (editing-Klasse) dabei mitnehmen, sonst verliert setTool den Anker.
+    canvas.className = 'img-redact' + (item.tool ? ' editing' : '')
 
     item.base = base
     item.canvas = canvas
@@ -277,6 +279,7 @@
     const canvas = item.canvas
     let drawing = false
     let start = null
+    let activePointerId = null
 
     function toCanvasCoords(e) {
       const rect = canvas.getBoundingClientRect()
@@ -287,13 +290,23 @@
     }
 
     canvas.addEventListener('pointerdown', (e) => {
+      if (!item.tool) return // Ansichtsmodus: Wischen scrollt, kein Zeichnen
+      // Zweiter Finger während des Zeichnens (Zoom-/Systemgeste): laufende
+      // Markierung verwerfen statt eine riesige Box über beide Finger zu ziehen.
+      if (drawing) {
+        drawing = false
+        redraw(item)
+        return
+      }
+      if (!e.isPrimary) return
       drawing = true
       start = toCanvasCoords(e)
+      activePointerId = e.pointerId
       canvas.setPointerCapture(e.pointerId)
     })
 
     canvas.addEventListener('pointermove', (e) => {
-      if (!drawing) return
+      if (!drawing || e.pointerId !== activePointerId) return
       const p = toCanvasCoords(e)
       redraw(item)
       item.ctx.save()
@@ -311,7 +324,7 @@
     })
 
     function finish(e) {
-      if (!drawing) return
+      if (!drawing || e.pointerId !== activePointerId) return
       drawing = false
       const p = toCanvasCoords(e)
       const x = Math.min(start.x, p.x)
@@ -333,7 +346,12 @@
     }
 
     canvas.addEventListener('pointerup', finish)
-    canvas.addEventListener('pointercancel', finish)
+    // Vom Browser abgebrochene Gesten (Systemgeste, Handballen) verwerfen die
+    // Markierung – ein Commit hier hätte versehentliche Riesen-Boxen zur Folge.
+    canvas.addEventListener('pointercancel', () => {
+      drawing = false
+      redraw(item)
+    })
   }
 
   function updateToolbar(item) {
@@ -350,9 +368,12 @@
     }
   }
 
-  // Aktives Zeichen-Werkzeug der Karte umschalten (Schwärzen/Verpixeln/Zuschneiden).
+  // Aktives Zeichen-Werkzeug der Karte umschalten (Schwärzen/Verpixeln/Zuschneiden);
+  // tool = null ist der Ansichtsmodus. Die .editing-Klasse schaltet touch-action
+  // um (CSS): nur mit aktivem Werkzeug fangen Wischgesten das Zeichnen ab.
   function setTool(item, tool) {
     item.tool = tool
+    if (item.canvas) item.canvas.classList.toggle('editing', !!tool)
     if (item.els && item.els.toolBtns) {
       Object.keys(item.els.toolBtns).forEach((key) => {
         item.els.toolBtns[key].classList.toggle('btn-secondary', key === tool)
@@ -411,16 +432,18 @@
     toolbar.className = 'redact-toolbar mt-2'
     body.appendChild(toolbar)
 
-    // Werkzeuge: Schwärzen (Standard), Verpixeln, Zuschneiden + Drehen-Aktion.
-    const toolBlack = mkBtn('⬛ Schwärzen', 'btn-secondary')
+    // Werkzeuge: Schwärzen, Verpixeln, Zuschneiden + Drehen-Aktion. Jeder Button
+    // ist ein Toggle: erneutes Antippen des aktiven Werkzeugs zurück in den
+    // Ansichtsmodus (Standard – sonst wird jede Wischgeste zur Schwärzung).
+    const toolBlack = mkBtn('⬛ Schwärzen', 'btn-outline-secondary')
     toolBlack.title = 'Bereiche schwarz übermalen'
-    toolBlack.addEventListener('click', () => setTool(item, 'black'))
+    toolBlack.addEventListener('click', () => setTool(item, item.tool === 'black' ? null : 'black'))
     const toolPixel = mkBtn('▩ Verpixeln', 'btn-outline-secondary')
     toolPixel.title = 'Bereiche verpixeln (z.B. Gesichter, fremde Kennzeichen)'
-    toolPixel.addEventListener('click', () => setTool(item, 'pixel'))
+    toolPixel.addEventListener('click', () => setTool(item, item.tool === 'pixel' ? null : 'pixel'))
     const toolCrop = mkBtn('✂️ Zuschneiden', 'btn-outline-secondary')
     toolCrop.title = 'Bild auf einen Ausschnitt zuschneiden'
-    toolCrop.addEventListener('click', () => setTool(item, item.tool === 'crop' ? 'black' : 'crop'))
+    toolCrop.addEventListener('click', () => setTool(item, item.tool === 'crop' ? null : 'crop'))
     const rotate = mkBtn('⟳ Drehen', 'btn-outline-secondary')
     rotate.title = 'Um 90° im Uhrzeigersinn drehen'
     rotate.addEventListener('click', () => rotateItem(item))
@@ -606,7 +629,7 @@
       file,
       kind: 'passthrough',
       redactions: [],
-      tool: 'black', // aktives Zeichen-Werkzeug: black | pixel | crop
+      tool: null, // aktives Zeichen-Werkzeug: black | pixel | crop; null = Ansichtsmodus (Wischen scrollt)
       edited: false, // true nach Drehen/Zuschneiden (auch ohne Markierungen speichern)
       gps: null,
       els: null,
@@ -650,7 +673,7 @@
       item.els.stage.appendChild(item.canvas)
       const hint = document.createElement('div')
       hint.className = 'form-text mt-1'
-      hint.textContent = 'Zum Schwärzen mit Maus oder Finger über die Bereiche ziehen.'
+      hint.textContent = 'Zum Schwärzen zuerst „⬛ Schwärzen“ antippen, dann über die Bereiche ziehen.'
       item.els.stage.appendChild(hint)
     } catch (_) {
       item.els.stage.textContent = 'Vorschau nicht möglich – das Bild bleibt unverändert.'
@@ -1294,7 +1317,9 @@
           // keepalive: Beim Verlassen der Seite darf der Request noch zu Ende laufen.
           keepalive: !!useKeepalive,
         })
-        dirty = false
+        // dirty nur bei Erfolg zurücksetzen – sonst bleibt das pagehide-
+        // Sicherheitsnetz scharf und versucht den Save beim Verlassen erneut.
+        if (res.ok) dirty = false
         if (status) status.textContent = res.ok ? 'Gespeichert ✓' : 'Nicht gespeichert'
       } catch (_) {
         if (status) status.textContent = 'Nicht gespeichert'

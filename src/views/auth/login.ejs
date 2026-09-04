@@ -34,9 +34,15 @@
               Angemeldet bleiben (30 Tage)
             </label>
           </div>
+          <%# Proof-of-Work-Captcha (lokal, kein externer Dienst) – löst beim
+              Absenden automatisch; Server-Prüfung in POST /login. %>
+          <altcha-widget challengeurl="/captcha" auto="onsubmit" hidelogo hidefooter
+                         class="d-block mb-3"></altcha-widget>
           <button type="submit" class="btn btn-primary w-100">Code anfordern</button>
         </form>
       </div>
     </div>
   </div>
 </div>
+
+<script type="module" src="/public/vendor/altcha.min.js"></script>

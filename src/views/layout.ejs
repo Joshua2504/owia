@@ -32,8 +32,20 @@
     <meta name="twitter:card" content="summary">
   <% } %>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
+  <%# PWA: installierbar mit Start auf dem Foto-Import (App-Icon → 2 Taps bis
+      zur Kamera). iOS liest das Manifest-Icon nicht → apple-touch-icon. %>
+  <link rel="manifest" href="/public/manifest.webmanifest">
+  <meta name="theme-color" content="#212529">
+  <link rel="apple-touch-icon" href="/public/icons/icon-180.png">
   <link rel="stylesheet" href="/public/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="/public/css/app.css">
+  <script>
+    // Service Worker (public/sw.js, Route /sw.js): cacht nur statische
+    // /public/-Assets und macht die App installierbar.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(function () {})
+    }
+  </script>
 </head>
 <body>
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">

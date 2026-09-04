@@ -9,6 +9,14 @@ const _hhmm = (t) => (t ? String(t).slice(0, 5) : '')
 const _queue = queueId ? '?queue=' + queueId : ''
 %>
 <tr <% if (r.status === 'entwurf') { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
+  <td>
+    <% if (r.status === 'entwurf') { %>
+      <%# Mehrfachauswahl fürs Sammel-Löschen (Formular in report-table.ejs). %>
+      <input type="checkbox" class="form-check-input bulk-select" name="az"
+             value="<%= r.aktenzeichen %>" form="bulk-discard-form"
+             aria-label="Entwurf <%= r.aktenzeichen %> auswählen">
+    <% } %>
+  </td>
   <td style="min-width:100px;max-width:300px">
     <div class="d-flex flex-wrap gap-1" data-photos>
       <% for (const imgId of imgIds) { %>

@@ -10,9 +10,9 @@ import { PdfService } from '../services/pdf'
 import { getCity, CITIES, unlockedCities, hasPdfForm } from '../config/cities'
 import { resolveSendCity, cityEmail } from '../services/districts'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
-import { prepareImage, writePreparedImage, removeImagePair, PreparedImage } from '../services/images'
+import { prepareImage, writePreparedImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage } from '../services/images'
 import { cachedThumbnail, writeThumbnailCache, cachedMailVariant } from '../services/pixelate'
-import { createDraft, reportDir, UPLOAD_DIR } from '../services/drafts'
+import { createDraft, deleteDraft, reportDir, UPLOAD_DIR, PDF_DIR } from '../services/drafts'
 import { extractPhotoMeta } from '../services/exif'
 import { alprEnabled, ALPR_MIN_CONFIDENCE } from '../services/alpr'
 import { queuePlateAnalysis, plateCropName } from '../services/plateAnalysis'
@@ -23,7 +23,6 @@ import { adminEmails } from '../config/admin'
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
 export { VERSTOSS_ARTEN }
 
-const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 const MAX_IMAGES = 10
 
 /** Buffer, den der PDF-Service einbettet. capturedAt = bereits formatierte
@@ -488,24 +487,36 @@ export default async function reportsRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Kein gültiges Bild übermittelt.' })
     }
 
-    const { filename, originalFilename } = await writeImageFiles(userId, old.report_id, prepared)
+    // Nur die neue nutzbare Fassung schreiben – original_filename bleibt auf dem
+    // Erst-Upload stehen, damit eine (auch versehentliche) Schwärzung das
+    // unbearbeitete Original nie vernichtet (es bleibt als Beleg auf der Platte
+    // und geht in den Datenexport ein).
+    const dir = reportDir(userId, old.report_id)
+    const filename = await writeReplacementImage(dir, prepared)
+    await writeThumbnailCache(dir, filename, prepared.buffer, prepared.mimetype)
     await pool.execute(
-      `UPDATE report_images
-         SET filename=?, mimetype=?, original_filename=?, original_mimetype=?
-       WHERE id=?`,
-      [filename, prepared.mimetype, originalFilename, prepared.originalMimetype, imageId]
+      'UPDATE report_images SET filename=?, mimetype=? WHERE id=?',
+      [filename, prepared.mimetype, imageId]
     )
-    await removeImageFiles(userId, old.report_id, old.filename, old.original_filename)
 
-    // Gespeicherten Kennzeichen-Ausschnitt zur neuen Fassung mitnehmen, bevor
-    // removeImageFiles ihn mit den alten Dateien wegräumt (die Erkennung lief
-    // gegen das alte, ungeschwärzte Bild – der Beleg bleibt gültig).
+    // Gespeicherten Kennzeichen-Ausschnitt zur neuen Fassung mitnehmen, BEVOR
+    // unten die alten Dateien samt Ableitungen weggeräumt werden (die Erkennung
+    // lief gegen das alte, ungeschwärzte Bild – der Beleg bleibt gültig).
     if (old.detected_plate !== null) {
-      const dir = reportDir(userId, old.report_id)
       await fs.rename(
         path.join(dir, plateCropName(old.filename)),
         path.join(dir, plateCropName(filename))
       ).catch(() => {})
+    }
+
+    // Vorherige Fassung aufräumen – das Original niemals: Ist die alte Fassung
+    // selbst der Erst-Upload (erste Bearbeitung eines JPG/PNG), bleibt die Datei
+    // liegen und nur ihre gecachten Ableitungen verschwinden.
+    if (old.filename === old.original_filename) {
+      await removeDerivedFiles(dir, old.filename)
+    } else {
+      await fs.rm(path.join(dir, old.filename), { force: true }).catch(() => {})
+      await removeDerivedFiles(dir, old.filename)
     }
 
     // Neu analysieren nur, wenn dieses Bild noch keine erfolgreiche Erkennung
@@ -734,23 +745,57 @@ export default async function reportsRoutes(app: FastifyInstance) {
       }))
     }
 
-    await pool.execute('DELETE FROM reports WHERE id = ? AND user_id = ?', [reportId, userId])
-    try {
-      await fs.rm(path.join(UPLOAD_DIR, String(userId), String(reportId)), { recursive: true, force: true })
-    } catch {
-      /* egal */
-    }
-    if (report.pdf_filename) {
-      try {
-        await fs.rm(path.join(PDF_DIR, String(userId), report.pdf_filename), { force: true })
-      } catch {
-        /* egal */
-      }
-    }
+    await deleteDraft(userId, { id: reportId, pdf_filename: report.pdf_filename })
 
     setFlash(reply, 'success', 'Entwurf verworfen.')
     // Import-Entwürfe zurück zur Batch-Übersicht, sonst zur Anzeigenliste.
     return reply.redirect(report.intake_batch_id ? `/import/${report.intake_batch_id}` : '/anzeigen')
+  })
+
+  // Sammel-Löschen angehakter Entwürfe (Mehrfachauswahl in der Anzeigen-Tabelle).
+  // Zweistufig wie /discard: erster POST zeigt die Bestätigungsseite, erst
+  // confirmed=1 löscht. Nur eigene Entwürfe – eingereichte/versendete Anzeigen
+  // fallen durch den status-Filter still heraus.
+  app.post('/anzeigen/loeschen', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = request.session.userId as number
+    const body = (request.body || {}) as { az?: string | string[]; confirmed?: string }
+    const azList = (Array.isArray(body.az) ? body.az : body.az ? [body.az] : [])
+      .map((a) => String(a))
+      .filter(Boolean)
+      .slice(0, 200)
+
+    if (azList.length === 0) {
+      setFlash(reply, 'error', 'Keine Entwürfe ausgewählt.')
+      return reply.redirect('/anzeigen')
+    }
+
+    const placeholders = azList.map(() => '?').join(',')
+    const [drafts] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tatort, pdf_filename,
+              DATE_FORMAT(tattag, '%d.%m.%Y') AS tattag_fmt,
+              (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = reports.id) AS image_count
+         FROM reports
+        WHERE aktenzeichen IN (${placeholders}) AND user_id = ? AND status = 'entwurf'
+        ORDER BY tattag, tatzeit_von, id`,
+      [...azList, userId]
+    )
+    if (drafts.length === 0) {
+      setFlash(reply, 'error', 'Keine löschbaren Entwürfe in der Auswahl.')
+      return reply.redirect('/anzeigen')
+    }
+
+    if (String(body.confirmed || '') !== '1') {
+      return reply.view('/reports/bulk-discard-confirm.ejs', viewData(request, {
+        title: 'Entwürfe löschen',
+        drafts,
+      }))
+    }
+
+    for (const d of drafts) {
+      await deleteDraft(userId, { id: d.id, pdf_filename: d.pdf_filename })
+    }
+    setFlash(reply, 'success', `${drafts.length} ${drafts.length === 1 ? 'Entwurf' : 'Entwürfe'} verworfen.`)
+    return reply.redirect('/anzeigen')
   })
 
   // Einzelne Zeile der Anzeigen-Tabelle als HTML-Fragment (ohne Layout, daher

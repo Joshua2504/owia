@@ -1,0 +1,44 @@
+<%
+// Bestätigungsseite vor dem Löschen eines abgeschlossenen Foto-Imports
+// (POST /import/:batchId/loeschen ohne confirmed=1). Erst der bestätigte
+// POST löscht wirklich – Muster wie reports/discard-confirm.ejs.
+%>
+
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <h2 class="mb-4">Import löschen?</h2>
+
+    <div class="card shadow-sm border-danger mb-4">
+      <div class="card-body">
+        <p>
+          <%= draftCount %> <%= draftCount === 1 ? 'Entwurf wird' : 'Entwürfe werden' %>
+          <strong>unwiderruflich gelöscht</strong> – einschließlich aller
+          Beweisfotos und erzeugten PDFs.
+        </p>
+
+        <% if (keptCount > 0) { %>
+          <p class="small">
+            <%= keptCount %> bereits eingereichte/versendete
+            <%= keptCount === 1 ? 'Anzeige bleibt' : 'Anzeigen bleiben' %> erhalten
+            und <%= keptCount === 1 ? 'wird' : 'werden' %> nur vom Import getrennt.
+          </p>
+        <% } %>
+
+        <% if (unassignedCount > 0) { %>
+          <p class="small">
+            <%= unassignedCount %> nicht zugeordnete
+            <%= unassignedCount === 1 ? 'Foto wird' : 'Fotos werden' %> ebenfalls gelöscht.
+          </p>
+        <% } %>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <form method="post" action="/import/<%= batch.id %>/loeschen" class="m-0">
+            <input type="hidden" name="confirmed" value="1">
+            <button type="submit" class="btn btn-danger">Ja, Import löschen</button>
+          </form>
+          <a href="/import/<%= batch.id %>" class="btn btn-outline-secondary">Abbrechen</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

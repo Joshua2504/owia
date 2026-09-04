@@ -13,11 +13,17 @@
           prüfen und die Verstoßart wählen.
         </p>
       </div>
-      <% if (firstOpenAz) { %>
-        <a class="btn btn-primary" href="/anzeige/<%= firstOpenAz %>/bearbeiten?queue=<%= batch.id %>">
-          Prüfen starten (<%= openCount %> offen)
-        </a>
-      <% } %>
+      <div class="d-flex gap-2 flex-wrap">
+        <% if (firstOpenAz) { %>
+          <a class="btn btn-primary" href="/anzeige/<%= firstOpenAz %>/bearbeiten?queue=<%= batch.id %>">
+            Prüfen starten (<%= openCount %> offen)
+          </a>
+        <% } %>
+        <%# Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
+        <form method="post" action="/import/<%= batch.id %>/loeschen" class="m-0">
+          <button type="submit" class="btn btn-outline-danger">Import löschen</button>
+        </form>
+      </div>
     </div>
   </div>
 </div>

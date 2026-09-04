@@ -25,6 +25,24 @@
     }
   })
 
+  // Kamera-Direkteinstieg (verstecktes Input mit capture, upload.ejs): frische
+  // Aufnahmen zur bestehenden Auswahl im Haupt-Input HINZUFÜGEN, damit sich
+  // mehrere Kamera-Runden und Galerie-Auswahl kombinieren lassen.
+  var cameraInput = document.getElementById('intake-camera')
+  var cameraBtn = document.getElementById('intake-camera-btn')
+  if (cameraInput && cameraBtn) {
+    cameraBtn.addEventListener('click', function () { cameraInput.click() })
+    cameraInput.addEventListener('change', function () {
+      if (!cameraInput.files || !cameraInput.files.length) return
+      var dt = new DataTransfer()
+      Array.prototype.forEach.call(input.files || [], function (f) { dt.items.add(f) })
+      Array.prototype.forEach.call(cameraInput.files, function (f) { dt.items.add(f) })
+      input.files = dt.files
+      cameraInput.value = ''
+      input.dispatchEvent(new Event('change'))
+    })
+  }
+
   function showErrors(list) {
     errorsBox.innerHTML = list.map(function (e) { return '<div>' + escapeHtml(e) + '</div>' }).join('')
     errorsBox.classList.remove('d-none')

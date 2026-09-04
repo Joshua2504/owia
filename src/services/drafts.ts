@@ -1,14 +1,16 @@
-// Gemeinsame Helfer rund um Entwürfe (Anlegen, Datei-Ablage, Bild-Rows).
+// Gemeinsame Helfer rund um Entwürfe (Anlegen, Löschen, Datei-Ablage, Bild-Rows).
 // Genutzt vom Anzeigen-Editor (src/routes/reports.ts) und vom Sammel-Import
 // (src/routes/intake.ts), der pro Foto-Gruppe automatisch Entwürfe erzeugt.
 import crypto from 'crypto'
 import path from 'path'
+import fs from 'fs/promises'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { DEFAULT_CITY_ID } from '../config/cities'
 import { detectCityByLabel } from './districts'
 
 export const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
+export const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
 /** Zufälliges, nicht aus der ID ableitbares Aktenzeichen, z.B. "OWiA-123456".
  *  Rein numerisch und 6-stellig (leichter zu diktieren/abzutippen); bei
@@ -76,6 +78,30 @@ export async function createDraft(
     }
   }
   throw new Error('Aktenzeichen-Erzeugung fehlgeschlagen')
+}
+
+/** Entwurf samt Dateien vollständig entfernen (DB-Zeile, Upload-Verzeichnis, PDF).
+ *  Vorher die intake_photos-Buchhaltung löschen: deren FK ist ON DELETE SET NULL –
+ *  die Fotos würden sonst in der Import-Übersicht als „nicht zugeordnet" wieder
+ *  auftauchen, obwohl ihre Dateien mit dem Entwurfs-Verzeichnis verschwinden. */
+export async function deleteDraft(
+  userId: number,
+  report: { id: number; pdf_filename?: string | null }
+): Promise<void> {
+  await pool.execute('DELETE FROM intake_photos WHERE report_id = ?', [report.id])
+  await pool.execute('DELETE FROM reports WHERE id = ? AND user_id = ?', [report.id, userId])
+  try {
+    await fs.rm(reportDir(userId, report.id), { recursive: true, force: true })
+  } catch {
+    /* egal */
+  }
+  if (report.pdf_filename) {
+    try {
+      await fs.rm(path.join(PDF_DIR, String(userId), report.pdf_filename), { force: true })
+    } catch {
+      /* egal */
+    }
+  }
 }
 
 export type ImageRowMeta = {

@@ -208,4 +208,43 @@
     })
   }
   document.querySelectorAll('[data-full-src]').forEach(bindLightbox)
+
+  // ---------------------------------------------------------------------------
+  // Mehrfachauswahl: Entwürfe anhaken und gesammelt löschen. Delegiert auf
+  // document, damit auch per Drag & Drop nachgeladene Zeilen (listenzeile,
+  // bindRow) ohne extra Verdrahtung funktionieren – ihre Checkboxen hängen
+  // per form-Attribut ohnehin am Sammel-Formular in report-table.ejs.
+  // ---------------------------------------------------------------------------
+  var bulkForm = document.getElementById('bulk-discard-form')
+  if (bulkForm) {
+    var bulkCount = document.getElementById('bulk-count')
+    var selectAll = document.getElementById('bulk-select-all')
+
+    function bulkBoxes() {
+      return Array.prototype.slice.call(document.querySelectorAll('input.bulk-select'))
+    }
+
+    function updateBulkBar() {
+      var boxes = bulkBoxes()
+      var checked = boxes.filter(function (b) { return b.checked })
+      bulkForm.classList.toggle('d-none', checked.length === 0)
+      bulkForm.classList.toggle('d-flex', checked.length > 0)
+      if (bulkCount) {
+        bulkCount.textContent = checked.length + ' ' + (checked.length === 1 ? 'Entwurf' : 'Entwürfe') + ' ausgewählt'
+      }
+      if (selectAll) {
+        selectAll.checked = boxes.length > 0 && checked.length === boxes.length
+        selectAll.indeterminate = checked.length > 0 && checked.length < boxes.length
+      }
+    }
+
+    document.addEventListener('change', function (e) {
+      if (e.target === selectAll) {
+        bulkBoxes().forEach(function (b) { b.checked = selectAll.checked })
+        updateBulkBar()
+      } else if (e.target.classList && e.target.classList.contains('bulk-select')) {
+        updateBulkBar()
+      }
+    })
+  }
 })()

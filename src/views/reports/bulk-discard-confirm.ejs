@@ -1,0 +1,45 @@
+<%
+// Bestätigungsseite vor dem Sammel-Löschen mehrerer Entwürfe
+// (POST /anzeigen/loeschen ohne confirmed=1, Mehrfachauswahl in der
+// Anzeigen-Tabelle). Erst der bestätigte POST löscht wirklich.
+const totalImages = drafts.reduce((sum, d) => sum + Number(d.image_count || 0), 0)
+%>
+
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <h2 class="mb-4">Entwürfe löschen?</h2>
+
+    <div class="card shadow-sm border-danger mb-4">
+      <div class="card-body">
+        <p>
+          <%= drafts.length %> <%= drafts.length === 1 ? 'Entwurf wird' : 'Entwürfe werden' %>
+          <strong>unwiderruflich gelöscht</strong> – einschließlich
+          <%= totalImages %> Beweisfoto<%= totalImages === 1 ? '' : 's' %> und der erzeugten PDFs.
+        </p>
+
+        <ul class="small mb-3">
+          <% for (const d of drafts) { %>
+            <li>
+              <code><%= d.aktenzeichen %></code>
+              <% if (d.kennzeichen) { %> · <%= d.kennzeichen %><% } %>
+              <% if (d.tattag_fmt) { %> · <%= d.tattag_fmt %><% } %>
+              <% if (d.tatort) { %> · <%= d.tatort %><% } %>
+              · <%= d.image_count %> Foto<%= Number(d.image_count) === 1 ? '' : 's' %>
+            </li>
+          <% } %>
+        </ul>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <form method="post" action="/anzeigen/loeschen" class="m-0">
+            <input type="hidden" name="confirmed" value="1">
+            <% for (const d of drafts) { %>
+              <input type="hidden" name="az" value="<%= d.aktenzeichen %>">
+            <% } %>
+            <button type="submit" class="btn btn-danger">Ja, <%= drafts.length === 1 ? 'Entwurf' : 'Entwürfe' %> löschen</button>
+          </form>
+          <a href="/anzeigen" class="btn btn-outline-secondary">Abbrechen</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

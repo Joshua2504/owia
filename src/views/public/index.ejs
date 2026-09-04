@@ -126,6 +126,10 @@
                        title="5-stellige Postleitzahl">
                 <button type="submit" class="btn btn-primary btn-sm text-nowrap flex-grow-1">Eintragen</button>
               </div>
+              <%# Proof-of-Work-Captcha (lokal, kein externer Dienst) – löst beim
+                  Absenden automatisch; Server-Prüfung in POST /newsletter. %>
+              <altcha-widget challengeurl="/captcha" auto="onsubmit" hidelogo hidefooter
+                             class="d-block"></altcha-widget>
             </form>
             <p class="form-text small mt-2 mb-0">
               Die PLZ hilft uns zu entscheiden, wo es als Nächstes losgeht. Mit Klick auf
@@ -213,3 +217,4 @@
 <link rel="stylesheet" href="/public/vendor/leaflet.css">
 <script src="/public/vendor/leaflet.js"></script>
 <script src="/public/js/overview-map.js"></script>
+<script type="module" src="/public/vendor/altcha.min.js"></script>

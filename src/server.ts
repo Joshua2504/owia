@@ -81,6 +81,9 @@ async function main() {
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'"],
+        // Altcha-Widget (public/vendor/altcha.min.js) löst die Proof-of-Work-
+        // Aufgabe in Web Workern aus blob:/data:-URLs.
+        workerSrc: ["'self'", 'blob:', 'data:'],
         objectSrc: ["'none'"],
         frameAncestors: ["'self'"], // PDF-Vorschau im eigenen iframe erlaubt, Clickjacking von außen nicht
       },

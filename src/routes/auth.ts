@@ -4,6 +4,7 @@ import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { viewData } from '../middleware/auth'
 import { MailService } from '../services/mail'
+import { verifyCaptcha } from '../services/captcha'
 
 const CODE_TTL_MINUTES = 15
 const MAX_ATTEMPTS = 5
@@ -84,12 +85,24 @@ export default async function authRoutes(app: FastifyInstance) {
   app.post('/login', {
     config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
   }, async (request, reply) => {
-    const { email, datenschutz, remember } = request.body as {
+    const { email, datenschutz, remember, altcha } = request.body as {
       email?: string
       datenschutz?: string
       remember?: string
+      altcha?: string
     }
     const rememberFlag = remember ? 1 : 0
+
+    // Proof-of-Work-Captcha (services/captcha.ts): bremst automatisiertes
+    // Mail-Bombing/User-Enumeration zusätzlich zum Rate-Limit.
+    if (!verifyCaptcha(altcha)) {
+      return reply.view('/auth/login.ejs', viewData(request, {
+        title: 'Anmelden',
+        error: 'Bitte die Sicherheitsprüfung abschließen und erneut absenden.',
+        email,
+        remember: rememberFlag,
+      }))
+    }
 
     if (!email || !isValidEmail(email)) {
       return reply.view('/auth/login.ejs', viewData(request, {
@@ -144,8 +157,12 @@ export default async function authRoutes(app: FastifyInstance) {
     }))
   })
 
-  // Schritt 2: Code eingeben
-  app.post('/login/verify', async (request, reply) => {
+  // Schritt 2: Code eingeben. Eigenes Rate-Limit gegen Brute-Force auf den
+  // 6-stelligen Code (großzügiger als MAX_ATTEMPTS, damit Tippfehler nicht
+  // doppelt bestraft werden – parallele Fluten aber nicht durchkommen).
+  app.post('/login/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
+  }, async (request, reply) => {
     const { email, code } = request.body as { email?: string; code?: string }
 
     if (!email || !code) {
@@ -172,11 +189,18 @@ export default async function authRoutes(app: FastifyInstance) {
       return renderError('Der Code ist abgelaufen. Bitte fordere einen neuen an.')
     }
 
+    // Versuch ATOMAR verbrauchen, BEVOR der Code verglichen wird: ein
+    // read-then-write-Zähler ließe sich mit parallelen Requests umgehen
+    // (alle lesen attempts=0) und der MAX_ATTEMPTS-Deckel wäre wirkungslos.
+    const [upd] = await pool.execute<mysql.ResultSetHeader>(
+      'UPDATE login_tokens SET attempts = attempts + 1 WHERE id = ? AND attempts < ?',
+      [tokenRow.id, MAX_ATTEMPTS]
+    )
+    if (upd.affectedRows === 0) {
+      return renderError('Der Code ist abgelaufen. Bitte fordere einen neuen an.')
+    }
+
     if (code.trim() !== tokenRow.code) {
-      await pool.execute(
-        'UPDATE login_tokens SET attempts = attempts + 1 WHERE id = ?',
-        [tokenRow.id]
-      )
       return renderError('Der Code ist nicht korrekt.')
     }
 
