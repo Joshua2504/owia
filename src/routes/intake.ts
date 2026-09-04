@@ -16,6 +16,7 @@ import { createDraft, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from 
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
 import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
+import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 
 // Muss zur Chunk-Größe in public/js/import-upload.js passen und unter dem
 // globalen Multipart-Limit (files: 10, src/server.ts) bleiben.
@@ -67,6 +68,7 @@ type PhotoRow = mysql.RowDataPacket & {
   gps_lat: string | null
   gps_lon: string | null
   report_id: number | null
+  sha256: string | null
 }
 
 /** Fotos eines Batches laden; captured_at als Wanduhrzeit-String (keine TZ-Drehung über JS-Date). */
@@ -74,7 +76,7 @@ async function loadPhotos(batchId: number, onlyUnassigned = false): Promise<Phot
   const [rows] = await pool.execute<PhotoRow[]>(
     `SELECT id, filename, mimetype, original_filename, original_mimetype,
             DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at,
-            gps_lat, gps_lon, report_id
+            gps_lat, gps_lon, report_id, sha256
        FROM intake_photos
       WHERE batch_id = ?${onlyUnassigned ? ' AND report_id IS NULL' : ''}
       ORDER BY captured_at IS NULL, captured_at, id`,
@@ -126,6 +128,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
 
     const saved: { id: number; name: string; capturedAt: string | null; hasGps: boolean }[] = []
     const errors: string[] = []
+    const skipped: string[] = [] // Duplikate (Dateinamen) – Frontend fasst sie zu einer Meldung zusammen
     try {
       for await (const part of request.parts()) {
         if (part.type !== 'file') continue
@@ -133,6 +136,14 @@ export default async function intakeRoutes(app: FastifyInstance) {
         const buffer = await part.toBuffer()
         if (buffer.length === 0) continue
         try {
+          // Duplikat? Hash über den unveränderten Upload; frühere Chunks dieses
+          // Batches sind bereits in der DB und werden dadurch mit erkannt.
+          const sha256 = photoSha256(buffer)
+          const existing = await findExistingPhoto(userId, sha256)
+          if (existing) {
+            skipped.push(`${part.filename} (${existing})`)
+            continue
+          }
           // EXIF aus dem Original – die HEIC-Konvertierung entfernt die Metadaten.
           const meta = await extractPhotoMeta(buffer)
           const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
@@ -146,10 +157,10 @@ export default async function intakeRoutes(app: FastifyInstance) {
           const [result] = await pool.execute<mysql.ResultSetHeader>(
             `INSERT INTO intake_photos
                (batch_id, filename, mimetype, original_filename, original_mimetype,
-                upload_name, captured_at, gps_lat, gps_lon)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                upload_name, captured_at, gps_lat, gps_lon, sha256)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [batch.id, filename, prepared.mimetype, originalFilename, prepared.originalMimetype,
-             part.filename, meta.capturedAt, meta.lat, meta.lon]
+             part.filename, meta.capturedAt, meta.lat, meta.lon, sha256]
           )
           saved.push({
             id: result.insertId,
@@ -162,9 +173,9 @@ export default async function intakeRoutes(app: FastifyInstance) {
         }
       }
     } catch {
-      return reply.status(413).send({ error: 'Bild zu groß (max. 20 MB).', photos: saved, errors })
+      return reply.status(413).send({ error: 'Bild zu groß (max. 20 MB).', photos: saved, errors, skipped })
     }
-    return reply.send({ photos: saved, errors })
+    return reply.send({ photos: saved, errors, skipped })
   })
 
   // Gruppierung + Entwurfs-Erzeugung. Claim über den Status, damit ein doppelter
@@ -234,6 +245,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
               capturedAt: p.captured_at,
               gpsLat: p.gps_lat !== null ? Number(p.gps_lat) : null,
               gpsLon: p.gps_lon !== null ? Number(p.gps_lon) : null,
+              sha256: p.sha256,
             })
             // Kennzeichen im Hintergrund erkennen (füllt das leere Feld des Entwurfs).
             queuePlateAnalysis(userId, draft.id, imageId, p.filename, p.mimetype)
@@ -298,9 +310,13 @@ export default async function intakeRoutes(app: FastifyInstance) {
 
     const unassigned = await loadPhotos(batch.id, true)
     const openDrafts = drafts.filter((d) => d.status === 'entwurf')
+    // Vom Upload-JS mitgegeben: Anzahl übersprungener Duplikate (die Seite wird
+    // direkt nach dem Upload aufgerufen, eine Meldung dort wäre nie sichtbar).
+    const skippedCount = Number((request.query as { uebersprungen?: string }).uebersprungen) || 0
     return reply.view('/intake/overview.ejs', viewData(request, {
       title: 'Foto-Import – Ergebnis',
       batch,
+      skippedCount,
       drafts,
       imagesByReport: Object.fromEntries(imagesByReport),
       unassigned,
@@ -376,7 +392,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
     const [rows] = await pool.execute<PhotoRow[]>(
       `SELECT id, filename, mimetype, original_filename, original_mimetype,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at,
-              gps_lat, gps_lon, report_id
+              gps_lat, gps_lon, report_id, sha256
          FROM intake_photos WHERE id = ? AND batch_id = ?`,
       [photoId, batch.id]
     )
@@ -423,6 +439,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
       capturedAt: photo.captured_at,
       gpsLat: photo.gps_lat !== null ? Number(photo.gps_lat) : null,
       gpsLon: photo.gps_lon !== null ? Number(photo.gps_lon) : null,
+      sha256: photo.sha256,
     })
     queuePlateAnalysis(userId, reportId, imageId, photo.filename, photo.mimetype)
     await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [reportId, photo.id])

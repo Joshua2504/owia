@@ -17,6 +17,7 @@ import { extractPhotoMeta } from '../services/exif'
 import { alprEnabled, ALPR_MIN_CONFIDENCE } from '../services/alpr'
 import { queuePlateAnalysis, plateCropName } from '../services/plateAnalysis'
 import { replyAttachmentPath } from '../services/mailInbox'
+import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 import { MailService } from '../services/mail'
 import { adminEmails } from '../config/admin'
 
@@ -57,7 +58,8 @@ async function removeImageFiles(
 async function saveImageToReport(
   userId: number,
   reportId: number,
-  p: PreparedImage
+  p: PreparedImage,
+  sha256: string
 ): Promise<{ id: number; filename: string; capturedAt: string | null }> {
   const { filename, originalFilename } = await writeImageFiles(userId, reportId, p)
 
@@ -74,10 +76,10 @@ async function saveImageToReport(
   const [result] = await pool.execute<mysql.ResultSetHeader>(
     `INSERT INTO report_images
        (report_id, filename, mimetype, original_filename, original_mimetype, sort_order,
-        captured_at, gps_lat, gps_lon)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        captured_at, gps_lat, gps_lon, sha256)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [reportId, filename, p.mimetype, originalFilename, p.originalMimetype, sortOrder,
-     meta.capturedAt, meta.lat, meta.lon]
+     meta.capturedAt, meta.lat, meta.lon, sha256]
   )
   return { id: result.insertId, filename, capturedAt: meta.capturedAt }
 }
@@ -419,8 +421,16 @@ export default async function reportsRoutes(app: FastifyInstance) {
           continue
         }
         try {
+          // Duplikat? Hash über den unveränderten Upload, Prüfung gegen alle
+          // Anzeigen + offenen Foto-Importe des Nutzers (services/photoDedup.ts).
+          const sha256 = photoSha256(buffer)
+          const existing = await findExistingPhoto(userId, sha256)
+          if (existing) {
+            errors.push(`${part.filename}: Bereits vorhanden (${existing}) – übersprungen.`)
+            continue
+          }
           const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
-          const row = await saveImageToReport(userId, reportId, prepared)
+          const row = await saveImageToReport(userId, reportId, prepared, sha256)
           // Kennzeichen im Hintergrund erkennen; Ergebnis holt das Formular per Poll.
           queuePlateAnalysis(userId, reportId, row.id, row.filename, prepared.mimetype)
           saved.push({ id: row.id, url: `/anzeige/${az}/image/${row.id}`, capturedAt: row.capturedAt })

@@ -148,6 +148,7 @@
     uploading = true
 
     var allErrors = []
+    var allSkipped = [] // Duplikate ("name (Anzeige OWiA-…)"), vom Server übersprungen
     var done = 0
     var withGps = 0
     var withTime = 0
@@ -180,6 +181,7 @@
                 if (p.capturedAt) withTime++
               })
               ;(res.errors || []).forEach(function (e) { allErrors.push(e) })
+              ;(res.skipped || []).forEach(function (s) { allSkipped.push(s) })
               if (res.error) allErrors.push(res.error)
               done += chunk.length
               completedBytes += chunkBytes
@@ -199,14 +201,25 @@
         uploading = false // fertig – die Weiterleitung darf keinen Dialog auslösen
         if (allErrors.length) showErrors(allErrors)
         if (data.redirect) {
-          location.href = data.redirect
+          // Anzahl übersprungener Duplikate in die Ziel-URL mitnehmen – die
+          // Weiterleitung ist sofort, eine Meldung hier wäre nie sichtbar.
+          location.href = allSkipped.length
+            ? data.redirect + '?uebersprungen=' + allSkipped.length
+            : data.redirect
         } else {
           throw new Error(data.error || 'finish')
         }
       })
       .catch(function () {
         uploading = false
-        allErrors.push('Upload fehlgeschlagen – bitte erneut versuchen. Bereits hochgeladene Fotos findest du unter „Bisherige Importe".')
+        // "Keine Fotos hochgeladen" heißt hier meist: alles waren Duplikate.
+        if (allSkipped.length) {
+          allErrors.push(allSkipped.length + (allSkipped.length === 1 ? ' Foto' : ' Fotos') +
+            ' übersprungen – bereits hochgeladen: ' + allSkipped.join(', '))
+        }
+        if (allSkipped.length !== done) {
+          allErrors.push('Upload fehlgeschlagen – bitte erneut versuchen. Bereits hochgeladene Fotos findest du unter „Bisherige Importe".')
+        }
         showErrors(allErrors)
         progress.classList.add('d-none')
         picker.classList.remove('d-none')

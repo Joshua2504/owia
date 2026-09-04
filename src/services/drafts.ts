@@ -113,6 +113,7 @@ export type ImageRowMeta = {
   capturedAt?: string | null // 'YYYY-MM-DD HH:MM:SS' (Wanduhrzeit)
   gpsLat?: number | null
   gpsLon?: number | null
+  sha256?: string | null // Hash des Original-Uploads (services/photoDedup.ts)
 }
 
 /** Bild-Row zu einem Entwurf anlegen (Dateien liegen bereits auf Platte). */
@@ -120,8 +121,8 @@ export async function insertImageRow(reportId: number, meta: ImageRowMeta): Prom
   const [result] = await pool.execute<mysql.ResultSetHeader>(
     `INSERT INTO report_images
        (report_id, filename, mimetype, original_filename, original_mimetype,
-        sort_order, captured_at, gps_lat, gps_lon)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        sort_order, captured_at, gps_lat, gps_lon, sha256)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       reportId,
       meta.filename,
@@ -132,6 +133,7 @@ export async function insertImageRow(reportId: number, meta: ImageRowMeta): Prom
       meta.capturedAt ?? null,
       meta.gpsLat ?? null,
       meta.gpsLon ?? null,
+      meta.sha256 ?? null,
     ]
   )
   return result.insertId
