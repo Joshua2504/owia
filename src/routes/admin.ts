@@ -227,6 +227,43 @@ export default async function adminRoutes(app: FastifyInstance) {
   })
 
   // ---------------------------------------------------------------------------
+  // Benutzerübersicht: alle Konten mit Anzeigen-Kennzahlen. Bewusst read-only –
+  // Konten schließen läuft über die Selbst-Anonymisierung (routes/settings.ts).
+  // ---------------------------------------------------------------------------
+
+  app.get('/admin/benutzer', { preHandler: requireAdmin }, async (request, reply) => {
+    const [users] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT u.id, u.email, u.vorname, u.nachname, u.plz, u.ort, u.anonymized_at,
+              DATE_FORMAT(u.created_at, '%d.%m.%Y') AS created_fmt,
+              COUNT(r.id) AS reports_total,
+              COALESCE(SUM(r.status = 'entwurf'), 0) AS drafts,
+              COALESCE(SUM(r.status = 'eingereicht'), 0) AS submitted,
+              COALESCE(SUM(r.status = 'versendet'), 0) AS sent,
+              DATE_FORMAT(MAX(r.created_at), '%d.%m.%Y') AS last_report_fmt
+         FROM users u
+         LEFT JOIN reports r ON r.user_id = u.id
+        GROUP BY u.id
+        ORDER BY u.created_at DESC`
+    )
+    // Fotoanzahl je Nutzer separat (über den JOIN oben würde COUNT(r.id) sonst
+    // durch die report_images-Zeilen multipliziert).
+    const [imgRows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT r.user_id, COUNT(*) AS c
+         FROM report_images ri
+         JOIN reports r ON r.id = ri.report_id
+        GROUP BY r.user_id`
+    )
+    const imagesByUser: Record<number, number> = {}
+    for (const row of imgRows) imagesByUser[row.user_id] = Number(row.c)
+
+    return reply.view('/admin/benutzer.ejs', viewData(request, {
+      title: 'Benutzer',
+      users,
+      imagesByUser,
+    }))
+  })
+
+  // ---------------------------------------------------------------------------
   // Newsletter-Ankündigungen (z.B. neue Stadt/PLZ freigeschaltet) an alle
   // bestätigten Abonnenten. Anmeldung/Abmeldung läuft öffentlich (routes/public.ts).
   // ---------------------------------------------------------------------------

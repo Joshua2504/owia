@@ -1,0 +1,55 @@
+<%
+// Admin-Benutzerübersicht (GET /admin/benutzer): alle Konten mit
+// Anzeigen-Kennzahlen, read-only. Anonymisierte Konten (Selbst-Löschung,
+// routes/settings.ts) sind an Platzhalter-Mail + Badge erkennbar.
+const active = users.filter((u) => !u.anonymized_at)
+%>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2 class="mb-0">Benutzer</h2>
+  <div class="text-muted small">
+    <%= active.length %> aktiv<% if (users.length - active.length) { %>, <%= users.length - active.length %> geschlossen<% } %>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>E-Mail</th>
+          <th>Name</th>
+          <th>Ort</th>
+          <th>Registriert</th>
+          <th class="text-end">Entwürfe</th>
+          <th class="text-end">Eingereicht</th>
+          <th class="text-end">Versendet</th>
+          <th class="text-end">Fotos</th>
+          <th>Letzte Anzeige</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% for (const u of users) { %>
+          <tr class="<%= u.anonymized_at ? 'text-muted' : '' %>">
+            <td>
+              <% if (u.anonymized_at) { %>
+                <span class="badge text-bg-secondary">Konto geschlossen</span>
+                <div class="small text-muted"><%= u.email %></div>
+              <% } else { %>
+                <%= u.email %>
+              <% } %>
+            </td>
+            <td><%= [u.vorname, u.nachname].filter(Boolean).join(' ') || '—' %></td>
+            <td><%= [u.plz, u.ort].filter(Boolean).join(' ') || '—' %></td>
+            <td class="text-nowrap"><%= u.created_fmt || '—' %></td>
+            <td class="text-end"><%= Number(u.drafts) || 0 %></td>
+            <td class="text-end"><%= Number(u.submitted) || 0 %></td>
+            <td class="text-end"><%= Number(u.sent) || 0 %></td>
+            <td class="text-end"><%= imagesByUser[u.id] || 0 %></td>
+            <td class="text-nowrap"><%= u.last_report_fmt || '—' %></td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>
