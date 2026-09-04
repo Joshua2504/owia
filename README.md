@@ -128,7 +128,8 @@ maßgebliche, dokumentierte Referenz. Die wichtigsten Gruppen:
 - **Geodaten** – `PHOTON_URL`, `TILESERVER_URL`
 - **Kennzeichen** – `ALPR_URL`, `ALPR_ENABLED`, `ALPR_MIN_CONFIDENCE`
 - **E-Mail-Versand** – `MAIL_DRIVER` (`mailpit` | `smtp`), `MAIL_HOST`,
-  `MAIL_PORT` (587/STARTTLS), `MAIL_USER`, `MAIL_PASS`, `MAIL_FROM`, `MAIL_FROM_NAME`
+  `MAIL_PORT` (587/STARTTLS oder 465/SMTPS), `MAIL_USER`, `MAIL_PASS`,
+  `MAIL_FROM`, `MAIL_FROM_NAME`
 - **E-Mail-Posteingang (IMAP)** – `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`,
   `IMAP_PASS`, `IMAP_POLL_SECONDS`, `REPLY_TRUSTED_DOMAINS`
 - **Admins** – `ADMIN_EMAILS` (kommagetrennt; leer = niemand kann freigeben)
@@ -204,10 +205,13 @@ data/                Persistente Volumes (mysql, uploads, pdfs, photon)  – nic
 
 ## Deployment
 
-Deploy erfolgt automatisch: Push auf `main` → GitHub Actions
-([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) rsynct den Stand
-auf den Server und führt `docker compose up -d --build` aus. `data/` und `.env`
-auf dem Server bleiben unberührt.
+Deploy läuft direkt auf dem Server: In der Dev-Arbeitskopie **`./deploy.sh`**
+ausführen — das rsynct den Stand ins Prod-Verzeichnis, führt
+`docker compose up -d --build --force-recreate` aus und macht einen Health-Check.
+`data/` und `.env` in Prod bleiben unberührt. Der GitHub-Actions-Workflow
+([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) ist nur noch
+ein manueller Fallback (`workflow_dispatch`); gepusht wird trotzdem — als
+Backup und Referenzstand.
 
 Details, Pflichtwerte und der Smoke-Test nach jedem Deploy: **[DEPLOY.md](DEPLOY.md)**.
 
