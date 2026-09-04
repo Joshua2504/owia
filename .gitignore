@@ -13,3 +13,6 @@ dist/
 
 # macos
 .DS_Store
+
+# Claude Code (lokale Session-Einstellungen)
+.claude/settings.local.json

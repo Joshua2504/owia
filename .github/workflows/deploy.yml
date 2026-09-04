@@ -1,11 +1,10 @@
 name: Deploy
 
+# Auto-Deploy bei Push ist deaktiviert: Entwickelt und deployt wird direkt
+# auf dem Server (siehe deploy.sh). Dieser Workflow bleibt nur als manueller
+# Notfall-Weg (workflow_dispatch) erhalten.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'README.md'
 
 jobs:
   deploy:

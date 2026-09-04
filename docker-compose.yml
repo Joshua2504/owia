@@ -27,6 +27,7 @@ services:
       ACME_EMAIL: ${ACME_EMAIL}
     depends_on:
       - app
+    networks: [default, proxy]
     restart: unless-stopped
     logging: *default-logging
 
@@ -52,6 +53,7 @@ services:
       db:
         condition: service_healthy
     env_file: .env
+    networks: [default, proxy]
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
@@ -85,6 +87,7 @@ services:
       # Produktion: MAILPIT_BIND=127.0.0.1:8025 (UI nicht öffentlich; wird bei
       # MAIL_DRIVER=smtp ohnehin nicht genutzt).
       - "${MAILPIT_BIND:-8025}:8025"
+    networks: [default, proxy]
     restart: unless-stopped
     logging: *default-logging
 
@@ -168,3 +171,15 @@ volumes:
   caddy_config:
   osm-tile-data:
   osm-tile-cache:
+
+# Gemeinsames Netz von Prod- und Dev-Stack: Der Prod-Caddy erreicht darüber
+# die Dev-Container (dev.<domain> / dev-mail.<domain>, siehe Caddyfile).
+# Muss vor dem ersten Start existieren: docker network create owia-proxy
+# (macht deploy.sh automatisch). Achtung: Der Service-Alias "app" ist in
+# diesem Netz mehrdeutig (Prod- UND Dev-App tragen ihn) – das Caddyfile
+# nutzt deshalb die eindeutigen Containernamen (owia-app-1 usw.), die sich
+# aus den Verzeichnisnamen ableiten. Ordner nicht umbenennen!
+networks:
+  proxy:
+    name: owia-proxy
+    external: true

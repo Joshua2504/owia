@@ -5,6 +5,31 @@
 
 # Caddy holt für diese Domain automatisch ein Let's-Encrypt-Zertifikat
 # und leitet den Traffic intern an die Node-App auf Port 3000 weiter.
+# Wichtig: Containername statt Service-Alias "app" – im geteilten Netz
+# owia-proxy hängen Prod- UND Dev-App, beide mit Alias "app" (DNS würde
+# zufällig auf die Dev-App routen!). Die Namen leiten sich aus den
+# Verzeichnisnamen ab (owia bzw. ffm-owianzeiger), siehe docker-compose.yml.
 {$APP_DOMAIN} {
-	reverse_proxy app:3000
+	reverse_proxy owia-app-1:3000
+}
+
+# Dev-Instanz (Stack unter /root/owia/owia-codebase/ffm-owianzeiger).
+# Basic Auth ist Pflicht: NODE_ENV=development öffnet /dev/inbound-mail,
+# und im Dev-Mailpit sind die Magic-Login-Links für jeden lesbar.
+# Zugangsdaten: Benutzer "dev", Passwort liegt auf dem Server in
+# /root/.owia-dev-basicauth (Hash ist bcrypt, kann daher versioniert werden).
+# Läuft der Dev-Stack nicht, antwortet Caddy hier mit 502 – Prod bleibt unberührt.
+dev.{$APP_DOMAIN} {
+	basic_auth {
+		dev $2a$14$gNlMsqXJ.Hbz9sGatUantOsQO3RyHj10U.YJlLo3n/6AK5vjEGRzy
+	}
+	reverse_proxy ffm-owianzeiger-app-1:3000
+}
+
+# Mailpit-UI der Dev-Instanz (eingehende Dev-Mails inkl. Magic-Links).
+dev-mail.{$APP_DOMAIN} {
+	basic_auth {
+		dev $2a$14$gNlMsqXJ.Hbz9sGatUantOsQO3RyHj10U.YJlLo3n/6AK5vjEGRzy
+	}
+	reverse_proxy ffm-owianzeiger-mail-1:8025
 }

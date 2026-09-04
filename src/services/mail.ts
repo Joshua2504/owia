@@ -11,9 +11,13 @@ import { recipientEmailForReport } from './districts'
 
 function createTransport() {
   if (process.env.MAIL_DRIVER === 'smtp') {
+    const port = Number(process.env.MAIL_PORT) || 587
     return nodemailer.createTransport({
       host: process.env.MAIL_HOST,
-      port: Number(process.env.MAIL_PORT) || 587,
+      port,
+      // Port 465 = SMTPS (TLS ab Verbindungsaufbau); ohne secure:true wartet
+      // nodemailer dort vergeblich auf ein Klartext-Greeting (Timeout).
+      secure: port === 465,
       auth: process.env.MAIL_USER
         ? { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS }
         : undefined,

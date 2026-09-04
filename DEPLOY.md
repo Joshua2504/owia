@@ -1,8 +1,15 @@
 # Deployment & Go-Live-Checkliste
 
-Deploy läuft automatisch: Push auf `main` → GitHub Actions rsynct den Stand auf
-den Server und führt `docker compose up -d --build --force-recreate --remove-orphans` aus.
-`data/` und `.env` auf dem Server werden nie überschrieben.
+Entwickelt und deployt wird direkt auf dem Server: Die Dev-Arbeitskopie liegt in
+`/root/owia/owia-codebase/ffm-owianzeiger` (eigener Compose-Stack, erreichbar
+über `dev.<domain>` / `dev-mail.<domain>` am Prod-Caddy, Basic Auth: Benutzer
+`dev`, Passwort in `/root/.owia-dev-basicauth`). Deploy nach Prod
+(`/root/owia/owia`) per **`./deploy.sh`** in der Arbeitskopie: rsync + 
+`docker compose up -d --build --force-recreate --remove-orphans` + Health-Check.
+`data/` und `.env` in Prod werden nie überschrieben. Der frühere
+GitHub-Actions-Auto-Deploy bei Push ist deaktiviert (nur noch manuell per
+`workflow_dispatch` als Fallback); nach GitHub gepusht wird trotzdem — als
+Backup und Referenzstand.
 
 ## Prod-`.env` — Pflichtwerte (vor dem ersten Go-Live prüfen!)
 
@@ -21,7 +28,7 @@ MAILPIT_BIND=127.0.0.1:8025    # Mailpit-UI nicht öffentlich
 DB_PASSWORD / DB_ROOT_PASSWORD # stark; VOR dem ersten Start setzen (Volume-Init)
 
 MAIL_DRIVER=smtp               # exakt "smtp" – alles andere fällt still auf Mailpit zurück!
-MAIL_HOST= / MAIL_PORT=587     # 587/STARTTLS; Port 465 wird nicht unterstützt
+MAIL_HOST= / MAIL_PORT=587     # 587/STARTTLS oder 465/SMTPS (secure wird bei 465 automatisch gesetzt)
 MAIL_USER= / MAIL_PASS=
 MAIL_FROM=owia@treudler.net    # Absender = Antwort-Postfach
 MAIL_TO_FRANKFURT=<VERIFIZIERTE Adresse des Ordnungsamts>  # sonst greift der Code-Fallback –
@@ -41,7 +48,13 @@ ADMIN_EMAILS=<admin@...>       # leer = NIEMAND kann Anzeigen freigeben!
    `data/mysql`.
 2. **Firewall**: nur 80/443 öffentlich; 3000/8025 sind mit den Bindings oben
    ohnehin nur noch lokal erreichbar.
-3. Optional: externes Uptime-Monitoring auf `https://<domain>/health`.
+3. **Shared-Proxy-Netz**: `docker network create owia-proxy` (macht `deploy.sh`
+   automatisch). Darüber erreicht der Prod-Caddy die Dev-Container. Die
+   Containernamen im Caddyfile (`owia-app-1`, `ffm-owianzeiger-app-1`, …)
+   leiten sich aus den Verzeichnisnamen ab — Ordner nicht umbenennen.
+4. **DNS** für die Dev-Instanz: A-Records `dev.<domain>` und `dev-mail.<domain>`
+   auf die Server-IP; Caddy holt die Zertifikate dann automatisch.
+5. Optional: externes Uptime-Monitoring auf `https://<domain>/health`.
 
 ## Smoke-Test nach jedem Deploy
 
