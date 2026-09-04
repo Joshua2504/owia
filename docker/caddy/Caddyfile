@@ -7,13 +7,13 @@
 # und leitet den Traffic intern an die Node-App auf Port 3000 weiter.
 # Wichtig: Containername statt Service-Alias "app" – im geteilten Netz
 # owia-proxy hängen Prod- UND Dev-App, beide mit Alias "app" (DNS würde
-# zufällig auf die Dev-App routen!). Die Namen leiten sich aus den
-# Verzeichnisnamen ab (owia bzw. ffm-owianzeiger), siehe docker-compose.yml.
+# zufällig auf die Dev-App routen!). Die Namen kommen aus den Compose-
+# Projektnamen (owia bzw. ffm-owianzeiger), siehe docker-compose.yml.
 {$APP_DOMAIN} {
 	reverse_proxy owia-app-1:3000
 }
 
-# Dev-Instanz (Stack unter /root/owia/owia-codebase/ffm-owianzeiger).
+# Dev-Instanz (Stack unter /root/owia/owia-codebase).
 # Basic Auth ist Pflicht: NODE_ENV=development öffnet /dev/inbound-mail,
 # und im Dev-Mailpit sind die Magic-Login-Links für jeden lesbar.
 # Zugangsdaten: Benutzer "dev", Passwort liegt auf dem Server in

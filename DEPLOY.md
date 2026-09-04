@@ -1,7 +1,7 @@
 # Deployment & Go-Live-Checkliste
 
 Entwickelt und deployt wird direkt auf dem Server: Die Dev-Arbeitskopie liegt in
-`/root/owia/owia-codebase/ffm-owianzeiger` (eigener Compose-Stack, erreichbar
+`/root/owia/owia-codebase` (eigener Compose-Stack, erreichbar
 über `dev.<domain>` / `dev-mail.<domain>` am Prod-Caddy, Basic Auth: Benutzer
 `dev`, Passwort in `/root/.owia-dev-basicauth`). Deploy nach Prod
 (`/root/owia/owia`) per **`./deploy.sh`** in der Arbeitskopie: rsync + 
@@ -51,7 +51,9 @@ ADMIN_EMAILS=<admin@...>       # leer = NIEMAND kann Anzeigen freigeben!
 3. **Shared-Proxy-Netz**: `docker network create owia-proxy` (macht `deploy.sh`
    automatisch). Darüber erreicht der Prod-Caddy die Dev-Container. Die
    Containernamen im Caddyfile (`owia-app-1`, `ffm-owianzeiger-app-1`, …)
-   leiten sich aus den Verzeichnisnamen ab — Ordner nicht umbenennen.
+   leiten sich aus dem Compose-Projektnamen ab: Prod = Verzeichnisname `owia`,
+   Dev = per `COMPOSE_PROJECT_NAME=ffm-owianzeiger` in der Dev-`.env` gepinnt
+   (hält auch die benannten Volumes, z.B. die importierte Tileserver-DB, stabil).
 4. **DNS** für die Dev-Instanz: A-Records `dev.<domain>` und `dev-mail.<domain>`
    auf die Server-IP; Caddy holt die Zertifikate dann automatisch.
 5. Optional: externes Uptime-Monitoring auf `https://<domain>/health`.

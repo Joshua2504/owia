@@ -177,8 +177,9 @@ volumes:
 # Muss vor dem ersten Start existieren: docker network create owia-proxy
 # (macht deploy.sh automatisch). Achtung: Der Service-Alias "app" ist in
 # diesem Netz mehrdeutig (Prod- UND Dev-App tragen ihn) – das Caddyfile
-# nutzt deshalb die eindeutigen Containernamen (owia-app-1 usw.), die sich
-# aus den Verzeichnisnamen ableiten. Ordner nicht umbenennen!
+# nutzt deshalb die eindeutigen Containernamen (owia-app-1 usw.). Die kommen
+# aus dem Compose-Projektnamen: Prod = Verzeichnisname "owia", Dev = per
+# COMPOSE_PROJECT_NAME=ffm-owianzeiger in der Dev-.env gepinnt.
 networks:
   proxy:
     name: owia-proxy
