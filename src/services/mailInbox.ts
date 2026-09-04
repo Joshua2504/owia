@@ -26,7 +26,7 @@ const MAX_BODY_CHARS = 500_000
 // Alt-Format "OWiAA-XXXXXX" (Buchstaben+Ziffern).
 const AZ_REGEX = /OWiAA?-[A-Z0-9]{6}/i
 
-function repliesDir(replyId: number): string {
+export function repliesDir(replyId: number): string {
   // Liegt im gemounteten uploads-Volume; "replies" kollidiert nicht mit den
   // numerischen <userId>-Verzeichnissen.
   return path.join(UPLOAD_DIR, 'replies', String(replyId))

@@ -8,7 +8,7 @@ import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { requireAdmin, viewData, setFlash } from '../middleware/auth'
 import { MailService } from '../services/mail'
-import { replyAttachmentPath } from '../services/mailInbox'
+import { replyAttachmentPath, repliesDir } from '../services/mailInbox'
 import { resolveSendCity } from '../services/districts'
 import { regeneratePdf, isProfileComplete } from './reports'
 
@@ -102,6 +102,29 @@ export default async function adminRoutes(app: FastifyInstance) {
       }
     }
     setFlash(reply, 'success', `Antwort der Anzeige ${az} zugeordnet.`)
+    return reply.redirect('/admin/anzeigen')
+  })
+
+  // Nicht zugeordnete Antwort verwerfen (Spam/Fehlzustellung): Zeile samt
+  // Anhängen löschen (DB-Kaskade + Dateien). Bewusst auf report_id IS NULL
+  // beschränkt – zugeordnete Antworten sind Aktenbestandteil und bleiben.
+  // Die Mail ist im Postfach bereits \Seen, der IMAP-Poll holt sie nicht erneut.
+  app.post('/admin/replies/:id/discard', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const [result] = await pool.execute<mysql.ResultSetHeader>(
+      'DELETE FROM report_replies WHERE id = ? AND report_id IS NULL',
+      [id]
+    )
+    if (result.affectedRows === 1) {
+      try {
+        await fs.rm(repliesDir(Number(id)), { recursive: true, force: true })
+      } catch (err) {
+        app.log.error({ err, replyId: id }, 'Anhang-Verzeichnis der verworfenen Antwort nicht löschbar')
+      }
+      setFlash(reply, 'success', 'Antwort verworfen.')
+    } else {
+      setFlash(reply, 'error', 'Antwort nicht gefunden oder bereits zugeordnet.')
+    }
     return reply.redirect('/admin/anzeigen')
   })
 
