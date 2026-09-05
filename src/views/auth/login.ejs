@@ -37,7 +37,8 @@
           <%# Proof-of-Work-Captcha (lokal, kein externer Dienst) – löst beim
               Absenden automatisch; Server-Prüfung in POST /login. %>
           <altcha-widget challengeurl="/captcha" auto="onsubmit" hidelogo hidefooter
-                         class="d-block mb-3"></altcha-widget>
+                         class="d-block mb-3"
+                         strings="{&quot;label&quot;:&quot;Ich bin kein Roboter&quot;,&quot;verifying&quot;:&quot;Prüfung läuft …&quot;,&quot;verified&quot;:&quot;Bestätigt&quot;,&quot;error&quot;:&quot;Prüfung fehlgeschlagen. Bitte erneut versuchen.&quot;,&quot;expired&quot;:&quot;Prüfung abgelaufen. Bitte erneut versuchen.&quot;,&quot;waitAlert&quot;:&quot;Prüfung läuft – bitte einen Moment warten.&quot;}"></altcha-widget>
           <button type="submit" class="btn btn-primary w-100">Code anfordern</button>
         </form>
       </div>
