@@ -16,7 +16,8 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
 <% } %>
 
 <% for (const r of pending) { %>
-  <div class="card shadow-sm mb-4">
+  <%# id = Sprungziel der Admin-Benachrichtigungsmail (#a-<id>) %>
+  <div class="card shadow-sm mb-4" id="a-<%= r.id %>" style="scroll-margin-top:1rem">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div>
         <code><%= r.aktenzeichen %></code>

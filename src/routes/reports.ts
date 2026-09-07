@@ -1145,6 +1145,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
     }
 
     // PDF auf den letzten Stand bringen; eine frühere Ablehnung ist damit erledigt.
+    // Den Grund vorher sichern – die Admin-Mail weist auf die Wiedervorlage hin.
+    const vorherigeAblehnung = report.ablehnung_grund as string | null
     await regeneratePdf(report.id, userId)
     await pool.execute(
       "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL WHERE id=?",
@@ -1152,7 +1154,12 @@ export default async function reportsRoutes(app: FastifyInstance) {
     )
     // Admins informieren – sonst kann eine Einreichung unbemerkt liegenbleiben.
     try {
-      await MailService.sendSubmitNotification(adminEmails(), report, request.session.userEmail || '')
+      await MailService.sendSubmitNotification(
+        adminEmails(),
+        report,
+        request.session.userEmail || '',
+        vorherigeAblehnung
+      )
     } catch (err) {
       app.log.error({ err }, 'Admin-Benachrichtigung zur Einreichung fehlgeschlagen')
     }

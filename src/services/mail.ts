@@ -31,13 +31,9 @@ function createTransport() {
   })
 }
 
-/** Betreff + Text der Anzeige-E-Mail. Wird für den echten Versand und als
- *  Beispieltext für den Selbst-Versand auf der Detailseite verwendet. */
-export function buildReportMail(
-  report: mysql.RowDataPacket,
-  user: mysql.RowDataPacket,
-  photoLines: string[] = []
-): { subject: string; text: string } {
+/** Tattag und Tatzeit deutsch formatiert – gemeinsam genutzt von der Anzeige-Mail
+ *  ans Amt und der Prüf-Benachrichtigung an die Admins. */
+function formatTatzeit(report: mysql.RowDataPacket): { tattag: string; tatzeit: string } {
   const tattagVon = report.tattag
     ? new Date(report.tattag).toLocaleDateString('de-DE')
     : 'unbekannt'
@@ -49,6 +45,17 @@ export function buildReportMail(
   const von = report.tatzeit_von ? String(report.tatzeit_von).slice(0, 5) : ''
   const bis = report.tatzeit_bis ? String(report.tatzeit_bis).slice(0, 5) : ''
   const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `${von} Uhr` : bis ? `${bis} Uhr` : ''
+  return { tattag, tatzeit }
+}
+
+/** Betreff + Text der Anzeige-E-Mail. Wird für den echten Versand und als
+ *  Beispieltext für den Selbst-Versand auf der Detailseite verwendet. */
+export function buildReportMail(
+  report: mysql.RowDataPacket,
+  user: mysql.RowDataPacket,
+  photoLines: string[] = []
+): { subject: string; text: string } {
+  const { tattag, tatzeit } = formatTatzeit(report)
 
   const az = report.aktenzeichen ? ` (${report.aktenzeichen})` : ''
   const subject = `Anzeige Ordnungswidrigkeit – Kfz ${report.kennzeichen}${az}`
@@ -364,27 +371,135 @@ export const MailService = {
     })
   },
 
-  /** Hinweis an die Admins: eine neue Anzeige wartet auf Prüfung. */
+  /**
+   * Hinweis an die Admins: eine neue Anzeige wartet auf Prüfung. Enthält alle
+   * prüfrelevanten Angaben, damit offensichtliche Fälle (unvollständiges Profil,
+   * fehlende Fotos, erneute Einreichung nach Ablehnung) schon in der Mailübersicht
+   * auffallen und nicht erst nach dem Öffnen der Prüfseite.
+   *
+   * `vorherigeAblehnung` = Ablehnungsgrund aus dem Stand VOR dem Einreichen
+   * (der Aufrufer setzt die Spalte beim Einreichen zurück).
+   */
   async sendSubmitNotification(
     adminAddresses: string[],
     report: mysql.RowDataPacket,
-    userEmail: string
+    userEmail: string,
+    vorherigeAblehnung?: string | null
   ): Promise<void> {
     if (!adminAddresses.length) return
     const transport = createTransport()
     const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+
+    // Zusatzangaben (Profil des Erstatters, Fotoanzahl, Länge der Warteschlange)
+    // best-effort nachladen – sie machen die Mail reichhaltiger, dürfen den
+    // Versand aber nicht verhindern.
+    let extra: mysql.RowDataPacket | undefined
+    try {
+      const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+        `SELECT u.email, u.vorname, u.nachname, u.strasse, u.plz, u.ort, u.telefon,
+                (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count,
+                (SELECT COUNT(*) FROM reports p WHERE p.status = 'eingereicht') AS pending_count
+           FROM reports r JOIN users u ON u.id = r.user_id
+          WHERE r.id = ?`,
+        [report.id]
+      )
+      extra = rows[0]
+    } catch {
+      /* ohne Zusatzangaben weiter */
+    }
+
+    const { tattag, tatzeit } = formatTatzeit(report)
+    const city = getCity(report.city)
+    const kennzeichen = report.kennzeichen
+      ? `${report.kennzeichen}${
+          report.kennzeichen_land && report.kennzeichen_land !== 'D'
+            ? ` (${report.kennzeichen_land})`
+            : ''
+        }`
+      : '—'
+    const profil = extra
+      ? [
+          [extra.vorname, extra.nachname].filter(Boolean).join(' '),
+          extra.strasse,
+          [extra.plz, extra.ort].filter(Boolean).join(' '),
+        ]
+          .filter(Boolean)
+          .join(', ')
+      : ''
+    const profilVollstaendig =
+      !!extra && !!(extra.vorname && extra.nachname && extra.strasse && extra.plz && extra.ort)
+    const fotos = extra ? Number(extra.image_count) : null
+    const offen = extra ? Number(extra.pending_count) : null
+
+    // "Label: Wert" mit ausgerichteten Werten; mehrzeilige Texte werden eingerückt.
+    const zeile = (label: string, value: unknown): string | undefined => {
+      const text = value === null || value === undefined || value === '' ? '' : String(value)
+      if (!text) return undefined
+      const pad = `${label}:`.padEnd(14)
+      return `  ${pad}${text.replace(/\r?\n/g, '\n'.padEnd(17))}`
+    }
+
+    const kurz = (s: unknown, max: number): string => {
+      const t = String(s ?? '').replace(/\s+/g, ' ').trim()
+      return t.length > max ? `${t.slice(0, max - 1)}…` : t
+    }
+
+    const verstoss = report.verstoss_art ? kurz(report.verstoss_art, 60) : 'ohne Verstoßangabe'
+    const now = new Date()
+    const wieder = !!vorherigeAblehnung
+
+    const text = [
+      `Anzeige ${report.aktenzeichen} wurde am ${now.toLocaleDateString('de-DE')} um ${now.toLocaleTimeString(
+        'de-DE',
+        { hour: '2-digit', minute: '2-digit' }
+      )} Uhr`,
+      `von ${userEmail || extra?.email || 'unbekannt'} zur Prüfung eingereicht.`,
+      wieder ? '' : undefined,
+      wieder ? `Erneute Einreichung nach Ablehnung. Grund der letzten Ablehnung:` : undefined,
+      wieder ? `  ${String(vorherigeAblehnung).replace(/\r?\n/g, '\n  ')}` : undefined,
+      '',
+      'Tatvorwurf',
+      zeile('Verstoß', report.verstoss_art),
+      report.fahrzeug_verlassen === 1 ? '  (Fahrzeug war verlassen)' : undefined,
+      zeile('Tattag', tattag),
+      zeile('Tatzeit', tatzeit || '—'),
+      zeile('Tatort', report.tatort),
+      report.tatort_lat && report.tatort_lon
+        ? zeile(
+            'Karte',
+            `https://www.openstreetmap.org/?mlat=${report.tatort_lat}&mlon=${report.tatort_lon}#map=19/${report.tatort_lat}/${report.tatort_lon}`
+          )
+        : zeile('Karte', 'keine Koordinaten hinterlegt'),
+      zeile('Kennzeichen', kennzeichen),
+      zeile('Fahrzeug', report.fahrzeug_marke),
+      zeile('Behinderung', report.behinderung === 1 ? report.behinderung_text || 'ja' : 'nein'),
+      zeile('Beschreibung', report.beschreibung),
+      '',
+      'Vorgang',
+      zeile('Stadt/Amt', `${city.name} – ${city.ordnungsamt}`),
+      zeile(
+        'Versandart',
+        hasPdfForm(city) ? 'amtliches PDF-Formular im Anhang' : 'rohe E-Mail mit Fotos + Karte'
+      ),
+      zeile('Empfänger', recipientEmailForReport(report) || 'nicht ermittelbar (!)'),
+      zeile('Fotos', fotos === null ? undefined : fotos === 0 ? '0 (!)' : fotos),
+      zeile('Erstatter', profilVollstaendig ? profil : `${profil || '—'} — Profil unvollständig (!)`),
+      zeile('E-Mail', extra?.email || userEmail),
+      zeile('Telefon', extra?.telefon),
+      '',
+      offen === null ? undefined : `Offen in der Prüfung: ${offen} Anzeige${offen === 1 ? '' : 'n'}.`,
+      `Zur Prüfung: ${base}/admin/anzeigen#a-${report.id}`,
+    ]
+      .filter((line) => line !== undefined)
+      .join('\n')
+
     await transport.sendMail({
       from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
       to: adminAddresses.join(','),
-      subject: `Neue Anzeige zur Prüfung: ${report.aktenzeichen}`,
-      text: [
-        `Anzeige ${report.aktenzeichen} wurde von ${userEmail} eingereicht.`,
-        '',
-        `Verstoß: ${report.verstoss_art || '—'}`,
-        `Tatort:  ${report.tatort || '—'}`,
-        '',
-        `Zur Prüfung: ${base}/admin/anzeigen`,
-      ].join('\n'),
+      subject: `Neue Anzeige zur Prüfung: ${report.aktenzeichen} – ${verstoss}${
+        wieder ? ' (erneut eingereicht)' : ''
+      }`,
+      text,
     })
   },
 
