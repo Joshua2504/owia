@@ -1,8 +1,12 @@
-<div class="d-flex justify-content-between align-items-center mb-4">
+<%# Auf dem Handy stehen die beiden Aktionen unter der Überschrift und teilen
+    sich die volle Breite (nebeneinander gequetscht brachen die Labels um);
+    ab sm wieder rechts neben der Überschrift. %>
+<div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
   <h2 class="mb-0">Meine Anzeigen</h2>
   <div class="d-flex gap-2">
-    <a class="btn btn-outline-primary" href="/import">📸 Foto-Import</a>
-    <form method="post" action="/anzeige/neu" class="m-0">
+    <a class="btn btn-outline-primary flex-fill d-flex align-items-center justify-content-center"
+       href="/import">📸 Foto-Import</a>
+    <form method="post" action="/anzeige/neu" class="m-0 flex-fill d-grid">
       <button type="submit" class="btn btn-primary">+ Neue Anzeige</button>
     </form>
   </div>
@@ -16,7 +20,7 @@
       Alle versendeter Anzeigen – anonymisiert, Fotos stark verpixelt.
       <span class="text-warning-emphasis">Deine eigenen Entwürfe sind orange markiert.</span>
     </p>
-    <div id="overview-map" class="rounded border" style="height:380px" data-include-own="1"></div>
+    <div id="overview-map" class="rounded border map-panel" data-include-own="1"></div>
   </div>
 </div>
 

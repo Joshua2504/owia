@@ -55,7 +55,7 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
     <% } %>
 
     <div class="card shadow-sm">
-      <div class="card-body p-4">
+      <div class="card-body p-3 p-sm-4">
         <form id="report-form" method="post" action="/anzeige/<%= r.aktenzeichen %>/save"
               data-report-id="<%= r.aktenzeichen %>">
           <% if (locals.queue) { %>
@@ -255,12 +255,14 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
             </div>
           </div>
 
-          <div class="d-flex justify-content-between align-items-center">
+          <%# Auf dem Handy nehmen die beiden Schaltflächen die volle Breite ein
+              (Daumen-Ziele); ab sm wieder kompakt rechts neben dem Speicherstatus. %>
+          <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
             <span id="save-status" class="text-muted small"></span>
             <div class="d-flex gap-2">
               <%# Verwerfen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
-              <button type="submit" form="discard-form" class="btn btn-outline-danger">Verwerfen</button>
-              <button type="submit" class="btn btn-primary">Entwurf speichern</button>
+              <button type="submit" form="discard-form" class="btn btn-outline-danger flex-fill">Verwerfen</button>
+              <button type="submit" class="btn btn-primary flex-fill">Entwurf speichern</button>
             </div>
           </div>
         </form>

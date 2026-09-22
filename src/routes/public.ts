@@ -19,7 +19,12 @@ import { createChallenge, verifyCaptcha } from '../services/captcha'
 const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 
 // Nur abgeschlossene (versendete) Anzeigen mit Koordinaten erscheinen öffentlich.
-const PUBLIC_WHERE = "r.status='versendet' AND r.tatort_lat IS NOT NULL AND r.tatort_lon IS NOT NULL"
+// `<> 0` filtert Altbestand mit 0/0 aus (Golf von Guinea): leere Hidden-Felder
+// im Formular wurden früher als 0 gespeichert – siehe Kommentar bei `coord()`
+// in src/routes/reports.ts. Ein solcher Marker zog die Karte auf die Weltkugel.
+const PUBLIC_WHERE =
+  "r.status='versendet' AND r.tatort_lat IS NOT NULL AND r.tatort_lon IS NOT NULL" +
+  ' AND r.tatort_lat <> 0 AND r.tatort_lon <> 0'
 
 export default async function publicRoutes(app: FastifyInstance) {
   // Öffentliche Startseite mit der Übersichtskarte.

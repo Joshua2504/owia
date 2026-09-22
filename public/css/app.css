@@ -207,3 +207,184 @@ code {
 body {
   background-color: var(--bs-tertiary-bg);
 }
+
+/* ---------------------------------------------------------------------------
+   Anzeigen-Liste (src/views/partials/report-table.ejs + report-row.ejs)
+   ---------------------------------------------------------------------------
+   Mobile-first gedacht: Die Liste hat neun Spalten und passt auf keinen
+   Handy-Screen – in `.table-responsive` blieb nur seitwärts scrollen, und die
+   meisten Nutzer kommen per Handy. Deshalb wird unterhalb von md aus jeder
+   Tabellenzeile eine Karte.
+
+   Das Markup bleibt bewusst eine echte Tabelle: public/js/report-table.js
+   hängt Drag & Drop an `tr[data-drop-az]` und fügt neue Zeilen als `<tr>` ein.
+   Umgebaut wird nur die Darstellung (display + order), die Zuordnung
+   Inhalt→Platz steckt in den `cell-*`-Klassen der Zeile.
+   --------------------------------------------------------------------------- */
+
+.report-thumb {
+  width: 96px;
+  height: 72px;
+  object-fit: cover;
+}
+
+/* Feldbeschriftung nur in der Kartenansicht (in der Tabelle sagt es der <th>). */
+.cell-label {
+  display: none;
+}
+
+/* Spaltenbreiten der Tabellenansicht (halten lange Tatorte/Verstöße im Zaum).
+   Bewusst in einer min-width-Query statt als Inline-Style, damit die
+   Kartenansicht unten sie nicht per !important aushebeln muss. */
+@media (min-width: 768px) {
+  .report-table .cell-photos {
+    min-width: 100px;
+    max-width: 300px;
+  }
+  .report-table .cell-place {
+    max-width: 200px;
+  }
+  .report-table .cell-offense {
+    max-width: 220px;
+  }
+}
+
+@media (max-width: 767.98px) {
+  /* Kein horizontales Scrollen mehr – die Karten sind so breit wie der Screen. */
+  .report-table-wrap {
+    overflow-x: visible;
+  }
+
+  .report-table,
+  .report-table > tbody,
+  .report-table > tbody > tr,
+  .report-table > tbody > tr > td {
+    display: block;
+    width: auto;
+  }
+
+  .report-table > thead {
+    display: none;
+  }
+
+  .report-table > tbody > tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 0.4rem;
+    column-gap: 0.5rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin: 0.75rem;
+    background-color: var(--bs-body-bg);
+  }
+
+  /* Zellrahmen/-abstände der Tabelle abräumen; die Karte bringt ihre eigenen
+     mit. Die Breiten-Styles der Spalten (max-width für Text-Truncation) gelten
+     nur für die Tabellenansicht. */
+  .report-table > tbody > tr > td {
+    flex: 0 0 100%;
+    min-width: 0;
+    max-width: none;
+    border: 0;
+    padding: 0;
+  }
+
+  /* Reihenfolge in der Karte: Kopfzeile (Auswahl · Aktenzeichen · Status),
+     dann Fotos, Daten und zuletzt die Aktionen. */
+  .report-table .cell-select {
+    flex: 0 0 auto;
+    order: 1;
+  }
+  .report-table .cell-az {
+    flex: 1 1 auto;
+    order: 2;
+  }
+  .report-table .cell-status {
+    flex: 0 0 auto;
+    order: 3;
+    text-align: right;
+  }
+  .report-table .cell-photos { order: 4; }
+  .report-table .cell-plate { order: 5; }
+  .report-table .cell-time { order: 6; }
+  .report-table .cell-place { order: 7; }
+  .report-table .cell-offense { order: 8; }
+  .report-table .cell-actions { order: 9; }
+
+  /* Zellen ohne Inhalt würden sonst als Lücke stehen bleiben (`:empty` greift
+     nicht – EJS lässt Zeilenumbrüche im <td> zurück, daher die Klasse). */
+  .report-table .cell-empty {
+    display: none;
+  }
+
+  .report-table .cell-label {
+    display: block;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--bs-secondary-color);
+  }
+
+  /* Größeres Touch-Ziel für die Mehrfachauswahl. */
+  .report-table .cell-select .form-check-input {
+    width: 1.35rem;
+    height: 1.35rem;
+    margin: 0;
+  }
+
+  /* Fotos zu dritt über die Kartenbreite – deutlich größer als die 96px der
+     Tabelle und damit auf dem Handy überhaupt erkennbar. */
+  .report-table .cell-photos .report-thumb {
+    flex: 0 0 calc((100% - 0.5rem) / 3);
+    width: auto;
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+
+  /* In der Tabelle wird Tatort/Verstoß auf Spaltenbreite gekürzt (.text-truncate
+     im Markup); in der Karte ist Platz für den vollen Text – abgeschnittene
+     Verstoßarten sind auf dem Handy sonst nicht zu entziffern (kein Hover-Titel). */
+  .report-table .cell-place .text-truncate,
+  .report-table .cell-offense .text-truncate {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+  }
+
+  /* Aktionen als volle, gut tappbare Schaltflächen nebeneinander. */
+  .report-table .cell-actions > div {
+    justify-content: stretch;
+    margin-top: 0.25rem;
+  }
+  .report-table .cell-actions > div > * {
+    flex: 1 1 0;
+  }
+  .report-table .cell-actions .btn {
+    width: 100%;
+    min-height: 2.75rem; /* ~44px komfortables Touch-Ziel */
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+  }
+}
+
+/* Kartenhöhen (Übersichtskarte, Tatort-Karte). Auf dem Handy flacher, damit
+   das, was unter der Karte steht (Liste, Formularfelder), nicht komplett unter
+   die Falz rutscht. .map-panel-lg ist die große Karte der Startseite. */
+.map-panel {
+  height: 380px;
+}
+
+.map-panel-lg {
+  height: 520px;
+}
+
+@media (max-width: 767.98px) {
+  .map-panel {
+    height: 260px;
+  }
+
+  .map-panel-lg {
+    height: 340px;
+  }
+}

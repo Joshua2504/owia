@@ -14,9 +14,14 @@
     })
   }
 
+  // `Number('')` und `Number(null)` sind 0 – ohne die Leerprüfung landet eine
+  // Anzeige ohne Tatort als Marker auf 0/0 (Golf von Guinea) und fitBounds()
+  // zoomt die Karte auf die halbe Weltkugel heraus. Exakt 0 ist hier kein
+  // gültiger Wert: die App ist auf deutsche Städte beschränkt.
   function num(v) {
+    if (v === null || v === undefined || String(v).trim() === '') return null
     const n = Number(v)
-    return Number.isFinite(n) ? n : null
+    return Number.isFinite(n) && n !== 0 ? n : null
   }
 
   // Marker als kleines Vorschaubild (erstes Foto) statt Standard-Pin. Für öffentliche

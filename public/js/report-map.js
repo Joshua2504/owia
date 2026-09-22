@@ -20,9 +20,15 @@
     })
   }
 
+  // `Number('')` ist 0 – ohne die Leerprüfung würde ein Entwurf ohne Tatort die
+  // Karte auf 0/0 (Golf von Guinea) zentrieren statt auf den Stadtmittelpunkt.
+  // Exakt 0 ist hier kein gültiger Wert: die App ist auf deutsche Städte
+  // beschränkt (gleiche Regel in public/js/overview-map.js und beim Speichern
+  // in src/routes/reports.ts).
   function num(v) {
+    if (v === null || v === undefined || String(v).trim() === '') return null
     const n = Number(v)
-    return Number.isFinite(n) ? n : null
+    return Number.isFinite(n) && n !== 0 ? n : null
   }
 
   // Marker als kleines Vorschaubild (erstes Beweisfoto) statt Standard-Pin.

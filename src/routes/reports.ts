@@ -152,10 +152,23 @@ async function persistFields(
   // Tattag unterscheidet (gleicher Tag = normaler Fall, Feld bleibt leer).
   const tattagBis = v.tattag_bis && v.tattag_bis !== v.tattag ? v.tattag_bis : null
   // Tatort-Koordinaten (Karte/Marker) nur übernehmen, wenn beide gültig sind.
-  const lat = Number(v.tatort_lat)
-  const lon = Number(v.tatort_lon)
-  const tatortLat = Number.isFinite(lat) ? lat : null
-  const tatortLon = Number.isFinite(lon) ? lon : null
+  // Achtung `Number('')` === 0: Die Hidden-Felder im Formular sind leer, solange
+  // kein Tatort gewählt wurde – ohne die Leerprüfung landete jeder solche
+  // Entwurf bei 0/0 (Golf von Guinea) und zog die Übersichtskarte auf die halbe
+  // Weltkugel auf. Exakt 0 ist deshalb ungültig (die App deckt nur deutsche
+  // Städte ab), ebenso Werte außerhalb des Wertebereichs. Gleiche Regel in
+  // public/js/report-map.js und public/js/overview-map.js.
+  const coord = (raw: string | undefined, max: number): number | null => {
+    const s = (raw || '').trim()
+    if (!s) return null
+    const n = Number(s)
+    return Number.isFinite(n) && n !== 0 && Math.abs(n) <= max ? n : null
+  }
+  const lat = coord(v.tatort_lat, 90)
+  const lon = coord(v.tatort_lon, 180)
+  // Nur als Paar sinnvoll – ein halber Punkt ist keine Position.
+  const tatortLat = lat !== null && lon !== null ? lat : null
+  const tatortLon = tatortLat !== null ? lon : null
   // Zuständige Stadt aus dem Dropdown (nur freigeschaltete IDs zulassen). Fehlt der
   // Wert oder ist er unbekannt, bleibt die gespeicherte Stadt erhalten (COALESCE).
   const city = v.city && CITIES[v.city] ? v.city : null
@@ -304,6 +317,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
          FROM reports
         WHERE user_id = ? AND status <> 'versendet'
           AND tatort_lat IS NOT NULL AND tatort_lon IS NOT NULL
+          -- 0/0 = Altbestand ohne echten Tatort (s. coord() weiter unten),
+          -- würde als Marker im Golf von Guinea landen.
+          AND tatort_lat <> 0 AND tatort_lon <> 0
         ORDER BY created_at DESC`,
       [userId]
     )

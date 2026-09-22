@@ -10,8 +10,12 @@
 const _queueId = typeof queueId !== 'undefined' && queueId ? queueId : null
 const _hasDrafts = reports.some((r) => r.status === 'entwurf')
 %>
-<div class="table-responsive">
-  <table class="table table-sm table-hover align-middle mb-0">
+<%# Ab md eine Tabelle, darunter Karten (Regeln in app.css, Zellklassen in
+    report-row.ejs) – der Großteil der Nutzer kommt per Handy und soll nicht
+    seitwärts scrollen müssen. Das Markup bleibt bewusst eine Tabelle, weil
+    report-table.js an <tr data-drop-az> hängt. %>
+<div class="table-responsive report-table-wrap">
+  <table class="table table-sm table-hover align-middle mb-0 report-table">
     <thead class="table-light">
       <tr>
         <th style="width:2rem">
@@ -48,7 +52,7 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
        eigene Einzel-Löschen-Formulare, Verschachtelung ist nicht erlaubt).
        Der POST führt erst auf eine Bestätigungsseite (serverseitig erzwungen). -->
   <form id="bulk-discard-form" method="post" action="/anzeigen/loeschen"
-        class="d-none align-items-center gap-2 mx-3 mt-2">
+        class="d-none align-items-center flex-wrap gap-2 mx-3 mt-2">
     <span id="bulk-count" class="small text-muted"></span>
     <button type="submit" class="btn btn-sm btn-outline-danger">Ausgewählte löschen</button>
   </form>
