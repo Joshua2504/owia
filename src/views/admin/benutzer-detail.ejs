@@ -1,6 +1,6 @@
 <%
 // Admin-Detailseite eines Benutzers (GET /admin/benutzer/:id): Stammdaten +
-// alle Anzeigen mit Status. Read-only; eingereichte Anzeigen verlinken zur
+// alle Anzeigen mit Status, Konto löschen; eingereichte Anzeigen verlinken zur
 // Prüfung (/admin/anzeigen).
 const u = benutzer
 const name = [u.vorname, u.nachname].filter(Boolean).join(' ')
@@ -93,4 +93,14 @@ for (const r of reports) if (counts[r.status] !== undefined) counts[r.status]++
       </table>
     </div>
   <% } %>
+</div>
+
+<div class="card border-danger shadow-sm mt-4">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="small text-muted">Konto mit allen Anzeigen, Fotos, PDFs und Nachrichten endgültig löschen.</div>
+    <form method="post" action="/admin/benutzer/<%= u.id %>/delete"
+          onsubmit="return confirm('Diesen Benutzer mit allen Daten endgültig löschen?')">
+      <button type="submit" class="btn btn-sm btn-danger">Benutzer löschen</button>
+    </form>
+  </div>
 </div>

@@ -12,6 +12,8 @@ import { dispatchReport, ReportPreparationError } from '../services/reportDispat
 import { replyAttachmentPath, repliesDir } from '../services/mailInbox'
 import { resolveSendCity } from '../services/districts'
 import { regeneratePdf, isProfileComplete } from './reports'
+import { deleteUser, UserDeleteError } from '../services/userDelete'
+import { isAdminEmail } from '../config/admin'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
@@ -234,8 +236,9 @@ export default async function adminRoutes(app: FastifyInstance) {
   })
 
   // ---------------------------------------------------------------------------
-  // Benutzerübersicht: alle Konten mit Anzeigen-Kennzahlen. Bewusst read-only –
-  // Konten schließen läuft über die Selbst-Anonymisierung (routes/settings.ts).
+  // Benutzerübersicht: alle Konten mit Anzeigen-Kennzahlen. Nutzer schließen ihr
+  // Konto selbst per Anonymisierung (routes/settings.ts); Admins können Konten
+  // (z.B. Spam) zusätzlich vollständig löschen.
   // ---------------------------------------------------------------------------
 
   app.get('/admin/benutzer', { preHandler: requireAdmin }, async (request, reply) => {
@@ -302,6 +305,29 @@ export default async function adminRoutes(app: FastifyInstance) {
       benutzer: user,
       reports,
     }))
+  })
+
+  app.post('/admin/benutzer/:id/delete', { preHandler: requireAdmin }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (id === request.session.userId) {
+      setFlash(reply, 'error', 'Das eigene Konto kann hier nicht gelöscht werden.')
+      return reply.redirect(`/admin/benutzer/${id}`)
+    }
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT email FROM users WHERE id = ?', [id])
+    if (rows[0] && isAdminEmail(rows[0].email)) {
+      setFlash(reply, 'error', 'Admin-Konten können nicht gelöscht werden.')
+      return reply.redirect(`/admin/benutzer/${id}`)
+    }
+    try {
+      const { email } = await deleteUser(id)
+      app.log.info({ userId: id, by: request.session.userId }, 'Benutzer durch Admin gelöscht')
+      setFlash(reply, 'success', `Benutzer ${email} wurde mit allen Daten gelöscht.`)
+      return reply.redirect('/admin/benutzer')
+    } catch (err) {
+      if (!(err instanceof UserDeleteError)) throw err
+      setFlash(reply, 'error', err.message)
+      return reply.redirect(rows[0] ? `/admin/benutzer/${id}` : '/admin/benutzer')
+    }
   })
 
   // ---------------------------------------------------------------------------
