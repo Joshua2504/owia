@@ -43,7 +43,7 @@
     var term = search.value.trim().toLocaleLowerCase('de')
     rows.forEach(function (row) {
       // Inline-Felder (Kennzeichen, Marke, Verstoß) stehen nicht im textContent.
-      var text = row.textContent + ' ' + Array.from(row.querySelectorAll('input[data-inline-field]')).map(function (el) { return el.value }).join(' ')
+      var text = row.textContent + ' ' + Array.from(row.querySelectorAll('input[data-inline-field], textarea[data-inline-field]')).map(function (el) { return el.value }).join(' ')
       var matches = (!status.value || row.dataset.status === status.value) && (!term || text.toLocaleLowerCase('de').includes(term))
       row.hidden = !matches
       if (!matches) { var box = row.querySelector('.bulk-select'); if (box) box.checked = false }

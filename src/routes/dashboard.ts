@@ -9,7 +9,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
     const [reports] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tattag, tattag_bis, tatzeit_von, tatzeit_bis,
-              tatort, verstoss_art, status, created_at,
+              tatort, tatort_lat, tatort_lon, verstoss_art, status, created_at,
               fahrzeug_marke, beschreibung, fahrzeug_verlassen, behinderung, behinderung_text,
               (SELECT COUNT(*) FROM report_images gi WHERE gi.report_id = reports.id AND gi.gps_lat IS NOT NULL AND gi.gps_lon IS NOT NULL) AS photo_gps_count,
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in') AS reply_count,

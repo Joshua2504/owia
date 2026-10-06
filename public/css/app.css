@@ -820,3 +820,38 @@ body.is-embed main { padding-bottom: 0 !important; }
 .photo-card.is-editing .photo-card-quick { display: none; }
 
 .tatort-from-photos { font-size: 0.75rem; text-decoration: none; }
+
+/* Tatort-Zelle der Liste: Inline-Feld + Karten-Icon (report-inline.js). */
+.tatort-cell { display: flex; align-items: flex-start; gap: 0.25rem; }
+.tatort-cell > :first-child { flex: 1 1 auto; min-width: 0; }
+.tatort-cell .address-ac { flex: 1 1 auto; min-width: 0; }
+.tatort-cell .address-ac-menu { width: min(28rem, 90vw); right: auto; }
+.inline-input.is-missing::placeholder { color: var(--bs-warning-text-emphasis); font-style: normal; }
+.map-peek {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 0.15rem;
+  line-height: 1;
+  font-size: 1rem;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.map-peek:hover { opacity: 1; }
+.map-peek-pop {
+  position: fixed;
+  z-index: 2040;
+  display: none;
+  width: 340px;
+  height: 240px;
+  border: 2px solid #fff;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  background: var(--bs-secondary-bg);
+}
+.map-peek-pop.is-visible { display: block; }
+.map-peek-map { width: 100%; height: 100%; }
+
+/* Mehrzeilige Inline-Felder wachsen mit dem Inhalt (Tatort, Verstoß). */
+textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6rem; }

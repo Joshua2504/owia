@@ -10,12 +10,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# YOLO-Modell beim Build ins Image backen (kein Download zur Laufzeit).
-COPY download_model.py .
-RUN python download_model.py
-
-# Warmup lädt auch die RapidOCR-ONNX-Modelle in den Image-Cache.
-COPY districts.py plate.py detector.py app.py warmup.py ./
+# Warmup lädt Detektor- und OCR-Modell beim Build ins Image (kein Download
+# zur Laufzeit).
+COPY districts.py plate.py segment.py app.py warmup.py ./
 RUN python warmup.py
 
 # CPU wird mit dem Tileserver geteilt – Thread-Zahl der BLAS/OMP-Pools begrenzen.

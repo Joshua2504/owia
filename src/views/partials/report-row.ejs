@@ -85,9 +85,29 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
       </div>
     <% } %>
   </td>
+  <%
+  // Karten-Icon nur mit gültigen Koordinaten (0/0 = Altbestand, s. persistFields).
+  const _lat = Number(r.tatort_lat), _lon = Number(r.tatort_lon)
+  const _hasCoords = Number.isFinite(_lat) && Number.isFinite(_lon) && _lat !== 0 && _lon !== 0
+  %>
   <td class="cell-place small <%= r.tatort || _isDraft ? '' : 'cell-empty' %>">
     <% if (r.tatort || _isDraft) { %><span class="cell-label">Tatort</span><% } %>
-    <span class="clamp-2" title="<%= r.tatort || '' %>"><%= r.tatort || '' %><% if (!r.tatort && _isDraft) { %><span class="text-warning-emphasis">Tatort fehlt</span><% } %></span>
+    <div class="tatort-cell">
+      <% if (_isDraft) { %>
+        <%# Adresse direkt hier ändern: Vorschläge wie im Editor (address-autocomplete.js,
+            lazy initialisiert in report-inline.js), Speichern per PATCH /felder. %>
+        <textarea class="form-control form-control-sm inline-input<%= r.tatort ? '' : ' is-missing' %>" data-inline-field="tatort"
+                  rows="2" data-geo-scope="unlocked" data-fill="full" data-ac-local
+                  placeholder="Tatort fehlt – Adresse eingeben" autocomplete="off" spellcheck="false"
+                  aria-label="Tatort von <%= r.aktenzeichen %>"><%= r.tatort || '' %></textarea>
+      <% } else { %>
+        <span class="clamp-2" title="<%= r.tatort || '' %>"><%= r.tatort || '' %></span>
+      <% } %>
+      <% if (_hasCoords) { %>
+        <button type="button" class="map-peek" data-map-peek data-lat="<%= _lat %>" data-lon="<%= _lon %>"
+                title="Karte anzeigen" aria-label="Tatort auf der Karte anzeigen">🗺️</button>
+      <% } %>
+    </div>
     <%# Fehlender Tatort, aber Fotos mit GPS: per Klick übernehmen (report-inline.js). %>
     <% if (!r.tatort && _isDraft && Number(r.photo_gps_count) > 0) { %>
       <button type="button" class="btn btn-link p-0 d-block small tatort-from-photos" data-tatort-from-photos>📍 aus Fotos übernehmen</button>

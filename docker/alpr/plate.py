@@ -2,7 +2,8 @@
 # "F-AB 1234" (+ optional E/H), exakt das Format, das initKennzeichenFormat im
 # Frontend erzeugt. Die Aufteilung Kreiskürzel/Erkennungsbuchstaben ist ohne
 # Trenner mehrdeutig ("FAB" -> F-AB oder FA-B) und wird über die Liste der
-# gültigen Unterscheidungszeichen (districts.py) aufgelöst.
+# gültigen Unterscheidungszeichen (districts.py) und, wenn verfügbar, über die
+# im Bild gemessene Plakettenlücke (segment.py) aufgelöst.
 from __future__ import annotations
 
 import re
@@ -21,17 +22,24 @@ MIDDLE = re.compile(r"^[A-Z]{1,2}$")
 DIGIT_ZONE = re.compile(r"^[1-9]\d{0,3}$")
 
 
-def normalize(raw: str) -> tuple[str, bool]:
+def normalize(raw: str, district_len: int | None = None) -> tuple[str, bool]:
     """Liefert (text, normalized). normalized=True nur, wenn die Lesung eindeutig
     auf ein gültiges deutsches Kennzeichen gemappt werden konnte; sonst wird die
-    bereinigte Rohlesung zurückgegeben (Aufrufer senkt dann die Konfidenz)."""
-    # Die Stempelplakette zwischen den Buchstabengruppen liest die OCR gern als
-    # Kleinbuchstaben ("MSeWL 545"); echte Prägeschrift wird groß gelesen. Erst
-    # mit Kleinbuchstaben-als-Trenner versuchen (markiert zugleich die sonst
-    # mehrdeutige Kürzel-Grenze), dann mit der wörtlichen Lesung.
-    literal = raw or ""
+    bereinigte Rohlesung zurückgegeben (Aufrufer senkt dann die Konfidenz).
+    district_len: aus dem Bild ermittelte Länge des Kreiskürzels (segment.py),
+    löst die Mehrdeutigkeit S-UO/SU-O auf; ungültige Hinweise werden ignoriert."""
+    literal = (raw or "").replace("_", "")  # Füllzeichen des OCR-Modells
+    candidates = []
+    if district_len and 0 < district_len < len(literal):
+        candidates.append(literal[:district_len] + " " + literal[district_len:])
+    # Die Stempelplakette zwischen den Buchstabengruppen lesen allgemeine
+    # OCR-Modelle gern als Kleinbuchstaben ("MSeWL 545"); dann markiert sie
+    # zugleich die Kürzel-Grenze.
     stripped = re.sub(r"[a-zäöü]", " ", literal)
-    for candidate in ([stripped] if stripped != literal else []) + [literal]:
+    if stripped != literal:
+        candidates.append(stripped)
+    candidates.append(literal)
+    for candidate in candidates:
         text, ok = _normalize_one(candidate)
         if ok:
             return text, True

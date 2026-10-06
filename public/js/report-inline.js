@@ -34,19 +34,20 @@
     if (state === 'is-saved') setTimeout(function () { target.classList.remove('is-saved') }, 1400)
   }
 
-  function save(el) {
+  // extra: zusätzliche Felder (Koordinaten eines gewählten Adressvorschlags).
+  function save(el, extra) {
     var row = rowOf(el)
     if (!row) return
     var field = el.getAttribute('data-inline-field')
     var value = el.value
     if (field === 'kennzeichen') value = value.toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim()
-    else value = value.trim()
+    else value = value.replace(/\s+/g, ' ').trim()
     // Unverändert (z.B. nur durch das Feld getabbt) → kein Request.
-    if (value === (el.dataset.saved !== undefined ? el.dataset.saved : el.defaultValue)) {
+    if (!extra && value === (el.dataset.saved !== undefined ? el.dataset.saved : el.defaultValue)) {
       el.value = value
       return
     }
-    var body = {}
+    var body = extra || {}
     body[field] = value
     setState(el, 'is-saving')
     fetch('/anzeige/' + encodeURIComponent(row.dataset.az) + '/felder', {
@@ -69,6 +70,11 @@
         }
         setState(el, 'is-saved')
         document.dispatchEvent(new Event('reports:updated'))
+        // Tatort mit neuen Koordinaten: Zeile neu laden (Karten-Icon, „aus Fotos").
+        if (field === 'tatort') {
+          el.classList.toggle('is-missing', !el.value)
+          if (extra && window.reportTableRefresh) setTimeout(function () { window.reportTableRefresh(row.dataset.az).catch(function () {}) }, 900)
+        }
       })
       .catch(function (err) {
         setState(el, 'is-invalid', err.message + ' – erneut versuchen.')
@@ -79,7 +85,7 @@
   // Feld derselben Spalte (schnelles Abarbeiten einer Liste), Escape = zurück.
   document.addEventListener('change', function (e) {
     var el = e.target
-    if (el.matches && el.matches('input[data-inline-field]')) save(el)
+    if (el.matches && el.matches('input[data-inline-field], textarea[data-inline-field]')) save(el)
   })
   document.addEventListener('input', function (e) {
     var el = e.target
@@ -100,7 +106,7 @@
       e.preventDefault() // kein Zeilenumbruch im Suchfeld; Auswahl übernimmt verstoss-select.js
       return
     }
-    if (!el.matches('input[data-inline-field]')) return
+    if (!el.matches('input[data-inline-field], textarea[data-inline-field]')) return
     if (e.key === 'Escape') {
       el.value = el.dataset.saved !== undefined ? el.dataset.saved : el.defaultValue
       el.blur()
@@ -114,6 +120,111 @@
       if (target) target.focus()
       else el.blur()
     }
+  })
+
+  // Tatort: Adressvorschläge beim ersten Fokus aktivieren; Auswahl eines
+  // Vorschlags speichert Adresse + Koordinaten (+ Stadt, serverseitig aus der PLZ).
+  // Frei getippter Text wird beim Verlassen ohne Koordinaten gespeichert.
+  document.addEventListener('focusin', function (e) {
+    var el = e.target
+    if (el.matches && el.matches('textarea[data-inline-field="tatort"]') && window.addressAutocomplete) {
+      window.addressAutocomplete.init(el)
+    }
+  })
+  document.addEventListener('address:chosen', function (e) {
+    var el = e.target
+    if (!el.matches || !el.matches('[data-inline-field="tatort"]')) return
+    var s = e.detail || {}
+    var extra = Number.isFinite(s.lat) && Number.isFinite(s.lon) ? { tatort_lat: s.lat, tatort_lon: s.lon } : {}
+    save(el, extra)
+  })
+
+  // ---------------------------------------------------------------------------
+  // Karten-Vorschau: Hover über 🗺️ zeigt eine kleine Karte mit dem Tatort.
+  // Leaflet wird erst beim ersten Hover geladen (Seiten ohne Übersichtskarte).
+  // ---------------------------------------------------------------------------
+  var peek = null
+  var peekMap = null
+  var peekMarker = null
+  var peekTimer = null
+  var peekHide = null
+  var leafletLoading = null
+
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve()
+    if (!leafletLoading) {
+      leafletLoading = new Promise(function (resolve, reject) {
+        var css = document.createElement('link')
+        css.rel = 'stylesheet'
+        css.href = '/public/vendor/leaflet.css'
+        document.head.appendChild(css)
+        var js = document.createElement('script')
+        js.src = '/public/vendor/leaflet.js'
+        js.onload = resolve
+        js.onerror = reject
+        document.head.appendChild(js)
+      })
+    }
+    return leafletLoading
+  }
+
+  function showPeek(btn) {
+    var lat = Number(btn.dataset.lat)
+    var lon = Number(btn.dataset.lon)
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return
+    loadLeaflet().then(function () {
+      if (!peek) {
+        peek = document.createElement('div')
+        peek.className = 'map-peek-pop'
+        peek.innerHTML = '<div class="map-peek-map"></div>'
+        document.body.appendChild(peek)
+        peek.addEventListener('mouseenter', function () { clearTimeout(peekHide) })
+        peek.addEventListener('mouseleave', hidePeekSoon)
+      }
+      var r = btn.getBoundingClientRect()
+      var w = 340
+      var h = 240
+      var left = Math.min(r.right + 8, window.innerWidth - w - 8)
+      if (left < r.right && r.left - w - 8 > 8) left = r.left - w - 8
+      var top = Math.min(Math.max(8, r.top - h / 2), window.innerHeight - h - 8)
+      peek.style.left = left + 'px'
+      peek.style.top = top + 'px'
+      peek.classList.add('is-visible')
+      if (!peekMap) {
+        peekMap = L.map(peek.querySelector('.map-peek-map'), { zoomControl: false, attributionControl: false })
+        L.tileLayer('/tiles/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(peekMap)
+        // circleMarker statt L.marker: das Standard-Icon findet beim Nachladen
+        // von Leaflet seinen Bildpfad nicht (kaputtes Bild).
+        peekMarker = L.circleMarker([lat, lon], { radius: 9, color: '#fff', weight: 3, fillColor: '#dc3545', fillOpacity: 1 }).addTo(peekMap)
+      }
+      peekMap.invalidateSize()
+      peekMap.setView([lat, lon], 17)
+      peekMarker.setLatLng([lat, lon])
+    }).catch(function () {})
+  }
+  function hidePeekSoon() {
+    clearTimeout(peekHide)
+    peekHide = setTimeout(function () { if (peek) peek.classList.remove('is-visible') }, 200)
+  }
+  document.addEventListener('mouseover', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-map-peek]')
+    if (!btn) return
+    clearTimeout(peekHide)
+    clearTimeout(peekTimer)
+    peekTimer = setTimeout(function () { showPeek(btn) }, 150)
+  })
+  document.addEventListener('mouseout', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-map-peek]')
+    if (!btn) return
+    clearTimeout(peekTimer)
+    hidePeekSoon()
+  })
+  // Touch: Tippen zeigt/verbirgt die Karte.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-map-peek]')
+    if (!btn) return
+    if (peek && peek.classList.contains('is-visible')) peek.classList.remove('is-visible')
+    else showPeek(btn)
   })
 
   // „Tatort fehlt" → Tatort aus den GPS-Daten der Fotos übernehmen (Server

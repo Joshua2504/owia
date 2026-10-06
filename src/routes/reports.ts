@@ -496,6 +496,27 @@ export default async function reportsRoutes(app: FastifyInstance) {
       sets.push('fahrzeug_marke=?')
       values.push(out.fahrzeug_marke)
     }
+    if (typeof body.tatort === 'string') {
+      out.tatort = body.tatort.replace(/\s+/g, ' ').trim().slice(0, 500) || null
+      sets.push('tatort=?')
+      values.push(out.tatort)
+      // Koordinaten nur als gültiges Paar (Adressvorschlag gewählt); sonst
+      // bleiben die bisherigen stehen – wie im Editor beim freien Tippen.
+      // Gleiche Regel wie coord() in persistFields: 0 und Unsinn sind ungültig.
+      const lat = Number(body.tatort_lat)
+      const lon = Number(body.tatort_lon)
+      if (body.tatort_lat != null && body.tatort_lon != null && Number.isFinite(lat) && Number.isFinite(lon) &&
+          lat !== 0 && lon !== 0 && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+        sets.push('tatort_lat=?', 'tatort_lon=?')
+        values.push(String(lat), String(lon))
+      }
+      // Zuständige Stadt aus der PLZ der Adresse (nur freigeschaltete Städte).
+      const det = detectCityByLabel(out.tatort)
+      if (det.status === 'unlocked') {
+        sets.push('city=?')
+        values.push(det.city.id)
+      }
+    }
     if (typeof body.verstoss_art === 'string') {
       const v = body.verstoss_art.trim()
       // Nur Einträge aus dem amtlichen Katalog (wie die Auswahl im Editor).

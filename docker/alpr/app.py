@@ -1,89 +1,94 @@
-# HTTP-Wrapper um YOLOv11 (Kennzeichen-Detektion, onnxruntime) + RapidOCR
-# (PP-OCRv5-Latin-Recognition als ONNX). Eine POST-Route nimmt ein Bild entgegen
-# und liefert die erkannten Kennzeichen als JSON. Läuft selbst-gehostet im
-# Docker-Netz; das Bild verlässt den Host nie. Bewusst ohne torch/paddle
-# (Begründung in detector.py).
+# HTTP-Wrapper um die Kennzeichenerkennung: YOLOv9-Kennzeichen-Detektion
+# (open-image-models) + spezialisiertes Kennzeichen-OCR (fast-plate-ocr,
+# cct-s-v2), beide als ONNX. Eine POST-Route nimmt ein Bild entgegen und liefert
+# die erkannten Kennzeichen als JSON. Läuft selbst-gehostet im Docker-Netz; das
+# Bild verlässt den Host nie. Bewusst ohne torch/paddle (siehe requirements.txt).
+#
+# Gegenüber dem früheren Stack (YOLOv11 + allgemeines PP-OCRv5) liest das
+# Kennzeichen-OCR die Plaketten nicht mehr als Buchstaben ("FB-TF" statt
+# "F-TF") und kommt mit Nachtaufnahmen und zweizeiligen Schildern zurecht;
+# gemessen an echten Anzeigefotos stieg die Trefferquote je Anzeige von 5/35
+# auf 31/35 (Rest: Kennzeichen gar nicht im Bild).
 import base64
 import threading
 
 import cv2
 import numpy as np
+import onnxruntime as ort
 from fastapi import FastAPI, File, UploadFile
-from rapidocr import RapidOCR
-from rapidocr.utils.typings import LangRec, ModelType, OCRVersion
+from fast_plate_ocr import LicensePlateRecognizer
+from open_image_models import create_detector
 
-from detector import PlateDetector
 from plate import normalize
+from segment import district_length
 
-MODEL_PATH = "models/license-plate-finetune-v1s.onnx"
-DET_CONF_MIN = 0.35
+DET_MODEL = "yolo-v9-s-608-license-plate-end2end"
+OCR_MODEL = "cct-s-v2-global-model"
+# Niedrig angesetzt: schwache Boxen (Nacht, schräg) sind oft echte Kennzeichen,
+# und Fehlalarme fallen über OCR-Konfidenz + Formatprüfung ohnehin raus.
+DET_CONF_MIN = 0.15
+# Ab dieser Konfidenz gilt eine Lesung als sicher (entspricht dem Default von
+# ALPR_MIN_CONFIDENCE der App); unter den sicheren gewinnt das größte Schild.
+CONFIDENT = 0.75
 
-app = FastAPI(title="OWiA ALPR (YOLOv11 + PP-OCRv5, ONNX)")
+app = FastAPI(title="OWiA ALPR (YOLOv9 + fast-plate-ocr, ONNX)")
+
+
+def _session_options() -> ort.SessionOptions:
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = 2  # CPU wird mit dem Tileserver geteilt
+    return opts
+
 
 # Modelle einmalig beim Start laden (beim Build vorgecached, kein Download).
-detector = PlateDetector(MODEL_PATH)
-# Nur Recognition auf dem YOLO-Crop; "latin" deckt Ö/Ü der Kreiskürzel ab.
-recognizer = RapidOCR(
-    params={
-        "Rec.lang_type": LangRec.LATIN,
-        "Rec.ocr_version": OCRVersion.PPOCRV5,
-        "Rec.model_type": ModelType.MOBILE,
-    }
+detector = create_detector(
+    DET_MODEL, conf_thresh=DET_CONF_MIN, providers=["CPUExecutionProvider"], sess_options=_session_options()
+)
+recognizer = LicensePlateRecognizer(
+    OCR_MODEL, providers=["CPUExecutionProvider"], sess_options=_session_options()
 )
 
 # Inferenz serialisieren: eine Anfrage darf die CPU nutzen, weitere warten.
 inference_lock = threading.Lock()
 
 
-def crop_plate(img: np.ndarray, xyxy: list) -> tuple:
-    """Enger Kennzeichen-Crop. Ohne Rand: hineinragende Umgebung (EU-Band,
-    Stoßstange) verschlechtert die OCR messbar."""
+def clip_box(img: np.ndarray, xyxy, pad_x: float = 0.0, pad_y: float = 0.0) -> list:
     h, w = img.shape[:2]
-    x1, y1 = max(0, int(xyxy[0])), max(0, int(xyxy[1]))
-    x2, y2 = min(w, int(xyxy[2])), min(h, int(xyxy[3]))
-    return img[y1:y2, x1:x2], [x1, y1, x2, y2]
+    x1, y1, x2, y2 = (float(v) for v in xyxy)
+    px, py = (x2 - x1) * pad_x, (y2 - y1) * pad_y
+    return [max(0, int(x1 - px)), max(0, int(y1 - py)), min(w, int(x2 + px)), min(h, int(y2 + py))]
 
 
-def encode_crop(crop: np.ndarray) -> str | None:
+def crop(img: np.ndarray, box: list) -> np.ndarray:
+    return img[box[1] : box[3], box[0] : box[2]]
+
+
+def encode_crop(c: np.ndarray) -> str | None:
     """Kennzeichen-Ausschnitt als Base64-JPEG (wird von der App pro Bild als
     eigene Beweisdatei neben dem Foto gespeichert)."""
-    ok, buf = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    ok, buf = cv2.imencode(".jpg", c, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     return base64.b64encode(buf.tobytes()).decode("ascii") if ok else None
 
 
-def read_text(crop: np.ndarray) -> tuple:
-    """Beste OCR-Lesung des Crops als (text, score)."""
-    res = recognizer(crop, use_det=False, use_cls=False, use_rec=True)
-    best_text, best_score = "", 0.0
-    for text, score in zip(res.txts or [], res.scores or []):
-        if text and float(score) > best_score:
-            best_text, best_score = str(text), float(score)
-    return best_text, best_score
-
-
-def read_plate(crop: np.ndarray) -> dict | None:
-    """Liest den Crop in zwei Varianten (Original + 2x hochskaliert) und liefert
-    die beste Lesung: normalisierte schlagen unnormalisierte, dann zählt der Score."""
-    variants = [crop]
-    if crop.shape[0] > 0:
-        variants.append(cv2.resize(crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC))
-    best = None
-    for variant in variants:
-        raw_text, ocr_conf = read_text(variant)
-        if not raw_text:
-            continue
-        text, normalized = normalize(raw_text)
-        if not text:
-            continue
-        candidate = {
-            "text": text,
-            "raw_text": raw_text,
-            "normalized": normalized,
-            "ocr_confidence": ocr_conf,
-        }
-        if best is None or (normalized, ocr_conf) > (best["normalized"], best["ocr_confidence"]):
-            best = candidate
-    return best
+def read_plate(img: np.ndarray, xyxy) -> dict | None:
+    # 10 % Rand: Das OCR-Modell liest leicht großzügige Crops messbar besser
+    # als die oft knapp anliegende Detektor-Box.
+    box = clip_box(img, xyxy, 0.1, 0.1)
+    c = crop(img, box)
+    if c.size == 0:
+        return None
+    pred = recognizer.run(cv2.cvtColor(c, cv2.COLOR_BGR2RGB), return_confidence=True)[0]
+    raw = (pred.plate or "").replace("_", "")
+    if not raw:
+        return None
+    probs = pred.char_probs[: len(pred.plate)] if pred.char_probs is not None else []
+    # Konfidenz = unsicherstes Zeichen (ein einziges falsches Zeichen macht das
+    # Kennzeichen falsch); trennt Fehllesungen deutlich schärfer als der Mittelwert.
+    ocr_conf = float(np.min(probs)) if len(probs) else 0.0
+    # Für die Lückenmessung oben/unten mehr Rand, damit keine Zeichen angeschnitten sind.
+    seg = crop(img, clip_box(img, xyxy, 0.04, 0.15))
+    text, normalized = normalize(raw, district_length(seg, raw))
+    return {"text": text, "raw_text": raw, "normalized": normalized, "ocr_confidence": ocr_conf, "crop": c, "bbox": box}
 
 
 @app.get("/health")
@@ -97,33 +102,45 @@ async def recognize(file: UploadFile = File(...)):
     img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         return {"plates": [], "best": None}
+    h, w = img.shape[:2]
 
     plates = []
     with inference_lock:
-        for det_conf, xyxy in detector.detect(img, conf_min=DET_CONF_MIN):
-            crop, bbox = crop_plate(img, xyxy)
-            if crop.size == 0:
+        for det in detector.predict(img):
+            b = det.bounding_box
+            xyxy = [b.x1, b.y1, b.x2, b.y2]
+            reading = read_plate(img, xyxy)
+            if not reading or not reading["text"]:
                 continue
-            reading = read_plate(crop)
-            if not reading:
-                continue
-            # Konfidenz = OCR-Score: Eine formatgültige, gegen die Kürzel-Liste
-            # validierte Lesung belegt selbst, dass die Box ein Kennzeichen war —
-            # det_conf gated bereits über DET_CONF_MIN und würde multiplikativ
-            # nur sichere Lesungen unter die Prefill-Schwelle drücken. Nicht
-            # normalisierbare Lesungen werden abgewertet: sie bleiben sichtbar,
-            # fallen aber unter die Prefill-Schwelle der App.
-            confidence = reading["ocr_confidence"] * (1.0 if reading["normalized"] else 0.5)
+            confidence = reading["ocr_confidence"]
+            # Nicht normalisierbare Lesungen bleiben sichtbar, fallen aber unter
+            # die Prefill-Schwelle der App.
+            if not reading["normalized"]:
+                confidence *= 0.5
+            # Am Bildrand angeschnittene Schilder liefern plausible, aber
+            # unvollständige Lesungen ("F-P 619" statt "F-BP 6197").
+            if b.x1 <= 2 or b.y1 <= 2 or b.x2 >= w - 2 or b.y2 >= h - 2:
+                confidence *= 0.5
             plates.append({
                 "text": reading["text"],
                 "raw_text": reading["raw_text"],
                 "normalized": reading["normalized"],
-                "det_confidence": round(det_conf, 3),
+                "det_confidence": round(float(det.confidence), 3),
                 "ocr_confidence": round(reading["ocr_confidence"], 3),
                 "confidence": round(confidence, 3),
-                "bbox": [int(v) for v in bbox],
-                "crop": encode_crop(crop),
+                "bbox": reading["bbox"],
+                "width": int(b.x2 - b.x1),
+                "crop": encode_crop(reading["crop"]),
             })
 
-    plates.sort(key=lambda p: p["confidence"], reverse=True)
+    # Bester Treffer: Unter den sicheren Lesungen das größte Schild – das
+    # angezeigte Auto steht meist vorn im Bild, Kennzeichen anderer Autos im
+    # Hintergrund sind kleiner. Ohne sichere Lesung zählt die Konfidenz.
+    def rank(p):
+        sure = p["normalized"] and p["confidence"] >= CONFIDENT
+        return (sure, p["width"] if sure else p["confidence"])
+
+    plates.sort(key=rank, reverse=True)
+    for p in plates:
+        del p["width"]
     return {"plates": plates, "best": plates[0] if plates else None}

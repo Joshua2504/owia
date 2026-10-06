@@ -26,6 +26,8 @@
   }
 
   function initOne(input) {
+    if (input.dataset.acReady) return
+    input.dataset.acReady = '1'
     input.setAttribute('autocomplete', 'off')
 
     const wrapper = document.createElement('div')
@@ -58,7 +60,10 @@
       fill(input.dataset.targetOrt, s.city)
       // Koordinaten an die Karte melden (falls vorhanden) – siehe report-map.js.
       // postcode/city zusätzlich, damit report-form.js das zuständige Amt erkennt.
-      if (Number.isFinite(s.lat) && Number.isFinite(s.lon)) {
+      // Zusätzlich am Feld selbst (bubbelt): mehrere Tatort-Felder auf einer
+      // Seite (Inline-Bearbeitung der Anzeigen-Liste, report-inline.js).
+      input.dispatchEvent(new CustomEvent('address:chosen', { bubbles: true, detail: s }))
+      if (Number.isFinite(s.lat) && Number.isFinite(s.lon) && !input.hasAttribute('data-ac-local')) {
         document.dispatchEvent(
           new CustomEvent('address:selected', {
             detail: { lat: s.lat, lon: s.lon, label: s.label, postcode: s.postcode, city: s.city },
@@ -145,4 +150,6 @@
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-address-autocomplete]').forEach(initOne)
   })
+  // Für nachträglich eingefügte Felder (z.B. neu geladene Listenzeilen).
+  window.addressAutocomplete = { init: initOne }
 })()

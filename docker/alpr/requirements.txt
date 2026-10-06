@@ -2,9 +2,10 @@
 #  - paddle-Wheels verlangen AVX -> "Illegal instruction" auf dem Produktionshost
 #  - torch+paddle im selben Prozess segfaulten auf aarch64
 # onnxruntime läuft ohne Sonderanforderungen auf x86_64 wie aarch64.
+# open-image-models (Detektion) und fast-plate-ocr (OCR) sind MIT-lizenziert.
 onnxruntime==1.27.0
-rapidocr==3.9.1
-huggingface_hub
+open-image-models==0.6.0
+fast-plate-ocr==1.1.0
 fastapi
 uvicorn[standard]
 python-multipart

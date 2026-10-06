@@ -1,22 +1,15 @@
-# Lädt beide Modelle beim Docker-Build einmal und führt eine Dummy-Inferenz aus:
-# RapidOCR lädt seine ONNX-Modelle dabei in den Image-Cache (site-packages),
-# und Installationsfehler brechen schon den Build ab statt erst den ersten Request.
+# Lädt beide Modelle beim Docker-Build (Download in den Image-Cache unter
+# ~/.cache) und führt eine Dummy-Inferenz aus: zur Laufzeit ist kein externer
+# Netzwerkzugriff nötig, und Installationsfehler brechen schon den Build ab
+# statt erst den ersten Request.
+import cv2
 import numpy as np
-from rapidocr import RapidOCR
-from rapidocr.utils.typings import LangRec, ModelType, OCRVersion
+from fastapi.testclient import TestClient
 
-from detector import PlateDetector
+import app
 
-detector = PlateDetector("models/license-plate-finetune-v1s.onnx")
-recognizer = RapidOCR(
-    params={
-        "Rec.lang_type": LangRec.LATIN,
-        "Rec.ocr_version": OCRVersion.PPOCRV5,
-        "Rec.model_type": ModelType.MOBILE,
-    }
-)
-
-dummy = np.zeros((96, 320, 3), dtype=np.uint8)
-detector.detect(dummy)
-recognizer(dummy, use_det=False, use_cls=False, use_rec=True)
-print("Modelle gecached und lauffähig.")
+dummy = np.full((480, 640, 3), 128, dtype=np.uint8)
+ok, buf = cv2.imencode(".jpg", dummy)
+res = TestClient(app.app).post("/recognize", files={"file": ("x.jpg", buf.tobytes(), "image/jpeg")})
+res.raise_for_status()
+print("Modelle gecached und lauffähig:", res.json())
