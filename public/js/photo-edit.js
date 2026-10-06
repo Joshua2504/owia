@@ -106,7 +106,11 @@
       '<input type="time" class="form-control" data-detail="tatzeit_von" aria-label="Uhrzeit von" title="Uhrzeit von">' +
       '<span>–</span>' +
       '<input type="time" class="form-control" data-detail="tatzeit_bis" aria-label="Uhrzeit bis" title="Uhrzeit bis (optional)">' +
-      '</div></div>' +
+      '</div>' +
+      '<div class="small text-muted mt-1" data-photo-times hidden>' +
+      '<button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times">🕒 Uhrzeit aus Fotos übernehmen</button>' +
+      ' <span data-photo-span></span></div>' +
+      '</div>' +
       '<label class="form-check"><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> <span class="form-check-label">Fahrzeug war verlassen</span></label>' +
       '<div class="pe-field"><div class="d-flex align-items-center gap-2"><span class="form-label mb-0">Wurde jemand behindert?</span>' +
       '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">' +
@@ -215,6 +219,7 @@
       setTimeout(function () { savePlate().catch(function () {}) }, 250)
     })
     dlg.querySelector('[data-act=tatort-photo]').addEventListener('click', tatortFromPhotos)
+    dlg.querySelector('[data-act=photo-times]').addEventListener('click', applyPhotoTimes)
     dlg.querySelector('[data-act=submit]').addEventListener('click', function () { submitReport(false) })
     var sendBtn = dlg.querySelector('[data-act=send]')
     if (sendBtn) sendBtn.addEventListener('click', function () { submitReport(true) })
@@ -245,13 +250,17 @@
       var root = verstossHidden().parentNode
       if (root.dataset.verstossReady || !window.verstossSelect) return
       loadCatalog().then(function (data) {
+        // Ein früherer Fehlschlag (z. B. während eines App-Neustarts) darf
+        // nicht als roter Rahmen stehen bleiben.
+        verstossInput().classList.remove('is-invalid')
+        verstossInput().title = ''
         if (root.dataset.verstossReady) return
         window.verstossSelect.init(root, data)
         fitVerstossMenu()
         if (document.activeElement === verstossInput()) verstossInput().dispatchEvent(new Event('focus'))
       }, function () {
         verstossInput().classList.add('is-invalid')
-        verstossInput().title = 'Verstoß-Katalog nicht ladbar.'
+        verstossInput().title = 'Verstoß-Katalog nicht ladbar – Feld erneut antippen.'
       })
     })
     dlg.addEventListener('cancel', function (e) {
@@ -560,6 +569,36 @@
     var bt = box.querySelector('[data-detail=behinderung_text]')
     bt.value = f.behinderung_text || ''
     bt.hidden = !f.behinderung
+    // Zeitspanne der Fotos (EXIF, serverseitig als Strings) für „Uhrzeit aus Fotos".
+    var t = s.report.photoTimes
+    box.querySelector('[data-photo-times]').hidden = !t
+    if (t) box.querySelector('[data-photo-span]').textContent = '(' + photoSpan(t) + ')'
+  }
+  function fmtDay(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '')
+    return m ? m[3] + '.' + m[2] + '.' + m[1] : iso
+  }
+  function photoSpan(t) {
+    if (t.vonTag !== t.bisTag) return fmtDay(t.vonTag) + ' ' + t.von + ' – ' + fmtDay(t.bisTag) + ' ' + t.bis
+    return fmtDay(t.vonTag) + ', ' + t.von + (t.bis !== t.von ? ' – ' + t.bis : '') + ' Uhr'
+  }
+  // Wie report-form.js: von = frühestes, bis = spätestes Foto; bis leer, wenn
+  // alles in derselben Minute; „Tag bis" nur bei Tageswechsel.
+  function applyPhotoTimes() {
+    var s = state
+    var t = s && s.report && s.report.photoTimes
+    if (!t) return
+    var body = {
+      tattag: t.vonTag,
+      tatzeit_von: t.von,
+      tattag_bis: t.bisTag !== t.vonTag ? t.bisTag : '',
+      tatzeit_bis: t.bis !== t.von || t.bisTag !== t.vonTag ? t.bis : '',
+    }
+    var box = dlg.querySelector('.photo-edit-details')
+    box.querySelector('[data-detail=tattag]').value = body.tattag
+    box.querySelector('[data-detail=tatzeit_von]').value = body.tatzeit_von
+    box.querySelector('[data-detail=tatzeit_bis]').value = body.tatzeit_bis
+    saveDetail(body)
   }
   function saveDetail(body) {
     var s = state
