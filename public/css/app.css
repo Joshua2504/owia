@@ -1095,3 +1095,5 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
   .photo-edit-fields { overflow: visible; }
   .photo-edit-actions { position: sticky; bottom: 0; background: var(--bs-body-bg); }
 }
+.photo-edit-map { height: 220px; }
+.photo-edit-map[hidden] { display: none; }

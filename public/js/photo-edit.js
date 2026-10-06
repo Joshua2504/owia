@@ -96,7 +96,10 @@
       '<input type="text" id="photo-edit-tatort-input" class="form-control" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
       ' autocomplete="off" spellcheck="false" placeholder="Adresse eingeben …">' +
       '<button type="button" class="btn btn-outline-secondary" data-act="tatort-photo" title="Tatort aus den GPS-Daten der Fotos">📍</button>' +
-      '</div></div>' +
+      '</div>' +
+      '<div class="photo-edit-map rounded border mt-2"></div>' +
+      '<div class="small text-muted mt-1">Marker zur genauen Stelle ziehen – die Adresse wird übernommen.</div>' +
+      '</div>' +
       // Restliche Angaben (Werte aus GET /pruefen/:az/daten, gespeichert je
       // Feld über PATCH /anzeige/:az/felder).
       '<div class="photo-edit-details" hidden>' +
@@ -212,6 +215,7 @@
     tatortInput().addEventListener('address:chosen', function (e) {
       var d = e.detail || {}
       chosenCoords = Number.isFinite(d.lat) && Number.isFinite(d.lon) ? { tatort_lat: d.lat, tatort_lon: d.lon } : null
+      if (chosenCoords) placeMarker(d.lat, d.lon, true)
       savePlate().catch(function () {})
     })
     tatortInput().addEventListener('change', function () {
@@ -620,6 +624,98 @@
     if (window.reportTableRefresh) Promise.resolve(window.reportTableRefresh(az)).catch(function () {})
   }
 
+  // ---- Tatort-Karte (wie report-map.js im Editor) ---------------------------
+  // Eine Leaflet-Karte für den ganzen Dialog; je Anzeige neu zentriert.
+  // Marker ziehen → Adresse per Reverse-Geocoding → Tatort + genau diese
+  // Koordinaten speichern. Leaflet wird bei Bedarf nachgeladen (nicht jede
+  // Listenseite bindet es ein).
+  var map = null
+  var marker = null
+  var mapAz = null
+  var leafletLoading = null
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve()
+    if (!leafletLoading) {
+      leafletLoading = new Promise(function (resolve, reject) {
+        var css = document.createElement('link')
+        css.rel = 'stylesheet'
+        css.href = '/public/vendor/leaflet.css'
+        document.head.appendChild(css)
+        var js = document.createElement('script')
+        js.src = '/public/vendor/leaflet.js'
+        js.onload = resolve
+        js.onerror = function () { leafletLoading = null; reject() }
+        document.head.appendChild(js)
+      })
+    }
+    return leafletLoading
+  }
+  // 0/0 und Unsinn sind keine Position (gleiche Regel wie report-map.js).
+  function validCoord(v) {
+    return typeof v === 'number' && isFinite(v) && v !== 0
+  }
+  function photoIcon(url) {
+    return L.divIcon({
+      className: 'photo-marker',
+      html: '<img src="' + encodeURI(url) + '" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:2px solid #0d6efd;box-shadow:0 1px 4px rgba(0,0,0,.45)">',
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
+    })
+  }
+  function syncMap(s) {
+    var el = dlg.querySelector('.photo-edit-map')
+    if (!s.report || s.tatort == null) return
+    loadLeaflet().then(function () {
+      if (state !== s) return
+      if (!map) {
+        var base = '/public/vendor/leaflet/images/'
+        L.Icon.Default.mergeOptions({ iconRetinaUrl: base + 'marker-icon-2x.png', iconUrl: base + 'marker-icon.png', shadowUrl: base + 'marker-shadow.png' })
+        map = L.map(el, { zoomControl: true })
+        L.tileLayer('/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap-Mitwirkende' }).addTo(map)
+        // Ohne Tatort setzt ein Klick in die Karte den Marker.
+        map.on('click', function (e) {
+          if (marker || !state) return
+          placeMarker(e.latlng.lat, e.latlng.lng, false)
+          markerMoved()
+        })
+      }
+      var f = s.report.fields
+      var has = validCoord(f.tatort_lat) && validCoord(f.tatort_lon)
+      if (mapAz !== s.az) {
+        mapAz = s.az
+        if (marker) { marker.remove(); marker = null }
+        var c = s.report.mapCenter || { lat: 50.1109, lon: 8.6821 }
+        map.setView(has ? [f.tatort_lat, f.tatort_lon] : [c.lat, c.lon], has ? 17 : 13)
+      }
+      if (has) placeMarker(f.tatort_lat, f.tatort_lon, false)
+      setTimeout(function () { if (map) map.invalidateSize() }, 50)
+    }, function () { el.hidden = true })
+  }
+  function placeMarker(lat, lon, recenter) {
+    if (!map || !state) return
+    var first = state.report && state.report.images && state.report.images[0]
+    if (marker) marker.setLatLng([lat, lon])
+    else {
+      marker = L.marker([lat, lon], first ? { draggable: true, icon: photoIcon(first.thumb) } : { draggable: true }).addTo(map)
+      marker.on('dragend', markerMoved)
+    }
+    if (recenter) map.setView([lat, lon], Math.max(map.getZoom(), 17))
+  }
+  function markerMoved() {
+    var s = state
+    var p = marker.getLatLng()
+    fetch('/api/geo/reverse?lat=' + p.lat + '&lon=' + p.lng, { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .catch(function () { return null })
+      .then(function (data) {
+        if (state !== s) return
+        var label = data && data.result && data.result.label
+        if (label) tatortInput().value = label
+        chosenCoords = { tatort_lat: Number(p.lat.toFixed(6)), tatort_lon: Number(p.lng.toFixed(6)) }
+        savePlate().catch(function () {})
+      })
+  }
+
   function loadStatus(s) {
     if (!s || s.plate == null) return
     var seq = (s.statusSeq = (s.statusSeq || 0) + 1)
@@ -630,6 +726,7 @@
         if (state !== s || seq !== s.statusSeq || !d || d.gone) return
         s.report = d
         fillDetails(s)
+        syncMap(s)
         updateRun()
       })
   }
@@ -759,6 +856,11 @@
         }
         updateUi()
         loadStatus(s)
+        // Neue Position zeigen, sobald der Status (mit Koordinaten) da ist.
+        setTimeout(function () {
+          var f = state === s && s.report && s.report.fields
+          if (f && validCoord(f.tatort_lat) && validCoord(f.tatort_lon)) placeMarker(f.tatort_lat, f.tatort_lon, true)
+        }, 700)
       })
       .catch(function (err) { alert(err.message) })
       .finally(function () { b.disabled = false })
@@ -914,6 +1016,7 @@
     document.documentElement.classList.remove('has-editor-dialog')
     state = null
     detailsAz = null
+    mapAz = null
     // Erst nach dem Schließen: review.js baut die Karte dann komplett neu.
     if (az) flushHost(az)
   }

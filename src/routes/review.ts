@@ -106,6 +106,8 @@ export default async function reviewRoutes(app: FastifyInstance) {
       recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
       verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
       hasGps: imgs.some((i) => i.gps_lat !== null),
+      // Kartenmitte ohne Tatort (Foto-Dialog, photo-edit.js): Stadtmitte.
+      mapCenter: { lat: city.geo.mapLat, lon: city.geo.mapLon },
       photoTimes,
       images: imgs.map((i) => {
         const v = imageVersion(i.filename)
