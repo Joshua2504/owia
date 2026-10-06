@@ -94,7 +94,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
           <% } %>
         </div>
         <div class="col-lg-7">
-          <!-- Das PDF enthält alle Angaben, Kartenseite und Beweisfotos. -->
+          <!-- Das PDF enthält nur das ausgefüllte Formular; die Beweisfotos gehen als eigene Mail-Anhänge raus. -->
           <iframe src="/admin/anzeigen/<%= r.id %>/pdf" class="w-100 border rounded"
                   style="height:420px" title="PDF <%= r.aktenzeichen %>" loading="lazy"></iframe>
         </div>

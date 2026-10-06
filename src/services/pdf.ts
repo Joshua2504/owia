@@ -1,11 +1,8 @@
 import fs from 'fs/promises'
 import path from 'path'
-import { PDFDocument, PDFName, PDFArray, StandardFonts, degrees, rgb } from 'pdf-lib'
-import { readOrientation } from './pixelate'
+import { PDFDocument, PDFName, PDFArray, StandardFonts, rgb } from 'pdf-lib'
 import mysql from 'mysql2/promise'
-import type { ReportImage } from '../routes/reports'
 import { getCity, DEFAULT_CITY_ID } from '../config/cities'
-import { renderTatortMap } from './staticmap'
 
 /** "14:30:00" / "14:30" -> "14:30" */
 function hhmm(time: unknown): string {
@@ -38,11 +35,9 @@ export const PdfService = {
     return form.getFields().map((f) => `${f.constructor.name}: ${f.getName()}`)
   },
 
-  async generate(
-    report: mysql.RowDataPacket,
-    user: mysql.RowDataPacket,
-    images: ReportImage[] = []
-  ): Promise<string> {
+  /** Nur das ausgefüllte amtliche Formular – Beweisfotos gehen als eigene
+   *  Mail-Anhänge raus (MailService.prepareReport), eine Kartenseite gibt es nicht. */
+  async generate(report: mysql.RowDataPacket, user: mysql.RowDataPacket): Promise<string> {
     const userDir = path.join(PDF_DIR, String(user.id))
     await fs.mkdir(userDir, { recursive: true })
 
@@ -230,101 +225,6 @@ export const PdfService = {
       // Vermerk konnte nicht gezeichnet werden — PDF trotzdem erzeugen.
     }
 
-    const A4 = { width: 595.28, height: 841.89 }
-    const margin = 40
-
-    // Tatort-Karte mit Marker als eigene Seite (vor den Beweisfotos), sofern
-    // Koordinaten vorliegen und der Tileserver die Kacheln liefern kann.
-    if (report.tatort_lat != null && report.tatort_lon != null) {
-      try {
-        const mapPng = await renderTatortMap(Number(report.tatort_lat), Number(report.tatort_lon))
-        if (mapPng) {
-          const embedded = await doc.embedPng(mapPng)
-          const font = await doc.embedFont(StandardFonts.Helvetica)
-          const page = doc.addPage([A4.width, A4.height])
-          let cursorY = A4.height - margin
-
-          page.drawText('Tatort auf der Karte', { x: margin, y: cursorY - 14, size: 14, font })
-          cursorY -= 32
-          if (report.tatort) {
-            // Adresse als Bildunterschrift; WinAnsi kann keine Emojis o.Ä. – daher absichern.
-            try {
-              page.drawText(String(report.tatort), { x: margin, y: cursorY - 10, size: 10, font })
-              cursorY -= 26
-            } catch {
-              /* Sonderzeichen in der Adresse – Unterschrift weglassen */
-            }
-          }
-
-          const scaled = embedded.scaleToFit(A4.width - margin * 2, cursorY - margin)
-          page.drawImage(embedded, {
-            x: (A4.width - scaled.width) / 2,
-            y: cursorY - scaled.height,
-            width: scaled.width,
-            height: scaled.height,
-          })
-        }
-      } catch {
-        // Karte konnte nicht erzeugt werden — PDF ohne Kartenseite weiter.
-      }
-    }
-
-    // Hochgeladene Bilder als zusätzliche Seiten anhängen. PDF-Viewer ignorieren
-    // die EXIF-Orientation (Handys speichern Hochkant-Fotos quer + Dreh-Tag);
-    // deshalb wird das Bild hier beim Zeichnen entsprechend gedreht. Oben je Seite
-    // die Aufnahmezeit (aus EXIF) als Beschriftung – wichtiges Beweis-Detail.
-    const photoFont = await doc.embedFont(StandardFonts.Helvetica)
-    for (const image of images) {
-      try {
-        const embedded =
-          image.mimetype === 'image/png'
-            ? await doc.embedPng(image.buffer)
-            : await doc.embedJpg(image.buffer)
-        const orientation = await readOrientation(image.buffer)
-        const page = doc.addPage([A4.width, A4.height])
-
-        // Beschriftung oben: reserviert eine Kopfzeile, das Bild sitzt darunter.
-        const caption = image.capturedAt ? `Aufgenommen: ${image.capturedAt} Uhr` : null
-        const captionH = caption ? 22 : 0
-        if (caption) {
-          page.drawText(caption, {
-            x: margin,
-            y: A4.height - margin - 11,
-            size: 11,
-            font: photoFont,
-            color: rgb(0.1, 0.1, 0.1),
-          })
-        }
-
-        // Anzeige-Maße: bei 90°-Drehungen (Orientation 5-8) sind Breite/Höhe vertauscht.
-        const rot90 = orientation >= 5
-        const dispW = rot90 ? embedded.height : embedded.width
-        const dispH = rot90 ? embedded.width : embedded.height
-        // Verfügbare Fläche = Seite minus Ränder minus Kopfzeile (Beschriftung).
-        const availH = A4.height - margin * 2 - captionH
-        const s = Math.min((A4.width - margin * 2) / dispW, availH / dispH)
-        const w = embedded.width * s // gezeichnete Maße in gespeicherter Orientierung
-        const h = embedded.height * s
-        const bx = (A4.width - dispW * s) / 2 // Ziel-Box (aufrechtes Bild), horizontal zentriert
-        const by = margin + (availH - dispH * s) / 2 // vertikal in der Fläche unter der Kopfzeile
-
-        // pdf-lib dreht um den Punkt (x,y); x/y so wählen, dass das gedrehte
-        // Bild exakt in der Ziel-Box landet. Spiegel-Orientierungen (2,4,5,7)
-        // werden wie ihre Dreh-Entsprechung behandelt.
-        if (orientation === 3 || orientation === 4) {
-          page.drawImage(embedded, { x: bx + w, y: by + h, width: w, height: h, rotate: degrees(180) })
-        } else if (orientation === 5 || orientation === 6) {
-          page.drawImage(embedded, { x: bx, y: by + w, width: w, height: h, rotate: degrees(-90) })
-        } else if (orientation === 7 || orientation === 8) {
-          page.drawImage(embedded, { x: bx + h, y: by, width: w, height: h, rotate: degrees(90) })
-        } else {
-          page.drawImage(embedded, { x: bx, y: by, width: w, height: h })
-        }
-      } catch {
-        // Bild konnte nicht eingebettet werden — überspringen
-      }
-    }
-
     // Seitenzahl "Seite X von Y" unten rechts auf jeder Seite (auch dem Formular).
     try {
       const font = await doc.embedFont(StandardFonts.Helvetica)
@@ -345,14 +245,6 @@ export const PdfService = {
     }
 
     const filled = await doc.save()
-
-    // Base64 im Mailversand bläht um ~37 % auf: ab ~10 MB PDF wird ein 15-MB-
-    // Postfach-Limit der Behörde (Frankfurt) knapp – im Log sichtbar machen.
-    if (filled.length > 10 * 1024 * 1024) {
-      console.warn(
-        `PDF für Anzeige ${report.aktenzeichen || report.id} ist ${(filled.length / 1024 / 1024).toFixed(1)} MB groß – Mail-Limit der Behörde (~15 MB) könnte überschritten werden`
-      )
-    }
 
     // Dateiname = Präfix-Tattag-Nummer (z.B. "OWiA-2026-07-14-123456.pdf"):
     // sortiert sich chronologisch und trägt das Aktenzeichen. Tattag bewusst
