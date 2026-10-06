@@ -629,6 +629,7 @@
   // Marker ziehen → Adresse per Reverse-Geocoding → Tatort + genau diese
   // Koordinaten speichern. Leaflet wird bei Bedarf nachgeladen (nicht jede
   // Listenseite bindet es ein).
+  var MAP_ZOOM = 19 // höchste Stufe des Tileservers (maxZoom unten)
   var map = null
   var marker = null
   var mapAz = null
@@ -657,9 +658,9 @@
   function photoIcon(url) {
     return L.divIcon({
       className: 'photo-marker',
-      html: '<img src="' + encodeURI(url) + '" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:2px solid #0d6efd;box-shadow:0 1px 4px rgba(0,0,0,.45)">',
-      iconSize: [44, 44],
-      iconAnchor: [22, 22],
+      html: '<img src="' + encodeURI(url) + '" alt="" style="width:30px;height:30px;object-fit:cover;border-radius:6px;border:2px solid #0d6efd;box-shadow:0 1px 4px rgba(0,0,0,.45)">',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
     })
   }
   function syncMap(s) {
@@ -675,7 +676,7 @@
         // Ohne Tatort setzt ein Klick in die Karte den Marker.
         map.on('click', function (e) {
           if (marker || !state) return
-          placeMarker(e.latlng.lat, e.latlng.lng, false)
+          placeMarker(e.latlng.lat, e.latlng.lng, true)
           markerMoved()
         })
       }
@@ -685,7 +686,8 @@
         mapAz = s.az
         if (marker) { marker.remove(); marker = null }
         var c = s.report.mapCenter || { lat: 50.1109, lon: 8.6821 }
-        map.setView(has ? [f.tatort_lat, f.tatort_lon] : [c.lat, c.lon], has ? 17 : 13)
+        // Mit Tatort ganz heran (Marker exakt setzen), sonst Stadtübersicht.
+        map.setView(has ? [f.tatort_lat, f.tatort_lon] : [c.lat, c.lon], has ? MAP_ZOOM : 13)
       }
       if (has) placeMarker(f.tatort_lat, f.tatort_lon, false)
       setTimeout(function () { if (map) map.invalidateSize() }, 50)
@@ -699,7 +701,7 @@
       marker = L.marker([lat, lon], first ? { draggable: true, icon: photoIcon(first.thumb) } : { draggable: true }).addTo(map)
       marker.on('dragend', markerMoved)
     }
-    if (recenter) map.setView([lat, lon], Math.max(map.getZoom(), 17))
+    if (recenter) map.setView([lat, lon], MAP_ZOOM)
   }
   function markerMoved() {
     var s = state

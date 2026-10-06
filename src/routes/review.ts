@@ -8,6 +8,7 @@ import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { submitProblems, mostUsedVerstoesse } from './reports'
+import { fillTatortFromPhotos } from '../services/tatortFill'
 
 // Prüf-Modus: alle offenen Entwürfe nacheinander durchgehen – Fotos prüfen und
 // schwärzen (photo-edit.js, mit Kennzeichen-Abgleich im Dialog), fehlende
@@ -54,6 +55,13 @@ export default async function reviewRoutes(app: FastifyInstance) {
   app.get('/pruefen/:az/daten', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
+    // Fehlt der Tatort noch, jetzt aus den Fotos nachtragen (no-op sonst) –
+    // so steht er im Prüf-Dialog schon da.
+    const [idRows] = await pool.execute<mysql.RowDataPacket[]>(
+      "SELECT id FROM reports WHERE aktenzeichen = ? AND user_id = ? AND status = 'entwurf' AND COALESCE(tatort, '') = ''",
+      [az, userId]
+    )
+    if (idRows[0]) await fillTatortFromPhotos(Number(idRows[0].id)).catch(() => null)
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT *, DATE_FORMAT(tattag, '%Y-%m-%d') AS tattag_iso, DATE_FORMAT(tattag_bis, '%Y-%m-%d') AS tattag_bis_iso,
               DATE_FORMAT(tatzeit_von, '%H:%i') AS von_hhmm, DATE_FORMAT(tatzeit_bis, '%H:%i') AS bis_hhmm

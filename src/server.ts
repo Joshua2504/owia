@@ -34,6 +34,7 @@ import { initDb } from './db/init'
 import { MySQLSessionStore } from './db/session-store'
 import { pool } from './db/connection'
 import { purgeTrash } from './services/drafts'
+import { fillMissingTatorte } from './services/tatortFill'
 
 // trustProxy: hinter Caddy sonst falsches Protokoll (secure-Cookies) und
 // Docker-interne IPs statt Client-IPs in Logs und Rate-Limits.
@@ -207,6 +208,20 @@ async function main() {
   }
   setInterval(purge, 6 * 60 * 60 * 1000)
   void purge()
+
+  // Tatort aus Foto-GPS nachholen (services/tatortFill.ts): Entwürfe, bei denen
+  // Photon beim Import nicht antwortete, und Altbestand. Erster Lauf kurz nach
+  // dem Start, danach alle 15 Minuten.
+  const fillTatorte = async () => {
+    try {
+      const n = await fillMissingTatorte()
+      if (n) app.log.info({ n }, 'Tatort aus Fotos nachgetragen')
+    } catch (err) {
+      app.log.warn({ err }, 'Tatort-Nachtrag fehlgeschlagen')
+    }
+  }
+  setTimeout(fillTatorte, 30 * 1000)
+  setInterval(fillTatorte, 15 * 60 * 1000)
 
   // Bei einem Neustart mitten in der Kennzeichen-Analyse liegengebliebene
   // 'pending'-Bilder auflösen, sonst zeigt das Formular dort endlos den Spinner.

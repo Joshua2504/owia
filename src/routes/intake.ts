@@ -17,6 +17,7 @@ import { findDuplicateGroups } from '../services/duplicates'
 import { createDraft, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
+import { queueTatortFill } from '../services/tatortFill'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 
 // Muss zur Chunk-Größe in public/js/import-upload.js passen und unter dem
@@ -290,6 +291,8 @@ export default async function intakeRoutes(app: FastifyInstance) {
               p.id,
             ])
           }
+          // Photon hat oben nicht geantwortet: Adresse im Hintergrund nachholen.
+          if (!address?.label) queueTatortFill(draft.id)
         }
       }
 
@@ -485,6 +488,8 @@ export default async function intakeRoutes(app: FastifyInstance) {
     })
     queuePlateAnalysis(userId, reportId, imageId, photo.filename, photo.mimetype)
     await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [reportId, photo.id])
+    // Neuer/leerer Entwurf: Tatort aus den Foto-Koordinaten (no-op, wenn gesetzt).
+    queueTatortFill(reportId)
     return reply.send({ ok: true })
   })
 

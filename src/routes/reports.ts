@@ -12,6 +12,7 @@ import { getCity, CITIES, unlockedCities, hasPdfForm } from '../config/cities'
 import { STICKER_LOESEN_MINUTEN, formatCode } from '../services/stickers'
 import { resolveSendCity, cityEmail, detectCityByLabel } from '../services/districts'
 import { reverseGeocode } from '../services/geocode'
+import { queueTatortFill } from '../services/tatortFill'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
 import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage, imageVersion } from '../services/images'
 import { cachedMailVariant } from '../services/pixelate'
@@ -694,6 +695,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
           const row = await saveImageToReport(userId, reportId, { buffer, filename: part.filename, mimetype: part.mimetype || '' }, sha256)
           // Kennzeichen im Hintergrund erkennen; Ergebnis holt das Formular per Poll.
           queuePlateAnalysis(userId, reportId, row.id, row.filename, row.mimetype)
+          // Tatort leer? Aus den GPS-Daten des neuen Fotos nachtragen.
+          queueTatortFill(reportId)
           saved.push({ id: row.id, url: `/anzeige/${az}/image/${row.id}`, capturedAt: row.capturedAt })
           count++
         } catch {
@@ -1777,5 +1780,7 @@ export async function moveImages(
   // „Einreichen" erzeugen das PDF ohnehin neu – der Nutzer soll nach dem
   // Verschieben nicht auf zwei PDF-Läufe warten.
   void regeneratePdf(source.id, userId).then(() => regeneratePdf(targetId, userId)).catch(() => {})
+  // Ziel ohne Tatort (z. B. neue Anzeige aus Fotos): aus deren GPS nachtragen.
+  queueTatortFill(targetId)
   return { status: 200, body: { ok: true, targetAz: resolvedTargetAz, moved: imgs.length } }
 }
