@@ -120,6 +120,8 @@ const versandLabel = {
 
     <% } %>
 
+    <%- include('../partials/sticker-card', { report, stickers: locals.stickers || [], loesenMinuten: locals.stickerLoesenMinuten }) %>
+
     <% const replies = locals.replies || [] %>
     <% const attachmentsByReply = locals.attachmentsByReply || {} %>
     <% if (replies.length || isVersendet) { %>

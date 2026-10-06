@@ -1,0 +1,57 @@
+<%
+// QR-Sticker der Anzeige (routes/sticker.ts): verknüpfte Codes + Scanner
+// (public/js/sticker-scan.js) bzw. Code abtippen. Lösen nur in den ersten
+// loesenMinuten nach dem Verknüpfen.
+%>
+<div class="card shadow-sm mb-4" id="sticker">
+  <div class="card-header">🏷 Sticker</div>
+  <div class="card-body">
+    <% if (stickers.length) { %>
+      <ul class="list-unstyled mb-3">
+        <% for (const s of stickers) { %>
+          <li class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <a href="/S/<%= s.code %>" class="font-monospace fw-semibold"><%= s.codeFmt %></a>
+            <span class="text-muted small">
+              <%= s.scans === 1 ? '1 Aufruf' : `${s.scans} Aufrufe` %><% if (s.letzterScan) { %>, zuletzt <%= s.letzterScan %><% } %>
+            </span>
+            <% if (s.loesbar) { %>
+              <form method="post" action="/S/<%= s.code %>/loesen" class="m-0">
+                <input type="hidden" name="zurueck" value="/anzeige/<%= report.aktenzeichen %>">
+                <button type="submit" class="btn btn-link btn-sm p-0">Verknüpfung lösen</button>
+              </form>
+            <% } %>
+          </li>
+        <% } %>
+      </ul>
+    <% } else { %>
+      <p class="small text-muted">
+        Noch kein Sticker verknüpft. Scanne einen deiner gedruckten Sticker – wer ihn
+        später scannt, sieht nur die öffentlichen Angaben dieser Anzeige (ohne
+        Kennzeichen, ohne deinen Namen).
+      </p>
+    <% } %>
+
+    <form method="post" action="/anzeige/<%= report.aktenzeichen %>/sticker"
+          class="d-flex flex-wrap gap-2" data-sticker-form>
+      <button type="button" class="btn btn-primary btn-sm" data-sticker-scan>📷 Sticker scannen</button>
+      <input name="code" class="form-control form-control-sm font-monospace" style="max-width:11rem"
+             placeholder="oder Code, z. B. 7KQ2-XM9P" autocomplete="off" autocapitalize="characters"
+             spellcheck="false" required maxlength="40" aria-label="Sticker-Code">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Verknüpfen</button>
+    </form>
+
+    <div class="d-none mt-3" data-sticker-scanner>
+      <video playsinline muted class="w-100 rounded border bg-dark" style="max-height:60vh;object-fit:cover"></video>
+      <div class="d-flex justify-content-between align-items-center mt-1">
+        <span class="small text-muted" data-sticker-status>Kamera wird gestartet …</span>
+        <button type="button" class="btn btn-link btn-sm" data-sticker-stop>Abbrechen</button>
+      </div>
+    </div>
+
+    <p class="small text-muted mt-3 mb-0">
+      Noch keine Sticker? <a href="/sticker">Bögen erzeugen und selbst drucken</a>.
+      <% if (stickers.length) { %>Lösen ist nur in den ersten <%= loesenMinuten %> Minuten möglich.<% } %>
+    </p>
+  </div>
+</div>
+<script src="/public/js/sticker-scan.js" defer></script>

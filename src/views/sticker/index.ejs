@@ -1,0 +1,187 @@
+<%
+// Sticker-Verwaltung (routes/sticker.ts): Bögen erzeugen + drucken, Reste
+// entwerten, verknüpfte Sticker im Blick. Neue Bögen nur ohne offene Codes.
+const gesperrt = offen > 0
+%>
+<div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-3">
+  <h2 class="mb-0">🏷 Sticker</h2>
+  <a href="/anzeigen" class="btn btn-outline-secondary">Zurück zu meinen Anzeigen</a>
+</div>
+
+<p class="text-muted">
+  Drucke Sticker mit QR-Code selbst auf A4-Etikettenbögen. Nach dem Erstellen
+  einer Anzeige scannst du einen Sticker – in der Anzeige über „Sticker scannen“
+  oder einfach mit der Handy-Kamera – und verknüpfst ihn damit. Wer den Sticker
+  danach scannt, sieht nur die öffentlichen Angaben: Verstoß, Tattag, Stadt,
+  Bearbeitungsstand und ein stark verpixeltes Foto – kein Kennzeichen und nichts
+  über dich.
+</p>
+
+<div class="alert alert-warning small">
+  <strong>Bitte beachten:</strong> Nur <strong>rückstandsfrei ablösbare</strong>
+  Etiketten verwenden und an eine <strong>Seitenscheibe</strong> kleben – nicht auf
+  den Lack und nie ins Sichtfeld der Fahrerin oder des Fahrers. Ein schwer
+  entfernbarer Aufkleber kann als Sachbeschädigung gelten. Tintenstrahldruck
+  verläuft bei Regen – besser Laserdrucker oder wetterfeste Etiketten.
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header">Neue Bögen erzeugen</div>
+  <div class="card-body">
+    <% if (gesperrt) { %>
+      <div class="alert alert-info small mb-3">
+        Du hast noch <strong><%= offen %> offene Sticker</strong>. Neue Bögen gibt es,
+        sobald alle verknüpft oder entwertet sind (verdruckte oder verlorene Sticker
+        unten beim jeweiligen Batch entwerten).
+      </div>
+    <% } %>
+    <form method="post" action="/sticker/erzeugen" id="sticker-form">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label" for="vorlage">Etikettenformat (A4)</label>
+          <select class="form-select" name="vorlage" id="vorlage">
+            <% for (const v of vorlagen) { %>
+              <option value="<%= v.id %>" <%= layout.vorlage === v.id ? 'selected' : '' %>><%= v.name %></option>
+            <% } %>
+            <option value="eigen" <%= layout.vorlage === 'eigen' ? 'selected' : '' %>>Eigenes Format …</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="seiten">Anzahl Bögen</label>
+          <input type="number" class="form-control" name="seiten" id="seiten" min="1" max="<%= maxSeiten %>"
+                 value="<%= maxSeiten %>" required>
+          <div class="form-text">höchstens <%= maxSeiten %></div>
+        </div>
+      </div>
+
+      <fieldset class="row g-2 mt-1 <%= layout.vorlage === 'eigen' ? '' : 'd-none' %>" id="eigen-felder">
+        <legend class="form-label small text-muted mb-0">Eigenes Format – alle Maße in mm (steht auf der Verpackung der Etiketten)</legend>
+        <% const feld = (name, label, value, step) => ({ name, label, value, step }) %>
+        <% for (const f of [
+             feld('cols', 'Spalten', layout.cols, 1), feld('rows', 'Zeilen', layout.rows, 1),
+             feld('labelW', 'Breite', layout.labelW, 0.1), feld('labelH', 'Höhe', layout.labelH, 0.1),
+             feld('marginLeft', 'Rand links', layout.marginLeft, 0.1), feld('marginTop', 'Rand oben', layout.marginTop, 0.1),
+             feld('gapX', 'Abstand waagerecht', layout.gapX, 0.1), feld('gapY', 'Abstand senkrecht', layout.gapY, 0.1),
+           ]) { %>
+          <div class="col-6 col-md-3">
+            <label class="form-label small mb-0" for="f-<%= f.name %>"><%= f.label %></label>
+            <input type="number" class="form-control form-control-sm" id="f-<%= f.name %>" name="<%= f.name %>"
+                   value="<%= f.value %>" step="<%= f.step %>" min="0">
+          </div>
+        <% } %>
+      </fieldset>
+
+      <div class="row g-2 mt-1 align-items-end">
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-0" for="dx">Versatz nach rechts (mm)</label>
+          <input type="number" class="form-control form-control-sm" id="dx" name="dx" value="<%= layout.dx %>" step="0.5" min="-15" max="15">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-0" for="dy">Versatz nach unten (mm)</label>
+          <input type="number" class="form-control form-control-sm" id="dy" name="dy" value="<%= layout.dy %>" step="0.5" min="-15" max="15">
+        </div>
+        <div class="col-12 col-md-6">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="rahmen" value="1" id="rahmen" <%= layout.rahmen ? 'checked' : '' %>>
+            <label class="form-check-label small" for="rahmen">Etikettenränder mitdrucken (für Normalpapier zum Ausschneiden)</label>
+          </div>
+        </div>
+      </div>
+
+      <p class="form-text mt-2 mb-3">
+        Erst die <strong>Testseite</strong> auf Normalpapier drucken und gegen einen
+        Etikettenbogen ins Licht halten. Sitzen die Ränder nicht, den Versatz anpassen.
+        Im Druckdialog „Tatsächliche Größe“ bzw. „100 %“ wählen, nicht „An Seite anpassen“.
+      </p>
+
+      <div class="d-flex flex-wrap gap-2">
+        <button type="submit" formaction="/sticker/kalibrierung.pdf" formmethod="get" formtarget="_blank"
+                class="btn btn-outline-secondary" formnovalidate>Testseite (PDF)</button>
+        <button type="submit" class="btn btn-primary" <%= gesperrt ? 'disabled' : '' %>>Sticker erzeugen</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<% if (batches.length) { %>
+  <h4 class="mb-3">Deine Bögen</h4>
+  <% for (const b of batches) { %>
+    <div class="card shadow-sm mb-3" id="batch-<%= b.id %>">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+          <div>
+            <strong><%= b.seiten %> <%= b.seiten === 1 ? 'Bogen' : 'Bögen' %></strong>
+            <span class="text-muted small">· <%= b.vorlageName %> · erstellt <%= b.erstellt %></span>
+          </div>
+          <div class="small">
+            <span class="badge bg-success"><%= Number(b.verknuepft || 0) %> verknüpft</span>
+            <span class="badge bg-secondary"><%= b.offen %> offen</span>
+            <% if (Number(b.entwertet || 0)) { %><span class="badge bg-light text-dark border"><%= Number(b.entwertet) %> entwertet</span><% } %>
+            <span class="text-muted ms-1"><%= Number(b.scans) %> Aufrufe</span>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-end">
+          <form method="get" action="/sticker/<%= b.id %>/sticker.pdf" target="_blank" class="d-flex flex-wrap gap-2 align-items-end m-0">
+            <div>
+              <label class="form-label small mb-0" for="dx-<%= b.id %>">rechts (mm)</label>
+              <input type="number" class="form-control form-control-sm" style="width:6rem" id="dx-<%= b.id %>" name="dx" value="<%= b.layout.dx %>" step="0.5" min="-15" max="15">
+            </div>
+            <div>
+              <label class="form-label small mb-0" for="dy-<%= b.id %>">unten (mm)</label>
+              <input type="number" class="form-control form-control-sm" style="width:6rem" id="dy-<%= b.id %>" name="dy" value="<%= b.layout.dy %>" step="0.5" min="-15" max="15">
+            </div>
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" name="rahmen" value="1" id="rahmen-<%= b.id %>" <%= b.layout.rahmen ? 'checked' : '' %>>
+              <label class="form-check-label small" for="rahmen-<%= b.id %>">Ränder</label>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">PDF herunterladen</button>
+          </form>
+          <% if (b.offen > 0) { %>
+            <form method="post" action="/sticker/<%= b.id %>/entwerten" class="m-0 ms-auto">
+              <button type="submit" class="btn btn-outline-danger btn-sm"
+                      onclick="return confirm('Alle <%= b.offen %> offenen Sticker dieses Batches entwerten? Sie lassen sich danach nicht mehr verknüpfen.')">
+                Offene entwerten
+              </button>
+            </form>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  <% } %>
+<% } %>
+
+<% if (linked.length) { %>
+  <h4 class="mt-4 mb-3">Verknüpfte Sticker</h4>
+  <div class="card shadow-sm">
+    <ul class="list-group list-group-flush">
+      <% for (const l of linked) { %>
+        <li class="list-group-item d-flex flex-wrap align-items-center gap-2 small">
+          <a href="/S/<%= l.code %>" class="font-monospace fw-semibold"><%= l.codeFmt %></a>
+          <% if (l.aktenzeichen) { %>
+            → <a href="/anzeige/<%= l.aktenzeichen %>"><code><%= l.aktenzeichen %></code></a>
+            <% if (l.kennzeichen) { %><span class="plate-chip"><%= l.kennzeichen %></span><% } %>
+          <% } else { %>
+            <span class="text-muted">→ Anzeige gelöscht</span>
+          <% } %>
+          <span class="text-muted">· verknüpft <%= l.verknuepft_fmt %></span>
+          <span class="text-muted">· <%= Number(l.scan_count) === 1 ? '1 Aufruf' : `${Number(l.scan_count)} Aufrufe` %><% if (l.letzter_scan) { %>, zuletzt <%= l.letzter_scan %><% } %></span>
+          <% if (l.loesbar) { %>
+            <form method="post" action="/S/<%= l.code %>/loesen" class="m-0 ms-auto">
+              <input type="hidden" name="zurueck" value="/sticker">
+              <button type="submit" class="btn btn-link btn-sm p-0">Verknüpfung lösen</button>
+            </form>
+          <% } %>
+        </li>
+      <% } %>
+    </ul>
+  </div>
+<% } %>
+
+<script>
+  // „Eigenes Format": Maßfelder nur dann zeigen.
+  (function () {
+    var sel = document.getElementById('vorlage')
+    var felder = document.getElementById('eigen-felder')
+    sel.addEventListener('change', function () { felder.classList.toggle('d-none', sel.value !== 'eigen') })
+  })()
+</script>

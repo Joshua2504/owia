@@ -1,0 +1,150 @@
+<%
+// Ziel des QR-Stickers (routes/sticker.ts). Öffentlich – daher NUR die Angaben,
+// die auch die Übersichtskarte zeigt. Kein Kennzeichen, kein Aktenzeichen,
+// keine Uhrzeit, kein Adresstext, nichts über die anzeigende Person. Der
+// Besitzer sieht zusätzlich seinen Banner bzw. das Verknüpfungsformular.
+// Englisch jeweils klein darunter, wie auf dem Sticker.
+const en = (text) => `<div class="small text-body-secondary fst-italic">${text}</div>`
+%>
+<div class="row justify-content-center">
+  <div class="col-lg-8 col-xl-7">
+
+    <% if (isOwner && zustand !== 'offen' && zustand !== 'entwertet') { %>
+      <div class="alert alert-info small">
+        <strong>Dein Sticker <span class="font-monospace"><%= codeFmt %></span></strong>
+        <% if (aktenzeichen) { %>– verknüpft mit <a href="/anzeige/<%= aktenzeichen %>" class="alert-link"><%= aktenzeichen %></a><% } %>.
+        <%= scans === 1 ? '1 Aufruf' : `${scans} Aufrufe` %> durch andere.
+        <% if (reportStatus === 'entwurf') { %>
+          <br>Die Anzeige ist noch ein Entwurf – öffentliche Angaben erscheinen hier, sobald du sie einreichst.
+        <% } %>
+        <% if (loesbar) { %>
+          <form method="post" action="/S/<%= code %>/loesen" class="d-inline">
+            <button type="submit" class="btn btn-link btn-sm p-0 align-baseline">Verknüpfung lösen</button>
+          </form>
+          <span class="text-muted">(nur in den ersten <%= loesenMinuten %> Minuten)</span>
+        <% } %>
+        <div class="mt-1 text-muted">So sehen andere diese Seite:</div>
+      </div>
+    <% } %>
+
+    <% if (zustand === 'oeffentlich') { %>
+      <h1 class="h3 mb-0">Anzeige wegen einer Ordnungswidrigkeit im ruhenden Verkehr</h1>
+      <div class="text-body-secondary fst-italic mb-4">Report of a parking violation</div>
+
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Verstoß<%- en('Violation') %></dt>
+            <dd class="col-sm-8"><%= anzeige.verstossArt || 'Ordnungswidrigkeit im ruhenden Verkehr' %></dd>
+
+            <dt class="col-sm-4">Tattag<%- en('Date') %></dt>
+            <dd class="col-sm-8"><%= anzeige.tattag || '—' %></dd>
+
+            <dt class="col-sm-4">Ort<%- en('City') %></dt>
+            <dd class="col-sm-8"><%= anzeige.stadt %></dd>
+
+            <dt class="col-sm-4">Stand<%- en('Status') %></dt>
+            <dd class="col-sm-8 mb-0">
+              <% if (anzeige.status === 'versendet') { %>
+                <%= anzeige.versendet ? `Am ${anzeige.versendet} an` : 'An' %> das <%= anzeige.behoerde %> übermittelt.
+                <%- en(anzeige.versendet ? `Forwarded to the local authority on ${anzeige.versendet}.` : 'Forwarded to the local authority.') %>
+              <% } else { %>
+                Eingereicht<%= anzeige.eingereicht ? ` am ${anzeige.eingereicht}` : '' %>, wird an das <%= anzeige.behoerde %> weitergeleitet.
+                <%- en('Submitted, will be forwarded to the local authority.') %>
+              <% } %>
+            </dd>
+          </dl>
+        </div>
+      </div>
+
+      <% if (anzeige.bildUrl) { %>
+        <figure class="mb-4">
+          <img src="<%= anzeige.bildUrl %>" alt="Beweisfoto, stark verpixelt" class="img-fluid rounded border w-100"
+               style="max-height:320px;object-fit:cover;image-rendering:pixelated">
+          <figcaption class="small text-body-secondary mt-1">
+            Beweisfoto, zum Schutz aller Beteiligten stark verpixelt. <span class="fst-italic">Photo, heavily pixelated.</span>
+          </figcaption>
+        </figure>
+      <% } %>
+
+      <h2 class="h5">Was bedeutet das?</h2>
+      <div class="small text-body-secondary fst-italic mb-2">What does this mean?</div>
+      <ul class="mb-4">
+        <li class="mb-2">
+          Dieser Aufkleber stammt nicht von einer Behörde. Eine Privatperson hat den Verstoß
+          über den OWiA-Anzeiger beim zuständigen Ordnungsamt angezeigt.
+          <%- en('This sticker was not issued by an authority. A private person reported the violation to the responsible public order office via OWiA-Anzeiger.') %>
+        </li>
+        <li class="mb-2">
+          Das Ordnungsamt prüft die Anzeige und entscheidet selbst, ob es ein Verfahren einleitet.
+          In diesem Fall erhält die Halterin oder der Halter Post von der Behörde.
+          <%- en('The authority reviews the report and decides whether to take action. If so, the registered keeper will receive a letter.') %>
+        </li>
+        <li class="mb-2">
+          Zahlen Sie nichts aufgrund dieses Aufklebers. Maßgeblich ist allein ein Schreiben der Behörde.
+          <%- en('Do not pay anything because of this sticker. Only a letter from the authority is binding.') %>
+        </li>
+        <li class="mb-2">
+          Diese Seite enthält bewusst keine personenbezogenen Daten – kein Kennzeichen und keine Namen.
+          <%- en('This page intentionally contains no personal data – no licence plate and no names.') %>
+        </li>
+        <li>
+          Sie dürfen den Aufkleber entfernen.
+          <%- en('You may remove the sticker.') %>
+        </li>
+      </ul>
+
+    <% } else if (zustand === 'offen' && isOwner) { %>
+      <h1 class="h3">Sticker <span class="font-monospace"><%= codeFmt %></span> verknüpfen</h1>
+      <% if (!eigeneAnzeigen.length) { %>
+        <p>Du hast noch keine Anzeige. Erstelle zuerst eine Anzeige und scanne den Sticker dann erneut.</p>
+        <form method="post" action="/anzeige/neu"><button type="submit" class="btn btn-primary">+ Neue Anzeige</button></form>
+      <% } else { %>
+        <p class="text-muted">
+          Wähle die Anzeige, zu der dieser Sticker gehört. Danach kannst du ihn aufkleben.
+          Lösen ist nur in den ersten <%= loesenMinuten %> Minuten möglich.
+        </p>
+        <form method="post" action="/S/<%= code %>/verknuepfen">
+          <div class="list-group mb-3">
+            <% eigeneAnzeigen.forEach((a, i) => { %>
+              <label class="list-group-item d-flex gap-2 align-items-start">
+                <input class="form-check-input flex-shrink-0 mt-1" type="radio" name="report" value="<%= a.id %>" <%= i === 0 ? 'checked' : '' %>>
+                <span class="small">
+                  <code><%= a.aktenzeichen %></code>
+                  <% if (a.kennzeichen) { %><span class="plate-chip ms-1"><%= a.kennzeichen %></span><% } %>
+                  <span class="badge <%= a.status === 'versendet' ? 'bg-success' : a.status === 'eingereicht' ? 'bg-info' : 'bg-secondary' %> ms-1">
+                    <%= a.status === 'versendet' ? 'Versendet' : a.status === 'eingereicht' ? 'Eingereicht' : 'Entwurf' %>
+                  </span>
+                  <br>
+                  <span class="text-muted">
+                    <%= a.tattag_fmt || `erstellt ${a.erstellt_fmt}` %>
+                    <% if (a.verstoss_art) { %>· <%= a.verstoss_art.length > 70 ? a.verstoss_art.slice(0, 70) + '…' : a.verstoss_art %><% } %>
+                  </span>
+                </span>
+              </label>
+            <% }) %>
+          </div>
+          <button type="submit" class="btn btn-primary">Sticker verknüpfen</button>
+        </form>
+      <% } %>
+
+    <% } else if (zustand === 'offen' || zustand === 'leer') { %>
+      <h1 class="h4">Zu diesem Aufkleber liegen derzeit keine öffentlichen Angaben vor.</h1>
+      <div class="text-body-secondary fst-italic mb-3">There is currently no public information for this sticker.</div>
+      <% if (zustand === 'offen' && !loggedIn) { %>
+        <p class="small">
+          Ist das dein Sticker? <a href="/login?weiter=/S/<%= code %>">Anmelden, um ihn mit einer Anzeige zu verknüpfen</a>.
+        </p>
+      <% } %>
+
+    <% } else { %>
+      <h1 class="h4">Diesen Sticker-Code gibt es nicht (mehr).</h1>
+      <div class="text-body-secondary fst-italic mb-3">This sticker code does not exist.</div>
+    <% } %>
+
+    <p class="small text-body-secondary mt-4">
+      <a href="/">Über den OWiA-Anzeiger</a>
+      <% if (code) { %> · Sticker <span class="font-monospace"><%= codeFmt %></span><% } %>
+    </p>
+  </div>
+</div>

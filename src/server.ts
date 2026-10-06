@@ -15,6 +15,7 @@ import authRoutes from './routes/auth'
 import dashboardRoutes from './routes/dashboard'
 import reportsRoutes from './routes/reports'
 import reviewRoutes from './routes/review'
+import stickerRoutes from './routes/sticker'
 import intakeRoutes from './routes/intake'
 import settingsRoutes from './routes/settings'
 import geoRoutes from './routes/geo'
@@ -172,6 +173,7 @@ async function main() {
   await app.register(dashboardRoutes)
   await app.register(reportsRoutes)
   await app.register(reviewRoutes)
+  await app.register(stickerRoutes)
   await app.register(intakeRoutes)
   await app.register(settingsRoutes)
   await app.register(geoRoutes)

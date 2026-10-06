@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest } from 'fastify'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import crypto from 'crypto'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
@@ -22,6 +22,20 @@ export function isValidEmail(email: string): boolean {
 function baseUrl(request: FastifyRequest): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '')
   return `${request.protocol}://${request.headers.host}`
+}
+
+// Rücksprung nach dem Login: Wer einen eigenen, noch offenen Sticker mit der
+// Handy-Kamera scannt, landet ausgeloggt auf /S/<code> (iOS: die installierte
+// PWA hat einen eigenen Cookie-Speicher). Nur Sticker-Pfade sind erlaubt –
+// kein Open Redirect. Cookie statt Session, weil der Login die Session neu
+// erzeugt (Session-Fixation-Schutz).
+const WEITER_RE = /^\/S\/[0-9A-Z]{8}$/
+
+function afterLogin(request: FastifyRequest, reply: FastifyReply): string {
+  const weiter = (request.cookies as Record<string, string | undefined>)?.weiter
+  if (!weiter) return '/anzeigen'
+  reply.clearCookie('weiter', { path: '/' })
+  return WEITER_RE.test(weiter) ? weiter : '/anzeigen'
 }
 
 /** Findet den Nutzer (oder legt ihn an) und meldet die Session an. */
@@ -77,6 +91,12 @@ async function loginUserByEmail(
 export default async function authRoutes(app: FastifyInstance) {
   // Schritt 1: E-Mail-Adresse eingeben
   app.get('/login', async (request, reply) => {
+    const weiter = String((request.query as { weiter?: string }).weiter || '')
+    if (WEITER_RE.test(weiter)) {
+      if (request.session.userId) return reply.redirect(weiter)
+      // Gültig so lange wie der Login-Code (CODE_TTL_MINUTES) plus Puffer.
+      reply.setCookie('weiter', weiter, { path: '/', httpOnly: true, sameSite: 'lax', maxAge: 30 * 60 })
+    }
     if (request.session.userId) return reply.redirect('/anzeigen')
     return reply.view('/auth/login.ejs', viewData(request, { title: 'Anmelden' }))
   })
@@ -178,7 +198,7 @@ export default async function authRoutes(app: FastifyInstance) {
     }
     const tokenRow = result.token
     await loginUserByEmail(request, normalizedEmail, tokenRow.remember === 1)
-    return reply.redirect('/anzeigen')
+    return reply.redirect(afterLogin(request, reply))
   })
 
   // Alternative: Anmeldung direkt über den Link in der E-Mail
@@ -195,7 +215,7 @@ export default async function authRoutes(app: FastifyInstance) {
     }
 
     await loginUserByEmail(request, tokenRow.email, tokenRow.remember === 1)
-    return reply.redirect('/anzeigen')
+    return reply.redirect(afterLogin(request, reply))
   })
 
   app.get('/logout', async (request, reply) => {

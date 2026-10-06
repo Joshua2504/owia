@@ -32,6 +32,10 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 - **Amts-Antworten in der App** – Antworten des Ordnungsamts werden per IMAP
   abgeholt und der passenden Anzeige zugeordnet (über Aktenzeichen / Message-ID).
 - **PDF-Generierung** – amtliches Frankfurter Formular wird per `pdf-lib` befüllt.
+- **QR-Sticker** – Nutzer drucken Etikettenbögen mit Einmal-Codes selbst
+  (`/sticker`, max. 20 Bögen, neue erst ohne offene Codes), verknüpfen einen
+  Code per Scanner oder Handy-Kamera mit der Anzeige; `/S/<code>` zeigt nur
+  die öffentlichen Angaben (`services/stickers.ts`, `routes/sticker.ts`).
 - **Newsletter** mit Double-Opt-In und optionaler PLZ (Bedarfsanzeige im Admin).
 - **DSGVO** – Daten-Export und Konto-Löschung/Anonymisierung durch Nutzer selbst;
   nur technisch notwendige Cookies.

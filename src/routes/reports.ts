@@ -9,6 +9,7 @@ import { pool } from '../db/connection'
 import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
 import { getCity, CITIES, unlockedCities, hasPdfForm } from '../config/cities'
+import { STICKER_LOESEN_MINUTEN, formatCode } from '../services/stickers'
 import { resolveSendCity, cityEmail, detectCityByLabel } from '../services/districts'
 import { reverseGeocode } from '../services/geocode'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
@@ -1219,7 +1220,24 @@ export default async function reportsRoutes(app: FastifyInstance) {
       [userId]
     )
 
+    // Verknüpfte QR-Sticker (routes/sticker.ts) für die Sticker-Karte.
+    const [stickerRows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT code, scan_count, DATE_FORMAT(last_scan_at, '%d.%m.%Y %H:%i') AS letzter_scan,
+              linked_at > DATE_SUB(NOW(), INTERVAL ? MINUTE) AS loesbar
+         FROM sticker_codes WHERE report_id = ? AND user_id = ? ORDER BY linked_at`,
+      [STICKER_LOESEN_MINUTEN, report.id, userId]
+    )
+    const stickers = stickerRows.map((s) => ({
+      code: String(s.code),
+      codeFmt: formatCode(String(s.code)),
+      scans: Number(s.scan_count || 0),
+      letzterScan: s.letzter_scan || null,
+      loesbar: Number(s.loesbar) === 1,
+    }))
+
     return reply.view('/reports/show.ejs', viewData(request, {
+      stickers,
+      stickerLoesenMinuten: STICKER_LOESEN_MINUTEN,
       title: `Anzeige ${report.aktenzeichen || ''}`,
       report,
       images,

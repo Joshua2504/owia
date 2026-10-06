@@ -22,6 +22,13 @@ import { trashDrafts, restoreDrafts, purgeTrash } from '../src/services/drafts'
 import { groupPhotos } from '../src/services/intakeGrouping'
 import { resolveSendCity } from '../src/services/districts'
 import { assertProductionMailConfig } from '../src/config/mail'
+import view from '@fastify/view'
+import { PDFDocument } from 'pdf-lib'
+import stickerRoutes from '../src/routes/sticker'
+import {
+  createBatch, linkCode, unlinkCode, voidOpenCodes, normalizeCode, parseLayout, renderBatchPdf,
+  batchCodes, StickerLayout,
+} from '../src/services/stickers'
 
 // Harte Schranke: Diese Suite darf niemals auf einer vorhandenen DB laufen.
 if (process.env.OWIA_TEST_ONLY !== '1' || process.env.DB_NAME !== 'owia_test' || process.env.DB_HOST !== 'db') {
@@ -73,8 +80,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0036_foto_geprueft.sql')
-  assert.equal(rows.length, 36)
+  assert.equal(rows.at(-1)?.filename, '0037_sticker.sql')
+  assert.equal(rows.length, 37)
 })
 
 test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
@@ -526,5 +533,115 @@ test('Einzelne Listenzeile lässt sich nachladen (Helfer wie verjaehrung stehen 
     const row = await app.inject({ method: 'GET', url: `/anzeige/${az}/listenzeile` })
     assert.equal(row.statusCode, 200)
     assert.ok(row.body.includes(`data-az="${az}"`))
+  } finally { await app.close() }
+})
+
+test('Sticker: Kontingent, Verknüpfen, Lösen und Code-Normalisierung', async () => {
+  const [u] = await pool.execute<mysql.ResultSetHeader>("INSERT INTO users(email) VALUES ('sticker@example.invalid')")
+  const owner = u.insertId
+  const layout = parseLayout({ vorlage: '70x37' }) as StickerLayout
+  assert.equal(typeof layout, 'object')
+  assert.match(String(parseLayout({ vorlage: 'eigen', cols: 3, rows: 8, labelW: 90, labelH: 37 })), /größer als A4/)
+
+  const first = await createBatch(owner, layout, 2)
+  assert.ok('batchId' in first)
+  const codes = await batchCodes(first.batchId)
+  assert.equal(codes.length, 48)
+  assert.equal(new Set(codes).size, 48)
+  assert.ok(codes.every(c => normalizeCode(c) === c))
+  // Solange Codes offen sind, gibt es keine neuen Bögen.
+  assert.ok('error' in await createBatch(owner, layout, 1))
+  assert.ok('error' in await createBatch(owner, layout, 21))
+
+  const id = await report(owner)
+  assert.equal(await linkCode(owner, codes[0], id), 'ok')
+  assert.equal(await linkCode(owner, codes[0], id), 'vergeben')
+  assert.equal(await linkCode(userId, codes[1], await report()), 'fremd')
+  assert.equal(await linkCode(owner, 'ZZZZZZZZ', id), 'unbekannt')
+  await pool.execute("UPDATE reports SET status='papierkorb' WHERE id=?", [id])
+  assert.equal(await linkCode(owner, codes[1], id), 'anzeige')
+  await pool.execute("UPDATE reports SET status='eingereicht' WHERE id=?", [id])
+
+  // Lösen nur kurz nach dem Verknüpfen.
+  assert.equal(await unlinkCode(owner, codes[0]), true)
+  assert.equal(await linkCode(owner, codes[0], id), 'ok')
+  await pool.execute('UPDATE sticker_codes SET linked_at = DATE_SUB(NOW(), INTERVAL 2 HOUR) WHERE code=?', [codes[0]])
+  assert.equal(await unlinkCode(owner, codes[0]), false)
+
+  assert.equal(await voidOpenCodes(owner, first.batchId), 47)
+  assert.equal(await linkCode(owner, codes[2], id), 'entwertet')
+  assert.ok('batchId' in await createBatch(owner, layout, 1))
+
+  assert.equal(normalizeCode('https://owia.example/S/7kq2-xm9p'), '7KQ2XM9P')
+  assert.equal(normalizeCode('7KQ2-XM9P'), '7KQ2XM9P')
+  assert.equal(normalizeCode('oil2 3456'), '0112' + '3456')
+  assert.equal(normalizeCode('MUSTER00'), null) // U gibt es im Alphabet nicht
+  assert.equal(normalizeCode('kurz'), null)
+
+  const pdf = await PDFDocument.load(await renderBatchPdf(codes, layout, 'https://owia.example'))
+  assert.equal(pdf.getPageCount(), 2)
+})
+
+test('Sticker-Seite zeigt Fremden nur öffentliche Angaben und zählt nur deren Aufrufe', async () => {
+  const [u] = await pool.execute<mysql.ResultSetHeader>("INSERT INTO users(email) VALUES ('sticker-seite@example.invalid')")
+  const owner = u.insertId
+  const created = await createBatch(owner, parseLayout({ vorlage: '105x57' }) as StickerLayout, 1)
+  assert.ok('batchId' in created)
+  const [code, offen] = await batchCodes(created.batchId)
+  const id = await report(owner)
+  await pool.execute(
+    "UPDATE reports SET verstoss_art='112454 – Sie parkten auf dem Gehweg.', tattag='2026-10-01', tatzeit_von='14:35', eingereicht_at=NOW() WHERE id=?",
+    [id]
+  )
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  assert.equal(await linkCode(owner, code, id), 'ok')
+
+  let viewer: number | undefined
+  const app = Fastify()
+  await app.register(cookie)
+  await app.register(formbody)
+  await app.register(view, {
+    engine: { ejs },
+    root: path.join(process.cwd(), 'src', 'views'),
+    layout: '/layout.ejs',
+    defaultContext: { isAdmin: false, verjaehrung },
+  })
+  app.addHook('preHandler', async request => { request.session = { userId: viewer } as typeof request.session })
+  await app.register(stickerRoutes)
+  try {
+    const page = await app.inject({ method: 'GET', url: `/S/${code}` })
+    assert.equal(page.statusCode, 200)
+    assert.match(page.body, /Sie parkten auf dem Gehweg/)
+    assert.match(page.body, /01\.10\.2026/)
+    for (const geheim of ['M KK 123', az, 'Kurpark', '14:35', 'sticker-seite@example.invalid']) {
+      assert.ok(!page.body.includes(geheim), `Sticker-Seite verrät ${geheim}`)
+    }
+    assert.equal(page.headers['x-robots-tag'], 'noindex, nofollow')
+    assert.equal((await query('SELECT scan_count FROM sticker_codes WHERE code=?', [code]))[0].scan_count, 1)
+
+    // Entwürfe sind nicht öffentlich.
+    await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
+    const draft = await app.inject({ method: 'GET', url: `/S/${code}` })
+    assert.match(draft.body, /keine öffentlichen Angaben/)
+    assert.ok(!draft.body.includes('Gehweg'))
+
+    // Besitzer: Banner, Verknüpfungsformular für offene Codes, kein Zähler.
+    viewer = owner
+    const own = await app.inject({ method: 'GET', url: `/S/${code}` })
+    assert.ok(own.body.includes(az))
+    assert.equal((await query('SELECT scan_count FROM sticker_codes WHERE code=?', [code]))[0].scan_count, 2)
+    const form = await app.inject({ method: 'GET', url: `/S/${offen}` })
+    assert.match(form.body, /Sticker verknüpfen/)
+    const linked = await app.inject({ method: 'POST', url: `/S/${offen}/verknuepfen`, payload: { report: String(id) } })
+    assert.equal(linked.statusCode, 302)
+    assert.equal((await query('SELECT report_id FROM sticker_codes WHERE code=?', [offen]))[0].report_id, id)
+
+    // Fremde können offene Codes nicht verknüpfen; Kleinschreibung leitet um.
+    viewer = userId
+    const third = (await batchCodes(created.batchId))[2]
+    await app.inject({ method: 'POST', url: `/S/${third}/verknuepfen`, payload: { report: String(await report()) } })
+    assert.equal((await query('SELECT report_id FROM sticker_codes WHERE code=?', [third]))[0].report_id, null)
+    const lower = await app.inject({ method: 'GET', url: `/s/${code.toLowerCase()}` })
+    assert.equal(lower.statusCode, 301)
   } finally { await app.close() }
 })
