@@ -230,6 +230,9 @@
     // die Auswahl meldet verstoss-select.js per change am versteckten Feld.
     verstossHidden().addEventListener('change', function () { savePlate().then(updateUi, function () {}) })
     window.addEventListener('resize', function () { if (dlg.open) fitVerstossMenu() })
+    verstossInput().addEventListener('input', fitVerstossMenu)
+    // Beim Scrollen der Seitenleiste mitwandern (capture: scroll bubbelt nicht).
+    dlg.addEventListener('scroll', function () { fitVerstossMenu() }, true)
     verstossInput().addEventListener('focus', function () {
       fitVerstossMenu()
       var root = verstossHidden().parentNode
@@ -295,19 +298,31 @@
   function verstossInput() {
     return dlg.querySelector('.photo-edit-verstoss [data-verstoss-input]')
   }
-  // Verstoß-Liste breiter als das Feld (lange Tatbestände), aber im Bild:
-  // nach rechts aufklappen, wenn Platz ist, sonst nach links bündig.
+  // Verstoß-Liste breiter als das Feld (lange Tatbestände) und fest am
+  // Bildschirm positioniert – die scrollende Seitenleiste würde sie sonst
+  // abschneiden. Rechtsbündig zum Feld, ragt nach links über das Foto.
   function fitVerstossMenu() {
     var menu = verstossHidden().parentNode.querySelector('.list-group')
     if (!menu) return
-    var r = verstossHidden().parentNode.getBoundingClientRect()
+    var r = verstossInput().getBoundingClientRect()
     var w = Math.max(r.width, Math.min(736, window.innerWidth - 32))
+    var left = Math.min(r.left, window.innerWidth - 16 - w)
+    menu.style.position = 'fixed'
     menu.style.width = w + 'px'
     menu.style.right = 'auto'
-    var left = 0
-    if (r.left + w > window.innerWidth - 16) left = window.innerWidth - 16 - w - r.left
-    if (r.left + left < 16) left = 16 - r.left
-    menu.style.left = left + 'px'
+    menu.style.left = Math.max(16, left) + 'px'
+    // Unter das Feld, wenn genug Platz ist, sonst darüber.
+    var below = window.innerHeight - r.bottom - 16
+    var above = r.top - 16
+    if (below >= 240 || below >= above) {
+      menu.style.top = r.bottom + 'px'
+      menu.style.bottom = 'auto'
+      menu.style.maxHeight = Math.max(160, below) + 'px'
+    } else {
+      menu.style.top = 'auto'
+      menu.style.bottom = window.innerHeight - r.top + 'px'
+      menu.style.maxHeight = above + 'px'
+    }
   }
 
   var catalog = null
