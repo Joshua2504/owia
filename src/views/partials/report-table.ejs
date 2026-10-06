@@ -5,10 +5,11 @@
 //   - komplett im Editor-Modal (report-modal.js, „Bearbeiten"),
 //   - gemeinsam für mehrere Entwürfe (report-bulk.js).
 // Erwartet: reports (Felder s. report-row.ejs inkl. status), imagesByReport
-// ({ reportId: [{ id, v }] }), optional queueId (Edit-Links öffnen die
+// ({ reportId: [{ id, v, ok }] }), optional queueId (Edit-Links öffnen die
 // Review-Queue des Batches).
-// Thumbnails: Hover = Vorschau/Lupe (image-preview.js), Klick = groß,
-// Ziehen = in anderen Entwurf verschieben (report-table.js).
+// Thumbnails: Klick = Vorschau/Lupe (image-preview.js), bei Entwürfen stattdessen
+// der Prüf-Dialog (photo-edit.js, ok = geprüft), Ziehen = in anderen Entwurf
+// verschieben (report-table.js).
 const _queueId = typeof queueId !== 'undefined' && queueId ? queueId : null
 const _hasDrafts = reports.some((r) => r.status === 'entwurf')
 // Mögliche Doppel-Anzeigen (services/duplicates.ts): Hinweis oben + Badge in der Zeile.

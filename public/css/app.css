@@ -407,8 +407,6 @@ body {
 .photo-pick-bar[hidden] { display: none; }
 .photo-pick-bar .ss { min-width: 14rem; }
 /* Aktionen in der Foto-Vorschau (Schwärzen/Zuschneiden bei Entwurfs-Fotos). */
-.img-preview-actions { position: absolute; top: 0.5rem; left: 0.5rem; display: flex; gap: 0.35rem; }
-.img-preview-actions[hidden] { display: none; }
 /* Foto-Editor der Liste (public/js/photo-edit.js) */
 .photo-edit-dialog {
   width: 100vw; height: 100dvh; max-width: none; max-height: none;
@@ -422,6 +420,30 @@ body {
 .photo-edit-stage canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
 .photo-edit-stage canvas.editing { cursor: crosshair; touch-action: none; }
 .photo-edit-msg { position: absolute; color: #ccc; }
+.photo-edit-status { font-weight: 600; white-space: nowrap; }
+.photo-edit-status.is-ok { color: #75b798; }
+.photo-edit-status.is-open { color: #ffda6a; }
+
+/* Foto-Prüfung in der Liste: ungeprüft = gelber Rahmen + „?", geprüft = grünes ✓. */
+.thumb-check {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+.thumb-wrap.is-ungeprueft .thumb-check { background: #ffc107; color: #000; }
+.thumb-wrap.is-geprueft .thumb-check { background: #198754; color: #fff; }
+.thumb-wrap.is-ungeprueft .report-thumb { border: 2px solid #ffc107; }
+.photos-unchecked { text-decoration: none; margin-top: 2px; }
+.photos-checked { margin-top: 2px; }
 
 .report-photos-more {
   display: flex;

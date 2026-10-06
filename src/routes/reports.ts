@@ -757,6 +757,23 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` } })
   })
 
+  // Foto als geprüft bestätigen (Prüf-Dialog in photo-edit.js): Der Nutzer hat
+  // es angesehen und bei Bedarf geschwärzt. Einreichen geht erst, wenn alle
+  // Fotos einer Anzeige bestätigt sind (countUncheckedImages).
+  app.post('/anzeige/:az/images/:imageId/geprueft', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const userId = request.session.userId as number
+    const [res] = await pool.execute<mysql.ResultSetHeader>(
+      `UPDATE report_images ri
+         JOIN reports r ON r.id = ri.report_id
+          SET ri.geprueft_at = COALESCE(ri.geprueft_at, NOW())
+        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
+      [imageId, az, userId]
+    )
+    if (!res.affectedRows) return reply.status(404).send({ error: 'not found' })
+    return reply.send({ ok: true })
+  })
+
   // Ergebnis der Kennzeichen-Erkennung für das Bearbeiten-Formular (Poll).
   // status 'pending', solange mindestens ein Bild noch nicht analysiert ist.
   app.get('/anzeige/:az/analysis', { preHandler: requireAuth }, async (request, reply) => {
@@ -1074,7 +1091,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, gps_lat, gps_lon, detected_plate FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+      'SELECT id, filename, gps_lat, gps_lon, detected_plate, geprueft_at FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
     const [counts] = await pool.execute<mysql.RowDataPacket[]>(
@@ -1094,7 +1111,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
           detected_plates: [...new Set(images.map((i) => i.detected_plate).filter(Boolean))].join('|'),
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
         },
-        imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename) })),
+        imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename), ok: i.geprueft_at !== null })),
         // ejs.renderFile kennt den defaultContext von @fastify/view (server.ts)
         // nicht – Helfer, die report-row.ejs nutzt, hier explizit mitgeben.
         verjaehrung,
@@ -1396,6 +1413,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
     ].filter(Boolean)
     if (missing.length) problems.push({ message: `Es fehlt: ${missing.join(', ')}.` })
     if (isVerjaehrt(report)) problems.push({ message: 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.' })
+    const unchecked = await countUncheckedImages(report.id)
+    if (unchecked) problems.push({ message: uncheckedMessage(unchecked) })
     if (!(await isProfileComplete(userId))) {
       problems.push({ message: 'Dein Profil ist unvollständig (Name und Anschrift).', link: '/einstellungen' })
     }
@@ -1481,6 +1500,10 @@ export default async function reportsRoutes(app: FastifyInstance) {
       return fail('Diese Anzeige ist verjährt (mehr als drei Monate nach der Tat) und kann nicht mehr eingereicht werden.', `/anzeige/${az}`)
     }
 
+    // Jedes Foto muss einzeln angesehen und bestätigt sein (ggf. geschwärzt).
+    const unchecked = await countUncheckedImages(report.id)
+    if (unchecked) return fail(uncheckedMessage(unchecked), '/anzeigen')
+
     // Ohne vollständiges Profil (Name + Anschrift) keine Einreichung – das
     // Ordnungsamt bearbeitet anonyme Anzeigen nicht.
     if (!(await isProfileComplete(userId))) {
@@ -1549,6 +1572,21 @@ export default async function reportsRoutes(app: FastifyInstance) {
 // Fotos in einen anderen eigenen Entwurf oder eine neue Anzeige verschieben
 // (Mehrfachauswahl im Editor, Drag & Drop in den Listen). Dateien wandern
 // physisch mit, die Bilder landen am Ende der Ziel-Sortierung.
+/** Anzahl noch nicht bestätigter Fotos einer Anzeige (Foto-Prüfung). */
+async function countUncheckedImages(reportId: number): Promise<number> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ? AND geprueft_at IS NULL',
+    [reportId]
+  )
+  return Number(rows[0].c)
+}
+
+function uncheckedMessage(n: number): string {
+  return n === 1
+    ? 'Ein Foto ist noch nicht geprüft – in der Liste anklicken, bei Bedarf schwärzen und bestätigen.'
+    : `${n} Fotos sind noch nicht geprüft – in der Liste jedes Foto anklicken, bei Bedarf schwärzen und bestätigen.`
+}
+
 export async function moveImages(
   userId: number,
   az: string,

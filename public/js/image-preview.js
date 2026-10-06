@@ -9,6 +9,8 @@
 //   Doppelklick auf die Vorschau → Vollbild (Lightbox, Klick = 100 % / eingepasst)
 //   Maus verlässt Vorschau+Bild, Escape oder Klick daneben → schließen
 // Ohne Maus (Handy) öffnet ein Tipp direkt die Lightbox.
+// Entwurfs-Fotos der Liste (data-photo-edit) öffnen stattdessen direkt den
+// Prüf-Dialog (photo-edit.js): ansehen, ggf. schwärzen, bestätigen.
 //
 // Bindet sich per Event-Delegation an jedes <img data-full-src> bzw.
 // <img data-zoom-src> (Attribut = URL des Originals). Dadurch funktionieren auch
@@ -43,39 +45,8 @@
   preview.innerHTML =
     '<img alt="" class="img-preview-img">' +
     '<div class="img-preview-lens"></div>' +
-    '<div class="img-preview-hint">Klicken zum Zoomen</div>' +
-    '<div class="img-preview-actions" hidden>' +
-    '<button type="button" class="btn btn-sm btn-light" data-pe="black">⬛ Schwärzen</button>' +
-    '<button type="button" class="btn btn-sm btn-light" data-pe="crop">✂️ Zuschneiden</button>' +
-    '<button type="button" class="btn btn-sm btn-light" data-pe="">Mehr …</button>' +
-    '<button type="button" class="btn btn-sm btn-danger" data-pe-delete title="Foto löschen" aria-label="Foto löschen">🗑</button>' +
-    '</div>'
+    '<div class="img-preview-hint">Klicken zum Zoomen</div>'
   var previewImg = preview.querySelector('img')
-  var actions = preview.querySelector('.img-preview-actions')
-  // Entwurfs-Fotos (data-photo-edit = PUT-URL der Fassung) direkt aus der
-  // Vorschau bearbeiten: photo-edit.js öffnet den Foto-Editor.
-  actions.addEventListener('mousedown', function (e) { e.stopPropagation() })
-  actions.addEventListener('click', function (e) {
-    e.stopPropagation()
-    var t = current
-    var row = t && t.closest('[data-az]')
-    // Foto löschen: DELETE auf die Fassungs-URL (data-photo-edit), Zeile neu laden.
-    if (e.target.closest('[data-pe-delete]') && t) {
-      if (!confirm('Dieses Foto endgültig aus dem Entwurf löschen?')) return
-      hideAll()
-      fetch(t.getAttribute('data-photo-edit'), { method: 'DELETE' })
-        .then(function (r) {
-          if (!r.ok || r.redirected) throw new Error()
-          if (window.reportTableRefresh && row) return window.reportTableRefresh(row.getAttribute('data-az'))
-        })
-        .catch(function () { alert('Foto konnte nicht gelöscht werden.') })
-      return
-    }
-    var b = e.target.closest('[data-pe]')
-    if (!b || !t || !window.photoEditor) return
-    window.photoEditor.open({ src: srcOf(t), put: t.getAttribute('data-photo-edit'), az: row && row.getAttribute('data-az'), tool: b.getAttribute('data-pe') || null })
-    hideAll()
-  })
   var lens = preview.querySelector('.img-preview-lens')
   var hint = preview.querySelector('.img-preview-hint')
 
@@ -148,7 +119,6 @@
     preview.classList.remove('is-zooming')
     zoom.classList.remove('is-visible')
     hint.textContent = 'Klick: Lupe · Doppelklick: Vollbild'
-    actions.hidden = !(thumb.hasAttribute('data-photo-edit') && window.photoEditor)
     var ratio = thumb.naturalWidth && thumb.naturalHeight ? thumb.naturalWidth / thumb.naturalHeight : 4 / 3
     place(e.clientX, e.clientY, sizeFor(ratio))
     // Sofort das (schon geladene) Vorschaubild zeigen, dann das Original
@@ -329,6 +299,11 @@
     var t = e.target
     if (!isThumb(t) || justDragged) return
     e.preventDefault()
+    if (t.hasAttribute('data-photo-edit') && window.photoEditor) {
+      hideAll()
+      window.photoEditor.openThumb(t)
+      return
+    }
     if (canHover) {
       // Mit Maus: Vorschau unter dem Cursor (erneuter Klick schließt sie).
       if (current === t) hideAll()

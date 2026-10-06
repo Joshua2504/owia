@@ -332,17 +332,17 @@ export default async function intakeRoutes(app: FastifyInstance) {
     )
     // Alle Fotos der Batch-Entwürfe für die Thumbnail-Leisten (Drag & Drop).
     const [draftImages] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.id, ri.report_id, ri.filename
+      `SELECT ri.id, ri.report_id, ri.filename, ri.geprueft_at
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
         WHERE r.intake_batch_id = ? AND r.user_id = ? AND r.status <> 'papierkorb'
         ORDER BY ri.report_id, ri.sort_order, ri.id`,
       [batch.id, userId]
     )
-    const imagesByReport = new Map<number, { id: number; v: string }[]>()
+    const imagesByReport = new Map<number, { id: number; v: string; ok: boolean }[]>()
     for (const img of draftImages) {
       const list = imagesByReport.get(img.report_id) ?? []
-      list.push({ id: img.id, v: imageVersion(img.filename) })
+      list.push({ id: img.id, v: imageVersion(img.filename), ok: img.geprueft_at !== null })
       imagesByReport.set(img.report_id, list)
     }
 

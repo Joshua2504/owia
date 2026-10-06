@@ -4,7 +4,7 @@
 // die Tabelle nach Drag & Drop, Inline- oder Modal-Bearbeitung ohne
 // Seiten-Reload aktualisiert werden kann.
 // Erwartet: r (Anzeige inkl. reply_count/unread_reply_count), imgs
-// ([{ id, v }] – v = Versionskennung der Bildfassung für Cache-Busting, s.
+// ([{ id, v, ok }] – ok = Foto geprüft, v = Versionskennung der Bildfassung für Cache-Busting, s.
 // imageVersion() in routes/reports.ts), queueId.
 //
 // Die Zellen tragen feste `cell-*`-Klassen: ab md ist das eine normale
@@ -43,18 +43,20 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       <% const _shown = _isDraft || _imgs.length <= 3 ? _imgs : _imgs.slice(0, 2) %>
       <% for (const img of _shown) { %>
         <%# thumb-wrap: Hülle für das Auswahl-Häkchen (photo-picks.js, nur Entwürfe). %>
-        <span class="thumb-wrap">
+        <span class="thumb-wrap<%= _isDraft ? (img.ok ? ' is-geprueft' : ' is-ungeprueft') : '' %>">
         <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= img.id %>/thumb.jpg?v=<%= img.v %>" alt="Beweisfoto"
              class="report-thumb" loading="lazy" decoding="async"
              data-full-src="/anzeige/<%= r.aktenzeichen %>/image/<%= img.id %>?v=<%= img.v %>"
              <% if (_isDraft) { %>
                draggable="true" data-drag-image="<%= img.id %>" data-drag-az="<%= r.aktenzeichen %>"
                data-photo-edit="/anzeige/<%= r.aktenzeichen %>/images/<%= img.id %>"
-               title="Klick: Vorschau (Schwärzen/Zuschneiden) · Strg-Klick: auswählen · Ziehen: verschieben"
+               data-geprueft="<%= img.ok ? 1 : 0 %>"
+               title="<%= img.ok ? 'Geprüft' : 'Noch nicht geprüft' %> – Klick: prüfen/schwärzen · Strg-Klick: auswählen · Ziehen: verschieben"
              <% } else { %>
                title="Klick: Vorschau"
              <% } %>>
         <% if (_isDraft) { %>
+          <span class="thumb-check" aria-hidden="true"><%= img.ok ? '✓' : '?' %></span>
           <input type="checkbox" class="thumb-pick" data-pick-az="<%= r.aktenzeichen %>" data-pick-id="<%= img.id %>"
                  aria-label="Foto zum Verschieben auswählen" title="Foto auswählen">
         <% } %>
@@ -64,6 +66,15 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
         <a class="report-photos-more" href="/anzeige/<%= r.aktenzeichen %>" title="Alle <%= _imgs.length %> Fotos ansehen">+<%= _imgs.length - _shown.length %></a>
       <% } %>
     </div>
+    <%# Foto-Prüfung: Einreichen erst, wenn jedes Foto bestätigt ist (photo-edit.js). %>
+    <% const _unchecked = _isDraft ? _imgs.filter((i) => !i.ok).length : 0 %>
+    <% if (_unchecked) { %>
+      <button type="button" class="btn btn-link p-0 small photos-unchecked" data-review-photos>
+        🔍 <%= _unchecked %> von <%= _imgs.length %> Foto<%= _imgs.length === 1 ? '' : 's' %> prüfen
+      </button>
+    <% } else if (_isDraft && _imgs.length) { %>
+      <div class="small text-success photos-checked">✓ Fotos geprüft</div>
+    <% } %>
   </td>
   <td class="cell-az text-nowrap">
     <a href="/anzeige/<%= r.aktenzeichen %><%= _isDraft ? '/bearbeiten' + _queue : '' %>" class="az-link"

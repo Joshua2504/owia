@@ -1,6 +1,9 @@
-// Foto direkt in der Anzeigen-Liste schwärzen, verpixeln, zuschneiden, drehen.
-// Öffnet sich aus der Foto-Vorschau (image-preview.js, Buttons bei Entwurfs-
-// Fotos mit data-photo-edit) als Vollbild-Dialog. Gespeichert wird wie im
+// Foto-Prüfung in der Anzeigen-Liste: Jedes Entwurfs-Foto startet ungeprüft.
+// Klick aufs Foto (data-photo-edit, s. image-preview.js) öffnet es hier als
+// Vollbild-Dialog; man schwärzt/verpixelt/schneidet bei Bedarf und bestätigt –
+// danach öffnet sich automatisch das nächste ungeprüfte Foto derselben Anzeige.
+// Einreichen ist erst möglich, wenn alle Fotos bestätigt sind (Server prüft).
+// Gespeichert wird wie im
 // Editor (report-form.js): Leinwand → JPEG → PUT /anzeige/:az/images/:id
 // (neue Fassung, das Original bleibt auf dem Server erhalten). Danach lädt
 // report-table.js die Zeile neu (neue Vorschaubilder).
@@ -14,7 +17,7 @@
   var dlg = null
   var canvas = null
   var ctx = null
-  var state = null // { put, az, base, redactions, history, tool, dirty }
+  var state = null // { put, az, base, redactions, history, tool, dirty, ok }
 
   function el(tag, cls, text) {
     var e = document.createElement(tag)
@@ -36,9 +39,11 @@
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
       '<span class="photo-edit-hint small"></span>' +
-      '<div class="ms-auto d-flex gap-2">' +
-      '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel">Abbrechen</button>' +
-      '<button type="button" class="btn btn-sm btn-primary" data-act="save" disabled>Speichern</button>' +
+      '<div class="ms-auto d-flex align-items-center gap-2">' +
+      '<span class="photo-edit-status small"></span>' +
+      '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen">🗑</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel">Schließen</button>' +
+      '<button type="button" class="btn btn-sm btn-success" data-act="save" title="Enter">✓ Bestätigen</button>' +
       '</div></div>' +
       '<div class="photo-edit-stage"><canvas></canvas><div class="photo-edit-msg"></div></div>'
     document.body.appendChild(dlg)
@@ -51,9 +56,16 @@
     dlg.querySelector('[data-act=undo]').addEventListener('click', undo)
     dlg.querySelector('[data-act=cancel]').addEventListener('click', cancel)
     dlg.querySelector('[data-act=save]').addEventListener('click', save)
+    dlg.querySelector('[data-act=delete]').addEventListener('click', remove)
     dlg.addEventListener('cancel', function (e) {
       e.preventDefault()
       cancel()
+    })
+    // Enter bestätigt – zügiges Durchklicken ohne Maus.
+    dlg.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || e.target.closest('button') || !state || !state.base || state.busy) return
+      e.preventDefault()
+      save()
     })
     attachDrawing()
   }
@@ -69,7 +81,15 @@
       b.classList.toggle('active', b.dataset.tool === state.tool)
     })
     dlg.querySelector('[data-act=undo]').disabled = !state.history.length
-    dlg.querySelector('[data-act=save]').disabled = !state.dirty
+    var saveBtn = dlg.querySelector('[data-act=save]')
+    saveBtn.disabled = !state.base || !!state.busy
+    if (!state.busy) saveBtn.textContent = state.dirty ? '✓ Speichern & bestätigen' : '✓ Bestätigen'
+    dlg.querySelector('[data-act=delete]').disabled = !!state.busy
+    var st = dlg.querySelector('.photo-edit-status')
+    st.textContent = 'Foto ' + state.pos + '/' + state.total + ' · ' + (state.ok ? '✓ geprüft' : 'ungeprüft') +
+      (state.open ? ' · noch ' + state.open + ' offen' : '')
+    st.classList.toggle('is-ok', state.ok)
+    st.classList.toggle('is-open', !state.ok)
     var tips = {
       black: 'Rechtecke über Gesichter oder fremde Kennzeichen ziehen.',
       pixel: 'Rechtecke über die zu verpixelnden Bereiche ziehen.',
@@ -234,44 +254,105 @@
     close()
   }
 
-  function save() {
-    var btn = dlg.querySelector('[data-act=save]')
-    btn.disabled = true
-    btn.textContent = 'Speichert …'
-    redraw() // keine Zeichen-Vorschau im Export
-    var s = state
-    canvas.toBlob(function (blob) {
-      var fd = new FormData()
-      fd.append('bilder', blob, 'bearbeitet.jpg')
-      fetch(s.put, { method: 'PUT', body: fd })
-        .then(function (r) {
-          if (!r.ok || r.redirected) throw new Error()
-          close()
-          if (window.reportTableRefresh) return window.reportTableRefresh(s.az)
-        })
-        .catch(function () {
-          alert('Speichern fehlgeschlagen – bitte erneut versuchen.')
-        })
-        .finally(function () {
-          btn.textContent = 'Speichern'
-          btn.disabled = false
-        })
-    }, 'image/jpeg', 0.9)
+  function rowOf(az) {
+    return document.querySelector('tr[data-az="' + az + '"]')
   }
 
-  // opts: { src: Bild-URL, put: PUT-URL der Fassung, az, tool }
+  // Nach Bestätigen/Löschen: Zeile neu laden (neue Vorschaubilder, Status) und
+  // das nächste ungeprüfte Foto derselben Anzeige öffnen – sonst schließen.
+  function next(az) {
+    var done = function () {
+      var row = rowOf(az)
+      var t = row && row.querySelector('[data-photo-edit][data-geprueft="0"]')
+      if (t) openThumb(t)
+      else close()
+    }
+    if (!window.reportTableRefresh) return close()
+    return Promise.resolve(window.reportTableRefresh(az)).then(done, close)
+  }
+
+  function save() {
+    if (!state || !state.base || state.busy) return
+    var s = state
+    var btn = dlg.querySelector('[data-act=save]')
+    s.busy = true
+    btn.textContent = s.dirty ? 'Speichert …' : 'Bestätigt …'
+    updateUi()
+    redraw() // keine Zeichen-Vorschau im Export
+    var upload = !s.dirty
+      ? Promise.resolve()
+      : new Promise(function (resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.9) }).then(function (blob) {
+          var fd = new FormData()
+          fd.append('bilder', blob, 'bearbeitet.jpg')
+          return fetch(s.put, { method: 'PUT', body: fd })
+        }).then(function (r) {
+          if (!r.ok || r.redirected) throw new Error()
+          s.dirty = false
+        })
+    upload
+      .then(function () { return fetch(s.put + '/geprueft', { method: 'POST' }) })
+      .then(function (r) {
+        if (!r.ok || r.redirected) throw new Error()
+        return next(s.az)
+      })
+      .catch(function () {
+        alert('Speichern fehlgeschlagen – bitte erneut versuchen.')
+      })
+      .finally(function () {
+        s.busy = false
+        if (state === s) updateUi()
+      })
+  }
+
+  function remove() {
+    if (!state || state.busy || !confirm('Dieses Foto endgültig aus dem Entwurf löschen?')) return
+    var s = state
+    s.busy = true
+    updateUi()
+    fetch(s.put, { method: 'DELETE' })
+      .then(function (r) {
+        if (!r.ok || r.redirected) throw new Error()
+        return next(s.az)
+      })
+      .catch(function () { alert('Foto konnte nicht gelöscht werden.') })
+      .finally(function () {
+        s.busy = false
+        if (state === s) updateUi()
+      })
+  }
+
+  // Foto aus einer Listen-Miniatur (data-photo-edit, data-full-src) öffnen.
+  function openThumb(t) {
+    var row = t.closest('[data-az]')
+    var all = row ? Array.prototype.slice.call(row.querySelectorAll('[data-photo-edit]')) : [t]
+    open({
+      src: t.getAttribute('data-full-src'),
+      put: t.getAttribute('data-photo-edit'),
+      az: row && row.getAttribute('data-az'),
+      ok: t.getAttribute('data-geprueft') === '1',
+      pos: all.indexOf(t) + 1,
+      total: all.length,
+      open: all.filter(function (x) { return x !== t && x.getAttribute('data-geprueft') === '0' }).length,
+    })
+  }
+
+  // opts: { src: Bild-URL, put: PUT-URL der Fassung, az, ok, pos, total, open, tool }
   function open(opts) {
     if (!dlg) build()
-    state = { put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool || null, dirty: false }
+    state = {
+      put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool || null, dirty: false,
+      ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
+    }
     canvas.width = 1
     canvas.height = 1
     msg('Foto wird geladen …')
-    dlg.showModal()
+    if (!dlg.open) dlg.showModal()
     document.documentElement.classList.add('has-editor-dialog')
     updateUi()
+    var s = state
     var img = new Image()
     img.onload = function () {
-      if (!state) return
+      if (state !== s) return
       var scale = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight))
       var c = document.createElement('canvas')
       c.width = Math.max(1, Math.round(img.naturalWidth * scale))
@@ -281,10 +362,20 @@
       msg('')
       redraw()
       updateUi()
+      dlg.querySelector('[data-act=save]').focus()
     }
-    img.onerror = function () { msg('Foto konnte nicht geladen werden.') }
+    img.onerror = function () { if (state === s) msg('Foto konnte nicht geladen werden.') }
     img.src = opts.src
   }
 
-  window.photoEditor = { open: open }
+  // „🔍 N Fotos prüfen" unter den Miniaturen: erstes ungeprüftes Foto öffnen.
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-review-photos]')
+    if (!b) return
+    var row = b.closest('[data-az]')
+    var t = row && row.querySelector('[data-photo-edit][data-geprueft="0"]')
+    if (t) openThumb(t)
+  })
+
+  window.photoEditor = { open: open, openThumb: openThumb }
 })()

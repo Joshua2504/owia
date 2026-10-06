@@ -73,8 +73,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0035_bereit.sql')
-  assert.equal(rows.length, 35)
+  assert.equal(rows.at(-1)?.filename, '0036_foto_geprueft.sql')
+  assert.equal(rows.length, 36)
 })
 
 test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
