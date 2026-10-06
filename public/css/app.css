@@ -372,8 +372,6 @@ body {
   grid-template-columns: repeat(auto-fill, 56px);
   gap: 4px;
 }
-.report-photos .thumb-wrap:nth-of-type(n + 7),
-.report-photos.has-more .thumb-wrap:nth-of-type(n + 6) { display: none; }
 .thumb-wrap { position: relative; display: block; }
 .thumb-pick {
   position: absolute;

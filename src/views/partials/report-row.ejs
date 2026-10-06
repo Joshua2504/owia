@@ -33,7 +33,7 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
     <% } %>
   </td>
   <td class="cell-photos <%= _imgs.length ? '' : 'cell-empty' %>">
-    <div class="report-photos <%= _imgs.length > 6 ? 'has-more' : '' %>" data-photos>
+    <div class="report-photos" data-photos>
       <% for (const img of _imgs) { %>
         <%# thumb-wrap: Hülle für das Auswahl-Häkchen (photo-picks.js, nur Entwürfe). %>
         <span class="thumb-wrap">
@@ -52,11 +52,6 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
                  aria-label="Foto zum Verschieben auswählen" title="Foto auswählen">
         <% } %>
         </span>
-      <% } %>
-      <%# Mehr als 6 Fotos: 5 zeigen + Kachel „+N" (Rest per CSS ausgeblendet, Zeilen bleiben kompakt). %>
-      <% if (_imgs.length > 6) { %>
-        <a class="report-photos-more" href="/anzeige/<%= r.aktenzeichen %><%= _isDraft ? '/bearbeiten' + _queue : '' %>"
-           <% if (_isDraft) { %>data-edit-modal<% } %> title="Alle <%= _imgs.length %> Fotos ansehen">+<%= _imgs.length - 5 %></a>
       <% } %>
     </div>
   </td>
