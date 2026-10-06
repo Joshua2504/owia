@@ -2,8 +2,9 @@
 
 ## Ergebnis
 
-Im Entwicklungsrepo umgesetzt, geprüft und in der Dev-App verfügbar. Noch kein
-Commit, Push oder Produktionsdeployment. Der Produktionscode ist unverändert.
+Im Entwicklungsrepo umgesetzt und geprüft; anschließend auf ausdrücklichen
+Nutzerauftrag nach Produktion ausgerollt. Code-Commit: `1ad1642`.
+Details stehen in `DEPLOYMENT-2026-10-06.md`.
 
 - Admin-Freigaben beanspruchen eine Anzeige atomar vor der Vorbereitung.
   Parallele Anfragen verschicken sie nicht mehrfach.
@@ -40,7 +41,8 @@ Dev-App, Dev-DB und Dev-Mailpit laufen wieder. `127.0.0.1:3001/health` liefert
 `{"ok":true}`. Startseite und Loginseite antworten ebenfalls mit HTTP 200.
 Migration 0032 ist in Dev bestätigt. Die Konfiguration wurde auf Development-Modus, Mailpit, deaktiviertes
 IMAP und getrennte Datenpfade geprüft. Optionale Dev-Dienste Photon/Tileserver/ALPR
-wurden nicht gestartet. Produktion wurde weder neugestartet noch migriert.
+wurden nicht gestartet. Beim anschließenden Deployment wurde ausschließlich die
+Produktions-App neu erstellt und Migration 0032 angewandt.
 
 ## Dokumentation und verbleibende Entscheidungen
 
@@ -52,7 +54,8 @@ und Importdaten löschen soll, wurde beim Nutzer angefragt und ist noch offen.
 Das bisherige Aufbewahrungsmodell wurde deshalb beibehalten. Die technische
 Sperre während laufenden/ungeklärten Versands ist bereits umgesetzt.
 
-Backup/Restore wurde nicht ausgeführt oder nachgewiesen. Weitere Punkte aus der
+Vor dem Deployment wurden eine konsistente DB-Sicherung, Uploads/PDFs und die
+bisherigen Code-/Konfigurationsdateien gesichert. Ein Restore wurde nicht durchgeführt. Weitere Punkte aus der
 Bestandsaufnahme (z.B. Abhängigkeiten pinnen, Import-Aufräumen, atomare Upload-
 Duplikaterkennung und generelle Release-/Rollback-Strategie) sind nicht Teil der
 hier umgesetzten Fehlerbehebung. Keine aktuellen Behördenadressen/Rechtstexte

@@ -91,7 +91,7 @@ GitHub-Actions-Fallback enthält derzeit keinen entsprechenden Healthcheck.
 
 - `npm run check` und `npm test` ausführen; Tests verwenden ihre eigene Compose-Datei.
 - Migration `0032_report_dispatch.sql` ist additiv (zwei neue Spalten in `reports`).
-  Sie ist in der Testdatenbank und Dev angewandt, noch nicht in Produktion.
+  Sie wurde am 06.10.2026 auch in Produktion erfolgreich angewandt.
 - Datenbanksicherung und Sicherung der zugehörigen Upload-/PDF-Dateien verifizieren.
   Ein tatsächlicher Restore wurde in dieser Aufgabe nicht durchgeführt.
 - Produktionskonfiguration benötigt `MAIL_DRIVER=smtp`, `MAIL_HOST`, `MAIL_FROM`.
