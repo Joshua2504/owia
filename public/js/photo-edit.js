@@ -89,11 +89,14 @@
       '<div class="photo-edit-problems small"></div>' +
       '</div>' +
       '<div class="photo-edit-fields">' +
+      // Kennzeichen + Marke nebeneinander – die Leiste soll ohne Scrollen passen.
+      '<div class="pe-row">' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
       '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false">' +
       '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
       '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. VW Golf, grau"></div>' +
+      '</div>' +
       '<div class="pe-field"><label class="form-label">Verstoß</label>' +
       '<div class="photo-edit-verstoss position-relative">' +
       '<input type="hidden">' +
@@ -105,21 +108,20 @@
       ' autocomplete="off" spellcheck="false" placeholder="Adresse eingeben …">' +
       '<button type="button" class="btn btn-outline-secondary" data-act="tatort-photo" title="Tatort aus den GPS-Daten der Fotos">📍</button>' +
       '</div>' +
-      '<div class="photo-edit-map rounded border mt-2"></div>' +
-      '<div class="small text-muted mt-1">Marker zur genauen Stelle ziehen – die Adresse wird übernommen.</div>' +
+      '<div class="photo-edit-map rounded border mt-1" title="Marker zur genauen Stelle ziehen – die Adresse wird übernommen."></div>' +
       '</div>' +
       // Restliche Angaben (Werte aus GET /pruefen/:az/daten, gespeichert je
       // Feld über PATCH /anzeige/:az/felder).
       '<div class="photo-edit-details" hidden>' +
       '<div class="pe-field"><label class="form-label" for="pe-tattag">Tatzeit</label>' +
-      '<input type="date" id="pe-tattag" class="form-control mb-1" data-detail="tattag">' +
       '<div class="pe-time">' +
+      '<input type="date" id="pe-tattag" class="form-control" data-detail="tattag">' +
       '<input type="time" class="form-control" data-detail="tatzeit_von" aria-label="Uhrzeit von" title="Uhrzeit von">' +
       '<span>–</span>' +
       '<input type="time" class="form-control" data-detail="tatzeit_bis" aria-label="Uhrzeit bis" title="Uhrzeit bis (optional)">' +
       '</div>' +
       '<div class="small text-muted mt-1" data-photo-times hidden>' +
-      '<button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times">🕒 Uhrzeit aus Fotos übernehmen</button>' +
+      '<button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times" title="Tattag und Uhrzeit aus den Aufnahmezeiten der Fotos übernehmen">🕒 Zeit aus Fotos übernehmen</button>' +
       ' <span data-photo-span></span></div>' +
       '</div>' +
       '<label class="form-check"><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> <span class="form-check-label">Fahrzeug war verlassen</span></label>' +
@@ -505,7 +507,16 @@
         b.appendChild(mv)
       }
       strip.appendChild(b)
-      if (t === state.thumb) setTimeout(function () { b.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }, 0)
+      // Nur den Streifen scrollen – scrollIntoView zog auf dem Handy den ganzen
+      // Dialog mit nach unten.
+      if (t === state.thumb) {
+        setTimeout(function () {
+          var sr = strip.getBoundingClientRect()
+          var br = b.getBoundingClientRect()
+          if (br.top < sr.top || br.bottom > sr.bottom) strip.scrollTop += br.top - sr.top - 8
+          if (br.left < sr.left || br.right > sr.right) strip.scrollLeft += br.left - sr.left - 8
+        }, 0)
+      }
     })
   }
 
@@ -616,7 +627,11 @@
     // Zeitspanne der Fotos (EXIF, serverseitig als Strings) für „Uhrzeit aus Fotos".
     var t = s.report.photoTimes
     box.querySelector('[data-photo-times]').hidden = !t
-    if (t) box.querySelector('[data-photo-span]').textContent = '(' + photoSpan(t) + ')'
+    // Kurz (eine Zeile): Datum nur, wenn es vom eingetragenen Tattag abweicht.
+    if (t) {
+      box.querySelector('[data-photo-span]').textContent = '(' +
+        (t.vonTag === t.bisTag && t.vonTag === f.tattag ? t.von + (t.bis !== t.von ? ' – ' + t.bis : '') + ' Uhr' : photoSpan(t)) + ')'
+    }
   }
   function fmtDay(iso) {
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '')
@@ -1345,6 +1360,12 @@
     chosenCoords = null
     // Bericht-Status nur behalten, wenn es dieselbe Anzeige bleibt (kein Flackern).
     var keepReport = state && state.az === opts.az ? state.report : null
+    // Neue Anzeige: Seitenleiste (und auf dem Handy der ganze Dialog) oben
+    // beginnen – sonst blieb die Scroll-Position der vorherigen stehen.
+    if (!state || state.az !== opts.az) {
+      dlg.querySelector('.photo-edit-fields').scrollTop = 0
+      dlg.querySelector('.photo-edit-body').scrollTop = 0
+    }
     plateInput().value = plate || ''
     markeInput().value = marke || ''
     markeInput().closest('.pe-field').hidden = marke == null
