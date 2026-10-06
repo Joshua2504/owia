@@ -1,14 +1,11 @@
 <div class="row justify-content-center">
   <div class="col-lg-10">
-    <!-- Prominenter Call-to-Action ganz oben -->
-    <div class="text-center py-5">
+    <!-- Hero: eine Aussage, ein Button -->
+    <div class="text-center pt-5 pb-4">
       <h1 class="display-5 fw-bold mb-3">Falschparker melden – kostenlos Anzeige erstatten</h1>
-      <p class="lead text-muted mb-4 mx-auto" style="max-width:640px">
-        Gehweg, Radweg oder Feuerwehrzufahrt zugeparkt? Erstatte in wenigen Minuten
-        Anzeige wegen einer Park-Ordnungswidrigkeit – mit Beweisfotos, automatischem
-        Tatort aus den Bildern und fertigem PDF fürs zuständige Ordnungsamt. Kostenlos.
-        Wir schalten Stadt für Stadt frei – ist deine noch nicht dabei, trag dich für
-        die Info ein.
+      <p class="lead text-muted mb-4 mx-auto" style="max-width:600px">
+        Fotos hochladen, Verstoß wählen, fertig. Tatort und Uhrzeit kommen aus den
+        Bildern, die Anzeige geht ans zuständige Ordnungsamt.
       </p>
       <% if (currentUser) { %>
         <div class="d-flex justify-content-center gap-3 flex-wrap">
@@ -24,79 +21,73 @@
       <% } %>
     </div>
 
-    <!-- Öffentliche Kennzahlen (aggregiert, anonym) -->
-    <% const stats = locals.stats || {} %>
-    <div class="row g-3 mb-4 text-center">
-      <div class="col-6 col-md-3">
-        <div class="card shadow-sm h-100"><div class="card-body">
-          <div class="display-6 fw-bold"><%= stats.total || 0 %></div>
-          <div class="text-muted small">Anzeigen versendet</div>
-        </div></div>
+    <!-- Akute Gefahr gehört ans Telefon, nicht in eine Anzeige → Ratgeber /falschparker-melden -->
+    <div class="alert alert-danger d-flex flex-column flex-md-row align-items-md-center gap-3 mb-5 shadow-sm">
+      <div class="fs-1 lh-1 d-none d-md-block">🚒</div>
+      <div class="flex-grow-1">
+        <div class="fw-semibold">Feuerwehrzufahrt oder Rettungsweg gerade zugeparkt?</div>
+        <div class="small">
+          Dann nicht anzeigen, sondern anrufen: Verkehrspolizei Frankfurt
+          <a href="tel:+496921236360" class="alert-link text-nowrap">069 212-36360</a>,
+          bei akuter Gefahr Notruf 110.
+        </div>
       </div>
-      <div class="col-6 col-md-3">
-        <div class="card shadow-sm h-100"><div class="card-body">
-          <div class="display-6 fw-bold"><%= stats.last30 || 0 %></div>
-          <div class="text-muted small">in den letzten 30 Tagen</div>
-        </div></div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="card shadow-sm h-100"><div class="card-body">
-          <div class="display-6 fw-bold"><%= stats.fotos || 0 %></div>
-          <div class="text-muted small">Beweisfotos eingereicht</div>
-        </div></div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="card shadow-sm h-100"><div class="card-body">
-          <div class="fw-bold mt-2" style="font-size:1.05rem"><%= stats.topVerstoss || '–' %></div>
-          <div class="text-muted small">häufigster Verstoß</div>
-        </div></div>
+      <div class="d-flex gap-2 flex-shrink-0">
+        <a href="tel:110" class="btn btn-danger fw-bold">📞 110</a>
+        <a href="/falschparker-melden" class="btn btn-outline-danger">Alle Nummern &amp; Tipps</a>
       </div>
     </div>
 
-    <%- include('../partials/hu-plaketten') %>
-
-    <!-- So funktioniert's: erklärt den Ablauf (und liefert Suchmaschinen Kontext) -->
+    <!-- So funktioniert's (liefert Suchmaschinen Kontext) -->
     <section class="mb-5">
-      <h2 class="h4 mb-3 text-center">So meldest du einen Falschparker</h2>
-      <div class="row g-3">
+      <h2 class="h4 mb-3 text-center">So funktioniert's</h2>
+      <div class="row g-3 text-center">
         <div class="col-md-4">
-          <div class="card h-100 shadow-sm"><div class="card-body">
-            <div class="fs-3 mb-1">📸</div>
-            <h3 class="h6">1. Fotos aufnehmen &amp; hochladen</h3>
-            <p class="small text-muted mb-0">
-              Beweisfotos vom falsch geparkten Fahrzeug machen (Kennzeichen und Situation
-              sichtbar). Beim Foto-Import werden Standort und Uhrzeit automatisch aus den
-              Bildern übernommen – auch für viele Fotos auf einmal.
-            </p>
-          </div></div>
+          <div class="fs-2">📸</div>
+          <h3 class="h6 mb-1">1. Fotos hochladen</h3>
+          <p class="small text-muted mb-0">Kennzeichen und Situation sichtbar – Ort und Zeit liest die App aus den Bildern, auch für viele auf einmal.</p>
         </div>
         <div class="col-md-4">
-          <div class="card h-100 shadow-sm"><div class="card-body">
-            <div class="fs-3 mb-1">📝</div>
-            <h3 class="h6">2. Verstoß auswählen</h3>
-            <p class="small text-muted mb-0">
-              Parken auf dem Gehweg, Radweg, in der Feuerwehrzufahrt oder im Halteverbot –
-              Verstoßart wählen, Angaben prüfen, fertig. Ein amtliches PDF-Formular wird
-              automatisch erzeugt.
-            </p>
-          </div></div>
+          <div class="fs-2">📝</div>
+          <h3 class="h6 mb-1">2. Verstoß wählen</h3>
+          <p class="small text-muted mb-0">Gehweg, Radweg, Feuerwehrzufahrt, Halteverbot … – das amtliche PDF entsteht automatisch.</p>
         </div>
         <div class="col-md-4">
-          <div class="card h-100 shadow-sm"><div class="card-body">
-            <div class="fs-3 mb-1">📮</div>
-            <h3 class="h6">3. Wir prüfen &amp; verschicken</h3>
-            <p class="small text-muted mb-0">
-              Nach dem Einreichen prüfen wir die Anzeige und senden sie ans zuständige
-              Ordnungsamt – du bekommst die E-Mail in Kopie und siehst Antworten des Amts
-              direkt in der App.
-            </p>
-          </div></div>
+          <div class="fs-2">📮</div>
+          <h3 class="h6 mb-1">3. Wir verschicken</h3>
+          <p class="small text-muted mb-0">Wir prüfen und senden ans Ordnungsamt. Du bekommst eine Kopie und siehst Antworten in der App.</p>
         </div>
       </div>
-      <p class="small text-center text-muted mt-3 mb-0">
-        🚒 Feuerwehrzufahrt oder Rettungsweg <strong>gerade jetzt</strong> zugeparkt?
-        Das ist ein Fall fürs Telefon, nicht für eine Anzeige –
-        <a href="/falschparker-melden">die richtigen Nummern für Frankfurt</a>.
+    </section>
+
+    <!-- Öffentliche Kennzahlen (aggregiert, anonym) + Karte -->
+    <% const stats = locals.stats || {} %>
+    <section class="mb-5">
+      <h2 class="h4 mb-3 text-center">Bisher gemeldet</h2>
+      <div class="row g-2 mb-3 text-center">
+        <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
+          <div class="fs-3 fw-bold"><%= stats.total || 0 %></div>
+          <div class="text-muted small">Anzeigen versendet</div>
+        </div></div>
+        <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
+          <div class="fs-3 fw-bold"><%= stats.last30 || 0 %></div>
+          <div class="text-muted small">letzte 30 Tage</div>
+        </div></div>
+        <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
+          <div class="fs-3 fw-bold"><%= stats.fotos || 0 %></div>
+          <div class="text-muted small">Beweisfotos</div>
+        </div></div>
+        <div class="col-6 col-md-3"><div class="border rounded py-2 h-100 d-flex flex-column justify-content-center">
+          <div class="fw-bold"><%= stats.topVerstoss || '–' %></div>
+          <div class="text-muted small">häufigster Verstoß</div>
+        </div></div>
+      </div>
+      <!-- Übersichtskarte: lädt Marker aus /api/public/reports, Kacheln aus /tiles/... -->
+      <div id="overview-map" class="rounded border shadow-sm map-panel-lg"
+           data-center-lat="<%= centerLat %>" data-center-lon="<%= centerLon %>"></div>
+      <p class="text-muted small mt-2 mb-0">
+        Anonymisierte Karte aller versendeten Anzeigen – keine personenbezogenen Daten,
+        Fotos stark verpixelt.
       </p>
     </section>
 
@@ -149,15 +140,7 @@
       </div>
     </section>
 
-    <!-- Karte darunter -->
-    <h2 class="h5 mb-1">Öffentliche Übersicht</h2>
-    <p class="text-muted small mb-3">
-      Anonymisierte Karte aller versendeter Anzeigen – keine personenbezogenen Daten,
-      Fotos stark verpixelt.
-    </p>
-    <!-- Übersichtskarte: lädt Marker aus /api/public/reports, Kacheln aus /tiles/... -->
-    <div id="overview-map" class="rounded border shadow-sm map-panel-lg"
-         data-center-lat="<%= centerLat %>" data-center-lon="<%= centerLon %>"></div>
+    <%- include('../partials/hu-plaketten') %>
 
     <!-- FAQ: beantwortet die häufigsten Suchanfragen (auch als FAQPage-Schema unten) -->
     <%
