@@ -49,9 +49,10 @@ Produktions-App neu erstellt und Migration 0032 angewandt.
 Versandzustände, Fehlergrenzen und manuelle Klärung stehen in `VERSANDBETRIEB.md`.
 `AGENTS.md`, `CLAUDE.md`, `README.md` und `DEPLOY.md` wurden nachgeführt.
 
-Die Entscheidung, ob Kontoschließung künftig sämtliche Anzeigen, Originalfotos
-und Importdaten löschen soll, wurde beim Nutzer angefragt und ist noch offen.
-Das bisherige Aufbewahrungsmodell wurde deshalb beibehalten. Die technische
+Der Nutzer hat am 06.10.2026 bestätigt, dass das bisherige Aufbewahrungsmodell
+nach Kontoschließung unverändert bleiben soll. Außerdem wird laut Nutzer die
+gesamte VM regelmäßig gesichert; eine zusätzliche Backup-Einrichtung ist
+für diese Aufgabe nicht erforderlich. Die technische
 Sperre während laufenden/ungeklärten Versands ist bereits umgesetzt.
 
 Vor dem Deployment wurden eine konsistente DB-Sicherung, Uploads/PDFs und die

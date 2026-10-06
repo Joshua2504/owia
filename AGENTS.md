@@ -42,3 +42,8 @@
 - `docs/FEHLERBEHEBUNG-2026-10-06.md` beschreibt die Regressionstests und den Stand der Umsetzung.
 - `docs/VERSANDBETRIEB.md` erklärt die dauerhafte Versandsperre und die manuelle Klärung ungewisser SMTP-Ergebnisse. Niemals eine Versandsperre automatisch nach einem Timeout zurücksetzen.
 - `reports.versand_status` schützt auch gegen Rücknahme, Ablehnung und Kontoschließung während des Versands. Neue Statuswechsel müssen diese Sperre respektieren.
+
+## Bestätigte Nutzerentscheidungen (06.10.2026)
+
+- Die bestehende Aufbewahrung nach Kontoschließung bleibt bewusst erhalten. Keine vollständige Löschung von Anzeigen, Originalfotos oder Importdaten ohne neuen Änderungsauftrag einführen.
+- Laut Nutzer wird die gesamte VM regelmäßig gesichert. Für diese Aufgabe ist keine zusätzliche Backup-Einrichtung nötig; diese Nutzerangabe ist kein durch Codex durchgeführter Restore-Test.

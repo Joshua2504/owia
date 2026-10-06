@@ -41,5 +41,13 @@ Die Sicherung liegt auf demselben Host und ersetzt kein externes regelmäßiges 
 Vor einem Rollback zunächst offene `versand_status`-Vorgänge prüfen; alter Code
 kennt deren Sperren nicht. Wiederaufnahme siehe `VERSANDBETRIEB.md`.
 
-Offen: gewünschte Datenaufbewahrung nach Kontoschließung und vorhandene externe
-Backup-Lösung. Diese Fragen werden erst nach erfolgreichem Ausrollen gestellt.
+## Bestätigte Entscheidungen nach dem Deployment
+
+Am 06.10.2026 vom Nutzer bestätigt:
+
+- Die bisherige Datenaufbewahrung nach Kontoschließung bleibt unverändert.
+- Die gesamte VM wird regelmäßig gesichert. Keine zusätzliche Backup-Einrichtung
+  im Rahmen dieser Aufgabe erforderlich. Diese Angabe stammt vom Nutzer;
+  ein eigener Restore-Test wurde nicht durchgeführt.
+
+Die beiden Rückfragen sind damit abgeschlossen.

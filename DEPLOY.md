@@ -47,7 +47,8 @@ sollen. Der obige Frankfurt-Wert ist nur ein Beispiel.
 
 ## Einmalig auf dem Server einrichten
 
-1. **Backups** laufen extern (bestehender Mechanismus). Wichtig: `data/mysql`,
+1. **Backups**: Der Nutzer hat am 06.10.2026 bestätigt, dass die gesamte VM
+   regelmäßig gesichert wird. Ein Restore wurde durch Codex nicht getestet. Wichtig: `data/mysql`,
    `data/uploads` und `data/pdfs` müssen abgedeckt sein — für einen konsistenten
    DB-Stand idealerweise per `mariadb-dump` statt Datei-Kopie des laufenden
    `data/mysql`.
