@@ -34,6 +34,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     return reply.view('/dashboard/index.ejs', viewData(request, {
       title: 'Meine Anzeigen',
+      wide: true, // Tabelle über die volle Breite (layout.ejs)
       reports,
       imagesByReport,
     }))

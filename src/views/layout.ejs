@@ -53,7 +53,7 @@
 <body class="<%= _embed ? 'is-embed' : '' %>">
   <% if (!_embed) { %>
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container">
+    <div class="<%= locals.wide ? 'container-fluid px-3 px-xl-4' : 'container' %>">
       <a class="navbar-brand fw-bold" href="/">🚗 OWiA-Anzeiger</a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
         <span class="navbar-toggler-icon"></span>
@@ -102,7 +102,8 @@
   </nav>
   <% } %>
 
-  <main class="<%= _embed ? 'container-fluid py-3' : 'container py-4' %>">
+  <%# wide: Listen-Seiten nutzen die volle Bildschirmbreite (große Tabellen). %>
+  <main class="<%= _embed ? 'container-fluid py-3' : (locals.wide ? 'container-fluid px-3 px-xl-4 py-4' : 'container py-4') %>">
     <% if (flash) { %>
       <div id="flash-message" class="alert alert-<%= flash.type === 'success' ? 'success' : 'danger' %> alert-dismissible fade show" role="alert">
         <%= flash.message %>

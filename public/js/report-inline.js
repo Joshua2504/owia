@@ -39,8 +39,13 @@
     var row = rowOf(el)
     if (!row) return
     var field = el.getAttribute('data-inline-field')
-    var value = el.value
-    if (field === 'kennzeichen') value = value.toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim()
+    var isBox = el.type === 'checkbox'
+    if (isBox) {
+      // Häkchen: '1'/'0'; Ausgangszustand aus dem gerenderten checked-Attribut.
+      if (el.dataset.saved === undefined) el.dataset.saved = el.defaultChecked ? '1' : '0'
+    }
+    var value = isBox ? (el.checked ? '1' : '0') : el.value
+    if (isBox) { /* unverändert übernehmen */ } else if (field === 'kennzeichen') value = value.toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim()
     else value = value.replace(/\s+/g, ' ').trim()
     // Unverändert (z.B. nur durch das Feld getabbt) → kein Request.
     if (!extra && value === (el.dataset.saved !== undefined ? el.dataset.saved : el.defaultValue)) {
@@ -62,8 +67,11 @@
       .then(function (res) {
         if (!res.ok) throw new Error(res.d.error || 'Speichern fehlgeschlagen.')
         var saved = res.d.values && res.d.values[field]
-        el.value = saved || ''
-        el.dataset.saved = el.value
+        if (isBox) el.dataset.saved = saved === '1' ? '1' : '0'
+        else {
+          el.value = saved || ''
+          el.dataset.saved = el.value
+        }
         if (field === 'verstoss_art') {
           var vis = el.parentNode.querySelector('[data-verstoss-input]')
           if (vis) vis.value = el.value
@@ -85,6 +93,14 @@
   // Feld derselben Spalte (schnelles Abarbeiten einer Liste), Escape = zurück.
   document.addEventListener('change', function (e) {
     var el = e.target
+    // Behinderung angehakt → Textfeld „Wer wurde wie behindert?" einblenden.
+    if (el.matches && el.matches('[data-inline-field="behinderung"]')) {
+      var text = rowOf(el).querySelector('[data-inline-field="behinderung_text"]')
+      if (text) {
+        text.hidden = !el.checked
+        if (el.checked) setTimeout(function () { text.focus() }, 0)
+      }
+    }
     if (el.matches && el.matches('input[data-inline-field], textarea[data-inline-field]')) save(el)
   })
   document.addEventListener('input', function (e) {

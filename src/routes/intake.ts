@@ -350,6 +350,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
     // direkt nach dem Upload aufgerufen, eine Meldung dort wäre nie sichtbar).
     const skippedCount = Number((request.query as { uebersprungen?: string }).uebersprungen) || 0
     return reply.view('/intake/overview.ejs', viewData(request, {
+      wide: true, // Tabelle über die volle Breite (layout.ejs)
       title: 'Foto-Import – Ergebnis',
       batch,
       skippedCount,

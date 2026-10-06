@@ -523,6 +523,35 @@ export default async function reportsRoutes(app: FastifyInstance) {
         values.push(det.city.id)
       }
     }
+    // Tatzeit: leere Werte leeren das Feld, ungültige Formate werden abgewiesen.
+    if (typeof body.tattag === 'string') {
+      const v = body.tattag.trim()
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return reply.status(400).send({ error: 'Ungültiges Datum.' })
+      out.tattag = v || null
+      sets.push('tattag=?')
+      values.push(out.tattag)
+    }
+    for (const f of ['tatzeit_von', 'tatzeit_bis'] as const) {
+      if (typeof body[f] !== 'string') continue
+      const v = (body[f] as string).trim()
+      if (v && !/^\d{2}:\d{2}(:\d{2})?$/.test(v)) return reply.status(400).send({ error: 'Ungültige Uhrzeit.' })
+      out[f] = v ? v.slice(0, 5) : null
+      sets.push(`${f}=?`)
+      values.push(out[f])
+    }
+    // Häkchen: '1'/true = ja, sonst nein (wie persistFields).
+    for (const f of ['behinderung', 'fahrzeug_verlassen'] as const) {
+      if (body[f] === undefined) continue
+      const on = body[f] === true || body[f] === '1' || body[f] === 1
+      out[f] = on ? '1' : '0'
+      sets.push(`${f}=?`)
+      values.push(out[f])
+    }
+    if (typeof body.behinderung_text === 'string') {
+      out.behinderung_text = body.behinderung_text.trim().slice(0, 2000) || null
+      sets.push('behinderung_text=?')
+      values.push(out.behinderung_text)
+    }
     if (typeof body.verstoss_art === 'string') {
       const v = body.verstoss_art.trim()
       // Nur Einträge aus dem amtlichen Katalog (wie die Auswahl im Editor).
@@ -1334,6 +1363,78 @@ export default async function reportsRoutes(app: FastifyInstance) {
     } catch {
       return reply.status(404).send('PDF-Datei nicht gefunden.')
     }
+  })
+
+  // Vorschau vor dem Einreichen (Modal in der Anzeigen-Liste, report-submit.js):
+  // erzeugt das PDF frisch und liefert alle Angaben samt ALLER Hinderungsgründe
+  // (gleiche Prüfungen wie /submit, dort bricht die erste ab). Die zuständige
+  // Stadt wird wie beim Einreichen aus dem Tatort festgeschrieben, damit PDF-
+  // Formular und Empfänger in der Vorschau stimmen.
+  app.post('/anzeige/:az/einreichen-vorschau', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
+    if (report.status !== 'entwurf') return reply.status(409).send({ error: 'Die Anzeige ist bereits eingereicht.' })
+
+    const problems: { message: string; link?: string }[] = []
+    const missing = [
+      !report.kennzeichen && 'Kennzeichen',
+      !report.tattag && 'Tattag',
+      !report.tatzeit_von && 'Uhrzeit',
+      !report.tatort && 'Tatort',
+      !report.verstoss_art && 'Verstoß',
+    ].filter(Boolean)
+    if (missing.length) problems.push({ message: `Es fehlt: ${missing.join(', ')}.` })
+    if (isVerjaehrt(report)) problems.push({ message: 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.' })
+    if (!(await isProfileComplete(userId))) {
+      problems.push({ message: 'Dein Profil ist unvollständig (Name und Anschrift).', link: '/einstellungen' })
+    }
+    if (report.tatort) {
+      const gate = resolveSendCity(report.tatort, report.city)
+      if (!gate.ok) problems.push({ message: gate.message })
+      else if (gate.cityId !== report.city) {
+        await pool.execute("UPDATE reports SET city=? WHERE id=? AND status='entwurf'", [gate.cityId, report.id])
+        report.city = gate.cityId
+      }
+    }
+
+    const city = getCity(report.city)
+    await regeneratePdf(report.id, userId)
+    const [fresh] = await pool.execute<mysql.RowDataPacket[]>('SELECT pdf_filename FROM reports WHERE id=?', [report.id])
+    const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT id, filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+      [report.id]
+    )
+    const fmtDate = (d: unknown) => (d ? new Date(d as string).toLocaleDateString('de-DE') : null)
+    const hhmm = (t: unknown) => (t ? String(t).slice(0, 5) : null)
+    const vj = verjaehrung(report)
+    return reply.send({
+      az,
+      canSubmit: problems.length === 0,
+      problems,
+      fields: {
+        kennzeichen: report.kennzeichen,
+        fahrzeug_marke: report.fahrzeug_marke,
+        tattag: fmtDate(report.tattag),
+        tattag_bis: report.tattag_bis ? fmtDate(report.tattag_bis) : null,
+        tatzeit_von: hhmm(report.tatzeit_von),
+        tatzeit_bis: hhmm(report.tatzeit_bis),
+        tatort: report.tatort,
+        verstoss_art: report.verstoss_art,
+        beschreibung: report.beschreibung,
+        fahrzeug_verlassen: report.fahrzeug_verlassen === 1,
+        behinderung: report.behinderung === 1,
+        behinderung_text: report.behinderung_text,
+      },
+      recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
+      verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
+      pdfUrl: hasPdfForm(city) && fresh[0]?.pdf_filename ? `/anzeige/${az}/pdf?inline=1&t=${Date.now()}` : null,
+      images: imgs.map((i) => ({
+        thumb: `/anzeige/${az}/image/${i.id}/thumb.jpg?v=${imageVersion(i.filename)}`,
+        full: `/anzeige/${az}/image/${i.id}?v=${imageVersion(i.filename)}`,
+      })),
+    })
   })
 
   // Anzeige zur Prüfung einreichen: ein Admin gibt sie frei und verschickt sie

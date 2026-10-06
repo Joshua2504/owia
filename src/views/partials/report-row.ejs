@@ -78,14 +78,31 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
       <% } %>
     <% } %>
   </td>
+  <%
+  // YYYY-MM-DD für <input type="date"> – lokale Datumsteile, kein toISOString (UTC-Versatz).
+  const _isoDate = (d) => { if (!d) return ''; const x = new Date(d); return isNaN(x) ? '' : x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0') }
+  %>
   <td class="cell-time text-nowrap">
-    <span class="cell-label">Tattag</span>
+    <span class="cell-label">Tatzeit</span>
+    <% if (_isDraft) { %>
+      <%# Tattag + Uhrzeit von/bis direkt bearbeiten (report-inline.js). %>
+      <input type="date" class="form-control form-control-sm inline-input" data-inline-field="tattag"
+             value="<%= _isoDate(r.tattag) %>" aria-label="Tattag von <%= r.aktenzeichen %>">
+      <div class="inline-times">
+        <input type="time" class="form-control form-control-sm inline-input" data-inline-field="tatzeit_von"
+               value="<%= _hhmm(r.tatzeit_von) %>" aria-label="Uhrzeit von">
+        <span class="text-muted">–</span>
+        <input type="time" class="form-control form-control-sm inline-input" data-inline-field="tatzeit_bis"
+               value="<%= _hhmm(r.tatzeit_bis) %>" aria-label="Uhrzeit bis">
+      </div>
+    <% } else { %>
     <%= _fmtDate(r.tattag) || '—' %><% if (r.tattag_bis && _fmtDate(r.tattag_bis) !== _fmtDate(r.tattag)) { %> – <%= _fmtDate(r.tattag_bis) %><% } %>
     <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
     <% if (von) { %>
       <div class="cell-sub text-muted small">
         <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr
       </div>
+    <% } %>
     <% } %>
   </td>
   <%
@@ -119,8 +136,9 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
   <%
   // Weitere Details kompakt darunter (nur befüllte Felder).
   const extras = []
-  if (r.fahrzeug_verlassen === 1) extras.push('Fahrzeug war verlassen')
-  if (r.behinderung === 1) extras.push('Behinderung: ' + (r.behinderung_text || 'ja'))
+  // Entwürfe zeigen Verlassen/Behinderung als Häkchen (unten), nicht als Text.
+  if (!_isDraft && r.fahrzeug_verlassen === 1) extras.push('Fahrzeug war verlassen')
+  if (!_isDraft && r.behinderung === 1) extras.push('Behinderung: ' + (r.behinderung_text || 'ja'))
   if (r.beschreibung) extras.push(r.beschreibung)
   %>
   <td class="cell-offense small <%= _isDraft || r.verstoss_art || extras.length ? '' : 'cell-empty' %>">
@@ -135,6 +153,13 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
                   placeholder="Verstoß wählen …" title="<%= r.verstoss_art || '' %>"
                   aria-label="Verstoß von <%= r.aktenzeichen %>"><%= r.verstoss_art || '' %></textarea>
       </div>
+      <div class="inline-flags">
+        <label><input type="checkbox" class="form-check-input" data-inline-field="fahrzeug_verlassen" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>> verlassen</label>
+        <label><input type="checkbox" class="form-check-input" data-inline-field="behinderung" <%= r.behinderung === 1 ? 'checked' : '' %>> Behinderung</label>
+      </div>
+      <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="behinderung_text"
+             value="<%= r.behinderung_text || '' %>" placeholder="Wer wurde wie behindert?" maxlength="2000"
+             <%= r.behinderung === 1 ? '' : 'hidden' %> aria-label="Behinderung beschreiben">
     <% } else { %>
       <div class="clamp-2" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '' %></div>
     <% } %>
@@ -168,7 +193,9 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
     <div class="d-flex gap-1 justify-content-end">
       <% if (_isDraft) { %>
         <%# Öffnet den Editor im Modal (report-modal.js); Strg-/Mittelklick = neuer Tab. %>
-        <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-primary" data-edit-modal>Bearbeiten</a>
+        <%# Einreichen: Modal mit Datenvorschau + PDF (report-submit.js). %>
+        <button type="button" class="btn btn-sm btn-success" data-submit-preview title="Prüfen und einreichen">Einreichen</button>
+        <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary" data-edit-modal title="Alle Angaben im Editor">✏️</a>
         <%# Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
         <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0">
           <button type="submit" class="btn btn-sm btn-outline-danger" title="Entwurf löschen" aria-label="Entwurf <%= r.aktenzeichen %> löschen">🗑</button>
