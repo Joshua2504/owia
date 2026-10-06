@@ -1026,40 +1026,14 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 }
 .review-actions .btn { padding-top: 0.6rem; padding-bottom: 0.6rem; }
 
-/* Kennzeichen-Abgleich im Foto-Dialog (photo-edit.js). */
-.photo-edit-plate { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; flex: 1 1 40rem; }
-.photo-edit-plate label { color: #bbb; }
-.photo-edit-plate .form-control::placeholder { color: #6c757d; opacity: 1; }
-.photo-edit-plate [data-act=plate-suggest] { white-space: nowrap; }
-.photo-edit-plate .plate-field {
-  width: 9.5rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-  background: #fff; color: #000;
-}
-.photo-edit-plate .plate-field.is-mismatch { border-color: #ffc107; box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.5); }
 @media (max-width: 575.98px) {
   /* Handy: Kopf darf umbrechen (Status + Knöpfe passten nicht in eine Zeile und
-     schoben den Dialog seitlich aus dem Bild), Kennzeichen über volle Breite. */
+     schoben den Dialog seitlich aus dem Bild). */
   .photo-edit-head > .ms-auto { flex-wrap: wrap; justify-content: flex-end; }
   .photo-edit-status { white-space: normal; }
   .photo-edit-hint { display: none; }
-  .photo-edit-plate { width: 100%; }
-  .photo-edit-plate .plate-field { flex: 1 1 auto; width: auto; min-width: 0; }
 }
-.photo-edit-marke { width: 11rem; background: #fff; color: #000; }
 .review-map { height: 260px; }
-@media (max-width: 575.98px) {
-  .photo-edit-plate { flex-wrap: wrap; }
-  .photo-edit-marke { flex: 1 1 8rem; width: auto; }
-}
-@media (max-width: 575.98px) {
-  .photo-edit-plate label[for="photo-edit-marke-input"] { display: none; }
-}
-/* Verstoß-Auswahl im Foto-Dialog: Dropdown (verstoss-select.js) liegt über der Leinwand. */
-.photo-edit-verstoss { flex: 1 1 18rem; min-width: 12rem; max-width: 32rem; }
-.photo-edit-verstoss [data-verstoss-input] { background: #fff; color: #000; }
-.photo-edit-verstoss [data-verstoss-input].is-missing { border-color: #ffc107; box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.5); }
-.photo-edit-verstoss .list-group { color: var(--bs-body-color); }
-@media (max-width: 575.98px) { .photo-edit-verstoss { flex-basis: 100%; max-width: none; } }
 /* Reihenfolge im Kachel-Streifen (photo-edit.js): Nummer, Pfeile an der aktuellen Kachel, Drop-Ziel. */
 .photo-edit-tile-no {
   position: absolute; left: 4px; top: 4px; min-width: 18px; height: 18px; padding: 0 4px;
@@ -1073,36 +1047,6 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
   /* Senkrechter Streifen: ‹ = nach oben, › = nach unten. */
   .photo-edit-move .btn { transform: rotate(90deg); }
 }
-/* Tatort im Foto-Dialog + Statuszeile der Anzeige (Prüfliste, Einreichen). */
-.photo-edit-tatort { display: flex; gap: 0.3rem; flex: 1 1 22rem; min-width: 14rem; }
-.photo-edit-tatort[hidden] { display: none; }
-.photo-edit-tatort .address-ac { flex: 1 1 auto; }
-.photo-edit-tatort input { background: #fff; color: #000; }
-.photo-edit-tatort input.is-missing { border-color: #ffc107; box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.5); }
-.photo-edit-tatort .btn-outline-light { --bs-btn-color: #333; --bs-btn-border-color: #ced4da; background: #f8f9fa; }
-.photo-edit-run {
-  flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
-  padding-top: 0.5rem; border-top: 1px solid #3a3a3a;
-}
-.photo-edit-run[hidden] { display: none; }
-.photo-edit-run-label { color: #ddd; }
-.photo-edit-problems.is-open { color: #ffda6a; }
-.photo-edit-problems.is-ok { color: #75b798; }
-@media (max-width: 575.98px) {
-  .photo-edit-tatort { flex-basis: 100%; }
-  .photo-edit-run .ms-auto { margin-left: 0 !important; width: 100%; }
-  .photo-edit-run .ms-auto .btn[data-act=submit] { flex: 1 1 auto; }
-}
-/* Restliche Angaben im Foto-Dialog: Tatzeit, verlassen, Behinderung. */
-.photo-edit-details { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
-.photo-edit-details[hidden] { display: none; }
-.photo-edit-details label { color: #bbb; }
-.photo-edit-details input[type=date], .photo-edit-details input[type=time] { width: auto; background: #fff; color: #000; }
-.photo-edit-details .form-check { display: flex; align-items: center; gap: 0.3rem; padding-left: 0; }
-.photo-edit-details .form-check-input { margin: 0; float: none; }
-.photo-edit-details .btn-group .btn { --bs-btn-color: #333; background: #f8f9fa; border-color: #ced4da; }
-.photo-edit-details .btn-check:checked + .btn { background: #0d6efd; border-color: #0d6efd; color: #fff; }
-.photo-edit-beh-text { flex: 1 1 18rem; min-width: 12rem; background: #fff; color: #000; }
 @media (max-width: 575.98px) {
   /* Einreichen-Vorschau: Hinweis über die volle Breite, Knöpfe darunter umbrechen
      (mit Admin-Knopf passten sie nicht mehr in eine Zeile). */
@@ -1117,3 +1061,35 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
   .submit-data { overflow: visible; margin-bottom: 1rem; }
 }
 .submit-pdf:has(.submit-nopdf) { min-height: 0; }
+
+/* Seitenleiste des Foto-Dialogs (photo-edit.js): Angaben der Anzeige rechts
+   neben dem Foto, Aktionen unten; auf dem Handy unter dem Foto. */
+.photo-edit-side {
+  flex: 0 0 380px; display: flex; flex-direction: column; min-height: 0;
+  background: var(--bs-body-bg); color: var(--bs-body-color); border-left: 1px solid #333;
+}
+.photo-edit-side[hidden] { display: none; }
+.photo-edit-run { padding: 0.75rem 1rem; border-bottom: 1px solid var(--bs-border-color); background: var(--bs-tertiary-bg); }
+.photo-edit-problems { margin-top: 0.15rem; }
+.photo-edit-problems.is-open { color: var(--bs-warning-text-emphasis); }
+.photo-edit-problems.is-ok { color: var(--bs-success-text-emphasis); }
+.photo-edit-fields { flex: 1 1 auto; overflow-y: auto; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.photo-edit-fields .form-label { font-size: 0.8rem; font-weight: 600; color: var(--bs-secondary-color); margin-bottom: 0.2rem; }
+.photo-edit-fields .pe-field[hidden], .photo-edit-details[hidden] { display: none; }
+.photo-edit-details { display: flex; flex-direction: column; gap: 0.75rem; }
+.photo-edit-side .plate-field { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.photo-edit-side .plate-field.is-mismatch,
+.photo-edit-side .is-missing { border-color: #ffc107; box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.45); }
+.photo-edit-side .address-ac { flex: 1 1 auto; }
+.pe-time { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 0.35rem; align-items: center; }
+.photo-edit-actions { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 1rem; border-top: 1px solid var(--bs-border-color); }
+.photo-edit-actions [hidden] { display: none !important; }
+.photo-edit-actions > .btn { padding-top: 0.55rem; padding-bottom: 0.55rem; }
+@media (max-width: 767.98px) {
+  /* Handy: Dialog scrollt als Ganzes – Foto oben, Angaben darunter. */
+  .photo-edit-body { overflow-y: auto; }
+  .photo-edit-stage { flex: 0 0 58vh; }
+  .photo-edit-side { order: 3; flex: 0 0 auto; border-left: 0; border-top: 1px solid #333; }
+  .photo-edit-fields { overflow: visible; }
+  .photo-edit-actions { position: sticky; bottom: 0; background: var(--bs-body-bg); }
+}

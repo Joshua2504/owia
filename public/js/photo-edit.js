@@ -54,72 +54,81 @@
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
       '<span class="photo-edit-hint small"></span>' +
-      // Weiße Eingabefelder auf dunklem Kopf: fest helles Theme, sonst kommen
-      // Text/Platzhalter/Dropdown im Dark Mode hellgrau auf Weiß.
-      '<div class="photo-edit-plate" data-bs-theme="light" hidden>' +
-      '<label class="small" for="photo-edit-plate-input">Kennzeichen</label>' +
-      '<input type="text" id="photo-edit-plate-input" class="form-control form-control-sm plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false">' +
-      '<button type="button" class="btn btn-sm btn-outline-warning" data-act="plate-suggest" hidden></button>' +
-      '<label class="small" for="photo-edit-marke-input">Marke</label>' +
-      '<input type="text" id="photo-edit-marke-input" class="form-control form-control-sm photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. VW Golf, grau">' +
-      '<div class="photo-edit-verstoss position-relative">' +
-      '<input type="hidden">' +
-      '<input type="text" class="form-control form-control-sm" data-verstoss-input autocomplete="off" spellcheck="false" placeholder="Verstoß wählen …" aria-label="Verstoß">' +
-      '</div>' +
-      '<div class="photo-edit-tatort">' +
-      '<input type="text" id="photo-edit-tatort-input" class="form-control form-control-sm" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
-      ' autocomplete="off" spellcheck="false" placeholder="Tatort – Adresse eingeben …" aria-label="Tatort">' +
-      '<button type="button" class="btn btn-sm btn-outline-light" data-act="tatort-photo" title="Tatort aus den GPS-Daten der Fotos">📍</button>' +
-      '</div>' +
-      // Restliche Angaben der Anzeige (Werte aus GET /pruefen/:az/daten,
-      // gespeichert je Feld über PATCH /anzeige/:az/felder).
-      '<div class="photo-edit-details" hidden>' +
-      '<label class="small" for="pe-tattag">Tattag</label>' +
-      '<input type="date" id="pe-tattag" class="form-control form-control-sm" data-detail="tattag">' +
-      '<input type="time" class="form-control form-control-sm" data-detail="tatzeit_von" aria-label="Uhrzeit von" title="Uhrzeit von">' +
-      '<span class="small">–</span>' +
-      '<input type="time" class="form-control form-control-sm" data-detail="tatzeit_bis" aria-label="Uhrzeit bis" title="Uhrzeit bis (optional)">' +
-      '<label class="form-check small mb-0"><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> Fahrzeug war verlassen</label>' +
-      '<span class="small">Behindert?</span>' +
-      '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">' +
-      '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-ja" value="1" data-detail="behinderung">' +
-      '<label class="btn btn-outline-light" for="pe-beh-ja">Ja</label>' +
-      '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-nein" value="0" data-detail="behinderung">' +
-      '<label class="btn btn-outline-light" for="pe-beh-nein">Nein</label>' +
-      '</span>' +
-      '<input type="text" class="form-control form-control-sm photo-edit-beh-text" data-detail="behinderung_text" list="pe-beh-vorschlaege"' +
-      ' placeholder="Wer wurde wie behindert? (Vorschläge beim Antippen)" hidden>' +
-      '<datalist id="pe-beh-vorschlaege">' +
-      // Wie die Schnellauswahl in reports/edit.ejs.
-      ['Ich musste auf die Straße ausweichen.', 'Ich musste auf den Gehweg ausweichen.', 'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
-        'Fußgänger mussten auf die Straße ausweichen.', 'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.']
-        .map(function (t) { return '<option value="' + t + '">' }).join('') +
-      '</datalist>' +
-      '</div>' +
-      '</div>' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
       '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen">🗑</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel">Schließen</button>' +
       '<button type="button" class="btn btn-sm btn-success" data-act="save" title="Enter">✓ Bestätigen</button>' +
       '</div>' +
-      // Anzeige als Ganzes: was fehlt noch, einreichen. Im Prüf-Modus (/pruefen,
-      // window.photoEditorRun) zusätzlich Position, Überspringen, Verwerfen.
-      '<div class="photo-edit-run" hidden>' +
-      '<span class="photo-edit-run-label small fw-semibold"></span>' +
-      '<span class="photo-edit-problems small"></span>' +
-      '<span class="ms-auto d-flex flex-wrap gap-2">' +
-      '<button type="button" class="btn btn-sm btn-outline-danger" data-act="trash-report" title="Anzeige in den Papierkorb (30 Tage wiederherstellbar)">🗑 Anzeige verwerfen</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-light" data-act="skip">⏭ Überspringen</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-success" data-act="submit" disabled title="Vorschau mit PDF öffnen und einreichen">✓ Anzeige einreichen …</button>' +
-      (document.body.hasAttribute('data-admin')
-        ? '<button type="button" class="btn btn-sm btn-primary" data-act="send" disabled title="Ohne Prüfung direkt ans Ordnungsamt senden (nur Admins)">📨 Sofort versenden</button>'
-        : '') +
-      '</span></div>' +
       '</div>' +
       '<div class="photo-edit-body">' +
       '<div class="photo-edit-strip" aria-label="Alle Fotos der Anzeige"></div>' +
       '<div class="photo-edit-stage"><canvas></canvas><div class="photo-edit-msg"></div></div>' +
+      // Seitenleiste mit den Angaben der Anzeige (nur bei Entwürfen). Helles
+      // Theme fest, damit Felder/Dropdowns auch im Dark Mode lesbar sind.
+      '<aside class="photo-edit-side photo-edit-plate" data-bs-theme="light" hidden>' +
+      // Anzeige als Ganzes: was fehlt noch. Im Prüf-Modus (/pruefen,
+      // window.photoEditorRun) zusätzlich Position.
+      '<div class="photo-edit-run">' +
+      '<div class="photo-edit-run-label fw-semibold"></div>' +
+      '<div class="photo-edit-problems small"></div>' +
+      '</div>' +
+      '<div class="photo-edit-fields">' +
+      '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
+      '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false">' +
+      '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
+      '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
+      '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. VW Golf, grau"></div>' +
+      '<div class="pe-field"><label class="form-label">Verstoß</label>' +
+      '<div class="photo-edit-verstoss position-relative">' +
+      '<input type="hidden">' +
+      '<input type="text" class="form-control" data-verstoss-input autocomplete="off" spellcheck="false" placeholder="Verstoß suchen …" aria-label="Verstoß">' +
+      '</div></div>' +
+      '<div class="pe-field photo-edit-tatort"><label class="form-label" for="photo-edit-tatort-input">Tatort</label>' +
+      '<div class="d-flex gap-1">' +
+      '<input type="text" id="photo-edit-tatort-input" class="form-control" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
+      ' autocomplete="off" spellcheck="false" placeholder="Adresse eingeben …">' +
+      '<button type="button" class="btn btn-outline-secondary" data-act="tatort-photo" title="Tatort aus den GPS-Daten der Fotos">📍</button>' +
+      '</div></div>' +
+      // Restliche Angaben (Werte aus GET /pruefen/:az/daten, gespeichert je
+      // Feld über PATCH /anzeige/:az/felder).
+      '<div class="photo-edit-details" hidden>' +
+      '<div class="pe-field"><label class="form-label" for="pe-tattag">Tatzeit</label>' +
+      '<input type="date" id="pe-tattag" class="form-control mb-1" data-detail="tattag">' +
+      '<div class="pe-time">' +
+      '<input type="time" class="form-control" data-detail="tatzeit_von" aria-label="Uhrzeit von" title="Uhrzeit von">' +
+      '<span>–</span>' +
+      '<input type="time" class="form-control" data-detail="tatzeit_bis" aria-label="Uhrzeit bis" title="Uhrzeit bis (optional)">' +
+      '</div></div>' +
+      '<label class="form-check"><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> <span class="form-check-label">Fahrzeug war verlassen</span></label>' +
+      '<div class="pe-field"><div class="d-flex align-items-center gap-2"><span class="form-label mb-0">Wurde jemand behindert?</span>' +
+      '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">' +
+      '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-ja" value="1" data-detail="behinderung">' +
+      '<label class="btn btn-outline-secondary" for="pe-beh-ja">Ja</label>' +
+      '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-nein" value="0" data-detail="behinderung">' +
+      '<label class="btn btn-outline-secondary" for="pe-beh-nein">Nein</label>' +
+      '</span></div>' +
+      '<input type="text" class="form-control mt-1 photo-edit-beh-text" data-detail="behinderung_text" list="pe-beh-vorschlaege"' +
+      ' placeholder="Wer wurde wie behindert? (Vorschläge beim Antippen)" hidden>' +
+      '<datalist id="pe-beh-vorschlaege">' +
+      // Wie die Schnellauswahl in reports/edit.ejs.
+      ['Ich musste auf die Straße ausweichen.', 'Ich musste auf den Gehweg ausweichen.', 'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
+        'Fußgänger mussten auf die Straße ausweichen.', 'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.']
+        .map(function (t) { return '<option value="' + t + '">' }).join('') +
+      '</datalist></div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="photo-edit-actions">' +
+      '<button type="button" class="btn btn-outline-success" data-act="submit" disabled title="Vorschau mit PDF öffnen und einreichen">✓ Anzeige einreichen …</button>' +
+      (document.body.hasAttribute('data-admin')
+        ? '<button type="button" class="btn btn-primary" data-act="send" disabled title="Ohne Prüfung direkt ans Ordnungsamt senden (nur Admins)">📨 Sofort versenden</button>'
+        : '') +
+      '<div class="d-flex gap-2">' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary flex-fill" data-act="skip">⏭ Überspringen</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-danger flex-fill" data-act="trash-report" title="Anzeige in den Papierkorb (30 Tage wiederherstellbar)">🗑 Verwerfen</button>' +
+      '</div>' +
+      '</div>' +
+      '</aside>' +
       '</div>'
     document.body.appendChild(dlg)
     canvas = dlg.querySelector('canvas')
@@ -568,14 +577,12 @@
     return !!(s && s.report && s.report.canSubmit && s.ok && !s.open && !s.dirty)
   }
   function updateRun() {
-    var box = dlg.querySelector('.photo-edit-run')
+    var box = dlg.querySelector('.photo-edit-side')
     var s = state
-    box.hidden = !s || s.plate == null
-    if (box.hidden) return
+    if (!s || s.plate == null) return
     var run = window.photoEditorRun
     dlg.querySelector('.photo-edit-run-label').textContent = (run && run.label ? run.label() + ' · ' : '') + s.az
-    box.querySelector('[data-act=skip]').hidden = !run
-    box.querySelector('[data-act=trash-report]').hidden = !run
+    box.querySelector('[data-act=skip]').parentNode.hidden = !run
     var probs = dlg.querySelector('.photo-edit-problems')
     var btn = box.querySelector('[data-act=submit]')
     var ready = readyToSubmit()
@@ -982,7 +989,7 @@
     var verstoss = plate != null && opts.verstoss != null && window.verstossSelect ? String(opts.verstoss) : null
     verstossHidden().value = verstoss || ''
     verstossInput().value = verstoss || ''
-    verstossHidden().parentNode.hidden = verstoss == null
+    verstossHidden().closest('.pe-field').hidden = verstoss == null
     var tatort = plate != null && opts.tatort != null ? String(opts.tatort).replace(/\s+/g, ' ').trim() : null
     tatortInput().value = tatort || ''
     tatortInput().closest('.photo-edit-tatort').hidden = tatort == null
@@ -991,8 +998,7 @@
     var keepReport = state && state.az === opts.az ? state.report : null
     plateInput().value = plate || ''
     markeInput().value = marke || ''
-    markeInput().hidden = marke == null
-    markeInput().previousElementSibling.hidden = marke == null
+    markeInput().closest('.pe-field').hidden = marke == null
     state = {
       plate: plate, marke: marke, verstoss: verstoss, tatort: tatort, report: keepReport, detected: opts.detected ? normPlate(opts.detected) : null,
       thumb: opts.thumb || null, thumbs: opts.thumbs || null,
