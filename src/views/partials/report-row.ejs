@@ -152,6 +152,12 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
       <span class="badge rounded-pill text-bg-success">Versendet</span>
     <% } else if (_isDraft) { %>
       <span class="badge rounded-pill text-bg-warning">Entwurf</span>
+      <% const _vj = verjaehrung(r) %>
+      <% if (_vj.verjaehrt) { %>
+        <span class="badge rounded-pill text-bg-danger" title="Tat liegt mehr als drei Monate zurück – kann nicht mehr eingereicht werden">⌛ Verjährt</span>
+      <% } else if (_vj.bald) { %>
+        <span class="badge rounded-pill text-bg-light border" title="Verjährt in <%= _vj.restTage %> Tag<%= _vj.restTage === 1 ? '' : 'en' %>">⏳ noch <%= _vj.restTage %> T.</span>
+      <% } %>
     <% } else { %>
       <span class="badge rounded-pill text-bg-info">Eingereicht</span>
     <% } %>

@@ -151,6 +151,19 @@ const embedQ = embed ? '&embed=1' : ''
             <input type="date" name="tattag_bis" id="tattag-bis" class="form-control"
                    value="<%= toDateInput(r.tattag_bis) %>">
           </div>
+          <%# Verjährung (3 Monate, services/verjaehrung.ts). report-form.js
+              (initVerjaehrung) rechnet bei Datumsänderung im Browser nach und
+              sperrt dann „Einreichen"; der Server prüft beim Submit erneut. %>
+          <% const _vj = verjaehrung({ tattag: r.tattag || today, tattag_bis: r.tattag_bis }) %>
+          <div class="col-12" id="verjaehrung-hint" <%= _vj.verjaehrt || _vj.bald ? '' : 'hidden' %>>
+            <div class="alert <%= _vj.verjaehrt ? 'alert-danger' : 'alert-warning' %> py-2 px-3 small mb-0" data-verjaehrung-text>
+              <% if (_vj.verjaehrt) { %>
+                ⌛ Verjährt: Die Tat liegt mehr als drei Monate zurück und kann nicht mehr eingereicht werden.
+              <% } else if (_vj.bald) { %>
+                ⏳ Verjährt in <%= _vj.restTage %> Tag<%= _vj.restTage === 1 ? '' : 'en' %> – bitte bald einreichen.
+              <% } %>
+            </div>
+          </div>
           <div class="col-6 col-md-3">
             <label class="form-label" for="tatzeit-bis">Uhrzeit bis</label>
             <input type="time" name="tatzeit_bis" id="tatzeit-bis" class="form-control"
@@ -305,7 +318,7 @@ const embedQ = embed ? '&embed=1' : ''
       <%# Speichert und reicht direkt zur Prüfung ein (report-form.js: initSubmit).
           Ziel danach: nächster Entwurf der Import-Queue, sonst Detailseite bzw.
           im Modal zurück zur Liste. %>
-      <button type="button" class="btn btn-success" id="btn-submit"
+      <button type="button" class="btn btn-success" id="btn-submit" <%= _vj.verjaehrt ? 'disabled' : '' %>
               data-after="<%= locals.queue ? (queue.nextAz ? `/anzeige/${queue.nextAz}/bearbeiten?queue=${queue.batchId}${embedQ}` : `/import/${queue.batchId}`) : `/anzeige/${r.aktenzeichen}` %>">
         Speichern &amp; Einreichen
       </button>

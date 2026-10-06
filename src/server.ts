@@ -20,6 +20,7 @@ import geoRoutes from './routes/geo'
 import tilesRoutes from './routes/tiles'
 import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
+import { verjaehrung } from './services/verjaehrung'
 import adminRoutes from './routes/admin'
 import { startInboxPolling, processInboundMail } from './services/mailInbox'
 import { failStalePlateAnalyses } from './services/plateAnalysis'
@@ -139,7 +140,7 @@ async function main() {
     layout: '/layout.ejs',
     // isAdmin ist Standard-false, damit das Layout es immer referenzieren kann,
     // auch bei (seltenen) Views, die ohne viewData gerendert werden.
-    defaultContext: { isAdmin: false },
+    defaultContext: { isAdmin: false, verjaehrung },
   })
 
   // Flash-Cookie nach dem Ausliefern einer HTML-Seite löschen (die Seite hat

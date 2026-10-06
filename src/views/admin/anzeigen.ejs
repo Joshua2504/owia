@@ -34,6 +34,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
               <%= fmtDate(r.tattag) %><% if (r.tattag_bis && fmtDate(r.tattag_bis) !== fmtDate(r.tattag)) { %> – <%= fmtDate(r.tattag_bis) %><% } %>
               <% const von = hhmm(r.tatzeit_von), bis = hhmm(r.tatzeit_bis) %>
               <% if (von) { %>, <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr<% } %>
+              <% if (verjaehrung(r).verjaehrt) { %><span class="badge text-bg-danger ms-1">⌛ Verjährt</span><% } %>
             </dd>
             <dt class="col-sm-4">Tatort</dt>
             <dd class="col-sm-8"><%= r.tatort %></dd>

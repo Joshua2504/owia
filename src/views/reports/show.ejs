@@ -172,6 +172,13 @@ const versandLabel = {
           Bitte den Entwurf anpassen und erneut einreichen.
         </div>
       <% } %>
+      <% if (locals.verjaehrt) { %>
+        <div class="alert alert-danger">
+          ⌛ <strong>Verjährt:</strong> Die Tat liegt mehr als drei Monate zurück
+          (§ 26 Abs. 3 StVG). Das Ordnungsamt kann sie nicht mehr ahnden – die
+          Anzeige kann daher nicht mehr eingereicht werden.
+        </div>
+      <% } %>
       <% if (!complete) { %>
         <div class="alert alert-warning">
           Es fehlen noch Pflichtangaben. Bitte zuerst
@@ -203,7 +210,7 @@ const versandLabel = {
           </div>
           <form method="post" action="/anzeige/<%= report.aktenzeichen %>/submit"
                 onsubmit="return confirm('Anzeige jetzt zur Prüfung einreichen?\n\nMit dem Einreichen bestätigst du die Richtigkeit deiner Angaben – wissentlich falsche Anzeigen sind strafbar (§ 164 StGB).')">
-            <button type="submit" class="btn btn-success" <%= complete && locals.profileComplete ? '' : 'disabled' %>>
+            <button type="submit" class="btn btn-success" <%= complete && locals.profileComplete && !locals.verjaehrt ? '' : 'disabled' %>>
               ✓ Einreichen
             </button>
           </form>

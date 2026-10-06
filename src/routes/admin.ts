@@ -1,6 +1,7 @@
 // Admin-Prüfung: Nutzer reichen Anzeigen ein (status 'eingereicht'), ein Admin
 // gibt sie hier frei (Versand ans Ordnungsamt per E-Mail, Nutzer optional in Kopie) oder
 // lehnt sie mit Begründung ab (zurück in den Entwurf + Info-Mail an den Nutzer).
+import { isVerjaehrt } from '../services/verjaehrung'
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import path from 'path'
@@ -182,6 +183,9 @@ export default async function adminRoutes(app: FastifyInstance) {
         const fresh = await loadReportWithUser(id)
         if (!fresh || !(await isProfileComplete(fresh.report.user_id))) {
           throw new ReportPreparationError('Das Nutzerprofil ist unvollständig. Bitte die Anzeige ablehnen und korrigieren lassen.')
+        }
+        if (isVerjaehrt(fresh.report)) {
+          throw new ReportPreparationError('Die Tat ist verjährt (mehr als drei Monate her). Bitte die Anzeige ablehnen.')
         }
         const gate = resolveSendCity(fresh.report.tatort, fresh.report.city)
         if (!gate.ok) throw new ReportPreparationError(gate.message)

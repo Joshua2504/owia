@@ -1,3 +1,4 @@
+import { isVerjaehrt } from '../services/verjaehrung'
 import { FastifyInstance, FastifyRequest } from 'fastify'
 import mysql from 'mysql2/promise'
 import crypto from 'crypto'
@@ -1113,6 +1114,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       replies,
       attachmentsByReply,
       complete: isComplete(report),
+      verjaehrt: isVerjaehrt(report),
       profileComplete: await isProfileComplete(userId),
       mailFrom: process.env.MAIL_FROM || null,
       city: getCity(report.city),
@@ -1359,6 +1361,11 @@ export default async function reportsRoutes(app: FastifyInstance) {
         !report.verstoss_art && 'Verstoß',
       ].filter(Boolean).join(', ')
       return fail(`Bitte zuerst alle Pflichtfelder ausfüllen (es fehlt: ${missing}).`, `/anzeige/${az}/bearbeiten`)
+    }
+
+    // Verjährte Taten kann das Ordnungsamt nicht mehr ahnden (§ 26 Abs. 3 StVG).
+    if (isVerjaehrt(report)) {
+      return fail('Diese Anzeige ist verjährt (mehr als drei Monate nach der Tat) und kann nicht mehr eingereicht werden.', `/anzeige/${az}`)
     }
 
     // Ohne vollständiges Profil (Name + Anschrift) keine Einreichung – das

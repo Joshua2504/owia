@@ -7,6 +7,7 @@ import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import formbody from '@fastify/formbody'
 import ejs from 'ejs'
+import { verjaehrung } from '../src/services/verjaehrung'
 import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
 import { runMigrations } from '../src/db/migrate'
@@ -338,7 +339,7 @@ test('Kontoschließung kann einen ungeklärten Versand nicht löschen', async ()
 test('Adminansicht bietet bei unklarem Versand keinen Wiederholungsbutton an', async () => {
   for (const state of [null, 'vorbereitung', 'versand', 'angenommen']) {
     const html = await ejs.renderFile('src/views/admin/anzeigen.ejs', {
-      pending: [{ id: 1, aktenzeichen: 'OWiA-123456', versand_status: state }], recent: [], unmatched: [],
+      pending: [{ id: 1, aktenzeichen: 'OWiA-123456', versand_status: state }], recent: [], unmatched: [], verjaehrung,
     })
     if (state === 'versand' || state === 'vorbereitung') {
       assert.ok(!html.includes('action="/admin/anzeigen/1/approve"'))

@@ -1796,6 +1796,45 @@
   // „Speichern & Einreichen": offene Änderungen sichern, Entwurf speichern
   // (PDF), dann einreichen. Fehler (fehlende Pflichtfelder, Profil, Stadt)
   // erscheinen direkt in der Aktionsleiste statt per Umleitung.
+  // Verjährung (Spiegel von src/services/verjaehrung.ts): 3 Monate ab Tatende
+  // (tattag_bis, sonst tattag). Verjährt → Hinweis + „Einreichen" gesperrt.
+  function initVerjaehrung(form) {
+    const hint = document.querySelector('#verjaehrung-hint')
+    const btn = document.querySelector('#btn-submit')
+    const von = form.querySelector('[name="tattag"]')
+    const bis = form.querySelector('[name="tattag_bis"]')
+    if (!hint || !von) return
+    const box = hint.querySelector('[data-verjaehrung-text]')
+    const parse = (v) => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || '')
+      return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null
+    }
+    const update = () => {
+      const tat = parse(bis && bis.value) || parse(von.value)
+      let rest = null
+      if (tat) {
+        const ab = new Date(tat.getFullYear(), tat.getMonth() + 3, tat.getDate())
+        if (ab.getDate() !== tat.getDate()) ab.setDate(1)
+        const n = new Date()
+        rest = Math.round((ab - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000)
+      }
+      const verjaehrt = rest !== null && rest <= 0
+      const bald = rest !== null && rest > 0 && rest <= 14
+      hint.hidden = !verjaehrt && !bald
+      box.className = 'alert ' + (verjaehrt ? 'alert-danger' : 'alert-warning') + ' py-2 px-3 small mb-0'
+      box.textContent = verjaehrt
+        ? '⌛ Verjährt: Die Tat liegt mehr als drei Monate zurück und kann nicht mehr eingereicht werden.'
+        : bald ? '⏳ Verjährt in ' + rest + ' Tag' + (rest === 1 ? '' : 'en') + ' – bitte bald einreichen.' : ''
+      if (btn) {
+        btn.disabled = verjaehrt
+        btn.title = verjaehrt ? 'Verjährt – Einreichen nicht mehr möglich' : ''
+      }
+    }
+    von.addEventListener('change', update)
+    if (bis) bis.addEventListener('change', update)
+    update()
+  }
+
   function initSubmit(form) {
     const btn = document.querySelector('#btn-submit')
     const errBox = document.querySelector('#submit-error')
@@ -1853,6 +1892,7 @@
     isEmbed = form.hasAttribute('data-embed') && window.parent !== window
     if (isEmbed) initEmbed(form)
     initSubmit(form)
+    initVerjaehrung(form)
 
     initCurrentLocation()
     initImageEditor()
