@@ -82,8 +82,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0037_sticker.sql')
-  assert.equal(rows.length, 37)
+  assert.equal(rows.at(-1)?.filename, '0038_jobs.sql')
+  assert.equal(rows.length, 38)
 })
 
 test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
@@ -664,4 +664,13 @@ test('Statistik summiert Regelsätze je TBNR, Freitext zählt ohne Betrag', () =
   assert.equal(s.euro, 135)
   assert.deepEqual(s.tatbestaende.map((t) => [t.key, t.anzahl, t.euro]), [['112454', 2, 110], ['141312', 1, 25], ['sonstige', 1, 0]])
   assert.deepEqual(s.monate.map((m) => [m.label, m.anzahl, m.euro]), [['September 2026', 1, 55], ['Oktober 2026', 3, 80]])
+})
+
+test('Hintergrund-Jobs: gleicher Schlüssel wird nur einmal eingereiht', async () => {
+  const { enqueueJob } = await import('../src/services/jobs')
+  await enqueueJob('test.noop', { a: 1 }, { key: 'test.noop:1' })
+  await enqueueJob('test.noop', { a: 1 }, { key: 'test.noop:1' })
+  const rows = await query("SELECT COUNT(*) AS n FROM jobs WHERE pending_key = 'test.noop:1'")
+  assert.equal(Number(rows[0].n), 1)
+  await pool.execute("DELETE FROM jobs WHERE type = 'test.noop'")
 })

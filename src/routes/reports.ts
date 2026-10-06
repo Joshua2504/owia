@@ -29,7 +29,7 @@ import { replyAttachmentPath } from '../services/mailInbox'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 import { MailService } from '../services/mail'
 import { adminEmails, isAdminEmail } from '../config/admin'
-import { approveAndDispatch } from './admin'
+import { enqueueJob, registerJob } from '../services/jobs'
 import { previewBulkEdit, applyBulkEdit, BulkEditInputError } from '../services/bulkEdit'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
@@ -350,6 +350,22 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
     console.error('PDF-Generierung fehlgeschlagen', err)
   }
 }
+
+/** PDF-Neuerzeugung als Hintergrund-Job; mehrfaches Einreihen derselben Anzeige
+ *  wird zusammengefasst (pending_key). */
+export function enqueuePdf(reportId: string | number, userId: number): Promise<void> {
+  return enqueueJob('report.pdf', { reportId: Number(reportId), userId }, { key: `report.pdf:${reportId}` })
+}
+
+registerJob('report.pdf', async ({ reportId, userId }) => {
+  await regeneratePdf(reportId, userId)
+})
+
+registerJob('mail.submit-notification', async ({ reportId, userId, userEmail, vorherigeAblehnung }) => {
+  const report = await loadReport(reportId, userId)
+  if (!report) return
+  await MailService.sendSubmitNotification(adminEmails(), report, userEmail, vorherigeAblehnung)
+})
 
 export default async function reportsRoutes(app: FastifyInstance) {
   // Verstoß-Katalog für Sammelbearbeitung und Inline-Bearbeitung der Liste
@@ -926,7 +942,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
     const body = (request.body || {}) as Record<string, string>
     await persistFields(report.id, userId, body)
-    await regeneratePdf(report.id, userId)
+    // PDF im Hintergrund – gebraucht wird es erst bei Vorschau/Freigabe, und die
+    // erzeugen es ohnehin neu.
+    await enqueuePdf(report.id, userId)
 
     // Editor im Modal (Anzeigen-Liste) speichert per fetch und schließt dann.
     if (String(request.headers.accept || '').includes('application/json')) {
@@ -1128,7 +1146,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
       await deleteDraft(userId, { id: source.id, pdf_filename: source.pdf_filename })
       merged++
     }
-    void regeneratePdf(target.id, userId).catch(() => {})
+    await enqueuePdf(target.id, userId)
     setFlash(reply, 'success', merged
       ? `${merged + 1} Entwürfe in ${targetAz} zusammengeführt.`
       : 'Nichts zusammengeführt.')
@@ -1577,7 +1595,6 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // PDF auf den letzten Stand bringen; eine frühere Ablehnung ist damit erledigt.
     // Den Grund vorher sichern – die Admin-Mail weist auf die Wiedervorlage hin.
     const vorherigeAblehnung = report.ablehnung_grund as string | null
-    await regeneratePdf(report.id, userId)
     const [submitted] = await pool.execute<mysql.ResultSetHeader>(
       "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL WHERE id=? AND status='entwurf' AND versand_status IS NULL",
       [report.id]
@@ -1586,25 +1603,22 @@ export default async function reportsRoutes(app: FastifyInstance) {
       return json ? reply.status(409).send({ error: 'Die Anzeige wird bereits bearbeitet.' }) : reply.redirect(`/anzeige/${az}`)
     }
     // Admins dürfen eigene Anzeigen direkt freigeben und versenden (?sofort=1) –
-    // dann entfällt die Prüf-Benachrichtigung.
+    // dann entfällt die Prüf-Benachrichtigung. PDF + Versand laufen als Job
+    // (routes/admin.ts, 'report.dispatch'); das Ergebnis steht danach im
+    // Versandstatus bzw. in /admin/anzeigen.
     const sofort = (request.query as { sofort?: string }).sofort === '1' && isAdminEmail(request.session.userEmail)
     if (sofort) {
-      const outcome = await approveAndDispatch(String(report.id), az, app.log)
-      if (json) return outcome.ok ? reply.send({ ok: true, sent: true }) : reply.status(502).send({ error: `Eingereicht, aber nicht versendet: ${outcome.message}` })
-      setFlash(reply, outcome.ok ? 'success' : 'error', outcome.ok ? 'Anzeige eingereicht, bestätigt und ans Ordnungsamt verschickt.' : `Eingereicht, aber nicht versendet: ${outcome.message}`)
+      await enqueueJob('report.dispatch', { reportId: report.id, aktenzeichen: az }, { key: `report.dispatch:${report.id}`, maxAttempts: 1 })
+      if (json) return reply.send({ ok: true, sent: false, queued: true })
+      setFlash(reply, 'success', 'Anzeige eingereicht – der Versand ans Ordnungsamt läuft im Hintergrund.')
       return reply.redirect(`/anzeige/${az}`)
     }
-    // Admins informieren – sonst kann eine Einreichung unbemerkt liegenbleiben.
-    try {
-      await MailService.sendSubmitNotification(
-        adminEmails(),
-        report,
-        request.session.userEmail || '',
-        vorherigeAblehnung
-      )
-    } catch (err) {
-      app.log.error({ err }, 'Admin-Benachrichtigung zur Einreichung fehlgeschlagen')
-    }
+    // PDF auf den letzten Stand bringen (die Admin-Prüfung zeigt es an), danach
+    // die Admins informieren – sonst kann eine Einreichung unbemerkt liegenbleiben.
+    await enqueuePdf(report.id, userId)
+    await enqueueJob('mail.submit-notification', {
+      reportId: report.id, userId, userEmail: request.session.userEmail || '', vorherigeAblehnung,
+    })
     if (json) return reply.send({ ok: true })
     setFlash(reply, 'success', 'Anzeige eingereicht – sie wird geprüft und dann ans Ordnungsamt verschickt.')
     return reply.redirect(`/anzeige/${az}`)
@@ -1779,7 +1793,8 @@ export async function moveImages(
   // PDFs im Hintergrund nachziehen: Beide sind Entwürfe, „Speichern" und
   // „Einreichen" erzeugen das PDF ohnehin neu – der Nutzer soll nach dem
   // Verschieben nicht auf zwei PDF-Läufe warten.
-  void regeneratePdf(source.id, userId).then(() => regeneratePdf(targetId, userId)).catch(() => {})
+  await enqueuePdf(source.id, userId)
+  await enqueuePdf(targetId, userId)
   // Ziel ohne Tatort (z. B. neue Anzeige aus Fotos): aus deren GPS nachtragen.
   queueTatortFill(targetId)
   return { status: 200, body: { ok: true, targetAz: resolvedTargetAz, moved: imgs.length } }

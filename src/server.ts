@@ -1,4 +1,5 @@
 import './types'
+import { startJobRunner, purgeJobs } from './services/jobs'
 import { assertProductionMailConfig } from './config/mail'
 import path from 'path'
 import fs from 'fs/promises'
@@ -204,6 +205,7 @@ async function main() {
       )
       // Papierkorb: Entwürfe nach PAPIERKORB_TAGE endgültig löschen.
       await purgeTrash()
+      await purgeJobs()
     } catch (err) {
       app.log.warn({ err }, 'Session-/Token-Aufräumen fehlgeschlagen')
     }
@@ -224,6 +226,9 @@ async function main() {
   }
   setTimeout(fillTatorte, 30 * 1000)
   setInterval(fillTatorte, 15 * 60 * 1000)
+
+  // Hintergrund-Jobs (services/jobs.ts): Import-Gruppierung, PDFs, Mails, Versand.
+  await startJobRunner(app.log)
 
   // Bei einem Neustart mitten in der Kennzeichen-Analyse liegengebliebene
   // 'pending'-Bilder auflösen, sonst zeigt das Formular dort endlos den Spinner.

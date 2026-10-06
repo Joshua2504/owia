@@ -15,6 +15,7 @@ import { resolveSendCity } from '../services/districts'
 import { regeneratePdf, isProfileComplete } from './reports'
 import { deleteUser, UserDeleteError } from '../services/userDelete'
 import { isAdminEmail } from '../config/admin'
+import { enqueueJob, registerJob, recentJobs } from '../services/jobs'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
@@ -76,6 +77,32 @@ export async function approveAndDispatch(
   }
 }
 
+// Hintergrund-Jobs der Admin-Aktionen: Versand und Benachrichtigungen laufen
+// nicht mehr im Request (services/jobs.ts). Mails werden mit frischen Daten
+// erzeugt; Fehler landen in jobs.error und werden bis zu 3× wiederholt.
+// Der Versand selbst nur einmal – dispatchReport sperrt über versand_status, ein
+// unklares Ergebnis muss ein Mensch prüfen (docs/VERSANDBETRIEB.md).
+registerJob('report.dispatch', async ({ reportId, aktenzeichen }, log) => {
+  const outcome = await approveAndDispatch(String(reportId), aktenzeichen, log)
+  if (!outcome.ok) throw new Error(outcome.message)
+})
+
+registerJob('mail.report-rejected', async ({ reportId, grund }) => {
+  const loaded = await loadReportWithUser(String(reportId))
+  if (loaded) await MailService.sendReportRejected(loaded.user, loaded.report, grund)
+})
+
+registerJob('mail.reply-notification', async ({ reportId }) => {
+  const loaded = await loadReportWithUser(String(reportId))
+  if (loaded) await MailService.sendReplyNotification(loaded.user, loaded.report)
+})
+
+// Ein Job pro Abonnent: einzelne Fehler blockieren die übrigen nicht und werden
+// einzeln wiederholt.
+registerJob('mail.newsletter', async ({ email, subject, text, unsubscribeUrl }) => {
+  await MailService.sendNewsletterAnnouncement(email, subject, text, unsubscribeUrl)
+})
+
 export default async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/anzeigen', { preHandler: requireAdmin }, async (request, reply) => {
     const [pending] = await pool.execute<mysql.RowDataPacket[]>(
@@ -109,9 +136,15 @@ export default async function adminRoutes(app: FastifyInstance) {
         LIMIT 2000`
     )
 
+    // Versand-Jobs je Anzeige (der jüngste zählt): „läuft" bzw. Fehlermeldung.
+    const versandJobs: Record<number, { status: string; error: string | null }> = {}
+    for (const job of await recentJobs('report.dispatch')) {
+      versandJobs[Number(job.payload?.reportId)] = { status: job.status, error: job.error }
+    }
     return reply.view('/admin/anzeigen.ejs', viewData(request, {
       title: 'Prüfung',
       pending,
+      versandJobs,
       recent,
       unmatched,
     }))
@@ -136,15 +169,7 @@ export default async function adminRoutes(app: FastifyInstance) {
       [reports[0].id, id]
     )
     if (result.affectedRows === 1) {
-      try {
-        const [users] = await pool.execute<mysql.RowDataPacket[]>(
-          'SELECT * FROM users WHERE id = ?',
-          [reports[0].user_id]
-        )
-        if (users[0]) await MailService.sendReplyNotification(users[0], reports[0])
-      } catch (err) {
-        app.log.error({ err }, 'Hinweis-Mail nach Zuordnung fehlgeschlagen')
-      }
+      await enqueueJob('mail.reply-notification', { reportId: reports[0].id })
     }
     setFlash(reply, 'success', `Antwort der Anzeige ${az} zugeordnet.`)
     return reply.redirect('/admin/anzeigen')
@@ -240,8 +265,9 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
 
-    const outcome = await approveAndDispatch(id, loaded.report.aktenzeichen, app.log)
-    setFlash(reply, outcome.ok ? 'success' : 'error', outcome.message)
+    await enqueueJob('report.dispatch', { reportId: loaded.report.id, aktenzeichen: loaded.report.aktenzeichen },
+      { key: `report.dispatch:${loaded.report.id}`, maxAttempts: 1 })
+    setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen}: Versand läuft im Hintergrund.`)
     return reply.redirect('/admin/anzeigen')
   })
 
@@ -266,11 +292,7 @@ export default async function adminRoutes(app: FastifyInstance) {
       setFlash(reply, 'error', 'Die Anzeige wird bereits versendet oder wurde inzwischen geändert.')
       return reply.redirect('/admin/anzeigen')
     }
-    try {
-      await MailService.sendReportRejected(loaded.user, loaded.report, grund)
-    } catch (err) {
-      app.log.error({ err }, 'Ablehnungs-Mail fehlgeschlagen')
-    }
+    await enqueueJob('mail.report-rejected', { reportId: loaded.report.id, grund })
     setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} abgelehnt – der Nutzer wurde informiert.`)
     return reply.redirect('/admin/anzeigen')
   })
@@ -409,32 +431,15 @@ export default async function adminRoutes(app: FastifyInstance) {
     )
     const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
 
-    // Seriell versenden; einzelne Fehler (z.B. ungültig gewordene Adresse)
-    // brechen den Versand an die übrigen Abonnenten nicht ab.
-    let sent = 0
-    let failed = 0
     for (const sub of subscribers) {
-      try {
-        await MailService.sendNewsletterAnnouncement(
-          sub.email,
-          subject.trim(),
-          text,
-          `${appUrl}/newsletter/abmelden/${sub.token}`
-        )
-        sent++
-      } catch (err) {
-        failed++
-        app.log.error({ err, email: sub.email }, 'Newsletter-Versand fehlgeschlagen')
-      }
+      await enqueueJob('mail.newsletter', {
+        email: sub.email,
+        subject: subject.trim(),
+        text,
+        unsubscribeUrl: `${appUrl}/newsletter/abmelden/${sub.token}`,
+      })
     }
-
-    setFlash(
-      reply,
-      failed ? 'error' : 'success',
-      failed
-        ? `Versendet an ${sent} Abonnenten, ${failed} fehlgeschlagen (siehe Log).`
-        : `Ankündigung an ${sent} Abonnenten versendet.`
-    )
+    setFlash(reply, 'success', `Ankündigung an ${subscribers.length} Abonnenten wird im Hintergrund versendet.`)
     return reply.redirect('/admin/newsletter')
   })
 }

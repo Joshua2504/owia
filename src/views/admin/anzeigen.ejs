@@ -65,6 +65,12 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
             </dd>
           </dl>
 
+          <% const vj = typeof versandJobs !== 'undefined' ? versandJobs[r.id] : undefined %>
+          <% if (vj && (vj.status === 'queued' || vj.status === 'running')) { %>
+            <div class="alert alert-info small">⏳ Versand läuft im Hintergrund – Seite später neu laden.</div>
+          <% } else if (vj && vj.status === 'failed' && !r.versand_status) { %>
+            <div class="alert alert-danger small">Letzter Versandversuch fehlgeschlagen: <%= vj.error %></div>
+          <% } %>
           <% if (r.versand_status) { %>
             <div class="alert alert-warning small">
               <% if (r.versand_status === 'angenommen') { %>
@@ -75,7 +81,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
               <% } %>
             </div>
           <% } %>
-          <% if (!r.versand_status || r.versand_status === 'angenommen') { %>
+          <% if ((!r.versand_status || r.versand_status === 'angenommen') && !(vj && (vj.status === 'queued' || vj.status === 'running'))) { %>
             <form method="post" action="/admin/anzeigen/<%= r.id %>/approve"
                   onsubmit="return confirm('<%= r.versand_status === 'angenommen' ? 'Versandabschluss ohne erneute Mail speichern?' : 'Anzeige freigeben und ans Ordnungsamt verschicken?' %>')">
               <button type="submit" class="btn btn-success"><%= r.versand_status === 'angenommen' ? 'Abschluss speichern (ohne erneuten Versand)' : '✓ Freigeben & verschicken' %></button>

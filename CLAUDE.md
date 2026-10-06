@@ -52,7 +52,13 @@ curl http://127.0.0.1:3001/debug/pdf-fields
 (SESSION_SECRET/APP_URL) → `initDb()` (Legacy-ALTERs in `src/db/init.ts`, dann
 Migrations-Runner) → Plugins (helmet mit strikter CSP, rate-limit, session mit
 eigenem MySQL-Store) → 301-Redirects alter englischer Pfade → Routen →
-Hintergrund-Jobs (IMAP-Polling, 6h-Purge, ALPR-Aufräumer).
+Hintergrund-Jobs (IMAP-Polling, 6h-Purge, ALPR-Aufräumer, Job-Runner).
+
+**Hintergrund-Jobs** (`services/jobs.ts`, Tabelle `jobs`): Alles, worauf der
+Nutzer nicht warten soll, läuft als durabler Job – `intake.group` (Import),
+`report.pdf`, `report.dispatch` (Versand, 1 Versuch), `mail.*`. Handler müssen
+wiederholbar sein (Neustart reiht laufende Jobs neu ein). Neue langsame Arbeit
+in Requests: `registerJob` + `enqueueJob` statt `await`.
 
 **Anzeigen-Lifecycle** (`reports.status`: `entwurf` → `eingereicht` → `versendet`):
 1. Entwurf (`services/drafts.ts`; Aktenzeichen `OWiA-<6 Ziffern>`), einzeln im

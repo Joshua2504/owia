@@ -249,7 +249,7 @@
         })
       } else await finishBatch()
       async function finishBatch() {
-        progressText.textContent = 'Übertragung abgeschlossen. Bereite Vorschaubilder vor und gruppiere Fotos …'
+        progressText.textContent = 'Übertragung abgeschlossen. Die Verarbeitung läuft im Hintergrund …'
         var response = await fetch('/import/' + batchId + '/finish', { method: 'POST' })
         if (response.redirected) throw new Error('Bitte erneut anmelden.')
         var data = await response.json()

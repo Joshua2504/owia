@@ -3,7 +3,7 @@
 // Entwürfe erzeugen. Der Upload läuft client-seitig in kleinen Chunks (unter dem
 // globalen Multipart-Limit von 10 Dateien); die Gruppierung ("finish") ist ein
 // separater Schritt nach Übertragung und Vorschauberechnung.
-import { FastifyInstance } from 'fastify'
+import { FastifyInstance, FastifyBaseLogger } from 'fastify'
 import mysql from 'mysql2/promise'
 import path from 'path'
 import fs from 'fs/promises'
@@ -19,6 +19,7 @@ import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
 import { queueTatortFill } from '../services/tatortFill'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
+import { enqueueJob, registerJob } from '../services/jobs'
 
 // Muss zur Chunk-Größe in public/js/import-upload.js passen und unter dem
 // globalen Multipart-Limit (files: 10, src/server.ts) bleiben.
@@ -86,6 +87,130 @@ async function loadPhotos(batchId: number, onlyUnassigned = false): Promise<Phot
   )
   return rows
 }
+
+/** Hintergrund-Job 'intake.group': wartende Fotos verarbeiten, gruppieren und
+ *  daraus Entwürfe erzeugen. Der Batch steht dabei auf 'grouping' (Claim in
+ *  POST /import/:id/finish). Wiederholbar: bereits zugeordnete Fotos bleiben
+ *  unberührt (loadPhotos(…, true) liefert nur unzugeordnete). */
+async function groupIntakeBatch(payload: { batchId: number; userId: number }, log: FastifyBaseLogger): Promise<void> {
+  const { userId } = payload
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    "SELECT id FROM intake_batches WHERE id = ? AND user_id = ? AND status = 'grouping'",
+    [payload.batchId, userId]
+  )
+  const batch = rows[0] as { id: number } | undefined
+  if (!batch) return
+    try {
+      const [pending] = await pool.execute<mysql.RowDataPacket[]>(
+        `SELECT id, filename, mimetype FROM intake_photos
+           WHERE batch_id = ? AND report_id IS NULL AND processing_status = 'pending'
+           ORDER BY id`,
+        [batch.id]
+      )
+      for (const photo of pending) {
+        const dir = intakeDir(userId, batch.id)
+        try {
+          const prepared = await processIntakeRaw(path.join(dir, photo.filename), photo.filename, photo.mimetype, dir)
+          await pool.execute(
+            `UPDATE intake_photos SET filename=?, mimetype=?, original_filename=?, original_mimetype=?,
+             captured_at=?, gps_lat=?, gps_lon=?, processing_status='ready', processing_error=NULL WHERE id=?`,
+            [prepared.filename, prepared.mimetype, prepared.originalFilename, prepared.originalMimetype,
+              prepared.meta.capturedAt, prepared.meta.lat, prepared.meta.lon, photo.id]
+          )
+          if (prepared.filename !== photo.filename) await fs.rm(path.join(dir, photo.filename), { force: true })
+        } catch (error) {
+          log.warn(error, 'Intake-Bildverarbeitung fehlgeschlagen')
+          await pool.execute(
+            "UPDATE intake_photos SET processing_status='error', processing_error=? WHERE id=?",
+            ['Bild konnte nicht verarbeitet werden.', photo.id]
+          )
+        }
+      }
+
+      const photos = await loadPhotos(batch.id, true)
+      if (photos.length === 0) {
+        // Nichts verwertbar: zurück auf „offen", die Upload-Seite bietet den Import wieder an.
+        await pool.execute("UPDATE intake_batches SET status = 'open' WHERE id = ?", [batch.id])
+        return
+      }
+
+      // Der eigentliche Transfer wartet nicht mehr auf JPEG-Decoding und
+      // Skalierung. Vor der Übersicht erzeugen wir die Caches im Worker;
+      // dabei bleibt der HTTP-Eventloop auch für weitere Uploads ansprechbar.
+      for (const photo of photos) {
+        await processIntakeThumbnail(photo.filename, photo.mimetype, intakeDir(userId, batch.id))
+      }
+
+      const byId = new Map(photos.map((p) => [p.id, p]))
+      const input: IntakePhoto[] = photos.map((p) => ({
+        id: p.id,
+        capturedAt: p.captured_at,
+        lat: p.gps_lat !== null ? Number(p.gps_lat) : null,
+        lon: p.gps_lon !== null ? Number(p.gps_lon) : null,
+      }))
+      const { incidents } = groupPhotos(input)
+
+      for (const incident of incidents) {
+        // Adresse aus den Koordinaten; Photon-Ausfall darf nie blockieren.
+        const address =
+          incident.lat !== null && incident.lon !== null
+            ? await reverseGeocode(incident.lat, incident.lon)
+            : null
+
+        // Mehr als MAX_IMAGES Fotos -> chronologisch in mehrere Entwürfe teilen.
+        for (let i = 0; i < incident.photoIds.length; i += MAX_IMAGES_PER_REPORT) {
+          const chunkIds = incident.photoIds.slice(i, i + MAX_IMAGES_PER_REPORT)
+          const draft = await createDraft(userId, {
+            tattag: incident.day,
+            tattagBis: incident.dayTo,
+            tatzeitVon: incident.timeFrom,
+            tatzeitBis: incident.timeTo,
+            tatort: address?.label ?? null,
+            tatortLat: incident.lat,
+            tatortLon: incident.lon,
+            intakeBatchId: batch.id,
+          })
+          for (let s = 0; s < chunkIds.length; s++) {
+            const p = byId.get(chunkIds[s])
+            if (!p) continue
+            await movePhotoFiles(userId, batch.id, draft.id, p.filename, p.original_filename)
+            const imageId = await insertImageRow(draft.id, {
+              filename: p.filename,
+              mimetype: p.mimetype,
+              originalFilename: p.original_filename,
+              originalMimetype: p.original_mimetype,
+              sortOrder: s + 1,
+              capturedAt: p.captured_at,
+              gpsLat: p.gps_lat !== null ? Number(p.gps_lat) : null,
+              gpsLon: p.gps_lon !== null ? Number(p.gps_lon) : null,
+              sha256: p.sha256,
+            })
+            // Kennzeichen im Hintergrund erkennen (füllt das leere Feld des Entwurfs).
+            queuePlateAnalysis(userId, draft.id, imageId, p.filename, p.mimetype)
+            await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [
+              draft.id,
+              p.id,
+            ])
+          }
+          // Photon hat oben nicht geantwortet: Adresse im Hintergrund nachholen.
+          if (!address?.label) queueTatortFill(draft.id)
+        }
+      }
+
+      await pool.execute(
+        "UPDATE intake_batches SET status = 'done', grouped_at = NOW() WHERE id = ?",
+        [batch.id]
+      )
+    } catch (err) {
+      // Fehler mittendrin: bereits erzeugte Entwürfe bleiben bestehen, die
+      // restlichen Fotos bleiben unzugeordnet und lassen sich manuell verteilen.
+      log.error({ err }, 'Intake-Gruppierung fehlgeschlagen')
+      await pool.execute("UPDATE intake_batches SET status = 'done', grouped_at = NOW() WHERE id = ?", [batch.id])
+    }
+
+}
+
+registerJob('intake.group', groupIntakeBatch)
 
 export default async function intakeRoutes(app: FastifyInstance) {
   // Upload-Seite; listet auch bestehende Batches (offenen Upload fortsetzen/verwerfen).
@@ -200,114 +325,11 @@ export default async function intakeRoutes(app: FastifyInstance) {
     )
     if (claim.affectedRows === 0) return reply.send({ redirect: `/import/${batch.id}` })
 
-    try {
-      const [pending] = await pool.execute<mysql.RowDataPacket[]>(
-        `SELECT id, filename, mimetype FROM intake_photos
-           WHERE batch_id = ? AND report_id IS NULL AND processing_status = 'pending'
-           ORDER BY id`,
-        [batch.id]
-      )
-      for (const photo of pending) {
-        const dir = intakeDir(userId, batch.id)
-        try {
-          const prepared = await processIntakeRaw(path.join(dir, photo.filename), photo.filename, photo.mimetype, dir)
-          await pool.execute(
-            `UPDATE intake_photos SET filename=?, mimetype=?, original_filename=?, original_mimetype=?,
-             captured_at=?, gps_lat=?, gps_lon=?, processing_status='ready', processing_error=NULL WHERE id=?`,
-            [prepared.filename, prepared.mimetype, prepared.originalFilename, prepared.originalMimetype,
-              prepared.meta.capturedAt, prepared.meta.lat, prepared.meta.lon, photo.id]
-          )
-          if (prepared.filename !== photo.filename) await fs.rm(path.join(dir, photo.filename), { force: true })
-        } catch (error) {
-          request.log.warn(error, 'Intake-Bildverarbeitung fehlgeschlagen')
-          await pool.execute(
-            "UPDATE intake_photos SET processing_status='error', processing_error=? WHERE id=?",
-            ['Bild konnte nicht verarbeitet werden.', photo.id]
-          )
-        }
-      }
-
-      const photos = await loadPhotos(batch.id, true)
-      if (photos.length === 0) {
-        await pool.execute("UPDATE intake_batches SET status = 'open' WHERE id = ?", [batch.id])
-        return reply.status(400).send({ error: 'Keine Fotos hochgeladen.' })
-      }
-
-      // Der eigentliche Transfer wartet nicht mehr auf JPEG-Decoding und
-      // Skalierung. Vor der Übersicht erzeugen wir die Caches im Worker;
-      // dabei bleibt der HTTP-Eventloop auch für weitere Uploads ansprechbar.
-      for (const photo of photos) {
-        await processIntakeThumbnail(photo.filename, photo.mimetype, intakeDir(userId, batch.id))
-      }
-
-      const byId = new Map(photos.map((p) => [p.id, p]))
-      const input: IntakePhoto[] = photos.map((p) => ({
-        id: p.id,
-        capturedAt: p.captured_at,
-        lat: p.gps_lat !== null ? Number(p.gps_lat) : null,
-        lon: p.gps_lon !== null ? Number(p.gps_lon) : null,
-      }))
-      const { incidents } = groupPhotos(input)
-
-      for (const incident of incidents) {
-        // Adresse aus den Koordinaten; Photon-Ausfall darf nie blockieren.
-        const address =
-          incident.lat !== null && incident.lon !== null
-            ? await reverseGeocode(incident.lat, incident.lon)
-            : null
-
-        // Mehr als MAX_IMAGES Fotos -> chronologisch in mehrere Entwürfe teilen.
-        for (let i = 0; i < incident.photoIds.length; i += MAX_IMAGES_PER_REPORT) {
-          const chunkIds = incident.photoIds.slice(i, i + MAX_IMAGES_PER_REPORT)
-          const draft = await createDraft(userId, {
-            tattag: incident.day,
-            tattagBis: incident.dayTo,
-            tatzeitVon: incident.timeFrom,
-            tatzeitBis: incident.timeTo,
-            tatort: address?.label ?? null,
-            tatortLat: incident.lat,
-            tatortLon: incident.lon,
-            intakeBatchId: batch.id,
-          })
-          for (let s = 0; s < chunkIds.length; s++) {
-            const p = byId.get(chunkIds[s])
-            if (!p) continue
-            await movePhotoFiles(userId, batch.id, draft.id, p.filename, p.original_filename)
-            const imageId = await insertImageRow(draft.id, {
-              filename: p.filename,
-              mimetype: p.mimetype,
-              originalFilename: p.original_filename,
-              originalMimetype: p.original_mimetype,
-              sortOrder: s + 1,
-              capturedAt: p.captured_at,
-              gpsLat: p.gps_lat !== null ? Number(p.gps_lat) : null,
-              gpsLon: p.gps_lon !== null ? Number(p.gps_lon) : null,
-              sha256: p.sha256,
-            })
-            // Kennzeichen im Hintergrund erkennen (füllt das leere Feld des Entwurfs).
-            queuePlateAnalysis(userId, draft.id, imageId, p.filename, p.mimetype)
-            await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [
-              draft.id,
-              p.id,
-            ])
-          }
-          // Photon hat oben nicht geantwortet: Adresse im Hintergrund nachholen.
-          if (!address?.label) queueTatortFill(draft.id)
-        }
-      }
-
-      await pool.execute(
-        "UPDATE intake_batches SET status = 'done', grouped_at = NOW() WHERE id = ?",
-        [batch.id]
-      )
-      return reply.send({ redirect: `/import/${batch.id}` })
-    } catch (err) {
-      // Fehler mittendrin: bereits erzeugte Entwürfe bleiben bestehen, die
-      // restlichen Fotos bleiben unzugeordnet und lassen sich manuell verteilen.
-      request.log.error({ err }, 'Intake-Gruppierung fehlgeschlagen')
-      await pool.execute("UPDATE intake_batches SET status = 'done', grouped_at = NOW() WHERE id = ?", [batch.id])
-      return reply.send({ redirect: `/import/${batch.id}` })
-    }
+    // Verarbeitung (HEIC/EXIF, Vorschaubilder, Gruppierung, Adressen) läuft als
+    // Hintergrund-Job – bei großen Importen dauert das Minuten. Die Übersicht
+    // zeigt solange „wird verarbeitet" und lädt sich neu (overview.ejs).
+    await enqueueJob('intake.group', { batchId: batch.id, userId }, { key: `intake.group:${batch.id}`, maxAttempts: 1 })
+    return reply.send({ redirect: `/import/${batch.id}` })
   })
 
   // Batch-Übersicht: erzeugte Entwürfe + unzugeordnete Fotos.
@@ -317,6 +339,21 @@ export default async function intakeRoutes(app: FastifyInstance) {
     const batch = await loadBatch(batchId, userId)
     if (!batch) return reply.status(404).send('Import nicht gefunden.')
     if (batch.status === 'open') return reply.redirect('/import')
+    // Läuft noch im Hintergrund (Job 'intake.group'): Fortschritt statt Ergebnis.
+    if (batch.status === 'grouping') {
+      const [counts] = await pool.execute<mysql.RowDataPacket[]>(
+        `SELECT COUNT(*) AS total, SUM(processing_status <> 'pending') AS processed, SUM(report_id IS NOT NULL) AS assigned
+           FROM intake_photos WHERE batch_id = ?`,
+        [batch.id]
+      )
+      return reply.view('/intake/processing.ejs', viewData(request, {
+        title: 'Foto-Import – wird verarbeitet',
+        batch,
+        total: Number(counts[0]?.total || 0),
+        processed: Number(counts[0]?.processed || 0),
+        assigned: Number(counts[0]?.assigned || 0),
+      }))
+    }
 
     const [drafts] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT r.id, r.aktenzeichen, r.status, r.tattag, r.tattag_bis, r.tatzeit_von, r.tatzeit_bis,
