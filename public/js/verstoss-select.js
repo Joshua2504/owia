@@ -9,6 +9,10 @@
 //     <input type="text" data-verstoss-input ...>
 //     <script type="application/json" data-verstoss-data>{ haeufig:[], alle:[] }</script>
 //   </div>
+//
+// Ohne eingebettete Daten (Anzeigen-Liste, ein Feld pro Zeile) initialisiert
+// report-inline.js die Felder selbst: window.verstossSelect.init(root, data).
+// Das Suchfeld darf dort ein <textarea> sein (lange Tatbestände umbrechen).
 (function () {
   const MAX_RESULTS = 50
 
@@ -21,22 +25,37 @@
       .replace(/ß/g, 'ss')
   }
 
-  function initOne(root) {
+  // Normalisierter Katalog einmal pro Datenobjekt – in der Liste teilen sich
+  // hunderte Felder denselben Katalog.
+  const prepared = new WeakMap()
+  function prepare(data) {
+    let p = prepared.get(data)
+    if (!p) {
+      const alle = Array.isArray(data.alle) ? data.alle : []
+      const haeufig = Array.isArray(data.haeufig) ? data.haeufig : []
+      p = { alle, haeufig, haeufigSet: new Set(haeufig), normAlle: alle.map((t) => ({ text: t, n: norm(t) })) }
+      prepared.set(data, p)
+    }
+    return p
+  }
+
+  function initOne(root, givenData) {
     const hidden = root.querySelector('input[type="hidden"]')
     const input = root.querySelector('[data-verstoss-input]')
     const dataEl = root.querySelector('[data-verstoss-data]')
-    if (!hidden || !input || !dataEl) return
+    if (!hidden || !input || root.dataset.verstossReady) return
+    if (!givenData && !dataEl) return
 
-    let data
-    try {
-      data = JSON.parse(dataEl.textContent)
-    } catch (_) {
-      return
+    let data = givenData
+    if (!data) {
+      try {
+        data = JSON.parse(dataEl.textContent)
+      } catch (_) {
+        return
+      }
     }
-    const haeufig = Array.isArray(data.haeufig) ? data.haeufig : []
-    const alle = Array.isArray(data.alle) ? data.alle : []
-    const haeufigSet = new Set(haeufig)
-    const normAlle = alle.map((t) => ({ text: t, n: norm(t) }))
+    root.dataset.verstossReady = '1'
+    const { alle, haeufig, haeufigSet, normAlle } = prepare(data)
 
     const menu = document.createElement('div')
     menu.className = 'list-group shadow-sm'
@@ -210,7 +229,10 @@
     )
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('[data-verstoss-select]').forEach(initOne)
-  })
+  function initAll() {
+    document.querySelectorAll('[data-verstoss-select]').forEach((root) => initOne(root))
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAll)
+  else initAll()
+  window.verstossSelect = { init: initOne }
 })()

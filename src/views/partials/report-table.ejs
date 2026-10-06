@@ -1,12 +1,14 @@
 <%
 // Gemeinsame Anzeigen-Tabelle für Dashboard und Foto-Import-Übersicht.
-// Alle Details stehen in der Tabelle (Zeile: report-row.ejs); bearbeitet wird
-// einzeln auf der Anzeigen-Seite oder gemeinsam über report-bulk.js.
+// Zeile: report-row.ejs. Bearbeitet wird
+//   - direkt in der Zeile (Kennzeichen, Marke, Verstoß: report-inline.js),
+//   - komplett im Editor-Modal (report-modal.js, „Bearbeiten"),
+//   - gemeinsam für mehrere Entwürfe (report-bulk.js).
 // Erwartet: reports (Felder s. report-row.ejs inkl. status), imagesByReport
-// ({ reportId: [imageIds] }), optional queueId (Edit-Links öffnen die
+// ({ reportId: [{ id, v }] }), optional queueId (Edit-Links öffnen die
 // Review-Queue des Batches).
-// Thumbnails: Klick = Lightbox, Ziehen = in anderen Entwurf verschieben
-// (public/js/report-table.js muss auf der Seite eingebunden sein).
+// Thumbnails: Hover = Vorschau/Lupe (image-preview.js), Klick = groß,
+// Ziehen = in anderen Entwurf verschieben (report-table.js).
 const _queueId = typeof queueId !== 'undefined' && queueId ? queueId : null
 const _hasDrafts = reports.some((r) => r.status === 'entwurf')
 %>
@@ -14,32 +16,44 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
     report-row.ejs) – der Großteil der Nutzer kommt per Handy und soll nicht
     seitwärts scrollen müssen. Das Markup bleibt bewusst eine Tabelle, weil
     report-table.js an <tr data-drop-az> hängt. %>
-<div class="report-filters p-3 d-flex flex-wrap gap-2">
-  <label class="flex-grow-1">Suchen<input type="search" id="report-search" class="form-control" placeholder="Kennzeichen, Aktenzeichen, Tatort"></label>
-  <label>Status<select id="report-status" class="form-select"><option value="">Alle</option><option value="entwurf">Entwürfe</option><option value="eingereicht">Eingereicht</option><option value="versendet">Versendet</option></select></label>
-  <% if (_hasDrafts) { %><label class="d-flex align-items-center gap-2 report-select-label"><input type="checkbox" id="bulk-select-all" class="form-check-input"> Sichtbare Entwürfe auswählen</label><% } %>
-  <span id="report-visible-count" class="small text-muted w-100" role="status"></span>
+<div class="report-filters">
+  <label class="report-filter-search">
+    <span class="visually-hidden">Suchen</span>
+    <input type="search" id="report-search" class="form-control" placeholder="🔍 Kennzeichen, Aktenzeichen, Tatort, Verstoß …">
+  </label>
+  <label class="report-filter-status">
+    <span class="visually-hidden">Status</span>
+    <select id="report-status" class="form-select"><option value="">Alle Status</option><option value="entwurf">Entwürfe</option><option value="eingereicht">Eingereicht</option><option value="versendet">Versendet</option></select>
+  </label>
+  <% if (_hasDrafts) { %><label class="d-md-none d-flex align-items-center gap-2 report-select-label"><input type="checkbox" id="bulk-select-all-m" class="form-check-input"> Alle Entwürfe</label><% } %>
+  <span id="report-visible-count" class="small text-muted ms-auto" role="status"></span>
 </div>
-<div class="table-responsive report-table-wrap">
-  <table class="table table-sm table-hover align-middle mb-0 report-table">
-    <thead class="table-light">
+<div class="report-table-wrap">
+  <table class="table table-hover align-middle mb-0 report-table">
+    <thead>
       <tr>
-        <th style="width:2rem"><span class="visually-hidden">Auswahl</span></th>
+        <th class="cell-select">
+          <% if (_hasDrafts) { %>
+            <label class="report-checkbox-target" title="Alle sichtbaren Entwürfe auswählen">
+              <input type="checkbox" id="bulk-select-all" class="form-check-input" aria-label="Alle sichtbaren Entwürfe auswählen">
+            </label>
+          <% } %>
+        </th>
         <th>Fotos</th>
         <th>Aktenzeichen</th>
-        <th>Kennzeichen</th>
-        <th>Tattag / Zeit</th>
+        <th>Kennzeichen / Marke</th>
+        <th>Tatzeit</th>
         <th>Tatort</th>
         <th>Verstoß</th>
         <th>Status</th>
-        <th></th>
+        <th><span class="visually-hidden">Aktionen</span></th>
       </tr>
     </thead>
     <tbody>
       <% for (const r of reports) { %>
         <%- include('report-row', {
           r,
-          imgIds: (typeof imagesByReport !== 'undefined' && imagesByReport && imagesByReport[r.id]) || [],
+          imgs: (typeof imagesByReport !== 'undefined' && imagesByReport && imagesByReport[r.id]) || [],
           queueId: _queueId,
         }) %>
       <% } %>
@@ -47,26 +61,27 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
   </table>
 </div>
 <% if (_hasDrafts) { %>
-  <!-- Sammel-Löschen der angehakten Entwürfe. Die Checkboxen in den Zeilen
+  <!-- Aktionsleiste für angehakte Entwürfe. Die Checkboxen in den Zeilen
        hängen per form-Attribut an diesem Formular (Zeilen enthalten bereits
        eigene Einzel-Löschen-Formulare, Verschachtelung ist nicht erlaubt).
-       Der POST führt erst auf eine Bestätigungsseite (serverseitig erzwungen). -->
+       Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). -->
   <form id="bulk-discard-form" method="post" action="/anzeigen/loeschen"
         class="d-none align-items-center flex-wrap gap-2 bulk-action-bar">
-    <span id="bulk-count" class="small text-muted" role="status"></span>
+    <span id="bulk-count" class="fw-semibold" role="status"></span>
     <button type="button" id="bulk-edit" class="btn btn-primary">Gemeinsam bearbeiten</button>
-    <button type="button" id="bulk-clear" class="btn btn-outline-secondary">Auswahl aufheben</button>
     <button type="submit" class="btn btn-outline-danger">Löschen …</button>
+    <button type="button" id="bulk-clear" class="btn btn-link">Auswahl aufheben</button>
   </form>
-<% } %>
-<% if (_hasDrafts) { %>
   <!-- Drop-Ziel: Foto hierher ziehen, um dafür eine neue Anzeige anzulegen.
        (report-table.js zieht es beim Drag-Start als Zwischenzeile direkt unter
-       den Quell-Eintrag; data-queue reicht die Review-Queue an neue Zeilen weiter.) -->
-  <div id="drop-new-draft" data-queue="<%= _queueId || '' %>"
-       class="border border-2 border-dashed rounded text-center text-muted py-2 mt-2 mx-3 mb-3 small">
-    ➕ Foto hierher ziehen, um eine <strong>neue Anzeige</strong> daraus zu erstellen
+       den Quell-Eintrag; data-queue reicht die Review-Queue an neue Zeilen weiter.)
+       Nur während eines Drags sichtbar (.is-dragging am body). -->
+  <div id="drop-new-draft" data-queue="<%= _queueId || '' %>" class="drop-new-draft">
+    ➕ Foto hier ablegen, um eine <strong>neue Anzeige</strong> daraus zu erstellen
   </div>
 <% } %>
 
+<script src="/public/js/verstoss-select.js" defer></script>
 <script src="/public/js/report-bulk.js" defer></script>
+<script src="/public/js/report-inline.js" defer></script>
+<script src="/public/js/report-modal.js" defer></script>

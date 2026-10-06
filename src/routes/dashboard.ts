@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
+import { imageVersion } from '../services/images'
 
 export default async function dashboardRoutes(app: FastifyInstance) {
   app.get('/anzeigen', { preHandler: requireAuth }, async (request, reply) => {
@@ -18,16 +19,16 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     // Foto-IDs pro Anzeige für die Thumbnail-Leiste (gemeinsames Tabellen-Partial).
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.id, ri.report_id
+      `SELECT ri.id, ri.report_id, ri.filename
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
         WHERE r.user_id = ?
         ORDER BY ri.report_id, ri.sort_order, ri.id`,
       [userId]
     )
-    const imagesByReport: Record<number, number[]> = {}
+    const imagesByReport: Record<number, { id: number; v: string }[]> = {}
     for (const img of images) {
-      ;(imagesByReport[img.report_id] ??= []).push(img.id)
+      ;(imagesByReport[img.report_id] ??= []).push({ id: img.id, v: imageVersion(img.filename) })
     }
 
     return reply.view('/dashboard/index.ejs', viewData(request, {

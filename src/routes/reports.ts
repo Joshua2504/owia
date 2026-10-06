@@ -10,10 +10,10 @@ import { PdfService } from '../services/pdf'
 import { getCity, CITIES, unlockedCities, hasPdfForm } from '../config/cities'
 import { resolveSendCity, cityEmail } from '../services/districts'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
-import { prepareImage, writePreparedImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage } from '../services/images'
-import { cachedThumbnail, writeThumbnailCache, cachedMailVariant } from '../services/pixelate'
+import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage, imageVersion } from '../services/images'
+import { cachedMailVariant } from '../services/pixelate'
+import { processReportImage, processReportImageDerivatives, loadThumbnail } from '../services/intakeImageProcessing'
 import { createDraft, deleteDraft, reportDir, UPLOAD_DIR, PDF_DIR } from '../services/drafts'
-import { extractPhotoMeta } from '../services/exif'
 import { alprEnabled, ALPR_MIN_CONFIDENCE } from '../services/alpr'
 import { queuePlateAnalysis, plateCropName } from '../services/plateAnalysis'
 import { replyAttachmentPath } from '../services/mailInbox'
@@ -31,18 +31,30 @@ const MAX_IMAGES = 10
  *  Aufnahmezeit (z.B. "10.07.2026, 14:30") aus den EXIF-Daten, oder null. */
 export type ReportImage = { mimetype: string; buffer: Buffer; capturedAt?: string | null }
 
-/** Vorbereitetes Bild (+ ggf. Original) zum Entwurf auf Platte schreiben. */
-async function writeImageFiles(
-  userId: number,
-  reportId: number,
-  p: PreparedImage
-): Promise<{ filename: string; originalFilename: string }> {
-  const dir = reportDir(userId, reportId)
-  const names = await writePreparedImage(dir, p)
-  // Vorschaubild sofort mitschreiben (Übersichten laden sonst beim ersten
-  // Aufruf dutzende Vollbilder durch den synchronen jpeg-js-Decoder).
-  await writeThumbnailCache(dir, names.filename, p.buffer, p.mimetype)
-  return names
+/** Abgeleitete Dateien (Vorschaubild, Versandfassung) im Worker-Thread
+ *  berechnen. jpeg-js dekodiert synchron – im HTTP-Prozess blockierte das bei
+ *  jedem Upload/Speichern sekundenlang ALLE anderen Requests. Bewusst nicht
+ *  awaited: Fehlt ein Vorschaubild noch, rechnet sendThumbnail() es vorrangig nach. */
+function queueDerivatives(dir: string, filename: string, mimetype: string): void {
+  processReportImageDerivatives(filename, mimetype, dir).catch(() => {})
+}
+
+/** Versandfassung (".mail.jpg") sicherstellen, bevor PDF/Mail sie lesen.
+ *  Kleine JPEGs (≤ 1 MB) gehen unverändert raus und brauchen keinen Cache. */
+export async function ensureMailVariant(dir: string, filename: string, mimetype: string): Promise<void> {
+  try {
+    await fs.access(path.join(dir, `${filename}.mail.jpg`))
+    return
+  } catch {
+    /* noch nicht berechnet */
+  }
+  try {
+    const stat = await fs.stat(path.join(dir, filename))
+    if (mimetype !== 'image/png' && stat.size <= 1024 * 1024) return
+    await processReportImageDerivatives(filename, mimetype, dir)
+  } catch {
+    /* Datei fehlt – cachedMailVariant/Aufrufer behandeln das */
+  }
 }
 
 /** Alte Bilddateien (nutzbare Fassung + Original) entfernen. */
@@ -55,18 +67,19 @@ async function removeImageFiles(
   return removeImagePair(reportDir(userId, reportId), filename, originalFilename)
 }
 
-/** Bild zum Entwurf auf Platte + in der DB speichern; gibt die neue Bild-ID zurück. */
+/** Bild zum Entwurf auf Platte + in der DB speichern; gibt die neue Bild-ID zurück.
+ *  HEIC-Konvertierung und EXIF-Lesen (aus dem Original – die Konvertierung
+ *  entfernt die Metadaten) laufen im Worker-Thread. */
 async function saveImageToReport(
   userId: number,
   reportId: number,
-  p: PreparedImage,
+  upload: { buffer: Buffer; filename: string; mimetype: string },
   sha256: string
-): Promise<{ id: number; filename: string; capturedAt: string | null }> {
-  const { filename, originalFilename } = await writeImageFiles(userId, reportId, p)
-
-  // EXIF (Aufnahmezeit + GPS) aus dem Original lesen – die HEIC-Konvertierung
-  // entfernt die Metadaten aus der nutzbaren Fassung.
-  const meta = await extractPhotoMeta(p.originalBuffer)
+): Promise<{ id: number; filename: string; mimetype: string; capturedAt: string | null }> {
+  const dir = reportDir(userId, reportId)
+  const p = await processReportImage(upload.buffer, upload.filename, upload.mimetype, dir)
+  const { filename, originalFilename, meta } = p
+  queueDerivatives(dir, filename, p.mimetype)
 
   // Neues Bild ans Ende der Sortierreihenfolge hängen.
   const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -82,7 +95,15 @@ async function saveImageToReport(
     [reportId, filename, p.mimetype, originalFilename, p.originalMimetype, sortOrder,
      meta.capturedAt, meta.lat, meta.lon, sha256]
   )
-  return { id: result.insertId, filename, capturedAt: meta.capturedAt }
+  return { id: result.insertId, filename, mimetype: p.mimetype, capturedAt: meta.capturedAt }
+}
+
+/** Bild-URLs mit ?v=<Fassung> (imageVersion) ändern sich bei jeder neuen
+ *  Fassung und dürfen lange gecacht werden – Listen laden Fotos dann nur einmal.
+ *  Ohne Version (Editor, Karten-Marker) nur kurz, sonst bliebe nach dem
+ *  Schwärzen die alte Fassung im Browser-Cache sichtbar. */
+function cacheControlFor(request: FastifyRequest): string {
+  return (request.query as { v?: string }).v ? 'private, max-age=604800' : 'private, max-age=60'
 }
 
 async function loadReport(
@@ -147,8 +168,11 @@ async function persistFields(
   const behinderungText = v.behinderung_text || null
   // Checkbox: nicht angehakt = Feld fehlt im Body bzw. ist leer.
   const fahrzeugVerlassen = v.fahrzeug_verlassen && v.fahrzeug_verlassen !== '0' ? 1 : 0
-  // Länderkürzel des Kennzeichens (blaues Band): 1-3 Buchstaben, Default 'D'.
-  const land = (v.kennzeichen_land || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'D'
+  // Länderkürzel: Der Editor fragt es nicht mehr ab (Kennzeichen sind
+  // Freitext). Fehlt das Feld, bleibt der gespeicherte Wert (COALESCE) – ältere
+  // Entwürfe mit z.B. „NL" verlieren ihn so nicht still.
+  const landRaw = (v.kennzeichen_land || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)
+  const land = landRaw || null
   // Tatzeitraum über Mitternacht: tattag_bis nur speichern, wenn er sich vom
   // Tattag unterscheidet (gleicher Tag = normaler Fall, Feld bleibt leer).
   const tattagBis = v.tattag_bis && v.tattag_bis !== v.tattag ? v.tattag_bis : null
@@ -175,12 +199,12 @@ async function persistFields(
   const city = v.city && CITIES[v.city] ? v.city : null
   await pool.execute(
     `UPDATE reports
-       SET kennzeichen=?, kennzeichen_land=?, fahrzeug_marke=?, tattag=?, tattag_bis=?, tatzeit_von=?, tatzeit_bis=?,
+       SET kennzeichen=?, kennzeichen_land=COALESCE(?, kennzeichen_land), fahrzeug_marke=?, tattag=?, tattag_bis=?, tatzeit_von=?, tatzeit_bis=?,
            tatort=?, tatort_lat=?, tatort_lon=?, verstoss_art=?, beschreibung=?,
            behinderung=?, behinderung_text=?, fahrzeug_verlassen=?, city=COALESCE(?, city)
      WHERE id=? AND user_id=? AND status='entwurf'`,
     [
-      v.kennzeichen ? v.kennzeichen.toUpperCase().trim() : null,
+      normalizePlate(v.kennzeichen),
       land,
       v.fahrzeug_marke || null,
       v.tattag || null,
@@ -200,6 +224,15 @@ async function persistFields(
       userId,
     ]
   )
+}
+
+/** Kennzeichen vereinheitlichen, ohne ein Länderformat vorzuschreiben: Es gibt
+ *  weltweit (und bei Rollern/Versicherungskennzeichen wie „123 ABC") keine
+ *  gemeinsame Schreibweise. Großschreibung, Leerraum zusammenfassen, auf die
+ *  Spaltenbreite (VARCHAR(20)) kürzen. */
+export function normalizePlate(raw: string | undefined | null): string | null {
+  const v = String(raw || '').toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim()
+  return v ? v.slice(0, 20) : null
 }
 
 function isComplete(r: mysql.RowDataPacket): boolean {
@@ -280,6 +313,8 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
     try {
       // Versandfassung statt Original einbetten: Behörden-Postfächer haben
       // Größenlimits (Frankfurt ~15 MB); das Original auf Platte bleibt erhalten.
+      // Fehlt der Cache (Altbestand), im Worker statt im Eventloop rechnen.
+      await ensureMailVariant(dir, row.filename, row.mimetype)
       const { buffer, type } = await cachedMailVariant(dir, row.filename, row.mimetype)
       images.push({ mimetype: type, buffer, capturedAt: row.captured_at })
     } catch {
@@ -306,7 +341,12 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
 }
 
 export default async function reportsRoutes(app: FastifyInstance) {
-  app.get('/anzeigen/bearbeitungsoptionen', { preHandler: requireAuth }, async () => ({ offenses: VERSTOSS_ARTEN }))
+  // Verstoß-Katalog für Sammelbearbeitung und Inline-Bearbeitung der Liste
+  // (lazy geladen, statt den ~55 KB-Katalog in jede Listenseite einzubetten).
+  app.get('/anzeigen/bearbeitungsoptionen', { preHandler: requireAuth }, async () => ({
+    offenses: VERSTOSS_ARTEN,
+    frequent: await mostUsedVerstoesse(),
+  }))
   app.post('/anzeigen/sammelbearbeitung/vorschau', { preHandler: requireAuth }, async (request, reply) => {
     try {
       return await previewBulkEdit(request.session.userId as number, (request.body || {}) as Record<string, unknown>)
@@ -376,13 +416,14 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
     if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
 
-    const [images] = await pool.execute<mysql.RowDataPacket[]>(
+    const [imageRows] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, filename, original_filename, detected_plate, gps_lat, gps_lon,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at
          FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
     )
-    const firstImageUrl = images.length ? `/anzeige/${az}/image/${images[0].id}/thumb.jpg` : null
+    const images = imageRows.map((i) => ({ ...(i as Record<string, unknown>), id: Number(i.id), v: imageVersion(i.filename) }))
+    const firstImageUrl = images.length ? `/anzeige/${az}/image/${images[0].id}/thumb.jpg?v=${images[0].v}` : null
 
     // Review-Queue des Foto-Imports: "Entwurf X von N" mit Vor/Zurück-Navigation
     // über alle noch offenen Entwürfe desselben Batches.
@@ -405,6 +446,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
     return reply.view('/reports/edit.ejs', viewData(request, {
       title: 'Entwurf bearbeiten',
+      // Im Editor-Modal der Anzeigen-Liste (report-modal.js): ohne Navigation.
+      embed: (request.query as { embed?: string }).embed === '1',
       verstossAlle: VERSTOSS_ARTEN,
       verstossHaeufig: await mostUsedVerstoesse(),
       report,
@@ -429,6 +472,47 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
     await persistFields(report.id, userId, (request.body || {}) as Record<string, string>)
     return reply.send({ ok: true })
+  })
+
+  // Einzelne Felder direkt aus der Anzeigen-Liste ändern (Inline-Bearbeitung in
+  // report-row.ejs / public/js/report-inline.js). Anders als PATCH /anzeige/:az
+  // (Autosave des Editors, schreibt immer ALLE Felder) nur die übergebenen
+  // Felder – sonst würde eine Kennzeichen-Änderung in der Liste den Rest leeren.
+  app.patch('/anzeige/:az/felder', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const body = (request.body || {}) as Record<string, unknown>
+    const sets: string[] = []
+    const values: (string | null)[] = []
+    const out: Record<string, string | null> = {}
+    if (typeof body.kennzeichen === 'string') {
+      out.kennzeichen = normalizePlate(body.kennzeichen)
+      sets.push('kennzeichen=?')
+      values.push(out.kennzeichen)
+    }
+    if (typeof body.fahrzeug_marke === 'string') {
+      out.fahrzeug_marke = body.fahrzeug_marke.trim().slice(0, 100) || null
+      sets.push('fahrzeug_marke=?')
+      values.push(out.fahrzeug_marke)
+    }
+    if (typeof body.verstoss_art === 'string') {
+      const v = body.verstoss_art.trim()
+      // Nur Einträge aus dem amtlichen Katalog (wie die Auswahl im Editor).
+      if (v && !VERSTOSS_ARTEN.includes(v)) return reply.status(400).send({ error: 'Unbekannter Verstoß.' })
+      out.verstoss_art = v || null
+      sets.push('verstoss_art=?')
+      values.push(out.verstoss_art)
+    }
+    if (!sets.length) return reply.status(400).send({ error: 'Keine Änderung übermittelt.' })
+    const [result] = await pool.execute<mysql.ResultSetHeader>(
+      `UPDATE reports SET ${sets.join(', ')}
+        WHERE aktenzeichen=? AND user_id=? AND status='entwurf' AND versand_status IS NULL`,
+      [...values, az, userId]
+    )
+    if (!result.affectedRows) {
+      return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
+    }
+    return reply.send({ ok: true, values: out })
   })
 
   // Einzelnes (ggf. bereits geschwärztes) Bild sofort zum Entwurf hochladen.
@@ -467,10 +551,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
             errors.push(`${part.filename}: Bereits vorhanden (${existing}) – übersprungen.`)
             continue
           }
-          const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
-          const row = await saveImageToReport(userId, reportId, prepared, sha256)
+          const row = await saveImageToReport(userId, reportId, { buffer, filename: part.filename, mimetype: part.mimetype || '' }, sha256)
           // Kennzeichen im Hintergrund erkennen; Ergebnis holt das Formular per Poll.
-          queuePlateAnalysis(userId, reportId, row.id, row.filename, prepared.mimetype)
+          queuePlateAnalysis(userId, reportId, row.id, row.filename, row.mimetype)
           saved.push({ id: row.id, url: `/anzeige/${az}/image/${row.id}`, capturedAt: row.capturedAt })
           count++
         } catch {
@@ -541,7 +624,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // und geht in den Datenexport ein).
     const dir = reportDir(userId, old.report_id)
     const filename = await writeReplacementImage(dir, prepared)
-    await writeThumbnailCache(dir, filename, prepared.buffer, prepared.mimetype)
+    queueDerivatives(dir, filename, prepared.mimetype)
     await pool.execute(
       'UPDATE report_images SET filename=?, mimetype=? WHERE id=?',
       [filename, prepared.mimetype, imageId]
@@ -660,56 +743,62 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({ ok: true })
   })
 
-  // Foto in einen anderen eigenen Entwurf verschieben (aus dem Formular oder
-  // per Drag & Drop in der Import-Übersicht). Dateien wandern physisch mit,
-  // das Bild landet am Ende der Ziel-Sortierung; beide PDFs werden aktualisiert.
-  app.post('/anzeige/:az/images/:imageId/move', { preHandler: requireAuth }, async (request, reply) => {
-    const { az, imageId } = request.params as { az: string; imageId: string }
-    const userId = request.session.userId as number
-    const { targetAz, newDraft } = (request.body || {}) as { targetAz?: string; newDraft?: boolean }
-    if (!newDraft && (!targetAz || targetAz === az)) {
-      return reply.status(400).send({ error: 'Ziel-Anzeige fehlt.' })
+  // Fotos in einen anderen eigenen Entwurf oder eine neue Anzeige verschieben
+  // (Mehrfachauswahl im Editor, Drag & Drop in den Listen). Dateien wandern
+  // physisch mit, die Bilder landen am Ende der Ziel-Sortierung.
+  async function moveImages(
+    userId: number,
+    az: string,
+    imageIds: number[],
+    dest: { targetAz?: string; newDraft?: boolean }
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    if (!dest.newDraft && (!dest.targetAz || dest.targetAz === az)) {
+      return { status: 400, body: { error: 'Ziel-Anzeige fehlt.' } }
     }
+    if (!imageIds.length) return { status: 400, body: { error: 'Keine Fotos ausgewählt.' } }
 
     const source = await loadReportByAktenzeichen(az, userId)
-    if (!source) return reply.status(404).send({ error: 'not found' })
-    if (source.status !== 'entwurf' || source.versand_status !== null) return reply.status(409).send({ error: 'not a draft' })
+    if (!source) return { status: 404, body: { error: 'not found' } }
+    if (source.status !== 'entwurf' || source.versand_status !== null) return { status: 409, body: { error: 'not a draft' } }
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, filename, original_filename,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at, gps_lat, gps_lon
-         FROM report_images WHERE id = ? AND report_id = ?`,
-      [imageId, source.id]
+         FROM report_images WHERE report_id = ? AND id IN (${imageIds.map(() => '?').join(',')})
+        ORDER BY sort_order, id`,
+      [source.id, ...imageIds]
     )
-    const img = rows[0]
-    if (!img) return reply.status(404).send({ error: 'Bild nicht gefunden.' })
+    if (imgs.length !== imageIds.length) return { status: 404, body: { error: 'Bild nicht gefunden.' } }
 
-    // Ziel: bestehender Entwurf oder neue Anzeige (mit EXIF des Fotos vorbelegt;
-    // ein Import-Entwurf bleibt Teil seines Batches, damit die Übersicht ihn zeigt).
+    // Ziel: bestehender Entwurf oder neue Anzeige (mit EXIF des ersten Fotos
+    // vorbelegt; ein Import-Entwurf bleibt Teil seines Batches, damit die
+    // Übersicht ihn zeigt).
     let targetId: number
     let resolvedTargetAz: string
-    if (newDraft) {
+    if (dest.newDraft) {
+      const first = imgs.find((i) => i.captured_at) || imgs[0]
+      const gps = imgs.find((i) => i.gps_lat !== null && i.gps_lon !== null)
       const draft = await createDraft(userId, {
-        tattag: img.captured_at ? img.captured_at.slice(0, 10) : null,
-        tatzeitVon: img.captured_at ? img.captured_at.slice(11, 19) : null,
-        tatortLat: img.gps_lat !== null ? Number(img.gps_lat) : null,
-        tatortLon: img.gps_lon !== null ? Number(img.gps_lon) : null,
+        tattag: first.captured_at ? first.captured_at.slice(0, 10) : null,
+        tatzeitVon: first.captured_at ? first.captured_at.slice(11, 19) : null,
+        tatortLat: gps ? Number(gps.gps_lat) : null,
+        tatortLon: gps ? Number(gps.gps_lon) : null,
         intakeBatchId: source.intake_batch_id ?? null,
       })
       targetId = draft.id
       resolvedTargetAz = draft.aktenzeichen
     } else {
-      const target = await loadReportByAktenzeichen(targetAz as string, userId)
-      if (!target) return reply.status(404).send({ error: 'Ziel-Entwurf nicht gefunden.' })
+      const target = await loadReportByAktenzeichen(dest.targetAz as string, userId)
+      if (!target) return { status: 404, body: { error: 'Ziel-Entwurf nicht gefunden.' } }
       if (target.status !== 'entwurf' || target.versand_status !== null) {
-        return reply.status(409).send({ error: 'Ziel-Anzeige ist kein Entwurf mehr.' })
+        return { status: 409, body: { error: 'Ziel-Anzeige ist kein Entwurf mehr.' } }
       }
       const [cntRows] = await pool.execute<mysql.RowDataPacket[]>(
         'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
         [target.id]
       )
-      if (Number(cntRows[0].c) >= MAX_IMAGES) {
-        return reply.status(400).send({ error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` })
+      if (Number(cntRows[0].c) + imgs.length > MAX_IMAGES) {
+        return { status: 400, body: { error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` } }
       }
       targetId = target.id
       resolvedTargetAz = target.aktenzeichen
@@ -718,30 +807,53 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const from = reportDir(userId, source.id)
     const to = reportDir(userId, targetId)
     await fs.mkdir(to, { recursive: true })
-    await fs.rename(path.join(from, img.filename), path.join(to, img.filename))
-    if (img.original_filename && img.original_filename !== img.filename) {
-      await fs.rename(path.join(from, img.original_filename), path.join(to, img.original_filename))
-    }
-    // Gecachte Ableitungen (Thumbnail/Pixelbild) mitnehmen, falls vorhanden.
-    for (const suffix of ['.thumb.jpg', '.pixel.jpg']) {
-      await fs
-        .rename(path.join(from, img.filename + suffix), path.join(to, img.filename + suffix))
-        .catch(() => {})
-    }
-
     const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
       [targetId]
     )
-    await pool.execute('UPDATE report_images SET report_id = ?, sort_order = ? WHERE id = ?', [
-      targetId,
-      Number(maxRows[0].next),
-      img.id,
-    ])
+    let sortOrder = Number(maxRows[0].next)
+    for (const img of imgs) {
+      await fs.rename(path.join(from, img.filename), path.join(to, img.filename))
+      if (img.original_filename && img.original_filename !== img.filename) {
+        await fs.rename(path.join(from, img.original_filename), path.join(to, img.original_filename))
+      }
+      // Gecachte Ableitungen (Vorschau, Pixelbild, Versandfassung, Kennzeichen-
+      // Ausschnitt) mitnehmen, falls vorhanden.
+      for (const suffix of ['.thumb.jpg', '.pixel.jpg', '.mail.jpg', '.plate.jpg']) {
+        await fs
+          .rename(path.join(from, img.filename + suffix), path.join(to, img.filename + suffix))
+          .catch(() => {})
+      }
+      await pool.execute('UPDATE report_images SET report_id = ?, sort_order = ? WHERE id = ?', [
+        targetId,
+        sortOrder++,
+        img.id,
+      ])
+    }
 
-    await regeneratePdf(source.id, userId)
-    await regeneratePdf(targetId, userId)
-    return reply.send({ ok: true, targetAz: resolvedTargetAz })
+    // PDFs im Hintergrund nachziehen: Beide sind Entwürfe, „Speichern" und
+    // „Einreichen" erzeugen das PDF ohnehin neu – der Nutzer soll nach dem
+    // Verschieben nicht auf zwei PDF-Läufe warten.
+    void regeneratePdf(source.id, userId).then(() => regeneratePdf(targetId, userId)).catch(() => {})
+    return { status: 200, body: { ok: true, targetAz: resolvedTargetAz, moved: imgs.length } }
+  }
+
+  app.post('/anzeige/:az/images/:imageId/move', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const dest = (request.body || {}) as { targetAz?: string; newDraft?: boolean }
+    const id = Number(imageId)
+    const res = await moveImages(request.session.userId as number, az, Number.isInteger(id) ? [id] : [], dest)
+    return reply.status(res.status).send(res.body)
+  })
+
+  app.post('/anzeige/:az/images/move', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const body = (request.body || {}) as { imageIds?: unknown; targetAz?: string; newDraft?: boolean }
+    const ids = Array.isArray(body.imageIds)
+      ? [...new Set(body.imageIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, MAX_IMAGES)
+      : []
+    const res = await moveImages(request.session.userId as number, az, ids, { targetAz: body.targetAz, newDraft: body.newDraft })
+    return reply.status(res.status).send(res.body)
   })
 
   // „Entwurf speichern": finale Werte sichern, PDF erzeugen, zur Detailseite.
@@ -756,13 +868,20 @@ export default async function reportsRoutes(app: FastifyInstance) {
     await persistFields(report.id, userId, body)
     await regeneratePdf(report.id, userId)
 
+    // Editor im Modal (Anzeigen-Liste) speichert per fetch und schließt dann.
+    if (String(request.headers.accept || '').includes('application/json')) {
+      return reply.send({ ok: true })
+    }
+
     // In der Review-Queue des Foto-Imports: direkt zum nächsten offenen Entwurf,
     // nach dem letzten zurück zur Batch-Übersicht.
     const queueId = Number(body.queue)
     if (Number.isInteger(queueId) && queueId > 0 && queueId === report.intake_batch_id) {
       const queue = await loadQueueContext(queueId, userId, az)
       setFlash(reply, 'success', `Entwurf ${az} gespeichert.`)
-      if (queue?.nextAz) return reply.redirect(`/anzeige/${queue.nextAz}/bearbeiten?queue=${queueId}`)
+      // Im Modal weiter im Modal (ohne embed käme die Navigation ins iframe).
+      const embed = body.embed === '1' ? '&embed=1' : ''
+      if (queue?.nextAz) return reply.redirect(`/anzeige/${queue.nextAz}/bearbeiten?queue=${queueId}${embed}`)
       return reply.redirect(`/import/${queueId}`)
     }
 
@@ -856,7 +975,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+      'SELECT id, filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
     const [counts] = await pool.execute<mysql.RowDataPacket[]>(
@@ -874,7 +993,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
           reply_count: Number(counts[0]?.reply_count) || 0,
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
         },
-        imgIds: images.map((i) => i.id),
+        imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename) })),
         queueId: Number.isInteger(queueParam) && queueParam > 0 ? queueParam : null,
       }
     )
@@ -891,10 +1010,11 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
 
-    const [images] = await pool.execute<mysql.RowDataPacket[]>(
+    const [imageRows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
+    const images = imageRows.map((i) => ({ ...(i as Record<string, unknown>), id: Number(i.id), v: imageVersion(i.filename) }))
 
     // Nachrichtenverlauf (Anzeige-Mail, Antworten des Amts, eigene Nachrichten)
     // + Anhänge; Ansehen der Seite = gelesen.
@@ -1053,7 +1173,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const imagePath = path.join(UPLOAD_DIR, String(userId), String(image.report_id), filename)
     try {
       const buffer = await fs.readFile(imagePath)
-      const reply2 = reply.header('Content-Type', mimetype || 'application/octet-stream')
+      const reply2 = reply
+        .header('Content-Type', mimetype || 'application/octet-stream')
+        .header('Cache-Control', cacheControlFor(request))
       if (wantOriginal) {
         reply2.header('Content-Disposition', `attachment; filename="${filename}"`)
       }
@@ -1080,14 +1202,14 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!image) return reply.status(404).send('Bild nicht gefunden.')
 
     try {
-      const { buffer, type } = await cachedThumbnail(
+      const { buffer, type } = await loadThumbnail(
         reportDir(userId, image.report_id),
         image.filename,
         image.mimetype
       )
       return reply
         .header('Content-Type', type)
-        .header('Cache-Control', 'private, max-age=3600')
+        .header('Cache-Control', cacheControlFor(request))
         .send(buffer)
     } catch {
       return reply.status(404).send('Bilddatei nicht gefunden.')

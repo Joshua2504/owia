@@ -5,13 +5,16 @@ import path from 'node:path'
 import { parentPort } from 'node:worker_threads'
 import { prepareImage, writePreparedImage } from './images'
 import { extractPhotoMeta } from './exif'
-import { writeThumbnailCache } from './pixelate'
+import { writeThumbnailCache, writeMailVariantCache } from './pixelate'
 
-parentPort!.on('message', async (job: { kind: 'prepare' | 'thumbnail' | 'prepare-path'; buffer?: Uint8Array; rawPath?: string; filename: string; mimetype: string; dir: string }) => {
+parentPort!.on('message', async (job: { kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path'; buffer?: Uint8Array; rawPath?: string; filename: string; mimetype: string; dir: string }) => {
   try {
-    if (job.kind === 'thumbnail') {
+    if (job.kind === 'thumbnail' || job.kind === 'derivatives') {
       const buffer = await fs.readFile(path.join(job.dir, job.filename))
       await writeThumbnailCache(job.dir, job.filename, buffer, job.mimetype)
+      // Versandfassung gleich mit vorberechnen: sonst dekodiert regeneratePdf()
+      // beim Speichern jedes Foto synchron im HTTP-Prozess (bis zu 14 s gemessen).
+      if (job.kind === 'derivatives') await writeMailVariantCache(job.dir, job.filename, buffer, job.mimetype)
       parentPort!.postMessage({ ok: true })
       return
     }

@@ -79,7 +79,7 @@ for (const r of reports) if (counts[r.status] !== undefined) counts[r.status]++
               </td>
               <td class="text-nowrap">
                 <% if (r.kennzeichen) { %>
-                  <span class="plate-badge"><%- include('../partials/euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
+                  <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>
                 <% } %>
               </td>
               <td class="text-nowrap"><%= r.tattag_fmt || '—' %><% if (r.von_fmt) { %> <span class="text-muted small"><%= r.von_fmt %></span><% } %></td>

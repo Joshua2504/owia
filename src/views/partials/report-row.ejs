@@ -1,21 +1,27 @@
 <%
 // EINE Zeile der Anzeigen-Tabelle (siehe report-table.ejs). Eigenständig
 // renderbar: GET /anzeige/:az/listenzeile liefert sie als HTML-Fragment, damit
-// die Tabelle nach Drag & Drop ("Foto in neue Anzeige") ohne Seiten-Reload
-// ergänzt werden kann.
-// Erwartet: r (Anzeige inkl. reply_count/unread_reply_count), imgIds, queueId.
+// die Tabelle nach Drag & Drop, Inline- oder Modal-Bearbeitung ohne
+// Seiten-Reload aktualisiert werden kann.
+// Erwartet: r (Anzeige inkl. reply_count/unread_reply_count), imgs
+// ([{ id, v }] – v = Versionskennung der Bildfassung für Cache-Busting, s.
+// imageVersion() in routes/reports.ts), queueId.
 //
 // Die Zellen tragen feste `cell-*`-Klassen: ab md ist das eine normale
 // Tabellenzeile, darunter macht app.css daraus eine Karte (Reihenfolge per
 // `order`, Beschriftung per .cell-label). Leere Zellen bekommen `cell-empty`
 // und verschwinden in der Kartenansicht – `:empty` greift nicht, weil EJS
 // Zeilenumbrüche im <td> hinterlässt.
+//
+// Entwürfe: Kennzeichen, Fahrzeugmarke und Verstoß sind direkt in der Zeile
+// editierbar (public/js/report-inline.js, PATCH /anzeige/:az/felder).
 const _fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '')
 const _hhmm = (t) => (t ? String(t).slice(0, 5) : '')
 const _queue = queueId ? '?queue=' + queueId : ''
 const _isDraft = r.status === 'entwurf'
+const _imgs = (typeof imgs !== 'undefined' && imgs) || []
 %>
-<tr data-status="<%= r.status %>" <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
+<tr data-status="<%= r.status %>" data-az="<%= r.aktenzeichen %>" <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
   <td class="cell-select <%= _isDraft ? '' : 'cell-empty' %>">
     <% if (_isDraft) { %>
       <%# Mehrfachauswahl für gemeinsame Aktionen (Formular in report-table.ejs). %>
@@ -26,32 +32,47 @@ const _isDraft = r.status === 'entwurf'
       </label>
     <% } %>
   </td>
-  <td class="cell-photos <%= imgIds.length ? '' : 'cell-empty' %>">
-    <div class="d-flex flex-wrap gap-1" data-photos>
-      <% for (const imgId of imgIds) { %>
-        <div class="report-photo">
-        <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt=""
-             class="rounded border report-thumb" style="cursor:zoom-in"
-             loading="lazy" decoding="async"
-             data-full-src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>"
+  <td class="cell-photos <%= _imgs.length ? '' : 'cell-empty' %>">
+    <div class="report-photos <%= _imgs.length > 6 ? 'has-more' : '' %>" data-photos>
+      <% for (const img of _imgs) { %>
+        <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= img.id %>/thumb.jpg?v=<%= img.v %>" alt="Beweisfoto"
+             class="report-thumb" loading="lazy" decoding="async"
+             data-full-src="/anzeige/<%= r.aktenzeichen %>/image/<%= img.id %>?v=<%= img.v %>"
              <% if (_isDraft) { %>
-               draggable="true" data-drag-image="<%= imgId %>" data-drag-az="<%= r.aktenzeichen %>"
-               title="Klick: vergrößern · Ziehen: in anderen Entwurf verschieben"
+               draggable="true" data-drag-image="<%= img.id %>" data-drag-az="<%= r.aktenzeichen %>"
+               title="Klick: groß anzeigen · Ziehen: in anderen Entwurf verschieben"
              <% } else { %>
-               title="Klick: vergrößern"
+               title="Klick: groß anzeigen"
              <% } %>>
-        <% if (_isDraft) { %><button type="button" class="btn btn-outline-secondary btn-sm photo-move" aria-label="Foto aus <%= r.aktenzeichen %> verschieben" title="Foto verschieben">↗</button><% } %>
-        </div>
+      <% } %>
+      <%# Mehr als 6 Fotos: 5 zeigen + Kachel „+N" (Rest per CSS ausgeblendet, Zeilen bleiben kompakt). %>
+      <% if (_imgs.length > 6) { %>
+        <a class="report-photos-more" href="/anzeige/<%= r.aktenzeichen %><%= _isDraft ? '/bearbeiten' + _queue : '' %>"
+           <% if (_isDraft) { %>data-edit-modal<% } %> title="Alle <%= _imgs.length %> Fotos ansehen">+<%= _imgs.length - 5 %></a>
       <% } %>
     </div>
   </td>
-  <td class="cell-az text-nowrap"><code class="small"><%= r.aktenzeichen || '—' %></code></td>
-  <td class="cell-plate <%= r.kennzeichen || r.fahrzeug_marke ? '' : 'cell-empty' %>">
-    <% if (r.kennzeichen) { %>
-      <span class="plate-badge"><%- include('euband', { land: r.kennzeichen_land }) %><span class="plate-text"><%= r.kennzeichen %></span></span>
-    <% } %>
-    <% if (r.fahrzeug_marke) { %>
-      <div class="text-muted small"><%= r.fahrzeug_marke %></div>
+  <td class="cell-az text-nowrap">
+    <a href="/anzeige/<%= r.aktenzeichen %><%= _isDraft ? '/bearbeiten' + _queue : '' %>" class="az-link"
+       <% if (_isDraft) { %>data-edit-modal<% } %>><%= r.aktenzeichen || '—' %></a>
+  </td>
+  <td class="cell-plate <%= _isDraft || r.kennzeichen || r.fahrzeug_marke ? '' : 'cell-empty' %>">
+    <% if (_isDraft) { %>
+      <span class="cell-label">Kennzeichen / Marke</span>
+      <input type="text" class="form-control form-control-sm inline-input plate-field" data-inline-field="kennzeichen"
+             value="<%= r.kennzeichen || '' %>" placeholder="Kennzeichen" maxlength="20"
+             autocomplete="off" spellcheck="false" autocapitalize="characters"
+             aria-label="Kennzeichen von <%= r.aktenzeichen %>">
+      <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="fahrzeug_marke"
+             value="<%= r.fahrzeug_marke || '' %>" placeholder="Marke / Farbe" maxlength="100"
+             autocomplete="off" aria-label="Fahrzeugmarke von <%= r.aktenzeichen %>">
+    <% } else { %>
+      <% if (r.kennzeichen) { %>
+        <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>
+      <% } %>
+      <% if (r.fahrzeug_marke) { %>
+        <div class="text-muted small mt-1"><%= r.fahrzeug_marke %></div>
+      <% } %>
     <% } %>
   </td>
   <td class="cell-time text-nowrap">
@@ -66,7 +87,7 @@ const _isDraft = r.status === 'entwurf'
   </td>
   <td class="cell-place small <%= r.tatort || _isDraft ? '' : 'cell-empty' %>">
     <% if (r.tatort || _isDraft) { %><span class="cell-label">Tatort</span><% } %>
-    <%= r.tatort || '' %><% if (!r.tatort && _isDraft) { %><span class="text-muted">– bitte prüfen –</span><% } %>
+    <span class="clamp-2" title="<%= r.tatort || '' %>"><%= r.tatort || '' %><% if (!r.tatort && _isDraft) { %><span class="text-warning-emphasis">Tatort fehlt</span><% } %></span>
   </td>
   <%
   // Weitere Details kompakt darunter (nur befüllte Felder).
@@ -75,36 +96,49 @@ const _isDraft = r.status === 'entwurf'
   if (r.behinderung === 1) extras.push('Behinderung: ' + (r.behinderung_text || 'ja'))
   if (r.beschreibung) extras.push(r.beschreibung)
   %>
-  <td class="cell-offense small <%= r.verstoss_art || extras.length ? '' : 'cell-empty' %>">
-    <% if (r.verstoss_art || extras.length) { %><span class="cell-label">Verstoß</span><% } %>
-    <div class="text-truncate" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '' %></div>
+  <td class="cell-offense small <%= _isDraft || r.verstoss_art || extras.length ? '' : 'cell-empty' %>">
+    <span class="cell-label">Verstoß</span>
+    <% if (_isDraft) { %>
+      <%# Durchsuchbare Auswahl wie im Editor; der Katalog wird erst beim
+          ersten Fokus geladen (report-inline.js → verstoss-select.js). %>
+      <div class="position-relative inline-verstoss" data-inline-verstoss>
+        <input type="hidden" data-inline-field="verstoss_art" value="<%= r.verstoss_art || '' %>">
+        <textarea class="form-control form-control-sm inline-input" data-verstoss-input rows="2"
+                  autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
+                  placeholder="Verstoß wählen …" title="<%= r.verstoss_art || '' %>"
+                  aria-label="Verstoß von <%= r.aktenzeichen %>"><%= r.verstoss_art || '' %></textarea>
+      </div>
+    <% } else { %>
+      <div class="clamp-2" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '' %></div>
+    <% } %>
     <% if (extras.length) { %>
       <div class="cell-sub text-muted small text-truncate" title="<%= extras.join(' · ') %>"><%= extras.join(' · ') %></div>
     <% } %>
   </td>
   <td class="cell-status">
     <% if (r.status === 'versendet') { %>
-      <span class="badge bg-success">Versendet</span>
+      <span class="badge rounded-pill text-bg-success">Versendet</span>
     <% } else if (_isDraft) { %>
-      <span class="badge text-bg-warning">Entwurf</span>
+      <span class="badge rounded-pill text-bg-warning">Entwurf</span>
     <% } else { %>
-      <span class="badge bg-info">Eingereicht</span>
+      <span class="badge rounded-pill text-bg-info">Eingereicht</span>
     <% } %>
     <%# Antwort des Ordnungsamts liegt vor (Spalten liefert nur das Dashboard). %>
     <% if (r.reply_count) { %>
-      <a href="/anzeige/<%= r.aktenzeichen %>" class="badge text-bg-primary text-decoration-none"
+      <a href="/anzeige/<%= r.aktenzeichen %>" class="badge rounded-pill text-bg-primary text-decoration-none"
          title="Antwort des Ordnungsamts ansehen">
         📨 Antwort<%= r.reply_count > 1 ? ' (' + r.reply_count + ')' : '' %><%= r.unread_reply_count > 0 ? ' • neu' : '' %>
       </a>
     <% } %>
   </td>
   <td class="cell-actions">
-    <div class="d-flex gap-2 justify-content-end">
+    <div class="d-flex gap-1 justify-content-end">
       <% if (_isDraft) { %>
-        <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary">Bearbeiten</a>
+        <%# Öffnet den Editor im Modal (report-modal.js); Strg-/Mittelklick = neuer Tab. %>
+        <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-primary" data-edit-modal>Bearbeiten</a>
         <%# Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
         <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0">
-          <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
+          <button type="submit" class="btn btn-sm btn-outline-danger" title="Entwurf löschen" aria-label="Entwurf <%= r.aktenzeichen %> löschen">🗑</button>
         </form>
       <% } else { %>
         <a href="/anzeige/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>

@@ -87,123 +87,51 @@ code {
 }
 
 /* ---------------------------------------------------------------------------
-   Kennzeichen im Look eines deutschen KFZ-Kennzeichens: weißes Schild mit
-   schwarzem Rand, blaues EU-Band (Sternenkranz + D) links, Prägeschrift-Optik.
-   .plate-input = Eingabefeld im Formular, .plate-badge = kleine Lese-Variante
-   in Tabellen. Beide teilen sich das EU-Band (.plate-euband).
+   Kennzeichen: bewusst neutral statt EU-Schild-Optik – erfasst werden
+   Kennzeichen aus aller Welt (auch Roller-Versicherungskennzeichen).
+   .plate-chip = Lese-Variante (Listen, Detailseite, Admin), optional mit
+   Länderkürzel in <small>; .plate-field = Eingabefeld (Editor, Liste).
    --------------------------------------------------------------------------- */
-.plate-input,
-.plate-badge {
+.plate-chip {
   display: inline-flex;
-  align-items: stretch;
-  background: #fff;
-  border: 2px solid #1a1a1a;
-  border-radius: 0.45rem;
-  overflow: hidden;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+  align-items: baseline;
+  gap: 0.35em;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.35rem;
+  background: var(--bs-body-bg);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-
-.plate-input {
-  border-width: 3px;
-  width: 100%;
-  max-width: 320px;
-}
-
-.plate-euband {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.15rem;
-  background: #039;
-  color: #fff;
-  padding: 0.2rem 0.3rem;
-}
-
-.plate-euband .plate-d {
+.plate-chip small {
+  font-size: 0.7em;
   font-weight: 700;
-  font-size: 0.8rem;
-  line-height: 1;
+  color: var(--bs-secondary-color);
 }
-
-.plate-input input {
-  border: 0;
-  outline: none;
-  width: 100%;
-  min-width: 0;
-  padding: 0.15rem 0.6rem;
-  background: transparent;
-  font-family: 'DIN Condensed', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', sans-serif;
-  font-weight: 700;
-  font-size: 1.7rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #1a1a1a;
-}
-
-.plate-input input::placeholder {
-  color: #b0b0b0;
+.plate-field {
+  font-weight: 600;
   letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
-
-.plate-input:focus-within {
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+.plate-field::placeholder {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
 }
 
 /* Kurzes Aufblitzen, wenn die Kennzeichen-Erkennung das Feld vorbefüllt hat. */
-.plate-input input.alpr-filled {
+.plate-field.alpr-filled {
   animation: alpr-filled-flash 1.6s ease-out 1;
 }
 
 @keyframes alpr-filled-flash {
   0% { background-color: rgba(25, 135, 84, 0.35); }
-  100% { background-color: transparent; }
+  100% { background-color: var(--bs-body-bg); }
 }
 
-.plate-badge {
-  padding: 0;
-  font-family: 'DIN Condensed', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', sans-serif;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-}
-
-.plate-badge .plate-euband {
-  padding: 0.1rem 0.2rem;
-}
-
-.plate-badge .plate-euband .plate-d {
-  font-size: 0.55rem;
-}
-
-.plate-badge .plate-text {
-  padding: 0.05rem 0.4rem;
-  color: #1a1a1a;
-}
-
-/* Länderkürzel im EU-Band als Eingabefeld (Formular). */
-.plate-euband .plate-d-input {
-  width: 2.1rem;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.8rem;
-  line-height: 1;
-  text-align: center;
-  text-transform: uppercase;
-  padding: 0;
-}
-
-.plate-euband .plate-d-input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-
-/* Dark Mode: Body-Hintergrund folgt dem Bootstrap-Theme (statt festem bg-light).
-   Das Kennzeichen-Schild bleibt bewusst weiß – ein Nummernschild ist weiß. */
+/* Dark Mode: Body-Hintergrund folgt dem Bootstrap-Theme (statt festem bg-light). */
 body {
   background-color: var(--bs-tertiary-bg);
 }
@@ -222,46 +150,23 @@ body {
    Inhalt→Platz steckt in den `cell-*`-Klassen der Zeile.
    --------------------------------------------------------------------------- */
 
-.report-thumb {
-  width: 96px;
-  height: 72px;
-  object-fit: cover;
-}
-
 @media (min-width: 768px) {
   .report-table { table-layout: fixed; width: 100%; }
-  .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 4%; }
-  .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 14%; }
-  .report-table th:nth-child(3), .report-table td:nth-child(3) { width: 10%; }
-  .report-table th:nth-child(4), .report-table td:nth-child(4) { width: 11%; }
-  .report-table th:nth-child(5), .report-table td:nth-child(5) { width: 12%; }
-  .report-table th:nth-child(6), .report-table td:nth-child(6) { width: 14%; }
-  .report-table th:nth-child(7), .report-table td:nth-child(7) { width: 15%; }
-  .report-table th:nth-child(8), .report-table td:nth-child(8) { width: 9%; }
-  .report-table th:nth-child(9), .report-table td:nth-child(9) { width: 11%; }
-  .report-table .cell-place, .report-table .cell-offense { overflow: hidden; }
-  .report-table .cell-actions .btn { padding-left: .35rem; padding-right: .35rem; }
+  .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 3.25rem; }
+  .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 12.25rem; }
+  .report-table th:nth-child(3), .report-table td:nth-child(3) { width: 8.5rem; }
+  .report-table th:nth-child(4), .report-table td:nth-child(4) { width: 14%; }
+  .report-table th:nth-child(5), .report-table td:nth-child(5) { width: 9rem; }
+  .report-table th:nth-child(6), .report-table td:nth-child(6) { width: 15%; }
+  .report-table th:nth-child(7), .report-table td:nth-child(7) { width: auto; }
+  .report-table th:nth-child(8), .report-table td:nth-child(8) { width: 7rem; }
+  .report-table th:nth-child(9), .report-table td:nth-child(9) { width: 8.75rem; }
+  .report-table .cell-place, .report-table .cell-offense { overflow: visible; }
 }
 
 /* Feldbeschriftung nur in der Kartenansicht (in der Tabelle sagt es der <th>). */
 .cell-label {
   display: none;
-}
-
-/* Spaltenbreiten der Tabellenansicht (halten lange Tatorte/Verstöße im Zaum).
-   Bewusst in einer min-width-Query statt als Inline-Style, damit die
-   Kartenansicht unten sie nicht per !important aushebeln muss. */
-@media (min-width: 768px) {
-  .report-table .cell-photos {
-    min-width: 100px;
-    max-width: 300px;
-  }
-  .report-table .cell-place {
-    max-width: 200px;
-  }
-  .report-table .cell-offense {
-    max-width: 220px;
-  }
 }
 
 @media (max-width: 767.98px) {
@@ -348,11 +253,12 @@ body {
     margin: 0;
   }
 
-  /* Fotos zu dritt über die Kartenbreite – deutlich größer als die 96px der
-     Tabelle und damit auf dem Handy überhaupt erkennbar. */
-  .report-table .cell-photos .report-thumb {
-    flex: 0 0 calc((100% - 0.5rem) / 3);
-    width: auto;
+  /* Fotos zu dritt über die Kartenbreite – auf dem Handy sonst nicht erkennbar. */
+  .report-table .report-photos {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .report-table .report-photos .report-thumb {
+    width: 100%;
     height: auto;
     aspect-ratio: 4 / 3;
   }
@@ -360,8 +266,11 @@ body {
   /* In der Tabelle wird Tatort/Verstoß auf Spaltenbreite gekürzt (.text-truncate
      im Markup); in der Karte ist Platz für den vollen Text – abgeschnittene
      Verstoßarten sind auf dem Handy sonst nicht zu entziffern (kein Hover-Titel). */
+  .report-table .cell-place .clamp-2,
+  .report-table .cell-offense .clamp-2,
   .report-table .cell-place .text-truncate,
   .report-table .cell-offense .text-truncate {
+    -webkit-line-clamp: unset;
     overflow: visible;
     white-space: normal;
     text-overflow: clip;
@@ -404,21 +313,159 @@ body {
   }
 }
 
-/* Gemeinsame Aktionen bleiben auch bei langen Listen erreichbar. */
+
+/* ---------------------------------------------------------------------------
+   Anzeigen-Liste: Filterleiste, Fotos, Inline-Bearbeitung, Aktionsleiste
+   --------------------------------------------------------------------------- */
+.report-card {
+  overflow: visible; /* Verstoß-Auswahl darf über die Karte hinausragen */
+}
+
+.report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--bs-border-color-translucent);
+}
+.report-filter-search { flex: 1 1 18rem; }
+.report-filter-status { flex: 0 0 11rem; }
+
+.report-table > thead th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color);
+  background: var(--bs-tertiary-bg);
+  border-bottom-width: 1px;
+  white-space: nowrap;
+}
+.report-table > tbody > tr > td {
+  padding-top: 0.6rem;
+  padding-bottom: 0.6rem;
+}
 .report-table tr[hidden] { display: none; }
+.report-table tr.is-selected {
+  --bs-table-bg: var(--bs-primary-bg-subtle);
+  box-shadow: inset 3px 0 0 var(--bs-primary);
+}
+
+.az-link {
+  font-family: var(--bs-font-monospace);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+.az-link:hover { text-decoration: underline; }
+
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* Foto-Miniaturen: Raster mit festen Kacheln, Hover-Vorschau in image-preview.js. */
+.report-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 56px);
+  gap: 4px;
+}
+.report-photos .report-thumb:nth-of-type(n + 7),
+.report-photos.has-more .report-thumb:nth-of-type(n + 6) { display: none; }
+.report-photos-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  border-radius: 0.3rem;
+  background: var(--bs-secondary-bg);
+  color: var(--bs-secondary-color);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.report-thumb {
+  display: block;
+  width: 56px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 0.3rem;
+  border: 1px solid var(--bs-border-color);
+  cursor: zoom-in;
+  background: var(--bs-secondary-bg);
+}
+.report-thumb[draggable="true"] { cursor: grab; }
+.report-thumb:hover { outline: 2px solid var(--bs-primary); outline-offset: 1px; }
+
+/* Inline-Felder sehen wie Text aus, bis man sie berührt. */
+.inline-input {
+  border-color: transparent;
+  background-color: transparent;
+  padding: 0.2rem 0.4rem;
+  margin-left: -0.4rem;
+  width: calc(100% + 0.4rem);
+  resize: none;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+.inline-input:hover {
+  border-color: var(--bs-border-color);
+  background-color: var(--bs-body-bg);
+}
+.inline-input:focus { background-color: var(--bs-body-bg); }
+.inline-input::placeholder { color: var(--bs-tertiary-color); font-style: italic; }
+.inline-input.inline-sub { font-size: 0.8125rem; color: var(--bs-secondary-color); }
+.inline-input.plate-field { font-size: 0.9375rem; }
+textarea.inline-input { font-size: 0.8125rem; line-height: 1.3; overflow: hidden; }
+.inline-input.is-saving { border-color: var(--bs-warning-border-subtle); background-color: var(--bs-warning-bg-subtle); }
+.inline-input.is-saved { border-color: var(--bs-success); background-color: var(--bs-success-bg-subtle); }
+/* Verstoß-Auswahl der Liste: rechtsbündig breiter als die Spalte. */
+.inline-verstoss > .list-group {
+  left: auto !important;
+  right: 0 !important;
+  width: min(34rem, 90vw);
+}
+
 .report-select-label { min-height: 44px; cursor: pointer; align-items: center; }
+.report-checkbox-target {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  cursor: pointer;
+}
+
 .bulk-action-bar {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1040;
-  padding: .75rem max(1rem, env(safe-area-inset-right)) calc(.75rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  padding: 0.6rem 0.75rem 0.6rem 1.1rem;
   background: var(--bs-body-bg);
-  border-top: 1px solid var(--bs-border-color);
-  box-shadow: 0 -2px 12px rgba(0,0,0,.12);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 999px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
   justify-content: center;
 }
+
+/* Drop-Ziel „neue Anzeige" nur während eines Foto-Drags. */
+.drop-new-draft {
+  display: none;
+  margin: 0.5rem 1rem 1rem;
+  padding: 0.6rem;
+  border: 2px dashed var(--bs-border-color);
+  border-radius: 0.5rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--bs-secondary-color);
+}
+body.is-dragging .drop-new-draft { display: block; }
+.drop-new-draft.border-primary { border-color: var(--bs-primary); color: var(--bs-primary); background: var(--bs-primary-bg-subtle); }
 
 .report-dialog {
   width: min(680px, calc(100% - 1rem));
@@ -428,56 +475,313 @@ body {
   color: var(--bs-body-color);
   background: var(--bs-body-bg);
   border: 1px solid var(--bs-border-color);
-  border-radius: .75rem;
+  border-radius: 0.75rem;
 }
-.report-dialog::backdrop { background: rgba(0,0,0,.6); }
-.report-photo { width: 48px; position: relative; flex: 0 0 48px; }
-.report-photo .report-thumb { width: 48px; height: 36px; display: block; object-fit: cover; }
-.report-table .cell-photos [data-photos] {
-  display: grid !important;
-  grid-auto-flow: row;
-  grid-template-columns: repeat(4, 48px);
-  grid-auto-rows: 36px;
-  grid-auto-columns: 48px;
-  max-width: 210px;
-  max-height: none;
-  overflow: hidden;
-  overflow-y: hidden;
-  align-content: start;
-}
-.photo-move {
-  width: 2rem;
-  min-height: 2rem;
-  margin: 0;
-  padding: .15rem .35rem;
-  line-height: 1;
-  position: absolute;
-  right: 2px;
-  bottom: 2px;
-}
+.report-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+
 @media (max-width: 767.98px) {
-  .report-table .cell-photos [data-photos] { display: flex !important; max-width: none; max-height: none; overflow: visible; }
-  .report-photo { flex: 0 0 calc((100% - .5rem) / 3); width: auto; min-width: 0; }
-  .report-photo .photo-move { width: 2.25rem; min-height: 2.25rem; padding: .25rem; font-size: 1rem; }
+  .report-filter-status { flex: 1 1 8rem; }
   .report-dialog .form-control, .report-dialog .form-select,
-  .report-filters .form-control, .report-filters .form-select { font-size: 16px; }
-  .photo-move, .bulk-action-bar .btn, .report-dialog .btn { min-height: 44px; }
+  .report-filters .form-control, .report-filters .form-select,
+  .inline-input { font-size: 16px; } /* iOS zoomt sonst beim Fokussieren */
+  .inline-input { margin-left: 0; width: 100%; border-color: var(--bs-border-color); background-color: var(--bs-body-bg); }
+  .bulk-action-bar { bottom: 0; left: 0; right: 0; transform: none; width: auto; max-width: none; border-radius: 0; padding-bottom: calc(0.6rem + env(safe-area-inset-bottom)); }
+  .bulk-action-bar .btn, .report-dialog .btn { min-height: 44px; }
   .bulk-action-bar #bulk-count { width: 100%; text-align: center; }
-}
-@media (max-width: 767.98px) {
-  .report-table .cell-photos .report-photo .report-thumb { width: 100%; height: auto; display: block; }
-}
-.report-checkbox-target {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
-  cursor: pointer;
+  .report-table .cell-plate .inline-input + .inline-input { margin-top: 0.35rem; }
 }
 
-.report-table tr.is-selected {
-  --bs-table-bg: var(--bs-primary-bg-subtle);
-  outline: 2px solid var(--bs-primary);
-  outline-offset: -2px;
+/* ---------------------------------------------------------------------------
+   Foto-Vorschau beim Hover, Lupe und Lightbox (public/js/image-preview.js)
+   --------------------------------------------------------------------------- */
+.img-preview,
+.img-zoom {
+  position: fixed;
+  z-index: 2050;
+  display: none;
+  overflow: hidden;
+  background: #111;
+  border: 2px solid #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+}
+.img-preview.is-visible,
+.img-zoom.is-visible { display: block; }
+.img-preview { cursor: zoom-in; }
+.img-preview.is-zooming { cursor: crosshair; }
+.img-preview-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.img-preview-lens {
+  position: absolute;
+  display: none;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.img-preview.is-zooming .img-preview-lens { display: block; }
+.img-preview-hint {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+.img-zoom { pointer-events: none; }
+.img-zoom img { position: absolute; max-width: none; }
+.img-zoom-level {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.75rem;
+}
+
+.img-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: none;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.9);
+  padding: 2rem;
+  cursor: zoom-out;
+}
+.img-lightbox.is-visible { display: flex; }
+.img-lightbox img {
+  margin: auto;
+  max-width: 100%;
+  max-height: calc(100dvh - 4rem);
+  border-radius: 0.4rem;
+  cursor: zoom-in;
+}
+.img-lightbox.is-actual img { max-width: none; max-height: none; cursor: zoom-out; }
+.img-lightbox-close { position: fixed; top: 1rem; right: 1rem; z-index: 1; }
+
+/* ---------------------------------------------------------------------------
+   Editor im Modal der Anzeigen-Liste (public/js/report-modal.js)
+   --------------------------------------------------------------------------- */
+.editor-dialog {
+  width: min(1200px, calc(100vw - 2rem));
+  height: calc(100dvh - 2rem);
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--bs-tertiary-bg);
+  color: var(--bs-body-color);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+.editor-dialog[open] { display: flex; flex-direction: column; }
+.editor-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.editor-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: var(--bs-body-bg);
+  border-bottom: 1px solid var(--bs-border-color);
+}
+.editor-dialog-body { position: relative; flex: 1 1 auto; }
+.editor-dialog-body iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.editor-dialog.is-loaded iframe { opacity: 1; }
+.editor-dialog-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--bs-secondary-color);
+}
+html.has-editor-dialog { overflow: hidden; }
+@media (max-width: 767.98px) {
+  .editor-dialog { width: 100vw; height: 100dvh; border-radius: 0; }
+}
+
+/* ---------------------------------------------------------------------------
+   Editor (src/views/reports/edit.ejs): Fotos · Angaben · Karte
+   --------------------------------------------------------------------------- */
+.editor {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.editor-embed .editor-head { display: none; } /* Titel steht im Modal-Kopf */
+.editor-queue { top: 0.5rem; z-index: 1030; }
+.editor-section { margin-bottom: 1rem; }
+.editor-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem 0.25rem;
+}
+.editor-fields .form-label {
+  margin-bottom: 0.2rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+}
+#photo-section.is-dropping {
+  outline: 3px dashed var(--bs-primary);
+  outline-offset: -6px;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+  gap: 0.75rem;
+}
+.photo-empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--bs-secondary-color);
+  border: 2px dashed var(--bs-border-color);
+  border-radius: 0.5rem;
+}
+.photo-select-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--bs-primary-bg-subtle);
+  border: 1px solid var(--bs-primary-border-subtle);
+}
+.photo-select-bar[hidden] { display: none; }
+.photo-select-bar .form-select { flex: 0 1 22rem; }
+
+.photo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  background: var(--bs-body-bg);
+  min-width: 0;
+}
+.photo-card.is-selected {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 2px var(--bs-primary);
+}
+.photo-card-media { position: relative; }
+.photo-card-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 0.35rem;
+  background: var(--bs-secondary-bg);
+  cursor: zoom-in;
+}
+.photo-card-img.is-placeholder { visibility: hidden; }
+.photo-card-check {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.4rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.photo-card-check .form-check-input {
+  width: 1.3rem;
+  height: 1.3rem;
+  margin: 0;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+.photo-card-pos {
+  position: absolute;
+  right: 0.35rem;
+  top: 0.35rem;
+  min-width: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.75rem;
+  text-align: center;
+  pointer-events: none;
+}
+.photo-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  min-height: 1.1em;
+}
+.photo-card-status { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.photo-card-hints { display: flex; flex-wrap: wrap; gap: 0 0.75rem; font-size: 0.8125rem; }
+.photo-card-hints .btn { font-size: inherit; text-decoration: none; }
+.photo-card-actions { display: flex; gap: 0.25rem; margin-top: auto; }
+.photo-card-actions .btn { padding-left: 0.45rem; padding-right: 0.45rem; white-space: nowrap; }
+.photo-card-actions .flex-fill { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* Bearbeiten aufgeklappt: Karte über die volle Breite, Leinwand statt Vorschau. */
+.photo-card .redact-stage,
+.photo-card .photo-card-tools { display: none; }
+.photo-card.is-editing { grid-column: 1 / -1; }
+.photo-card.is-editing .photo-card-img { display: none; }
+.photo-card.is-editing .redact-stage,
+.photo-card.is-editing .photo-card-tools { display: block; }
+.photo-card.is-editing .img-redact {
+  width: auto;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+}
+.photo-card-tools { padding-top: 0.25rem; border-top: 1px solid var(--bs-border-color-translucent); }
+
+/* Aktionsleiste des Editors klebt unten – Speichern ist immer erreichbar. */
+.editor-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1020;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 -0.25rem;
+  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.75rem 0.75rem 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+}
+body.is-embed main { padding-bottom: 0 !important; }
+@media (max-width: 575.98px) {
+  .photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+  .editor-actions .btn { flex: 1 1 0; min-height: 44px; }
+  .editor-actions #save-status { width: 100%; }
 }

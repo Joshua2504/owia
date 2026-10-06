@@ -473,3 +473,27 @@ test('Überlappende Importpakete speichern ein identisches Foto genau einmal', a
     assert.equal(lateUpload.statusCode, 409)
   } finally { await app.close() }
 })
+
+test('Inline-Bearbeitung ändert nur übergebene Felder, nur Katalog-Verstöße und nur Entwürfe', async () => {
+  const id = await report()
+  await pool.execute("UPDATE reports SET status='entwurf', tatort='Teststraße 1', fahrzeug_marke='VW', kennzeichen_land='NL' WHERE id=?", [id])
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  const app = Fastify()
+  app.addHook('preHandler', async request => { request.session = { userId } as typeof request.session })
+  await app.register(reportsRoutes)
+  try {
+    // Weltweite Schreibweisen (Roller-Versicherungskennzeichen) bleiben erhalten.
+    const plate = await app.inject({ method: 'PATCH', url: `/anzeige/${az}/felder`, payload: { kennzeichen: ' 123  abc ' } })
+    assert.equal(plate.statusCode, 200)
+    const row = (await query('SELECT kennzeichen, tatort, fahrzeug_marke, kennzeichen_land FROM reports WHERE id=?', [id]))[0]
+    assert.deepEqual([row.kennzeichen, row.tatort, row.fahrzeug_marke, row.kennzeichen_land], ['123 ABC', 'Teststraße 1', 'VW', 'NL'])
+    const bad = await app.inject({ method: 'PATCH', url: `/anzeige/${az}/felder`, payload: { verstoss_art: 'Erfunden' } })
+    assert.equal(bad.statusCode, 400)
+    // Autosave des Editors ohne Länderfeld lässt das gespeicherte Land stehen.
+    await app.inject({ method: 'PATCH', url: `/anzeige/${az}`, payload: { kennzeichen: 'NL-12-AB', tatort: 'Teststraße 1' } })
+    assert.equal((await query('SELECT kennzeichen_land FROM reports WHERE id=?', [id]))[0].kennzeichen_land, 'NL')
+    await pool.execute("UPDATE reports SET status='eingereicht' WHERE id=?", [id])
+    const locked = await app.inject({ method: 'PATCH', url: `/anzeige/${az}/felder`, payload: { kennzeichen: 'X' } })
+    assert.equal(locked.statusCode, 409)
+  } finally { await app.close() }
+})

@@ -1,5 +1,7 @@
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { cachedThumbnail, thumbFilename } from './pixelate'
 
 export type IntakeImageResult = {
   filename: string
@@ -9,7 +11,7 @@ export type IntakeImageResult = {
   meta: { capturedAt: string | null; lat: number | null; lon: number | null }
 }
 type Job = {
-  kind: 'prepare' | 'thumbnail' | 'prepare-path'; buffer?: Buffer; rawPath?: string; filename: string; mimetype: string; dir: string
+  kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path'; buffer?: Buffer; rawPath?: string; filename: string; mimetype: string; dir: string
   resolve: (result: IntakeImageResult | undefined) => void; reject: (error: Error) => void
 }
 const jobs: Job[] = []
@@ -70,6 +72,52 @@ export function processIntakeRaw(rawPath: string, filename: string, mimetype: st
     if (!result) throw new Error('Bild konnte nicht verarbeitet werden.')
     return result
   })
+}
+
+// Interaktive Aufgaben (Editor, Liste) laufen vor einem evtl. laufenden
+// 150-Foto-Import, sonst wartet ein einzelnes Bild minutenlang in der Schlange.
+function enqueue(job: Job, priority: boolean) {
+  if (priority) jobs.unshift(job)
+  else jobs.push(job)
+  startNext()
+}
+
+/** Vorschaubild + Versandfassung eines gespeicherten Anzeigenfotos im Worker
+ *  berechnen (beides als Datei-Cache neben dem Bild, s. pixelate.ts). */
+export function processReportImageDerivatives(filename: string, mimetype: string, dir: string): Promise<void> {
+  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+    enqueue({ kind: 'derivatives', filename, mimetype, dir, resolve, reject }, true)
+  }).then(() => {})
+}
+
+/** Bild für den Upload in eine Anzeige vorbereiten (HEIC→JPG, EXIF, Dateien
+ *  schreiben) – wie processIntakeImage, aber vorrangig in der Warteschlange. */
+export function processReportImage(buffer: Buffer, filename: string, mimetype: string, dir: string): Promise<IntakeImageResult> {
+  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+    enqueue({ kind: 'prepare', buffer, filename, mimetype, dir, resolve, reject }, true)
+  }).then(result => {
+    if (!result) throw new Error('Bild konnte nicht verarbeitet werden.')
+    return result
+  })
+}
+
+/** Fehlendes Vorschaubild vorrangig nachrechnen (On-demand-Fallback der Listen). */
+export function processThumbnailNow(filename: string, mimetype: string, dir: string): Promise<void> {
+  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+    enqueue({ kind: 'thumbnail', filename, mimetype, dir, resolve, reject }, true)
+  }).then(() => {})
+}
+
+/** Vorschaubild ausliefern; fehlt der Cache, zuerst im Worker berechnen statt
+ *  synchron im Request (cachedThumbnail fiele sonst auf jpeg-js im Eventloop
+ *  zurück und hielte bei einer Liste voller neuer Fotos alle Requests auf). */
+export async function loadThumbnail(dir: string, filename: string, mimetype: string) {
+  try {
+    await fs.access(path.join(dir, thumbFilename(filename)))
+  } catch {
+    await processThumbnailNow(filename, mimetype, dir).catch(() => {})
+  }
+  return cachedThumbnail(dir, filename, mimetype)
 }
 
 // Erst nach dem Upload erzeugen. Die Warteschlange enthält nur Dateipfade,

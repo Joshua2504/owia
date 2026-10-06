@@ -9,13 +9,13 @@ import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { requireAuth, viewData, setFlash } from '../middleware/auth'
-import { processIntakeRaw, processIntakeThumbnail, withIntakeUploadLock } from '../services/intakeImageProcessing'
+import { imageVersion } from '../services/images'
+import { processIntakeRaw, processIntakeThumbnail, withIntakeUploadLock, loadThumbnail } from '../services/intakeImageProcessing'
 import crypto from 'node:crypto'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
 import { createDraft, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
-import { cachedThumbnail } from '../services/pixelate'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 
 // Muss zur Chunk-Größe in public/js/import-upload.js passen und unter dem
@@ -329,17 +329,17 @@ export default async function intakeRoutes(app: FastifyInstance) {
     )
     // Alle Fotos der Batch-Entwürfe für die Thumbnail-Leisten (Drag & Drop).
     const [draftImages] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.id, ri.report_id
+      `SELECT ri.id, ri.report_id, ri.filename
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
         WHERE r.intake_batch_id = ? AND r.user_id = ?
         ORDER BY ri.report_id, ri.sort_order, ri.id`,
       [batch.id, userId]
     )
-    const imagesByReport = new Map<number, number[]>()
+    const imagesByReport = new Map<number, { id: number; v: string }[]>()
     for (const img of draftImages) {
       const list = imagesByReport.get(img.report_id) ?? []
-      list.push(img.id)
+      list.push({ id: img.id, v: imageVersion(img.filename) })
       imagesByReport.set(img.report_id, list)
     }
 
@@ -402,7 +402,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
     if (!photo) return reply.status(404).send('Bild nicht gefunden.')
 
     try {
-      const { buffer, type } = await cachedThumbnail(
+      const { buffer, type } = await loadThumbnail(
         intakeDir(userId, batchId),
         photo.filename,
         photo.mimetype

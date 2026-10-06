@@ -72,6 +72,14 @@ export async function prepareImage(
   throw new Error('unsupported')
 }
 
+/** Versionskennung einer Bildfassung für Cache-Busting in URLs: Jede neue
+ *  Fassung (Schwärzen/Drehen → PUT) bekommt einen neuen Zufalls-Dateinamen,
+ *  die Bild-ID bleibt gleich. Ohne ?v= zeigten Listen dank Cache-Control bis
+ *  zu einer Stunde die alte, ungeschwärzte Vorschau. */
+export function imageVersion(filename: string): string {
+  return String(filename || '').replace(/^bild-/, '').replace(/\..*$/, '').slice(0, 16)
+}
+
 /** Vorbereitetes Bild (+ ggf. Original) in ein Verzeichnis schreiben; gibt die Dateinamen zurück. */
 export async function writePreparedImage(
   dir: string,

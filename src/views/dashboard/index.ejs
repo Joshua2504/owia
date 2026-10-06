@@ -22,13 +22,13 @@
     </div>
   </div>
 <% } else { %>
-  <div class="card shadow-sm">
+  <div class="card shadow-sm report-card">
     <%- include('../partials/report-table', { reports, imagesByReport, queueId: null }) %>
   </div>
 <% } %>
 
 <!-- Anonyme Übersichtskarte aller versendeter Anzeigen (gleiche Daten wie die Startseite). -->
-<details class="card shadow-sm mt-4 mb-4" open>
+<details class="card shadow-sm mt-4 mb-4">
   <summary class="p-3 fw-semibold">Übersichtskarte</summary>
   <div class="card-body">
     <h5 class="card-title mb-1">Übersicht</h5>
@@ -45,4 +45,4 @@
 <script src="/public/vendor/leaflet.js"></script>
 <script src="/public/js/overview-map.js"></script>
 <script src="/public/js/report-table.js"></script>
-<script src="/public/js/image-loupe.js"></script>
+<script src="/public/js/image-preview.js"></script>

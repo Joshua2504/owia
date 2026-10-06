@@ -47,7 +47,11 @@
     }
   </script>
 </head>
-<body>
+<%# embed: Seite läuft im Editor-Modal der Anzeigen-Liste (report-modal.js) –
+    ohne Navigation, Footer und Cookie-Hinweis (die zeigt die umgebende Seite). %>
+<% const _embed = !!locals.embed %>
+<body class="<%= _embed ? 'is-embed' : '' %>">
+  <% if (!_embed) { %>
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
       <a class="navbar-brand fw-bold" href="/">🚗 OWiA-Anzeiger</a>
@@ -96,8 +100,9 @@
       </div>
     </div>
   </nav>
+  <% } %>
 
-  <main class="container py-4">
+  <main class="<%= _embed ? 'container-fluid py-3' : 'container py-4' %>">
     <% if (flash) { %>
       <div id="flash-message" class="alert alert-<%= flash.type === 'success' ? 'success' : 'danger' %> alert-dismissible fade show" role="alert">
         <%= flash.message %>
@@ -122,6 +127,7 @@
 
     <%- body %>
   </main>
+  <% if (!_embed) { %>
 
   <!-- Cookie-Hinweis: rein informativ, da ausschließlich technisch notwendige
        Cookies (Sitzung + Statusmeldung) genutzt werden – keine Einwilligung
@@ -161,6 +167,7 @@
       <a href="/nutzungsbedingungen" class="text-muted">Nutzungsbedingungen</a>
     </div>
   </footer>
+  <% } %>
 
   <script>
     // Hell/Dunkel-Umschalter: Wahl in localStorage, Icon zeigt das Ziel-Theme.

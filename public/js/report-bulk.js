@@ -3,7 +3,9 @@
   var table = document.querySelector('.report-table')
   if (!table) return
   var bulkForm = document.getElementById('bulk-discard-form')
-  var selectAll = document.getElementById('bulk-select-all')
+  // Zwei „Alle auswählen"-Häkchen: im Tabellenkopf (Desktop) und in der
+  // Filterleiste (Handy – dort gibt es keinen Tabellenkopf).
+  var selectAlls = Array.from(document.querySelectorAll('#bulk-select-all, #bulk-select-all-m'))
   var search = document.getElementById('report-search')
   var status = document.getElementById('report-status')
   var dialog = document.createElement('dialog')
@@ -40,21 +42,27 @@
     var rows = Array.from(table.querySelectorAll('tbody > tr[data-status]'))
     var term = search.value.trim().toLocaleLowerCase('de')
     rows.forEach(function (row) {
-      var matches = (!status.value || row.dataset.status === status.value) && (!term || row.textContent.toLocaleLowerCase('de').includes(term))
+      // Inline-Felder (Kennzeichen, Marke, Verstoß) stehen nicht im textContent.
+      var text = row.textContent + ' ' + Array.from(row.querySelectorAll('input[data-inline-field]')).map(function (el) { return el.value }).join(' ')
+      var matches = (!status.value || row.dataset.status === status.value) && (!term || text.toLocaleLowerCase('de').includes(term))
       row.hidden = !matches
       if (!matches) { var box = row.querySelector('.bulk-select'); if (box) box.checked = false }
     })
     var visible = boxes().filter(function (box) { return !box.closest('tr').hidden })
     var count = selected().length
     boxes().forEach(function (box) { box.closest('tr').classList.toggle('is-selected', box.checked) })
-    document.getElementById('report-visible-count').textContent = rows.filter(function (row) { return !row.hidden }).length + ' Anzeigen sichtbar'
+    var shown = rows.filter(function (row) { return !row.hidden }).length
+    document.getElementById('report-visible-count').textContent = shown === rows.length ? rows.length + ' Anzeigen' : shown + ' von ' + rows.length + ' Anzeigen'
     if (!bulkForm) return
     bulkForm.classList.toggle('d-none', count === 0)
     bulkForm.classList.toggle('d-flex', count > 0)
     document.body.classList.toggle('has-bulk-selection', count > 0)
-    document.getElementById('bulk-count').textContent = count + ' Entwürfe ausgewählt'
-    selectAll.checked = visible.length > 0 && visible.every(function (box) { return box.checked })
-    selectAll.indeterminate = count > 0 && !selectAll.checked
+    document.getElementById('bulk-count').textContent = count === 1 ? '1 Entwurf ausgewählt' : count + ' Entwürfe ausgewählt'
+    var all = visible.length > 0 && visible.every(function (box) { return box.checked })
+    selectAlls.forEach(function (el) {
+      el.checked = all
+      el.indeterminate = count > 0 && !all
+    })
     document.body.style.paddingBottom = count ? (bulkForm.offsetHeight + 24) + 'px' : ''
   }
   window.addEventListener('resize', update)
@@ -62,8 +70,8 @@
   status.addEventListener('change', update)
   document.addEventListener('reports:updated', update)
   document.addEventListener('change', function (event) {
-    if (event.target === selectAll) {
-      boxes().forEach(function (box) { if (!box.closest('tr').hidden) box.checked = selectAll.checked })
+    if (selectAlls.indexOf(event.target) !== -1) {
+      boxes().forEach(function (box) { if (!box.closest('tr').hidden) box.checked = event.target.checked })
       update()
     } else if (event.target.matches('.bulk-select')) update()
   })
@@ -154,46 +162,5 @@
       finally { working(false) }
     })
   }
-  document.addEventListener('click', function (event) {
-    var button = event.target.closest('.photo-move')
-    if (!button) return
-    var img = button.closest('.report-photo').querySelector('img')
-    var sourceAz = img.dataset.dragAz
-    open('Foto verschieben')
-    content.innerHTML = '<label class="form-label d-block">Ziel suchen<input type="search" class="form-control" data-target-search placeholder="Kennzeichen, Aktenzeichen, Tatort"></label><label class="form-label d-block">Ziel-Entwurf<select class="form-select" data-target></select></label><button class="btn btn-primary" type="button" data-move>Foto verschieben</button>'
-    var photoPreview = document.createElement('img')
-    photoPreview.src = img.src
-    photoPreview.alt = 'Ausgewähltes Beweisfoto'
-    photoPreview.className = 'rounded border w-100 mb-2'
-    photoPreview.style.cssText = 'max-height:180px;object-fit:contain'
-    var sourceLabel = document.createElement('p')
-    sourceLabel.className = 'small text-muted'
-    sourceLabel.textContent = 'Quelle: ' + sourceAz
-    content.prepend(sourceLabel)
-    content.prepend(photoPreview)
-    var target = content.querySelector('[data-target]')
-    var targetSearch = content.querySelector('[data-target-search]')
-    function targets() {
-      target.replaceChildren(new Option('Neue Anzeige erstellen', 'new'))
-      table.querySelectorAll('tr[data-drop-az]').forEach(function (row) {
-        if (row.dataset.dropAz === sourceAz) return
-        var label = row.dataset.dropAz + ' · ' + row.querySelector('.cell-plate').textContent.trim() + ' · ' + row.querySelector('.cell-place').textContent.trim()
-        if (label.toLocaleLowerCase('de').includes(targetSearch.value.toLocaleLowerCase('de'))) target.add(new Option(label, row.dataset.dropAz))
-      })
-    }
-    targets()
-    targetSearch.addEventListener('input', targets)
-    content.querySelector('[data-move]').addEventListener('click', async function () {
-      var destination = target.value
-      working(true)
-      message.textContent = 'Foto wird verschoben …'
-      try {
-        await window.reportTableMove({ az: sourceAz, imageId: img.dataset.dragImage, el: img }, destination === 'new' ? { newDraft: true } : { targetAz: destination })
-        message.textContent = 'Foto verschoben.'
-        content.replaceChildren()
-      } catch (error) { message.textContent = error.message || 'Verschieben fehlgeschlagen.' }
-      finally { working(false) }
-    })
-  })
   update()
 })()

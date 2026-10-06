@@ -226,6 +226,25 @@ export async function cachedMailVariant(
 }
 
 /**
+ * Versandfassung vorab als Cache-Datei schreiben (Worker, s.
+ * intakeImageProcessing.ts). Best-effort wie writeThumbnailCache: Fehler
+ * werden geschluckt, dann rechnet cachedMailVariant() bei Bedarf selbst.
+ */
+export async function writeMailVariantCache(
+  dir: string,
+  filename: string,
+  buffer: Buffer,
+  mimetype: string
+): Promise<void> {
+  try {
+    const out = mailVariant(buffer, mimetype || 'image/jpeg', await readOrientation(buffer))
+    if (out.buffer !== buffer) await fs.writeFile(path.join(dir, `${filename}.mail.jpg`), out.buffer)
+  } catch {
+    /* nicht dekodierbar – Versand nimmt dann das Original */
+  }
+}
+
+/**
  * Verpixeltes Bild (öffentliche Karte) mit Datei-Cache: einmal berechnet,
  * danach direkt von Platte. Wirft, wenn das Bild nicht dekodierbar ist.
  */

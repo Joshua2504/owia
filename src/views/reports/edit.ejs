@@ -1,6 +1,7 @@
 <%
 const r = locals.report || {}
 const images = locals.images || []
+const embed = !!locals.embed
 const pad = (n) => String(n).padStart(2, '0')
 const toDateInput = (d) => {
   if (!d) return ''
@@ -11,220 +12,231 @@ const hhmm = (t) => (t ? String(t).slice(0, 5) : '')
 const now = new Date()
 const today = toDateInput(now)
 const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
+const embedQ = embed ? '&embed=1' : ''
 %>
-
-<div class="row justify-content-center">
-  <div class="col-lg-7">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <h2 class="mb-0">Anzeige bearbeiten</h2>
+<%#
+  Aufbau (oben → unten): Fotos · Angaben (kompakt) · Karte. Läuft auch im
+  Editor-Modal der Anzeigen-Liste (embed, s. report-modal.js) – dann ohne
+  Navigation; Speichern schließt das Modal.
+  Logik: public/js/report-form.js (Fotos, Autosave, Erkennung), report-map.js
+  (Karte), verstoss-select.js (Verstoß-Auswahl), address-autocomplete.js.
+%>
+<div class="editor <%= embed ? 'editor-embed' : '' %>">
+  <div class="editor-head">
+    <div>
+      <h2 class="h4 mb-0">Anzeige bearbeiten</h2>
+      <div class="small text-muted">Entwurf <code><%= r.aktenzeichen %></code></div>
+    </div>
+    <% if (!embed) { %>
       <% if (locals.queue) { %>
         <a href="/import/<%= queue.batchId %>" class="btn btn-outline-secondary btn-sm">← Import-Übersicht</a>
       <% } else { %>
-        <a href="/anzeigen" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+        <a href="/anzeigen" class="btn btn-outline-secondary btn-sm">← Meine Anzeigen</a>
       <% } %>
-    </div>
+    <% } %>
+  </div>
 
-    <% if (locals.queue) { %>
-      <div class="card shadow-sm mb-3 sticky-top" style="top:.5rem;z-index:1030">
-        <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <div class="fw-semibold">Entwurf <%= queue.position %> von <%= queue.total %></div>
-          <div class="d-flex gap-2">
-            <% if (queue.prevAz) { %>
-              <a class="btn btn-sm btn-outline-secondary" href="/anzeige/<%= queue.prevAz %>/bearbeiten?queue=<%= queue.batchId %>">← Zurück</a>
-            <% } %>
-            <% if (queue.nextAz) { %>
-              <a class="btn btn-sm btn-outline-secondary" href="/anzeige/<%= queue.nextAz %>/bearbeiten?queue=<%= queue.batchId %>">Überspringen →</a>
-            <% } %>
-            <button type="submit" form="report-form" class="btn btn-sm btn-primary">
-              Speichern &amp; weiter<% if (!queue.nextAz) { %> (letzter)<% } %>
-            </button>
-          </div>
+  <% if (locals.queue) { %>
+    <div class="card shadow-sm mb-3 sticky-top editor-queue">
+      <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="fw-semibold">Entwurf <%= queue.position %> von <%= queue.total %></div>
+        <div class="d-flex gap-2">
+          <% if (queue.prevAz) { %>
+            <a class="btn btn-sm btn-outline-secondary" href="/anzeige/<%= queue.prevAz %>/bearbeiten?queue=<%= queue.batchId %><%= embedQ %>">← Zurück</a>
+          <% } %>
+          <% if (queue.nextAz) { %>
+            <a class="btn btn-sm btn-outline-secondary" href="/anzeige/<%= queue.nextAz %>/bearbeiten?queue=<%= queue.batchId %><%= embedQ %>">Überspringen →</a>
+          <% } %>
+          <button type="submit" form="report-form" class="btn btn-sm btn-primary" data-queue-submit>
+            Speichern &amp; weiter<% if (!queue.nextAz) { %> (letzter)<% } %>
+          </button>
         </div>
       </div>
-    <% } %>
+    </div>
+  <% } %>
 
-    <% if (locals.error) { %>
-      <div class="alert alert-danger"><%= error %></div>
-    <% } %>
+  <% if (locals.error) { %>
+    <div class="alert alert-danger"><%= error %></div>
+  <% } %>
 
-    <% if (r.ablehnung_grund) { %>
-      <div class="alert alert-warning">
-        <strong>Die Prüfung hat die Anzeige zurückgegeben:</strong> <%= r.ablehnung_grund %><br>
-        Bitte anpassen und über die Detailseite erneut einreichen.
+  <% if (r.ablehnung_grund) { %>
+    <div class="alert alert-warning">
+      <strong>Die Prüfung hat die Anzeige zurückgegeben:</strong> <%= r.ablehnung_grund %><br>
+      Bitte anpassen und über die Detailseite erneut einreichen.
+    </div>
+  <% } %>
+
+  <form id="report-form" method="post" action="/anzeige/<%= r.aktenzeichen %>/save"
+        data-report-id="<%= r.aktenzeichen %>" <% if (embed) { %>data-embed<% } %>
+        <% if (locals.queue) { %>data-queue="<%= queue.batchId %>"<% } %>>
+    <% if (locals.queue) { %>
+      <input type="hidden" name="queue" value="<%= queue.batchId %>">
+    <% } %>
+    <% if (embed) { %><input type="hidden" name="embed" value="1"><% } %>
+
+    <!-- ================================================================= -->
+    <!-- Fotos                                                               -->
+    <!-- ================================================================= -->
+    <section class="card shadow-sm editor-section" id="photo-section">
+      <div class="editor-section-head">
+        <h3 class="h6 mb-0">Beweisfotos <span class="text-muted fw-normal" id="photo-count"></span></h3>
+        <label class="btn btn-sm btn-primary mb-0">
+          + Fotos hinzufügen
+          <input type="file" id="bilder-input" class="visually-hidden"
+                 accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
+        </label>
       </div>
-    <% } %>
+      <div class="card-body pt-2">
+        <%# Mehrfachauswahl: erscheint, sobald mindestens ein Foto angehakt ist. %>
+        <div id="photo-select-bar" class="photo-select-bar" hidden>
+          <span class="fw-semibold" id="photo-select-count"></span>
+          <button type="button" class="btn btn-sm btn-primary" id="photo-move-new">In neue Anzeige verschieben</button>
+          <select class="form-select form-select-sm w-auto" id="photo-move-target" aria-label="In bestehenden Entwurf verschieben">
+            <option value="">In Entwurf verschieben …</option>
+          </select>
+          <button type="button" class="btn btn-sm btn-link" id="photo-select-clear">Auswahl aufheben</button>
+        </div>
+        <!-- Bereits gespeicherte Bilder; das Script baut daraus die Foto-Karten. -->
+        <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/anzeige/${r.aktenzeichen}/image/${img.id}`, v: img.v, capturedAt: img.captured_at || null, detectedPlate: img.detected_plate || null, gpsLat: img.gps_lat !== null ? Number(img.gps_lat) : null, gpsLon: img.gps_lon !== null ? Number(img.gps_lon) : null }))) %></script>
+        <div id="image-editor" class="photo-grid"></div>
+        <div id="photo-empty" class="photo-empty" hidden>
+          Noch keine Fotos. Über „+ Fotos hinzufügen" auswählen oder hierher ziehen.
+        </div>
+        <div class="form-text mt-2">
+          Foto antippen zum Vergrößern · „✏️ Bearbeiten" zum Schwärzen, Verpixeln, Zuschneiden und Drehen
+          (wird automatisch gespeichert) · Häkchen setzen, um Fotos in eine andere Anzeige zu verschieben.
+        </div>
+      </div>
+    </section>
 
-    <div class="card shadow-sm">
-      <div class="card-body p-3 p-sm-4">
-        <form id="report-form" method="post" action="/anzeige/<%= r.aktenzeichen %>/save"
-              data-report-id="<%= r.aktenzeichen %>">
-          <% if (locals.queue) { %>
-            <input type="hidden" name="queue" value="<%= queue.batchId %>">
-          <% } %>
-
-          <h5 class="mb-3">Beweisfotos</h5>
-          <div class="mb-4">
-            <label class="form-label">Bilder hinzufügen</label>
-            <input type="file" id="bilder-input" class="form-control"
-                   accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
-            <div class="form-text">
-              Zum Schwärzen von Bereichen (z.&nbsp;B. Personen) zuerst das Werkzeug am Foto aktivieren – wird automatisch gespeichert.
-            </div>
-            <!-- Bereits gespeicherte Bilder; das Script lädt sie als bearbeitbare Karten. -->
-            <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/anzeige/${r.aktenzeichen}/image/${img.id}`, capturedAt: img.captured_at || null, detectedPlate: img.detected_plate || null, gpsLat: img.gps_lat !== null ? Number(img.gps_lat) : null, gpsLon: img.gps_lon !== null ? Number(img.gps_lon) : null }))) %></script>
-            <div id="image-editor" class="row g-3 mt-1"></div>
+    <!-- ================================================================= -->
+    <!-- Angaben                                                             -->
+    <!-- ================================================================= -->
+    <section class="card shadow-sm editor-section">
+      <div class="editor-section-head">
+        <h3 class="h6 mb-0">Angaben</h3>
+        <span class="small text-muted"><span class="text-danger">*</span> für den Versand erforderlich</span>
+      </div>
+      <div class="card-body pt-2">
+        <div class="row g-2 editor-fields">
+          <div class="col-12 col-md-5">
+            <label class="form-label" for="kennzeichen-input">Kennzeichen <span class="text-danger">*</span></label>
+            <%# Freitext: weltweit gibt es kein gemeinsames Format (Ausland, Roller-
+                Versicherungskennzeichen, Sonderkennzeichen). Nur Großschreibung. %>
+            <input type="text" name="kennzeichen" id="kennzeichen-input" class="form-control plate-field"
+                   value="<%= r.kennzeichen || '' %>" maxlength="20"
+                   placeholder="z. B. F AB 1234" autocomplete="off" spellcheck="false" autocapitalize="characters">
+            <div id="alpr-status" class="form-text" role="status" aria-live="polite"></div>
+          </div>
+          <div class="col-12 col-md-7">
+            <label class="form-label" for="fahrzeug-marke">Fahrzeugmarke / -farbe</label>
+            <input type="text" name="fahrzeug_marke" id="fahrzeug-marke" class="form-control"
+                   value="<%= r.fahrzeug_marke || '' %>" maxlength="100"
+                   placeholder="z. B. VW Golf, grau">
           </div>
 
-          <h5 class="mb-3">Fahrzeug</h5>
-          <div class="row g-3 mb-4">
-            <div class="col-sm-6">
-              <label class="form-label" for="kennzeichen-input">Kennzeichen <span class="text-danger">*</span></label>
-              <!-- Optik eines deutschen KFZ-Kennzeichens (EU-Band + Prägeschrift). -->
-              <div class="plate-input">
-                <%- include('../partials/euband', { land: r.kennzeichen_land || 'D', landInput: true }) %>
-                <input type="text" name="kennzeichen" id="kennzeichen-input"
-                       value="<%= r.kennzeichen || '' %>"
-                       placeholder="F-AB 1234" autocomplete="off" spellcheck="false">
-              </div>
-              <!-- Hinweis der Kennzeichen-Erkennung (Befüllung in report-form.js). -->
-              <div id="alpr-status" class="form-text" role="status" aria-live="polite"></div>
-            </div>
-            <div class="col-sm-6">
-              <label class="form-label">Fahrzeugmarke / -farbe</label>
-              <input type="text" name="fahrzeug_marke" class="form-control"
-                     value="<%= r.fahrzeug_marke || '' %>"
-                     placeholder="z.B. VW Golf, grau">
-            </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="tattag">Tattag <span class="text-danger">*</span></label>
+            <input type="date" name="tattag" id="tattag" class="form-control"
+                   value="<%= toDateInput(r.tattag) || today %>">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="tatzeit-von">Uhrzeit von <span class="text-danger">*</span></label>
+            <input type="time" name="tatzeit_von" id="tatzeit-von" class="form-control"
+                   value="<%= hhmm(r.tatzeit_von) || nowTime %>">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="tattag-bis" title="Nur wenn der Verstoß über Mitternacht andauerte">Tattag bis <span class="text-muted small">(über Nacht)</span></label>
+            <input type="date" name="tattag_bis" id="tattag-bis" class="form-control"
+                   value="<%= toDateInput(r.tattag_bis) %>">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="tatzeit-bis">Uhrzeit bis</label>
+            <input type="time" name="tatzeit_bis" id="tatzeit-bis" class="form-control"
+                   value="<%= hhmm(r.tatzeit_bis) %>">
+          </div>
+          <!-- Uhrzeit (von = frühestes, bis = spätestes Foto) aus den EXIF-Daten der
+               Fotos übernehmen. Erscheint nur, wenn mindestens ein Foto eine
+               Aufnahmezeit enthält (Befüllung in public/js/report-form.js). -->
+          <div class="col-12 d-none" id="photo-time-row">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-photo-times">
+              🕒 Uhrzeit aus Fotos übernehmen
+            </button>
+            <span id="photo-time-status" class="form-text ms-2"></span>
           </div>
 
-          <h5 class="mb-3">Tat</h5>
-          <div class="row g-3 mb-4">
-            <div class="col-sm-3">
-              <label class="form-label">Tattag <span class="text-danger">*</span></label>
-              <input type="date" name="tattag" class="form-control"
-                     value="<%= toDateInput(r.tattag) || today %>">
-            </div>
-            <div class="col-sm-3">
-              <label class="form-label">Uhrzeit von <span class="text-danger">*</span></label>
-              <input type="time" name="tatzeit_von" class="form-control"
-                     value="<%= hhmm(r.tatzeit_von) || nowTime %>">
-            </div>
-            <div class="col-sm-3">
-              <label class="form-label">Tattag bis</label>
-              <input type="date" name="tattag_bis" class="form-control"
-                     value="<%= toDateInput(r.tattag_bis) %>">
-            </div>
-            <div class="col-sm-3">
-              <label class="form-label">Uhrzeit bis</label>
-              <input type="time" name="tatzeit_bis" class="form-control"
-                     value="<%= hhmm(r.tatzeit_bis) %>">
-            </div>
-            <div class="col-sm-12 mt-1">
-              <div class="form-text mt-0">
-                „Tattag bis" nur angeben, wenn der Verstoß über Mitternacht hinaus andauerte
-                (z.&nbsp;B. Dauerparken über Nacht) – sonst leer lassen.
-              </div>
-            </div>
-            <!-- Uhrzeit (von = frühestes, bis = spätestes Foto) aus den EXIF-Daten der
-                 hochgeladenen Fotos übernehmen. Erscheint nur, wenn mindestens ein Foto
-                 eine Aufnahmezeit enthält (Befüllung in public/js/report-form.js). -->
-            <div class="col-sm-12 d-none mt-0" id="photo-time-row">
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-photo-times">
-                🕒 Uhrzeit aus Fotos übernehmen
+          <div class="col-12 col-lg-8">
+            <label class="form-label" for="tatort">Tatort <span class="text-danger">*</span></label>
+            <input type="text" name="tatort" id="tatort" class="form-control"
+                   value="<%= r.tatort || '' %>"
+                   data-address-autocomplete data-fill="full"
+                   data-geo-scope="unlocked"
+                   placeholder="Adresse eingeben und aus der Liste wählen …">
+            <div class="d-flex align-items-center flex-wrap gap-2 mt-1">
+              <button type="button" class="btn btn-link btn-sm p-0" id="btn-current-location">
+                📍 Aktueller Standort
               </button>
-              <span id="photo-time-status" class="form-text ms-2"></span>
+              <!-- Erscheint nur, wenn mindestens ein Foto GPS-Daten enthält. -->
+              <button type="button" class="btn btn-link btn-sm p-0 d-none" id="btn-photo-geo">
+                🖼️ Tatort aus Fotos
+              </button>
+              <span id="geo-status" class="form-text m-0"></span>
             </div>
-            <div class="col-sm-12">
-              <label class="form-label">Tatort <span class="text-danger">*</span></label>
-              <input type="text" name="tatort" id="tatort" class="form-control"
-                     value="<%= r.tatort || '' %>"
-                     data-address-autocomplete data-fill="full"
-                     data-geo-scope="unlocked"
-                     placeholder="Adresse eingeben und aus der Liste wählen …">
-              <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-current-location">
-                  📍 Aktuellen Standort verwenden
-                </button>
-                <!-- Erscheint nur, wenn mindestens ein Foto GPS-Daten enthält
-                     (Befüllung in public/js/report-form.js). -->
-                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btn-photo-geo">
-                  🖼️ Tatort aus Fotos übernehmen
-                </button>
-                <span id="geo-status" class="form-text m-0"></span>
-              </div>
-              <div class="form-text">
-                Adresse tippen und einen Vorschlag wählen, den aktuellen Standort verwenden
-                oder Standort und Uhrzeit aus einem oben hochgeladenen Foto übernehmen.
-              </div>
-              <!-- Zuständiges Ordnungsamt: aus dem Tatort automatisch erkannt
-                   (report-form.js: initCity), bei Bedarf manuell umstellbar. -->
-              <div class="mt-3">
-                <label for="city-select" class="form-label">Zuständiges Ordnungsamt</label>
-                <select name="city" id="city-select" class="form-select">
-                  <% for (const c of (locals.cities || [])) { %>
-                    <option value="<%= c.id %>"
-                            data-ordnungsamt="<%= c.ordnungsamt %>"
-                            data-email="<%= c.email %>"
-                            data-center-lat="<%= c.geo.mapLat %>"
-                            data-center-lon="<%= c.geo.mapLon %>"
-                            <%= report.city === c.id ? 'selected' : '' %>>
-                      <%= c.name %>
-                    </option>
-                  <% } %>
-                </select>
-                <div id="city-hint" class="form-text d-flex align-items-start gap-2 mt-2 mb-0" role="status">
-                  <span aria-hidden="true">🏛️</span>
-                  <div>
-                    Diese Anzeige geht an das <strong id="city-ordnungsamt"><%= city.ordnungsamt %></strong>
-                    (<span id="city-email"><%= locals.cityEmail || '' %></span>).
-                  </div>
-                </div>
-                <div id="city-warning" class="alert alert-warning small mt-2 mb-0 d-none" role="alert"></div>
-              </div>
-              <!-- Karte zum Tatort. Marker lässt sich verschieben; die Adresse wird dann
-                   per Reverse-Geocoding aktualisiert. Koordinaten gehen in die Hidden-Felder. -->
-              <div id="tatort-map" class="rounded border mt-2"
-                   style="height:320px"
-                   data-lat="<%= r.tatort_lat || '' %>" data-lon="<%= r.tatort_lon || '' %>"
-                   data-thumb="<%= (typeof firstImageUrl !== 'undefined' && firstImageUrl) ? firstImageUrl : '' %>"
-                   data-center-lat="<%= city.geo.mapLat %>" data-center-lon="<%= city.geo.mapLon %>"></div>
-              <div class="form-text">
-                Den Marker kannst du zur genauen Stelle ziehen – die Adresse wird dann übernommen.<br>Ein Ausschnitt der Karte wird automatisch als Vorschaubild in die Anzeige übernommen.
-              </div>
-              <input type="hidden" name="tatort_lat" value="<%= r.tatort_lat || '' %>">
-              <input type="hidden" name="tatort_lon" value="<%= r.tatort_lon || '' %>">
+          </div>
+          <div class="col-12 col-lg-4">
+            <!-- Zuständiges Ordnungsamt: aus dem Tatort automatisch erkannt
+                 (report-form.js: initCity), bei Bedarf manuell umstellbar. -->
+            <label for="city-select" class="form-label">Zuständiges Ordnungsamt</label>
+            <select name="city" id="city-select" class="form-select">
+              <% for (const c of (locals.cities || [])) { %>
+                <option value="<%= c.id %>"
+                        data-ordnungsamt="<%= c.ordnungsamt %>"
+                        data-email="<%= c.email %>"
+                        data-center-lat="<%= c.geo.mapLat %>"
+                        data-center-lon="<%= c.geo.mapLon %>"
+                        <%= report.city === c.id ? 'selected' : '' %>>
+                  <%= c.name %>
+                </option>
+              <% } %>
+            </select>
+            <div id="city-hint" class="form-text mt-1 mb-0" role="status">
+              🏛️ An <strong id="city-ordnungsamt"><%= city.ordnungsamt %></strong>
+              (<span id="city-email"><%= locals.cityEmail || '' %></span>)
             </div>
-            <div class="col-sm-12">
-              <label class="form-label" for="verstoss-input">Verstoßart <span class="text-danger">*</span></label>
-              <!-- Durchsuchbare Auswahl (public/js/verstoss-select.js): sichtbares
-                   Suchfeld + verstecktes Feld „verstoss_art" (der gespeicherte Wert).
-                   Häufige Verstöße stehen oben, darunter der ganze Tatbestandskatalog. -->
-              <div data-verstoss-select class="position-relative">
-                <input type="hidden" name="verstoss_art" value="<%= r.verstoss_art || '' %>">
-                <input type="text" id="verstoss-input" class="form-control" data-verstoss-input
-                       autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
-                       placeholder="Verstoß suchen oder aus der Liste wählen …"
-                       value="<%= r.verstoss_art || '' %>">
-                <script type="application/json" data-verstoss-data><%- JSON.stringify({ haeufig: verstossHaeufig, alle: verstossAlle }).replace(/</g, '\\u003c') %></script>
-              </div>
-              <div class="form-text">Alle amtlichen Tatbestände durchsuchbar; häufig genutzte stehen oben.</div>
+          </div>
+          <div class="col-12">
+            <div id="city-warning" class="alert alert-warning small mb-0 d-none" role="alert"></div>
+          </div>
+
+          <div class="col-12">
+            <label class="form-label" for="verstoss-input">Verstoß <span class="text-danger">*</span></label>
+            <!-- Durchsuchbare Auswahl (public/js/verstoss-select.js): sichtbares
+                 Suchfeld + verstecktes Feld „verstoss_art" (der gespeicherte Wert).
+                 Häufige Verstöße stehen oben, darunter der ganze Tatbestandskatalog. -->
+            <div data-verstoss-select class="position-relative">
+              <input type="hidden" name="verstoss_art" value="<%= r.verstoss_art || '' %>">
+              <input type="text" id="verstoss-input" class="form-control" data-verstoss-input
+                     autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
+                     placeholder="Verstoß suchen (z. B. Gehweg, Radweg) oder aus der Liste wählen …"
+                     value="<%= r.verstoss_art || '' %>">
+              <script type="application/json" data-verstoss-data><%- JSON.stringify({ haeufig: verstossHaeufig, alle: verstossAlle }).replace(/</g, '\\u003c') %></script>
             </div>
-            <div class="col-sm-12">
-              <label class="form-label">Beschreibung</label>
-              <textarea name="beschreibung" class="form-control" rows="3"
-                        placeholder="Optionale Schilderung des Vorfalls"><%= r.beschreibung || '' %></textarea>
+          </div>
+
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="beschreibung">Beschreibung <span class="text-muted small">(optional)</span></label>
+            <textarea name="beschreibung" id="beschreibung" class="form-control" rows="3"
+                      placeholder="Optionale Schilderung des Vorfalls"><%= r.beschreibung || '' %></textarea>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="form-check mt-md-4">
+              <input type="checkbox" class="form-check-input" name="fahrzeug_verlassen"
+                     id="fahrzeug-verlassen" value="1" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>>
+              <label class="form-check-label" for="fahrzeug-verlassen">Das Fahrzeug war verlassen</label>
             </div>
-            <div class="col-sm-12">
-              <div class="form-check">
-                <input type="checkbox" class="form-check-input" name="fahrzeug_verlassen"
-                       id="fahrzeug-verlassen" value="1" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>>
-                <label class="form-check-label" for="fahrzeug-verlassen">Das Fahrzeug war verlassen</label>
-              </div>
-              <div class="form-text">Wird dem Tatvorwurf als Satz „Das Fahrzeug war verlassen." hinzugefügt.</div>
-            </div>
-            <div class="col-sm-12">
-              <label class="form-label d-block">Wurde jemand behindert?</label>
-              <div class="btn-group" role="group" aria-label="Wurde jemand behindert?">
+            <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
+              <span class="small">Wurde jemand behindert?</span>
+              <div class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">
                 <input type="radio" class="btn-check" name="behinderung" id="behinderung-ja"
                        value="ja" <%= r.behinderung === 1 ? 'checked' : '' %>>
                 <label class="btn btn-outline-secondary" for="behinderung-ja">Ja</label>
@@ -233,50 +245,71 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
                        value="nein" <%= r.behinderung !== 1 ? 'checked' : '' %>>
                 <label class="btn btn-outline-secondary" for="behinderung-nein">Nein</label>
               </div>
-              <!-- Nur bei „Ja" relevant: wer wurde wie behindert. -->
-              <div class="mt-2 <%= r.behinderung === 1 ? '' : 'd-none' %>" id="behinderung-detail">
-                <label class="form-label">Wer wurde wie behindert?</label>
-                <textarea name="behinderung_text" class="form-control" rows="2"
-                          placeholder="z.B. Rollstuhlfahrer musste auf die Straße ausweichen"><%= r.behinderung_text || '' %></textarea>
-                <!-- Schnellauswahl: Klick übernimmt den Satz ins Textfeld. -->
-                <div class="d-flex flex-wrap gap-1 mt-2">
-                  <% for (const satz of [
-                    'Ich musste auf die Straße ausweichen.',
-                    'Ich musste auf den Gehweg ausweichen.',
-                    'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
-                    'Fußgänger mussten auf die Straße ausweichen.',
-                    'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.',
-                  ]) { %>
-                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                            data-behinderung-vorschlag="<%= satz %>"><%= satz %></button>
-                  <% } %>
-                </div>
-              </div>
             </div>
           </div>
-
-          <%# Auf dem Handy nehmen die beiden Schaltflächen die volle Breite ein
-              (Daumen-Ziele); ab sm wieder kompakt rechts neben dem Speicherstatus. %>
-          <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
-            <span id="save-status" class="text-muted small"></span>
-            <div class="d-flex gap-2">
-              <%# Verwerfen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
-              <button type="submit" form="discard-form" class="btn btn-outline-danger flex-fill">Verwerfen</button>
-              <button type="submit" class="btn btn-primary flex-fill">Entwurf speichern</button>
+          <!-- Nur bei „Ja" relevant: wer wurde wie behindert. -->
+          <div class="col-12 <%= r.behinderung === 1 ? '' : 'd-none' %>" id="behinderung-detail">
+            <label class="form-label" for="behinderung-text">Wer wurde wie behindert?</label>
+            <textarea name="behinderung_text" id="behinderung-text" class="form-control" rows="2"
+                      placeholder="z. B. Rollstuhlfahrer musste auf die Straße ausweichen"><%= r.behinderung_text || '' %></textarea>
+            <!-- Schnellauswahl: Klick übernimmt den Satz ins Textfeld. -->
+            <div class="d-flex flex-wrap gap-1 mt-2">
+              <% for (const satz of [
+                'Ich musste auf die Straße ausweichen.',
+                'Ich musste auf den Gehweg ausweichen.',
+                'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
+                'Fußgänger mussten auf die Straße ausweichen.',
+                'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.',
+              ]) { %>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        data-behinderung-vorschlag="<%= satz %>"><%= satz %></button>
+              <% } %>
             </div>
           </div>
-        </form>
+        </div>
       </div>
-    </div>
+    </section>
 
+    <!-- ================================================================= -->
+    <!-- Karte                                                               -->
+    <!-- ================================================================= -->
+    <section class="card shadow-sm editor-section">
+      <div class="editor-section-head">
+        <h3 class="h6 mb-0">Tatort auf der Karte</h3>
+        <span class="small text-muted d-none d-sm-inline">Marker zur genauen Stelle ziehen – die Adresse wird übernommen.</span>
+      </div>
+      <div class="card-body pt-2">
+        <!-- Marker lässt sich verschieben; die Adresse wird dann per Reverse-
+             Geocoding aktualisiert. Koordinaten gehen in die Hidden-Felder. -->
+        <div id="tatort-map" class="rounded border map-panel"
+             data-lat="<%= r.tatort_lat || '' %>" data-lon="<%= r.tatort_lon || '' %>"
+             data-thumb="<%= (typeof firstImageUrl !== 'undefined' && firstImageUrl) ? firstImageUrl : '' %>"
+             data-center-lat="<%= city.geo.mapLat %>" data-center-lon="<%= city.geo.mapLon %>"></div>
+        <div class="form-text">Ein Ausschnitt der Karte wird automatisch als Vorschaubild in die Anzeige übernommen.</div>
+        <input type="hidden" name="tatort_lat" value="<%= r.tatort_lat || '' %>">
+        <input type="hidden" name="tatort_lon" value="<%= r.tatort_lon || '' %>">
+      </div>
+    </section>
+
+    <%# Aktionsleiste klebt am unteren Rand – Speichern ist immer erreichbar. %>
+    <div class="editor-actions">
+      <span id="save-status" class="small text-muted me-auto" role="status" aria-live="polite"></span>
+      <%# Verwerfen führt erst auf eine Bestätigungsseite (serverseitig erzwungen);
+          im Modal fragt report-form.js direkt nach. %>
+      <button type="submit" form="discard-form" class="btn btn-outline-danger" id="btn-discard">Verwerfen</button>
+      <button type="submit" class="btn btn-primary" id="btn-save">
+        <%= embed ? 'Speichern & schließen' : 'Entwurf speichern' %>
+      </button>
+    </div>
+  </form>
+
+  <% if (!embed) { %>
     <p class="text-muted small mt-3">
-      * Für den Versand erforderlich. Als Entwurf kannst du jederzeit speichern – auch mit
-      nur einem ausgefüllten Feld oder nur einem Foto, etwa um unterwegs Fotos und Standort
-      festzuhalten und die Anzeige später zu vervollständigen. Eingaben werden zudem
-      automatisch gespeichert. Deine persönlichen Daten (Name, Adresse) werden aus den
-      <a href="/einstellungen">Einstellungen</a> übernommen.
+      Als Entwurf kannst du jederzeit speichern – auch mit nur einem ausgefüllten Feld oder
+      nur einem Foto. Eingaben werden zudem automatisch gespeichert. Deine persönlichen Daten
+      (Name, Adresse) werden aus den <a href="/einstellungen">Einstellungen</a> übernommen.
     </p>
-  </div>
+  <% } %>
 </div>
 
 <form id="discard-form" method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="d-none"></form>
@@ -284,18 +317,18 @@ const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
 <!-- Leaflet für die Tatort-Karte (Tiles kommen same-origin über /tiles/...). -->
 <link rel="stylesheet" href="/public/vendor/leaflet.css">
 
-<!-- Optionale Hilfen: EXIF-GPS und Aufnahmezeit aus Fotos lesen, HEIC im Browser für die Vorschau wandeln. -->
 <script>
-  // Ziel-Entwürfe für "Foto verschieben"; "<" wird escaped, damit Nutzereingaben
+  // Ziel-Entwürfe für „Fotos verschieben"; "<" wird escaped, damit Nutzereingaben
   // (z.B. Tatort) das Script-Tag nicht vorzeitig beenden können.
   window.OTHER_DRAFTS = <%- JSON.stringify((locals.otherDrafts || []).map((d) => ({
     az: d.aktenzeichen,
-    label: [d.tattag_fmt, d.kennzeichen || d.tatort].filter(Boolean).join(' – ') || d.aktenzeichen,
+    label: [d.aktenzeichen, d.kennzeichen, d.tattag_fmt, d.tatort && d.tatort.slice(0, 40)].filter(Boolean).join(' · '),
   }))).replace(/</g, '\\u003c') %>;
 </script>
+<!-- Optionale Hilfe: EXIF-GPS aus Fotos lesen. heic2any lädt report-form.js bei Bedarf nach. -->
 <script src="/public/vendor/exifr-lite.umd.js"></script>
-<script src="/public/vendor/heic2any.min.js"></script>
 <script src="/public/vendor/leaflet.js"></script>
 <script src="/public/js/report-form.js"></script>
 <script src="/public/js/report-map.js"></script>
 <script src="/public/js/verstoss-select.js"></script>
+<script src="/public/js/image-preview.js"></script>

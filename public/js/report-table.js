@@ -4,8 +4,9 @@
 //   wandert in die Ziel-Zeile; eine neue Anzeige kommt als serverseitig
 //   gerenderte Zeile von /anzeige/:az/listenzeile) – die Tabelle bleibt ruhig
 //   und die Scroll-Position erhalten.
-// - Klick auf ein Thumbnail öffnet die Lightbox (gilt für alle [data-full-src] der Seite)
-// - Hover-Lupe zum Kennzeichen-Prüfen: siehe public/js/image-loupe.js
+// - Hover-Vorschau, Lupe und Lightbox der Thumbnails: public/js/image-preview.js
+// - window.reportTableRefresh(az): eine Zeile neu vom Server holen (nach
+//   Inline-/Modal-Bearbeitung); verschwundene Entwürfe fliegen aus der Liste.
 ;(function () {
   var dragged = null // { imageId, az, el }
 
@@ -22,6 +23,7 @@
       }
       e.dataTransfer.effectAllowed = 'move'
       img.style.opacity = '0.4'
+      document.body.classList.add('is-dragging')
       // Das Drop-Ziel "neue Anzeige" direkt unter den Quell-Eintrag holen –
       // kurzer Weg statt ans Listenende ziehen. Bei Tabellenzeilen wird es in
       // eine eingeschobene Zwischenzeile (colspan über alle Spalten) gesetzt.
@@ -48,6 +50,7 @@
     })
     img.addEventListener('dragend', function () {
       img.style.opacity = ''
+      document.body.classList.remove('is-dragging')
       document.querySelectorAll('[data-drop-az]').forEach(function (row) {
         row.classList.remove('table-primary', 'bg-primary-subtle')
       })
@@ -90,14 +93,17 @@
     var photos = targetRow && targetRow.querySelector('[data-photos]')
     var img = moved.el
     if (!photos || !img) { location.reload(); return } // Fallback: alte Ziel-Zeile unbekannt
-    img.src = '/anzeige/' + targetAz + '/image/' + moved.imageId + '/thumb.jpg'
-    img.setAttribute('data-full-src', '/anzeige/' + targetAz + '/image/' + moved.imageId)
+    var version = (img.getAttribute('src').split('?v=')[1] || '')
+    var suffix = version ? '?v=' + version : ''
+    img.src = '/anzeige/' + targetAz + '/image/' + moved.imageId + '/thumb.jpg' + suffix
+    img.setAttribute('data-full-src', '/anzeige/' + targetAz + '/image/' + moved.imageId + suffix)
     img.setAttribute('data-drag-az', targetAz)
-    photos.appendChild(img.closest('.report-photo') || img)
-    var moveButton = img.closest('.report-photo') && img.closest('.report-photo').querySelector('.photo-move')
-    if (moveButton) moveButton.setAttribute('aria-label', 'Foto aus ' + targetAz + ' verschieben')
+    photos.appendChild(img)
     targetRow.querySelector('.cell-photos').classList.remove('cell-empty')
     updatePhotoCell(moved.az)
+    // Beide Zeilen frisch vom Server (Fotozahl „+N", Reihenfolge).
+    window.reportTableRefresh(moved.az).catch(function () {})
+    window.reportTableRefresh(targetAz).catch(function () {})
     document.dispatchEvent(new Event('reports:updated'))
   }
 
@@ -119,7 +125,7 @@
         var row = tbody.querySelector('tr')
         if (!row) { location.reload(); return }
         source.parentNode.insertBefore(row, source.nextSibling)
-        if (moved.el) (moved.el.closest('.report-photo') || moved.el).remove() // Foto hängt jetzt in der neuen Zeile
+        if (moved.el) moved.el.remove() // Foto hängt jetzt in der neuen Zeile
         bindRow(row)
         updatePhotoCell(moved.az)
         document.dispatchEvent(new Event('reports:updated'))
@@ -157,8 +163,6 @@
   function bindRow(row) {
     row.querySelectorAll('[data-drag-image]').forEach(bindDragImage)
     if (row.hasAttribute('data-drop-az')) bindDropTarget(row)
-    row.querySelectorAll('[data-full-src]').forEach(bindLightbox)
-    if (window.imageLoupe) row.querySelectorAll('img[data-full-src]').forEach(window.imageLoupe.bind)
   }
 
   document.querySelectorAll('[data-drag-image]').forEach(bindDragImage)
@@ -187,40 +191,6 @@
     })
   }
 
-  // ---------------------------------------------------------------------------
-  // Lightbox: Klick auf ein Thumbnail zeigt das Bild in groß.
-  // ---------------------------------------------------------------------------
-  var justDragged = false
-  document.addEventListener('dragend', function () {
-    justDragged = true
-    setTimeout(function () { justDragged = false }, 200)
-  }, true)
-
-  var lightbox = document.createElement('div')
-  lightbox.style.cssText =
-    'display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.8);' +
-    'align-items:center;justify-content:center;cursor:zoom-out;padding:2rem'
-  var lightboxImg = document.createElement('img')
-  lightboxImg.style.cssText = 'max-width:100%;max-height:100%;border-radius:.5rem'
-  lightbox.appendChild(lightboxImg)
-  document.body.appendChild(lightbox)
-  function closeLightbox() {
-    lightbox.style.display = 'none'
-    lightboxImg.src = ''
-  }
-  lightbox.addEventListener('click', closeLightbox)
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeLightbox()
-  })
-  function bindLightbox(img) {
-    img.addEventListener('click', function () {
-      if (justDragged) return // Klick direkt nach Drag & Drop ignorieren
-      lightboxImg.src = img.getAttribute('data-full-src')
-      lightbox.style.display = 'flex'
-    })
-  }
-  document.querySelectorAll('[data-full-src]').forEach(bindLightbox)
-
   // Auch die Touch-Bedienung verwendet denselben Ablauf wie Drag & Drop.
   window.reportTableMove = moveDragged
   window.reportTableRefresh = async function (az) {
@@ -229,12 +199,22 @@
     var drop = document.getElementById('drop-new-draft')
     var queue = drop && drop.getAttribute('data-queue')
     var response = await fetch('/anzeige/' + az + '/listenzeile' + (queue ? '?queue=' + queue : ''))
+    if (response.status === 404) {
+      // Entwurf wurde gelöscht (z.B. im Editor-Modal verworfen).
+      old.remove()
+      document.dispatchEvent(new Event('reports:updated'))
+      return
+    }
     if (!response.ok || response.redirected) throw new Error('Liste konnte nicht aktualisiert werden.')
     var tbody = document.createElement('tbody')
     tbody.innerHTML = await response.text()
     var row = tbody.querySelector('tr')
     if (!row) throw new Error('Liste konnte nicht aktualisiert werden.')
+    // Auswahl-Häkchen über die Aktualisierung retten.
+    var wasChecked = old.querySelector('.bulk-select:checked')
     old.replaceWith(row)
+    if (wasChecked && row.querySelector('.bulk-select')) row.querySelector('.bulk-select').checked = true
     bindRow(row)
+    document.dispatchEvent(new Event('reports:updated'))
   }
 })()
