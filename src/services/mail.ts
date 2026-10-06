@@ -66,12 +66,11 @@ export function buildReportMail(
   const az = report.aktenzeichen ? ` (${report.aktenzeichen})` : ''
   const subject = `Anzeige Ordnungswidrigkeit – Kfz ${report.kennzeichen}${az}`
 
-  // Städte mit amtlichem Formular bekommen das PDF plus die Beweisfotos als
-  // eigene Anhänge; Städte ohne Formular erhalten eine rohe E-Mail, der
-  // Beweisfotos und eine Tatort-Karte beiliegen.
+  // Städte mit amtlichem Formular bekommen das PDF im Anhang; Städte ohne Formular
+  // erhalten eine rohe E-Mail, der Beweisfotos und eine Tatort-Karte beiliegen.
   const withForm = hasPdfForm(getCity(report.city))
   const anhangHinweis = withForm
-    ? 'Das ausgefüllte Formular und die Beweisfotos finden Sie im Anhang.'
+    ? 'Das ausgefüllte Formular finden Sie im Anhang.'
     : 'Die Beweisfotos und – soweit ermittelbar – eine Tatort-Karte finden Sie im Anhang.'
 
   const text = [
@@ -95,7 +94,8 @@ export function buildReportMail(
     report.beschreibung ? `Beschreibung: ${report.beschreibung}` : '',
     '',
     anhangHinweis,
-    // Aufnahmezeit je Beweisfoto – die Fotos hängen als einzelne Dateien an.
+    // Aufnahmezeit je Beweisfoto (nur bei roher E-Mail übergeben; bei Frankfurt
+    // stehen die Zeiten stattdessen als Beschriftung auf den PDF-Fotoseiten).
     ...(photoLines.length ? ['', 'Beweisfotos (Aufnahmezeit):', ...photoLines.map((l) => `- ${l}`)] : []),
     '',
     'Mit freundlichen Grüßen',
@@ -108,16 +108,15 @@ export function buildReportMail(
 }
 
 /**
- * Beweisfoto-Anhänge (in Versandfassung) für alle Städte, plus eine gerenderte
- * Tatort-Karte nur für Städte OHNE amtliches Formular (withMap). Best-effort –
- * ein fehlendes Bild/eine fehlende Karte darf den Versand nicht verhindern.
+ * Anhänge für Städte OHNE amtliches Formular (rohe E-Mail): die Beweisfotos
+ * (in nutzbarer Fassung) plus eine gerenderte Tatort-Karte. Best-effort – ein
+ * fehlendes Bild/eine fehlende Karte darf den Versand nicht verhindern.
  */
 type Attachment = { filename: string; content?: Buffer; path?: string; contentType?: string }
 
 async function buildEvidenceAttachments(
   report: mysql.RowDataPacket,
-  user: mysql.RowDataPacket,
-  withMap: boolean
+  user: mysql.RowDataPacket
 ): Promise<{ attachments: Attachment[]; photoLines: string[] }> {
   const attachments: Attachment[] = []
   // Je Beweisfoto eine Zeile "Beweisfoto-N.jpg – aufgenommen: …" für den Mailtext.
@@ -151,8 +150,8 @@ async function buildEvidenceAttachments(
     }
   }
 
-  // Tatort-Karte mit Marker, sofern Koordinaten da sind.
-  if (withMap && report.tatort_lat != null && report.tatort_lon != null) {
+  // Tatort-Karte mit Marker (wie die Kartenseite im PDF), sofern Koordinaten da sind.
+  if (report.tatort_lat != null && report.tatort_lon != null) {
     try {
       const mapPng = await renderTatortMap(Number(report.tatort_lat), Number(report.tatort_lon))
       if (mapPng) {
@@ -223,42 +222,34 @@ export const MailService = {
     const to = recipientEmailForReport(report)
     if (!to) throw new Error('Keine Empfänger-Adresse für den Tatort ermittelbar (PLZ fehlt in districts.csv).')
 
-    // Städte mit Formular: amtliches PDF (nur das Formular) + Beweisfotos als
-    // einzelne Dateien – das Amt übernimmt Fotos als Bilddateien in seine Akte.
-    // Städte ohne Formular: rohe E-Mail mit Beweisfotos + Tatort-Karte. Die
-    // Aufnahmezeiten der Fotos stehen in beiden Fällen im Mailtext.
-    const withForm = hasPdfForm(city) && !!report.pdf_filename
-    const evidence = await buildEvidenceAttachments(report, user, !withForm)
-    const attachments: Attachment[] = withForm
-      ? [
-          {
-            filename: report.pdf_filename,
-            path: path.join(process.cwd(), 'data/pdfs', String(user.id), report.pdf_filename),
-            contentType: 'application/pdf',
-          },
-          ...evidence.attachments,
-        ]
-      : evidence.attachments
-    const photoLines = evidence.photoLines
+    // Städte mit Formular: amtliches PDF anhängen (Foto-Zeiten stehen dort auf den
+    // PDF-Seiten). Städte ohne Formular: rohe E-Mail mit Beweisfotos + Tatort-Karte;
+    // die Aufnahmezeiten der Fotos werden dann direkt in den Mailtext gelistet.
+    let attachments: Attachment[]
+    let photoLines: string[] = []
+    if (hasPdfForm(city) && report.pdf_filename) {
+      attachments = [
+        {
+          filename: report.pdf_filename,
+          path: path.join(process.cwd(), 'data/pdfs', String(user.id), report.pdf_filename),
+          contentType: 'application/pdf',
+        },
+      ]
+    } else {
+      const evidence = await buildEvidenceAttachments(report, user)
+      attachments = evidence.attachments
+      photoLines = evidence.photoLines
+    }
 
     const { subject, text } = buildReportMail(report, user, photoLines)
 
     // PDF vor dem Claim-Wechsel zu SMTP lesen: fehlende Dateien sind sichere
     // Vorbereitungsfehler und dürfen ohne manuelle Klärung erneut versucht werden.
-    let totalBytes = 0
     for (const attachment of attachments) {
       if (attachment.path) {
         attachment.content = await fs.readFile(attachment.path)
         delete attachment.path
       }
-      totalBytes += attachment.content?.length ?? 0
-    }
-    // Base64 bläht um ~37 % auf: ab ~10 MB Anhängen wird ein 15-MB-Postfach-
-    // Limit der Behörde (Frankfurt) knapp – im Log sichtbar machen.
-    if (totalBytes > 10 * 1024 * 1024) {
-      console.warn(
-        `Anhänge für Anzeige ${report.aktenzeichen || report.id} sind ${(totalBytes / 1024 / 1024).toFixed(1)} MB groß – Mail-Limit der Behörde (~15 MB) könnte überschritten werden`
-      )
     }
     return {
       messageId, subject, text, from: process.env.MAIL_FROM || null,
@@ -512,7 +503,7 @@ export const MailService = {
       zeile('Stadt/Amt', `${city.name} – ${city.ordnungsamt}`),
       zeile(
         'Versandart',
-        hasPdfForm(city) ? 'amtliches PDF-Formular + Fotos im Anhang' : 'rohe E-Mail mit Fotos + Karte'
+        hasPdfForm(city) ? 'amtliches PDF-Formular im Anhang' : 'rohe E-Mail mit Fotos + Karte'
       ),
       zeile('Empfänger', recipientEmailForReport(report) || 'nicht ermittelbar (!)'),
       zeile('Fotos', fotos === null ? undefined : fotos === 0 ? '0 (!)' : fotos),

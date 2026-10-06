@@ -163,9 +163,8 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
   [`src/config/cities.ts`](src/config/cities.ts). Ein erkannter Ort ohne Eintrag
   dort wird als „noch nicht freigeschaltet" abgewiesen.
 - Städte **mit** `pdfForm` bekommen das amtliche Formular als PDF-Anhang
-  (nur das Formular, ohne Fotos/Karte) plus die Beweisfotos als einzelne
-  Anhänge (Frankfurt), Städte **ohne** eine strukturierte E-Mail mit
-  Beweisfotos + Tatort-Karte.
+  (Frankfurt), Städte **ohne** eine strukturierte E-Mail mit Beweisfotos +
+  Tatort-Karte.
 
 ### Neue Stadt freischalten
 

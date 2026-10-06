@@ -13,6 +13,7 @@ import { resolveSendCity, cityEmail, detectCityByLabel } from '../services/distr
 import { reverseGeocode } from '../services/geocode'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
 import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage, imageVersion } from '../services/images'
+import { cachedMailVariant } from '../services/pixelate'
 import { processReportImage, processReportImageDerivatives, loadThumbnail } from '../services/intakeImageProcessing'
 import { createDraft, deleteDraft, reportDir, UPLOAD_DIR, PDF_DIR } from '../services/drafts'
 import { alprEnabled } from '../services/alpr'
@@ -33,6 +34,10 @@ export { VERSTOSS_ARTEN }
 
 const MAX_IMAGES = 10
 
+/** Buffer, den der PDF-Service einbettet. capturedAt = bereits formatierte
+ *  Aufnahmezeit (z.B. "10.07.2026, 14:30") aus den EXIF-Daten, oder null. */
+export type ReportImage = { mimetype: string; buffer: Buffer; capturedAt?: string | null }
+
 /** Abgeleitete Dateien (Vorschaubild, Versandfassung) im Worker-Thread
  *  berechnen. jpeg-js dekodiert synchron – im HTTP-Prozess blockierte das bei
  *  jedem Upload/Speichern sekundenlang ALLE anderen Requests. Bewusst nicht
@@ -41,7 +46,7 @@ function queueDerivatives(dir: string, filename: string, mimetype: string): void
   processReportImageDerivatives(filename, mimetype, dir).catch(() => {})
 }
 
-/** Versandfassung (".mail.jpg") sicherstellen, bevor der Mailversand sie liest.
+/** Versandfassung (".mail.jpg") sicherstellen, bevor PDF/Mail sie lesen.
  *  Kleine JPEGs (≤ 1 MB) gehen unverändert raus und brauchen keinen Cache. */
 export async function ensureMailVariant(dir: string, filename: string, mimetype: string): Promise<void> {
   try {
@@ -303,16 +308,25 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
   )
   const user = uRows[0]
   const [imgRows] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT filename, mimetype FROM report_images WHERE report_id = ?',
+    `SELECT filename, mimetype,
+            DATE_FORMAT(captured_at, '%d.%m.%Y, %H:%i') AS captured_at
+       FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
     [reportId]
   )
 
-  // Die Fotos stehen nicht im PDF, sondern gehen als eigene Mail-Anhänge raus.
-  // Deren Versandfassung hier schon im Worker vorberechnen, damit der Versand
-  // sie nicht im Eventloop rechnen muss (Altbestand ohne Cache).
   const dir = path.join(UPLOAD_DIR, String(userId), String(reportId))
+  const images: ReportImage[] = []
   for (const row of imgRows) {
-    await ensureMailVariant(dir, row.filename, row.mimetype)
+    try {
+      // Versandfassung statt Original einbetten: Behörden-Postfächer haben
+      // Größenlimits (Frankfurt ~15 MB); das Original auf Platte bleibt erhalten.
+      // Fehlt der Cache (Altbestand), im Worker statt im Eventloop rechnen.
+      await ensureMailVariant(dir, row.filename, row.mimetype)
+      const { buffer, type } = await cachedMailVariant(dir, row.filename, row.mimetype)
+      images.push({ mimetype: type, buffer, capturedAt: row.captured_at })
+    } catch {
+      // Datei fehlt – überspringen
+    }
   }
 
   // Altes PDF entfernen, damit keine verwaisten Dateien liegen bleiben.
@@ -325,7 +339,7 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
   }
 
   try {
-    const filename = await PdfService.generate(report, user)
+    const filename = await PdfService.generate(report, user, images)
     await pool.execute('UPDATE reports SET pdf_filename=? WHERE id=?', [filename, reportId])
   } catch (err) {
     // PDF-Erzeugung darf den Workflow nicht blockieren; Vorschau bleibt dann leer.
