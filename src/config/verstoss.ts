@@ -86,3 +86,50 @@ export const VERSTOSS_HAEUFIG: string[] = HAEUFIG_TBNR.map((tbnr) => {
   const v = verstoesse.find((x) => x.tbnr === tbnr)
   return v ? verstossLabel(v) : undefined
 }).filter((t): t is string => !!t)
+
+// ---------------------------------------------------------------------------
+// Regelsätze (Bußgeld in Euro je TBNR) für die öffentliche Statistik.
+// Quelle: Bundeseinheitlicher Tatbestandskatalog des KBA, Stand 22.08.2024
+// (bkat_owi_22_08_2024.pdf, Spalte „Euro"), abgeglichen gegen verstoesse.csv –
+// jede TBNR dort außer der Sammelnummer „000000" hat einen Eintrag. Bei einem
+// neuen Katalogstand beide CSVs gemeinsam aktualisieren.
+// Es ist der Regelsatz laut BKat, nicht das tatsächlich verhängte Bußgeld
+// (Einstellung, Verwarnung, Gebühren/Auslagen kennt die App nicht).
+// ---------------------------------------------------------------------------
+
+const BUSSGELD_CSV_PATH = path.join(process.cwd(), 'resources', 'bussgelder.csv')
+
+/** Jede Zeile: "TBNR","Euro" (Euro mit Dezimalpunkt, z.B. "55.00"). */
+function parseBussgelder(content: string): Map<string, number> {
+  const out = new Map<string, number>()
+  const rowRe = /^"(\d{6})","(\d+(?:\.\d+)?)"\s*$/
+  for (const line of content.split(/\r?\n/)) {
+    const m = rowRe.exec(line)
+    if (m) out.set(m[1], Number(m[2]))
+  }
+  return out
+}
+
+let bussgelder: Map<string, number>
+try {
+  bussgelder = parseBussgelder(fs.readFileSync(BUSSGELD_CSV_PATH, 'utf8'))
+} catch {
+  bussgelder = new Map()
+}
+
+/** Regelsatz in Euro für eine TBNR, `null` wenn unbekannt (z.B. „000000"). */
+export function regelsatzEuro(tbnr: string | null | undefined): number | null {
+  return tbnr ? bussgelder.get(tbnr) ?? null : null
+}
+
+/** TBNR aus einem gespeicherten reports.verstoss_art-Label („TBNR – Text", siehe
+ *  verstossLabel). Freitext/Altbestand ohne Nummer ⇒ `null`. */
+export function tbnrAusLabel(label: string | null | undefined): string | null {
+  const m = /^(\d{6}) – /.exec(label || '')
+  return m ? m[1] : null
+}
+
+/** Katalogtext zu einer TBNR (für Tabellen, die nur die Nummer kennen). */
+export function verstossText(tbnr: string): string | null {
+  return verstoesse.find((v) => v.tbnr === tbnr)?.text ?? null
+}

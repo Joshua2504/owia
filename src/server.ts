@@ -22,6 +22,7 @@ import geoRoutes from './routes/geo'
 import tilesRoutes from './routes/tiles'
 import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
+import statistikRoutes from './routes/statistik'
 import { verjaehrung } from './services/verjaehrung'
 import adminRoutes from './routes/admin'
 import { startInboxPolling, processInboundMail } from './services/mailInbox'
@@ -181,6 +182,7 @@ async function main() {
   await app.register(tilesRoutes)
   await app.register(publicRoutes)
   await app.register(legalRoutes)
+  await app.register(statistikRoutes)
   await app.register(adminRoutes)
 
   // Antworten des Ordnungsamts aus dem Versand-Postfach abrufen (IMAP).

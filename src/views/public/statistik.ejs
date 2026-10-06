@@ -1,0 +1,136 @@
+<%
+  const s = statistik
+  const eur = (n) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: n % 1 ? 2 : 0 })
+  const zahl = (n) => n.toLocaleString('de-DE')
+  const maxMonat = Math.max(1, ...s.monate.map((m) => m.euro))
+  const maxTat = Math.max(1, ...s.tatbestaende.map((t) => t.euro))
+%>
+<style>
+  /* Balken: eine Serie, eine Farbe (Bootstrap-Primär), Datenende abgerundet;
+     Werte stehen als Text daneben, nie in der Balkenfarbe. */
+  .stat-bar-track { background: var(--bs-tertiary-bg); border-radius: 4px; height: 1.25rem; }
+  .stat-bar { background: var(--bs-primary); height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .stat-month { display: grid; grid-template-columns: 9rem 1fr 7.5rem; gap: .5rem; align-items: center; }
+  .stat-month:hover .stat-bar { filter: brightness(1.15); }
+  @media (max-width: 575.98px) {
+    .stat-month { grid-template-columns: 1fr auto; }
+    .stat-month .stat-bar-track { grid-column: 1 / -1; grid-row: 2; }
+  }
+  .stat-table td.stat-tbnr { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .stat-table td.num, .stat-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .stat-table .stat-bar-track { height: .375rem; margin-top: .25rem; }
+</style>
+
+<div class="mx-auto" style="max-width: 960px">
+  <h1 class="h3 mb-1">Statistik</h1>
+  <p class="text-muted mb-4">
+    Alle über den OWiA-Anzeiger an die Ordnungsämter versendeten Anzeigen und die
+    Bußgelder, die der Bußgeldkatalog dafür vorsieht.
+  </p>
+
+  <div class="row g-2 mb-4 text-center">
+    <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
+      <div class="fs-3 fw-bold"><%= zahl(s.anzahl) %></div>
+      <div class="text-muted small">Anzeigen versendet</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
+      <div class="fs-3 fw-bold"><%= eur(s.euro) %></div>
+      <div class="text-muted small">mögliche Bußgelder</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
+      <div class="fs-3 fw-bold"><%= s.mitRegelsatz ? eur(Math.round(s.euro / s.mitRegelsatz * 100) / 100) : '–' %></div>
+      <div class="text-muted small">Ø je Anzeige</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
+      <div class="fs-3 fw-bold"><%= zahl(s.tatbestaende.filter((t) => t.key !== 'sonstige').length) %></div>
+      <div class="text-muted small">verschiedene Tatbestände</div>
+    </div></div>
+  </div>
+
+  <% if (!s.anzahl) { %>
+    <div class="alert alert-secondary">Noch keine versendeten Anzeigen.</div>
+  <% } else { %>
+
+  <% if (s.monate.length) { %>
+  <h2 class="h5 mb-1">Mögliche Bußgelder nach Tatmonat</h2>
+  <p class="text-muted small mb-3">Summe der Regelsätze je Monat, in dem die Verstöße festgestellt wurden.</p>
+  <div class="d-flex flex-column gap-2 mb-5" role="list">
+    <% s.monate.forEach((m) => { %>
+      <div class="stat-month" role="listitem" title="<%= m.label %>: <%= zahl(m.anzahl) %> Anzeigen, <%= eur(m.euro) %>">
+        <div class="small"><%= m.label %></div>
+        <div class="stat-bar-track" aria-hidden="true"><div class="stat-bar" style="width: <%= (m.euro / maxMonat * 100).toFixed(1) %>%"></div></div>
+        <div class="small text-end"><span class="fw-semibold"><%= eur(m.euro) %></span> <span class="text-muted">· <%= zahl(m.anzahl) %></span></div>
+      </div>
+    <% }) %>
+  </div>
+  <% } %>
+
+  <h2 class="h5 mb-1">Nach Tatbestand</h2>
+  <p class="text-muted small mb-3">Regelsatz laut Bußgeldkatalog, Anzahl der Anzeigen und Summe.</p>
+  <div class="table-responsive mb-4">
+    <table class="table table-sm stat-table align-middle">
+      <thead>
+        <tr>
+          <th class="d-none d-sm-table-cell">TBNR</th>
+          <th>Tatbestand</th>
+          <th class="num d-none d-sm-table-cell">Regelsatz</th>
+          <th class="num">Anzahl</th>
+          <th class="num">Summe</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% s.tatbestaende.forEach((t) => { %>
+          <tr>
+            <td class="stat-tbnr text-muted d-none d-sm-table-cell"><%= t.key === 'sonstige' ? '–' : t.key %></td>
+            <td>
+              <%= t.label %>
+              <%# Schmale Displays: TBNR- und Regelsatz-Spalte sind ausgeblendet, damit
+                  Anzahl/Summe ohne Querscrollen sichtbar bleiben – hier nachgereicht. %>
+              <% if (t.regelsatz !== null) { %><div class="d-sm-none small text-muted"><%= t.key %> · Regelsatz <%= eur(t.regelsatz) %></div><% } %>
+              <% if (t.euro) { %><div class="stat-bar-track" aria-hidden="true"><div class="stat-bar" style="width: <%= (t.euro / maxTat * 100).toFixed(1) %>%"></div></div><% } %>
+            </td>
+            <td class="num d-none d-sm-table-cell"><%= t.regelsatz === null ? '–' : eur(t.regelsatz) %></td>
+            <td class="num"><%= zahl(t.anzahl) %></td>
+            <td class="num fw-semibold"><%= t.regelsatz === null ? '–' : eur(t.euro) %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+      <tfoot>
+        <tr class="fw-semibold">
+          <td class="d-none d-sm-table-cell"></td><td>Gesamt</td><td class="d-none d-sm-table-cell"></td>
+          <td class="num"><%= zahl(s.anzahl) %></td>
+          <td class="num"><%= eur(s.euro) %></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <% if (s.staedte.length > 1) { %>
+  <h2 class="h5 mb-3">Nach Stadt</h2>
+  <div class="table-responsive mb-4">
+    <table class="table table-sm stat-table">
+      <thead><tr><th>Stadt</th><th class="num">Anzahl</th><th class="num">Summe</th></tr></thead>
+      <tbody>
+        <% s.staedte.forEach((c) => { %>
+          <tr><td><%= c.label %></td><td class="num"><%= zahl(c.anzahl) %></td><td class="num"><%= eur(c.euro) %></td></tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+  <% } %>
+
+  <% } %>
+
+  <div class="border rounded p-3 small text-muted">
+    <strong>So entstehen die Zahlen.</strong>
+    Gezählt werden nur Anzeigen, die an das zuständige Ordnungsamt versendet wurden.
+    Die Beträge sind die <em>Regelsätze</em> aus dem bundeseinheitlichen
+    Tatbestandskatalog des Kraftfahrt-Bundesamts (Stand 22.08.2024) zur jeweiligen
+    Tatbestandsnummer (TBNR). Ob und in welcher Höhe die Behörde tatsächlich ein
+    Verwarn- oder Bußgeld verhängt, erfahren wir nicht. Gebühren und Auslagen eines
+    Bußgeldbescheids sind nicht enthalten.
+    <% if (s.anzahl > s.mitRegelsatz) { %>
+      <%= zahl(s.anzahl - s.mitRegelsatz) %> Anzeige(n) ohne Katalog-Tatbestand sind mitgezählt, aber ohne Betrag.
+    <% } %>
+  </div>
+</div>

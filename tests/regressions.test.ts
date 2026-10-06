@@ -8,6 +8,8 @@ import cookie from '@fastify/cookie'
 import formbody from '@fastify/formbody'
 import ejs from 'ejs'
 import { verjaehrung } from '../src/services/verjaehrung'
+import { aggregiere } from '../src/services/statistik'
+import { regelsatzEuro } from '../src/config/verstoss'
 import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
 import { runMigrations } from '../src/db/migrate'
@@ -644,4 +646,22 @@ test('Sticker-Seite zeigt Fremden nur öffentliche Angaben und zählt nur deren 
     const lower = await app.inject({ method: 'GET', url: `/s/${code.toLowerCase()}` })
     assert.equal(lower.statusCode, 301)
   } finally { await app.close() }
+})
+
+test('Statistik summiert Regelsätze je TBNR, Freitext zählt ohne Betrag', () => {
+  // Stichproben aus dem KBA-Katalog (resources/bussgelder.csv).
+  assert.equal(regelsatzEuro('112454'), 55)
+  assert.equal(regelsatzEuro('141312'), 25)
+  assert.equal(regelsatzEuro('000000'), null)
+  const s = aggregiere([
+    { verstoss_art: '112454 – Sie parkten verbotswidrig auf dem Gehweg.', monat: '2026-09', city: 'frankfurt' },
+    { verstoss_art: '112454 – Sie parkten verbotswidrig auf dem Gehweg.', monat: '2026-10', city: 'frankfurt' },
+    { verstoss_art: '141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).', monat: '2026-10', city: 'frankfurt' },
+    { verstoss_art: 'Sonstige Vergehen', monat: '2026-10', city: 'frankfurt' },
+  ])
+  assert.equal(s.anzahl, 4)
+  assert.equal(s.mitRegelsatz, 3)
+  assert.equal(s.euro, 135)
+  assert.deepEqual(s.tatbestaende.map((t) => [t.key, t.anzahl, t.euro]), [['112454', 2, 110], ['141312', 1, 25], ['sonstige', 1, 0]])
+  assert.deepEqual(s.monate.map((m) => [m.label, m.anzahl, m.euro]), [['September 2026', 1, 55], ['Oktober 2026', 3, 80]])
 })
