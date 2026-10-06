@@ -19,6 +19,7 @@
     '<span class="fw-semibold" data-count></span>' +
     '<button type="button" class="btn btn-sm btn-primary" data-new>In neue Anzeige</button>' +
     '<select class="form-select form-select-sm w-auto" data-target aria-label="In Entwurf verschieben"></select>' +
+    '<button type="button" class="btn btn-sm btn-outline-danger" data-delete>Löschen</button>' +
     '<button type="button" class="btn btn-sm btn-link" data-clear>Auswahl aufheben</button>'
   document.body.appendChild(bar)
   var target = bar.querySelector('[data-target]')
@@ -94,6 +95,20 @@
     cb.checked = !cb.checked
     update()
   }, true)
+  // Ausgewählte Fotos löschen (DELETE je Foto), danach Liste neu laden.
+  bar.querySelector('[data-delete]').addEventListener('click', async function () {
+    var list = picks()
+    if (!list.length) return
+    if (!confirm((list.length === 1 ? 'Das ausgewählte Foto' : 'Die ' + list.length + ' ausgewählten Fotos') + ' endgültig löschen?')) return
+    bar.querySelectorAll('button, select').forEach(function (b) { b.disabled = true })
+    var failed = 0
+    for (var cb of list) {
+      var res = await fetch('/anzeige/' + encodeURIComponent(cb.getAttribute('data-pick-az')) + '/images/' + cb.getAttribute('data-pick-id'), { method: 'DELETE' }).catch(function () { return null })
+      if (!res || !res.ok) failed++
+    }
+    if (failed) alert(failed + ' Foto(s) konnten nicht gelöscht werden.')
+    location.reload()
+  })
   bar.querySelector('[data-new]').addEventListener('click', function () { moveTo({ newDraft: true }) })
   bar.querySelector('[data-clear]').addEventListener('click', function () {
     picks().forEach(function (cb) { cb.checked = false })

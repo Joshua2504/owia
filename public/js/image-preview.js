@@ -48,6 +48,7 @@
     '<button type="button" class="btn btn-sm btn-light" data-pe="black">⬛ Schwärzen</button>' +
     '<button type="button" class="btn btn-sm btn-light" data-pe="crop">✂️ Zuschneiden</button>' +
     '<button type="button" class="btn btn-sm btn-light" data-pe="">Mehr …</button>' +
+    '<button type="button" class="btn btn-sm btn-danger" data-pe-delete title="Foto löschen" aria-label="Foto löschen">🗑</button>' +
     '</div>'
   var previewImg = preview.querySelector('img')
   var actions = preview.querySelector('.img-preview-actions')
@@ -56,10 +57,22 @@
   actions.addEventListener('mousedown', function (e) { e.stopPropagation() })
   actions.addEventListener('click', function (e) {
     e.stopPropagation()
-    var b = e.target.closest('[data-pe]')
-    if (!b || !current || !window.photoEditor) return
     var t = current
-    var row = t.closest('[data-az]')
+    var row = t && t.closest('[data-az]')
+    // Foto löschen: DELETE auf die Fassungs-URL (data-photo-edit), Zeile neu laden.
+    if (e.target.closest('[data-pe-delete]') && t) {
+      if (!confirm('Dieses Foto endgültig aus dem Entwurf löschen?')) return
+      hideAll()
+      fetch(t.getAttribute('data-photo-edit'), { method: 'DELETE' })
+        .then(function (r) {
+          if (!r.ok || r.redirected) throw new Error()
+          if (window.reportTableRefresh && row) return window.reportTableRefresh(row.getAttribute('data-az'))
+        })
+        .catch(function () { alert('Foto konnte nicht gelöscht werden.') })
+      return
+    }
+    var b = e.target.closest('[data-pe]')
+    if (!b || !t || !window.photoEditor) return
     window.photoEditor.open({ src: srcOf(t), put: t.getAttribute('data-photo-edit'), az: row && row.getAttribute('data-az'), tool: b.getAttribute('data-pe') || null })
     hideAll()
   })
