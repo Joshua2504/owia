@@ -8,7 +8,7 @@ die – je nach Stadt – als amtliches PDF-Formular oder als strukturierte E-Ma
 ans Ordnungsamt versendet wird.
 
 Aktuell freigeschaltet: **Frankfurt am Main** (amtliches PDF-Formular) und
-**Bad Soden-Salmünster** (E-Mail-Versand). Weitere Städte lassen sich über eine
+**Bad Soden-Salmünster** und **Hanau** (jeweils E-Mail-Versand). Weitere Städte lassen sich über eine
 zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freischalten)).
 
 ---
@@ -19,7 +19,7 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 - **Anzeige erstellen** – Beweisfotos hochladen (inkl. HEIC-Konvertierung),
   Tatort per Adresssuche oder Kartenklick verorten, Verstoß und Fahrzeugdaten
   erfassen.
-- **Automatische Kennzeichenerkennung** (ALPR, YOLOv11 + PaddleOCR) – befüllt
+- **Automatische Kennzeichenerkennung** (ALPR, YOLOv11 + RapidOCR/PP-OCRv5 über ONNX) – befüllt
   das Kennzeichen-Feld aus dem Beweisfoto vor. Läuft lokal, die Fotos verlassen
   den Host nie.
 - **EXIF-/GPS-Auswertung** – Aufnahmezeitpunkt und Position aus den Fotos.
@@ -52,7 +52,7 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 | Bilder           | `heic-convert`, `exifr`, `jpeg-js`, `pngjs` (Pixelierung) |
 | E-Mail           | `nodemailer` (Versand), `imapflow` + `mailparser` (Posteingang) |
 | Geodaten         | Photon (Geocoding), OSM-Tileserver (Kacheln) |
-| Kennzeichen      | eigener ALPR-Dienst (YOLOv11 + PaddleOCR, CPU-only) |
+| Kennzeichen      | eigener ALPR-Dienst (YOLOv11 + RapidOCR/PP-OCRv5 über ONNX, CPU-only) |
 | Reverse-Proxy    | Caddy (automatisches HTTPS via Let's Encrypt, nur Produktion) |
 | Orchestrierung   | Docker Compose |
 
@@ -74,6 +74,12 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 
 Voraussetzung: Docker + Docker Compose.
 
+Auf diesem Server ist `/root/owia/owia-codebase` die Entwicklungsbasis und
+`/root/owia/owia` das Produktionsziel. Die folgenden Schritte beschreiben eine
+neue Entwicklungsinstallation; vorhandene `.env`-Dateien nicht überschreiben.
+Den geprüften Stand und die nächsten Aufgaben enthält [docs/PROJEKTSTATUS.md](docs/PROJEKTSTATUS.md).
+Codex liest die Arbeitsregeln in [AGENTS.md](AGENTS.md).
+
 ```bash
 # 1. Konfiguration anlegen
 cp .env.example .env
@@ -81,10 +87,13 @@ cp .env.example .env
 #      NODE_ENV=development
 #      ADMIN_EMAILS=deine@mail.de   (sonst kann niemand Anzeigen freigeben)
 
-# 2. Stack starten
+# 2. Gemeinsames Proxy-Netz einmalig anlegen, falls noch nicht vorhanden
+docker network inspect owia-proxy >/dev/null 2>&1 || docker network create owia-proxy
+
+# 3. Stack starten
 docker compose up -d --build
 
-# 3. App öffnen
+# 4. App öffnen
 open http://localhost:3000
 ```
 
@@ -137,8 +146,8 @@ maßgebliche, dokumentierte Referenz. Die wichtigsten Gruppen:
 > ⚠️ **Produktion:** `NODE_ENV=production` ist Pflicht – sonst sind Dev-Endpoints
 > offen und das Session-Cookie hat kein `Secure`-Flag. Die App **verweigert den
 > Start**, wenn `SESSION_SECRET` ein Platzhalter ist oder `APP_URL` nicht `https://`
-> ist. `MAIL_DRIVER` muss exakt `smtp` lauten – jeder andere Wert fällt still auf
-> Mailpit zurück, und keine Mail erreicht echte Empfänger.
+> ist. `MAIL_DRIVER` muss exakt `smtp` lauten; außerdem müssen `MAIL_HOST` und
+> `MAIL_FROM` gesetzt sein. Sonst verweigert die Produktions-App den Start.
 
 Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
 [DEPLOY.md](DEPLOY.md).
@@ -216,3 +225,19 @@ Backup und Referenzstand.
 Details, Pflichtwerte und der Smoke-Test nach jedem Deploy: **[DEPLOY.md](DEPLOY.md)**.
 
 Healthcheck für Monitoring: `GET /health` → `{"ok":true}`.
+
+
+## Qualitätsprüfungen
+
+```bash
+npm run check   # TypeScript inkl. Tests, Browser-JS und EJS-Syntax
+npm test        # Regressionstests mit eigener MariaDB und Mailpit (Docker nötig)
+```
+
+Die Testumgebung ist flüchtig, verwendet keine vorhandenen Daten oder `.env` und
+hat keinen Internetzugang für Mailversand. Die CI unter
+`.github/workflows/check.yml` führt dieselben Prüfungen aus.
+Die Entwicklungs-App mit DB/Mailpit läuft wieder; Kartendienste/ALPR sind separat zu starten.
+
+Versandfehler und Wiederaufnahme: [docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md).
+Umsetzungsstand: [docs/FEHLERBEHEBUNG-2026-10-06.md](docs/FEHLERBEHEBUNG-2026-10-06.md).

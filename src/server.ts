@@ -1,4 +1,5 @@
 import './types'
+import { assertProductionMailConfig } from './config/mail'
 import path from 'path'
 import fs from 'fs/promises'
 import Fastify from 'fastify'
@@ -52,6 +53,7 @@ async function main() {
     }
   }
 
+  assertProductionMailConfig()
   await initDb()
 
   // Lauter Selbsttest: sind die Daten-Verzeichnisse beschreibbar? Häufige

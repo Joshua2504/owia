@@ -149,50 +149,60 @@ export async function processInboundMail(
   if (!body && typeof parsed.html === 'string') body = htmlToText(parsed.html)
   body = body.slice(0, MAX_BODY_CHARS)
 
-  let replyId: number
+  // Erst die vollständige Nachricht veröffentlichen. INSERT und alle Anhang-
+  // Metadaten gehören in dieselbe Transaktion; ein Wiederholungsversuch darf
+  // nur eine vollständig gespeicherte Nachricht als Duplikat überspringen.
+  const conn = await pool.getConnection()
+  let replyId: number | undefined
+  let commitStarted = false
   try {
-    const [result] = await pool.execute<mysql.ResultSetHeader>(
+    await conn.beginTransaction()
+    const [result] = await conn.execute<mysql.ResultSetHeader>(
       `INSERT INTO report_replies (report_id, message_id, from_address, subject, body_text, received_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
-        report?.id ?? null,
-        messageId,
-        from ? from.slice(0, 255) : null,
-        (parsed.subject || '').slice(0, 500) || null,
-        body || null,
+        report?.id ?? null, messageId, from ? from.slice(0, 255) : null,
+        (parsed.subject || '').slice(0, 500) || null, body || null,
         parsed.date instanceof Date && !isNaN(parsed.date.getTime()) ? parsed.date : new Date(),
       ]
     )
     replyId = result.insertId
+    const attachments = (parsed.attachments || []).slice(0, MAX_ATTACHMENTS)
+    for (const att of attachments) {
+      if (!att.content?.length) continue
+      if (att.content.length > MAX_ATTACHMENT_BYTES) {
+        log.warn({ size: att.content.length, replyId }, 'Posteingang: Anhang zu groß – übersprungen')
+        continue
+      }
+      const { display, ext } = sanitizeAttachmentName(att.filename)
+      const stored = `anhang-${crypto.randomBytes(6).toString('hex')}.${ext}`
+      await fs.mkdir(repliesDir(replyId), { recursive: true })
+      await fs.writeFile(path.join(repliesDir(replyId), stored), att.content)
+      await conn.execute(
+        `INSERT INTO report_reply_attachments (reply_id, filename, original_filename, mimetype, size_bytes)
+         VALUES (?, ?, ?, ?, ?)`,
+        [replyId, stored, display, (att.contentType || '').slice(0, 100) || null, att.content.length]
+      )
+    }
+    commitStarted = true
+    await conn.commit()
   } catch (err) {
-    if ((err as { code?: string }).code === 'ER_DUP_ENTRY') {
-      // Bereits verarbeitet (z.B. Crash zwischen Speichern und markSeen).
-      log.info({ messageId }, 'Posteingang: Duplikat übersprungen')
+    await conn.rollback()
+    // Bei verlorener COMMIT-Antwort könnten die DB-Zeilen bereits sichtbar
+    // sein. Dann niemals deren Dateien entfernen! Ein Prozessabbruch kann
+    // lediglich verwaiste Dateien hinterlassen, keine halbe sichtbare Mail.
+    if (replyId !== undefined && !commitStarted) {
+      await fs.rm(repliesDir(replyId), { recursive: true, force: true }).catch((cleanupError) => {
+        log.warn({ err: cleanupError, replyId }, 'Posteingang: verwaistes Anhang-Verzeichnis')
+      })
+    }
+    if (replyId === undefined && (err as { code?: string }).code === 'ER_DUP_ENTRY') {
+      log.info({ messageId }, 'Posteingang: vollständig gespeichertes Duplikat übersprungen')
       return null
     }
     throw err
-  }
-
-  // Anhänge (gedeckelt) neben die Antwort legen.
-  const attachments = (parsed.attachments || []).slice(0, MAX_ATTACHMENTS)
-  for (const att of attachments) {
-    if (!att.content || att.content.length === 0) continue
-    if (att.content.length > MAX_ATTACHMENT_BYTES) {
-      log.warn(
-        { filename: att.filename, size: att.content.length, replyId },
-        'Posteingang: Anhang zu groß – übersprungen'
-      )
-      continue
-    }
-    const { display, ext } = sanitizeAttachmentName(att.filename)
-    const stored = `anhang-${crypto.randomBytes(6).toString('hex')}.${ext}`
-    await fs.mkdir(repliesDir(replyId), { recursive: true })
-    await fs.writeFile(path.join(repliesDir(replyId), stored), att.content)
-    await pool.execute(
-      `INSERT INTO report_reply_attachments (reply_id, filename, original_filename, mimetype, size_bytes)
-       VALUES (?, ?, ?, ?, ?)`,
-      [replyId, stored, display, (att.contentType || '').slice(0, 100) || null, att.content.length]
-    )
+  } finally {
+    conn.release()
   }
 
   // Nutzer informieren (Fehler loggen, aber die Verarbeitung nie blockieren).

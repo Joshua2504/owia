@@ -73,7 +73,8 @@ Hintergrund-Jobs (IMAP-Polling, 6h-Purge, ALPR-Aufräumer).
 
 **DB/Migrationen:** `src/db/schema.sql` gilt nur für frische Volumes. Jede
 Schemaänderung ist eine neue Datei `migrations/NNNN_snake_case.sql`
-(fortlaufend, aktuell bei 0030 — nächste ist 0031), idempotent formulieren
+(fortlaufend; höchste vorhandene Nummer vor jeder Änderung prüfen,
+Stand nach Fehlerbehebung 06.10.2026: 0032, nächste freie Nummer 0033), idempotent formulieren
 (`IF [NOT] EXISTS`) — der Runner (`src/db/migrate.ts`) hat KEINE Transaktion,
 ein Fehler beim Boot ist eine bewusste Container-Restart-Schleife. Nichts mehr
 in `src/db/init.ts` ergänzen (Legacy).
@@ -104,3 +105,17 @@ in `public/vendor/` — kein CDN, die CSP erzwingt das.
 - Datenschutz ist Designbedingung: keine externen Requests, Originalfotos
   verlassen den Host nie, öffentliche Endpoints liefern nur stark pixelierte
   Bilder und Aggregate.
+
+## Geprüfter Projektstand
+
+Die Bestandsaufnahme vom 06.10.2026 steht in [docs/PROJEKTSTATUS.md](docs/PROJEKTSTATUS.md).
+Für Codex dient [AGENTS.md](AGENTS.md) als Einstieg; diese Datei bleibt gemeinsame
+Referenz für Architektur und Konventionen. Betriebsangaben sind Soll-Konfiguration:
+Bei der ersten Bestandsaufnahme lief nur der Produktionsstack. Inzwischen laufen
+Dev-App, DB und Mailpit wieder. Details und offene Punkte:
+[docs/FEHLERBEHEBUNG-2026-10-06.md](docs/FEHLERBEHEBUNG-2026-10-06.md).
+
+Versand erfolgt über `services/reportDispatch.ts`: persistenter Claim vor SMTP,
+unklares Ergebnis bleibt gesperrt, bestätigter Versandabschluss ist ohne neue Mail
+wiederholbar. Anleitung: [docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md).
+Tests: `npm run check` und `npm test` (isolierte Docker-Testumgebung).

@@ -1,10 +1,13 @@
 {
   "name": "owia-anzeiger",
   "version": "1.0.0",
-  "description": "Ordnungswidrigkeits-Anzeige für Frankfurt",
+  "description": "Ordnungswidrigkeits-Anzeige f\u00fcr Frankfurt",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts"
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
+    "test": "bash scripts/test-integration.sh",
+    "check": "npm run typecheck && node scripts/check-syntax.cjs"
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",

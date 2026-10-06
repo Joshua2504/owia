@@ -1,0 +1,351 @@
+import assert from 'node:assert/strict'
+import { before, after, test, mock } from 'node:test'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import mysql from 'mysql2/promise'
+import Fastify from 'fastify'
+import cookie from '@fastify/cookie'
+import formbody from '@fastify/formbody'
+import ejs from 'ejs'
+import { pool } from '../src/db/connection'
+import { initDb } from '../src/db/init'
+import { runMigrations } from '../src/db/migrate'
+import { dispatchReport } from '../src/services/reportDispatch'
+import { consumeLoginCode, consumeMagicLink, MAX_LOGIN_ATTEMPTS } from '../src/services/loginTokens'
+import { processInboundMail, repliesDir } from '../src/services/mailInbox'
+import { MailService } from '../src/services/mail'
+import adminRoutes from '../src/routes/admin'
+import reportsRoutes from '../src/routes/reports'
+import settingsRoutes from '../src/routes/settings'
+import { groupPhotos } from '../src/services/intakeGrouping'
+import { resolveSendCity } from '../src/services/districts'
+import { assertProductionMailConfig } from '../src/config/mail'
+
+// Harte Schranke: Diese Suite darf niemals auf einer vorhandenen DB laufen.
+if (process.env.OWIA_TEST_ONLY !== '1' || process.env.DB_NAME !== 'owia_test' || process.env.DB_HOST !== 'db') {
+  throw new Error('Tests ausschließlich über npm test in der isolierten Compose-Umgebung ausführen.')
+}
+const logger = Fastify({ logger: false }).log
+let userId: number
+let counter = 0
+async function query(sql: string, values: (string | number | null)[] = []) {
+  return (await pool.execute<mysql.RowDataPacket[]>(sql, values))[0]
+}
+async function report(ownerId = userId) {
+  const [result] = await pool.execute<mysql.ResultSetHeader>(
+    `INSERT INTO reports(user_id, aktenzeichen, status, city, tatort, kennzeichen)
+     VALUES (?, ?, 'eingereicht', 'badsoden', 'Kurpark, 63628 Bad Soden-Salmünster', 'M KK 123')`,
+    [ownerId, `OWiA-${String(++counter).padStart(6, '0')}`]
+  )
+  return result.insertId
+}
+async function token() {
+  const email = `login-${++counter}@example.invalid`
+  const value = `test-token-${counter}`
+  await pool.execute(
+    `INSERT INTO login_tokens(email, code, token, expires_at) VALUES (?, '123456', ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))`,
+    [email, value]
+  )
+  return { email, value }
+}
+function prepared(messageId: string, send: () => Promise<void>) {
+  return { messageId, subject: 'Testanzeige', text: 'Nur Testdaten', from: 'owia@example.invalid', send }
+}
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+before(async () => {
+  await initDb()
+  // Wiederholter Boot darf weder Migrationen duplizieren noch scheitern.
+  await runMigrations()
+  const [result] = await pool.execute<mysql.ResultSetHeader>(
+    `INSERT INTO users(email, vorname, nachname, strasse, plz, ort)
+     VALUES ('user@example.invalid', 'Test', 'Nutzer', 'Testweg 1', '63628', 'Testort')`
+  )
+  userId = result.insertId
+})
+after(async () => { await pool.end() })
+
+test('Migrationen sind vollständig und wiederholbar', async () => {
+  const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
+  assert.equal(rows.at(-1)?.filename, '0032_report_dispatch.sql')
+  assert.equal(rows.length, 32)
+})
+
+test('Parallele Freigaben versenden genau einmal und speichern genau eine Nachricht', async () => {
+  const id = await report()
+  let sent = 0
+  const results = await Promise.all(Array.from({ length: 8 }, () =>
+    dispatchReport(id, async messageId => prepared(messageId, async () => { sent++ }))
+  ))
+  assert.equal(sent, 1)
+  assert.ok(results.includes('sent'))
+  assert.equal((await query('SELECT status FROM reports WHERE id=?', [id]))[0].status, 'versendet')
+  assert.equal((await query('SELECT COUNT(*) n FROM report_replies WHERE report_id=?', [id]))[0].n, 1)
+})
+
+test('Vorbereitungsfehler erlauben einen späteren sicheren Versuch', async () => {
+  const id = await report()
+  await assert.rejects(dispatchReport(id, async () => { throw new Error('PDF fehlt') }))
+  assert.equal((await query('SELECT versand_status FROM reports WHERE id=?', [id]))[0].versand_status, null)
+  assert.equal(await dispatchReport(id, async messageId => prepared(messageId, async () => {})), 'sent')
+})
+
+test('Unklarer SMTP-Ausgang bleibt gesperrt, auch bei erneuter Freigabe', async () => {
+  const id = await report()
+  let sent = 0
+  const prepare = async (messageId: string) => prepared(messageId, async () => {
+    sent++
+    throw new Error('Verbindung nach DATA abgebrochen')
+  })
+  await assert.rejects(dispatchReport(id, prepare))
+  assert.equal(await dispatchReport(id, prepare), 'uncertain')
+  assert.equal(sent, 1)
+  const row = (await query('SELECT * FROM reports WHERE id=?', [id]))[0]
+  assert.equal(row.status, 'eingereicht')
+  assert.ok(JSON.parse(row.versand_ergebnis).messageId)
+})
+
+test('SQL-Fehler nach SMTP wird ohne zweiten Versand atomar nachgeholt', async () => {
+  const id = await report()
+  let sent = 0
+  await pool.query(`CREATE TRIGGER fail_outgoing BEFORE INSERT ON report_replies FOR EACH ROW
+    BEGIN IF NEW.direction='out' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Testfehler nach SMTP'; END IF; END`)
+  try {
+    await assert.rejects(dispatchReport(id, async messageId => prepared(messageId, async () => { sent++ })))
+    const row = (await query('SELECT status, versand_status FROM reports WHERE id=?', [id]))[0]
+    assert.equal(row.status, 'eingereicht')
+    assert.equal(row.versand_status, 'angenommen')
+  } finally {
+    await pool.query('DROP TRIGGER fail_outgoing')
+  }
+  const outcomes = await Promise.all([1, 2].map(() => dispatchReport(id, async () => {
+    throw new Error('Darf nicht erneut vorbereitet/versendet werden')
+  })))
+  assert.deepEqual(outcomes, ['sent', 'sent'])
+  assert.equal(sent, 1)
+  assert.equal((await query('SELECT COUNT(*) n FROM report_replies WHERE report_id=?', [id]))[0].n, 1)
+})
+
+test('Prozessabbruch bei Vorbereitung führt nicht zu automatischer Wiederholung', async () => {
+  const id = await report()
+  await pool.execute("UPDATE reports SET versand_status='vorbereitung' WHERE id=?", [id])
+  assert.equal(await dispatchReport(id, async () => { throw new Error('Nicht aufrufen') }), 'busy')
+})
+
+test('Zurückziehen und Ablehnen sind während des Versands gesperrt', async () => {
+  const id = await report()
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  const started = deferred(), proceed = deferred()
+  const dispatch = dispatchReport(id, async messageId => {
+    started.resolve()
+    await proceed.promise
+    return prepared(messageId, async () => {})
+  })
+  const app = Fastify()
+  await app.register(cookie)
+  await app.register(formbody)
+  app.addHook('preHandler', async request => {
+    request.session = { userId, userEmail: 'admin@example.invalid' } as typeof request.session
+  })
+  await app.register(adminRoutes)
+  await app.register(reportsRoutes)
+  try {
+    await started.promise
+    for (const url of [`/anzeige/${az}/withdraw`, `/admin/anzeigen/${id}/reject`]) {
+      const response = await app.inject({ method: 'POST', url, payload: { grund: 'Test' } })
+      assert.equal(response.statusCode, 302)
+      assert.equal((await query('SELECT status FROM reports WHERE id=?', [id]))[0].status, 'eingereicht')
+    }
+  } finally {
+    proceed.resolve()
+    await dispatch
+    await app.close()
+  }
+})
+
+test('Magic-Link und Code konkurrieren um genau einen Login', async () => {
+  const { email, value } = await token()
+  const result = await Promise.all(Array.from({ length: 10 }, (_, i) =>
+    i % 2 ? consumeMagicLink(value) : consumeLoginCode(email, '123456').then(result => result.token)
+  ))
+  assert.equal(result.filter(Boolean).length, 1)
+  assert.equal(await consumeMagicLink(value), null)
+})
+
+test('Falsche Codes überschreiten bei Parallelität das Versuchslimit nicht', async () => {
+  const { email } = await token()
+  await Promise.all(Array.from({ length: 10 }, () => consumeLoginCode(email, '000000')))
+  const row = (await query('SELECT attempts FROM login_tokens WHERE email=?', [email]))[0]
+  assert.equal(row.attempts, MAX_LOGIN_ATTEMPTS)
+  assert.equal((await consumeLoginCode(email, '123456')).token, null)
+})
+
+test('Abgelaufene Tokens erlauben weder Code- noch Link-Anmeldung', async () => {
+  const { email, value } = await token()
+  await pool.execute('UPDATE login_tokens SET expires_at=DATE_SUB(NOW(), INTERVAL 1 SECOND) WHERE email=?', [email])
+  assert.equal(await consumeMagicLink(value), null)
+  assert.equal((await consumeLoginCode(email, '123456')).token, null)
+})
+
+function inboundMail(id: string) {
+  return Buffer.from([
+    'From: test@example.invalid', 'To: owia@example.invalid', `Message-ID: <${id}@example.invalid>`,
+    'Subject: Testantwort', 'MIME-Version: 1.0', 'Content-Type: multipart/mixed; boundary="test-boundary"', '',
+    '--test-boundary', 'Content-Type: text/plain; charset=utf-8', '', 'Antworttext',
+    '--test-boundary', 'Content-Type: text/plain; name="beleg.txt"',
+    'Content-Disposition: attachment; filename="beleg.txt"', 'Content-Transfer-Encoding: base64', '',
+    Buffer.from('Vollständiger Beleg').toString('base64'), '--test-boundary--', '',
+  ].join('\r\n'))
+}
+
+test('Fehler beim Speichern eines Anhangs hinterlässt keine halbe Mail; Wiederholung gelingt', async () => {
+  const raw = inboundMail('retry')
+  await pool.query(`CREATE TRIGGER fail_attachment BEFORE INSERT ON report_reply_attachments
+    FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Testfehler Anhang'`)
+  try {
+    await assert.rejects(processInboundMail(raw, logger))
+    assert.equal((await query("SELECT COUNT(*) n FROM report_replies WHERE message_id='<retry@example.invalid>'"))[0].n, 0)
+  } finally {
+    await pool.query('DROP TRIGGER fail_attachment')
+  }
+  const result = await processInboundMail(raw, logger)
+  assert.ok(result)
+  const attachments = await query('SELECT filename FROM report_reply_attachments WHERE reply_id=?', [result.replyId])
+  assert.equal(attachments.length, 1)
+  assert.equal(await fs.readFile(path.join(repliesDir(result.replyId), attachments[0].filename), 'utf8'), 'Vollständiger Beleg')
+  assert.equal(await processInboundMail(raw, logger), null)
+})
+
+test('Dateisystemfehler beim Anhang erlaubt vollständigen erneuten Import', async () => {
+  const raw = inboundMail('disk-error')
+  const original = fs.writeFile
+  const failing = mock.method(fs, 'writeFile', async () => { throw new Error('Datenträger voll') })
+  try { await assert.rejects(processInboundMail(raw, logger)) } finally { failing.mock.restore() }
+  assert.equal(fs.writeFile, original)
+  assert.ok(await processInboundMail(raw, logger))
+})
+
+test('Parallel importierte identische Mails haben genau eine Nachricht und einen Anhang', async () => {
+  const results = await Promise.all(Array.from({ length: 4 }, () => processInboundMail(inboundMail('parallel'), logger)))
+  assert.equal(results.filter(Boolean).length, 1)
+  const rows = await query(`SELECT COUNT(*) n FROM report_reply_attachments a JOIN report_replies r ON r.id=a.reply_id
+    WHERE r.message_id='<parallel@example.invalid>'`)
+  assert.equal(rows[0].n, 1)
+})
+
+test('Echter SMTP-Versand in Mailpit verwendet die persistierte Message-ID', async () => {
+  const id = await report()
+  const row = (await query('SELECT * FROM reports WHERE id=?', [id]))[0]
+  const user = (await query('SELECT * FROM users WHERE id=?', [userId]))[0]
+  assert.equal(await dispatchReport(id, messageId => MailService.prepareReport(row, user, messageId)), 'sent')
+  const stored = (await query('SELECT sent_message_id FROM reports WHERE id=?', [id]))[0].sent_message_id
+  const response = await fetch('http://mail:8025/api/v1/messages')
+  const mailbox = await response.json() as { messages: { ID: string }[] }
+  assert.ok(mailbox.messages.length > 0)
+  const detail = await fetch(`http://mail:8025/api/v1/message/${mailbox.messages[0].ID}`)
+  const mail = await detail.json() as { MessageID: string; To: { Address: string }[] }
+  assert.equal(mail.MessageID.replace(/^<|>$/g, ''), stored.replace(/^<|>$/g, ''))
+  assert.ok(mail.To.some(to => to.Address.includes('@')))
+})
+
+test('Foto-Gruppierung erhält Zeiträume über Mitternacht', () => {
+  const result = groupPhotos([
+    { id: 1, capturedAt: '2026-10-05 23:55:00', lat: 50.1, lon: 8.6 },
+    { id: 2, capturedAt: '2026-10-06 00:05:00', lat: 50.1, lon: 8.6 },
+  ])
+  assert.equal(result.incidents.length, 1)
+  assert.equal(result.incidents[0].dayTo, '2026-10-06')
+})
+
+test('Städte-Gate erkennt Hanau und blockiert nicht freigeschaltete Orte', () => {
+  assert.deepEqual(resolveSendCity('Marktplatz, 63450 Hanau', 'frankfurt'), { ok: true, cityId: 'hanau' })
+  assert.equal(resolveSendCity('10115 Berlin', 'frankfurt').ok, false)
+})
+
+
+test('Produktions-Mailkonfiguration kann nicht still auf Mailpit zurückfallen', () => {
+  assert.throws(() => assertProductionMailConfig({ NODE_ENV: 'production', MAIL_DRIVER: 'smpt' }))
+  assert.throws(() => assertProductionMailConfig({ NODE_ENV: 'production', MAIL_DRIVER: 'smtp' }))
+  assert.doesNotThrow(() => assertProductionMailConfig({ NODE_ENV: 'development', MAIL_DRIVER: 'mailpit' }))
+  assert.doesNotThrow(() => assertProductionMailConfig({ NODE_ENV: 'production', MAIL_DRIVER: 'smtp', MAIL_HOST: 'smtp.example.invalid', MAIL_FROM: 'owia@example.invalid' }))
+})
+
+test('Verlorene Speicherung der SMTP-Annahme löst keinen erneuten Versand aus', async () => {
+  const id = await report()
+  let sent = 0
+  await pool.query(`CREATE TRIGGER fail_acceptance BEFORE UPDATE ON reports FOR EACH ROW
+    BEGIN IF NEW.versand_status='angenommen' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Testfehler Annahme'; END IF; END`)
+  try {
+    await assert.rejects(dispatchReport(id, async messageId => prepared(messageId, async () => { sent++ })))
+  } finally {
+    await pool.query('DROP TRIGGER fail_acceptance')
+  }
+  assert.equal(await dispatchReport(id, async () => { throw new Error('Kein erneuter Versand') }), 'uncertain')
+  assert.equal(sent, 1)
+})
+
+test('Fremde Anzeigen und ihre Fotos bleiben vor dem Nutzer verborgen', async () => {
+  const id = await report()
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  const app = Fastify()
+  app.addHook('preHandler', async request => {
+    request.session = { userId: userId + 999, userEmail: 'other@example.invalid' } as typeof request.session
+  })
+  await app.register(reportsRoutes)
+  try {
+    for (const url of [`/anzeige/${az}`, `/anzeige/${az}/image/1`, `/anzeige/${az}/pdf`]) {
+      assert.equal((await app.inject({ method: 'GET', url })).statusCode, 404)
+    }
+  } finally { await app.close() }
+})
+
+
+test('Kontoschließung kann einen ungeklärten Versand nicht löschen', async () => {
+  const [created] = await pool.execute<mysql.ResultSetHeader>("INSERT INTO users(email) VALUES ('closing@example.invalid')")
+  const owner = created.insertId
+  const id = await report(owner)
+  await pool.execute("UPDATE reports SET versand_status='versand', versand_ergebnis=? WHERE id=?", ['{"messageId":"pending@example.invalid"}', id])
+  const app = Fastify()
+  await app.register(cookie)
+  await app.register(formbody)
+  let destroyed = false
+  app.addHook('preHandler', async request => {
+    request.session = { userId: owner, userEmail: 'closing@example.invalid', destroy: async () => { destroyed = true } } as unknown as typeof request.session
+  })
+  await app.register(settingsRoutes)
+  try {
+    const response = await app.inject({ method: 'POST', url: '/einstellungen/loeschen', payload: { bestaetigung: 'LÖSCHEN' } })
+    assert.equal(response.statusCode, 302)
+    assert.equal(response.headers.location, '/einstellungen')
+    assert.equal(destroyed, false)
+    assert.equal((await query('SELECT anonymized_at FROM users WHERE id=?', [owner]))[0].anonymized_at, null)
+    assert.equal((await query('SELECT versand_status FROM reports WHERE id=?', [id]))[0].versand_status, 'versand')
+    // Sobald sicher kein Versuch aktiv ist, funktioniert die bisherige
+    // Kontoschließung weiterhin und widerruft die Sitzung.
+    await pool.execute('UPDATE reports SET versand_status=NULL, versand_ergebnis=NULL WHERE id=?', [id])
+    const closed = await app.inject({ method: 'POST', url: '/einstellungen/loeschen', payload: { bestaetigung: 'LÖSCHEN' } })
+    assert.equal(closed.statusCode, 302)
+    assert.equal(closed.headers.location, '/')
+    assert.equal(destroyed, true)
+    assert.ok((await query('SELECT anonymized_at FROM users WHERE id=?', [owner]))[0].anonymized_at)
+  } finally { await app.close() }
+})
+
+test('Adminansicht bietet bei unklarem Versand keinen Wiederholungsbutton an', async () => {
+  for (const state of [null, 'vorbereitung', 'versand', 'angenommen']) {
+    const html = await ejs.renderFile('src/views/admin/anzeigen.ejs', {
+      pending: [{ id: 1, aktenzeichen: 'OWiA-123456', versand_status: state }], recent: [], unmatched: [],
+    })
+    if (state === 'versand' || state === 'vorbereitung') {
+      assert.ok(!html.includes('action="/admin/anzeigen/1/approve"'))
+      assert.ok(!html.includes('action="/admin/anzeigen/1/reject"'))
+    } else {
+      assert.ok(html.includes('action="/admin/anzeigen/1/approve"'))
+      if (state === 'angenommen') assert.ok(html.includes('Abschluss speichern (ohne erneuten Versand)'))
+    }
+  }
+})

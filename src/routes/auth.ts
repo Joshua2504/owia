@@ -5,9 +5,9 @@ import { pool } from '../db/connection'
 import { viewData } from '../middleware/auth'
 import { MailService } from '../services/mail'
 import { verifyCaptcha } from '../services/captcha'
+import { consumeMagicLink, consumeLoginCode } from '../services/loginTokens'
 
 const CODE_TTL_MINUTES = 15
-const MAX_ATTEMPTS = 5
 // „Angemeldet bleiben": Cookie-Lebensdauer, sonst gilt der Default aus server.ts.
 const REMEMBER_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -158,7 +158,7 @@ export default async function authRoutes(app: FastifyInstance) {
   })
 
   // Schritt 2: Code eingeben. Eigenes Rate-Limit gegen Brute-Force auf den
-  // 6-stelligen Code (großzügiger als MAX_ATTEMPTS, damit Tippfehler nicht
+  // 6-stelligen Code (großzügiger als MAX_LOGIN_ATTEMPTS, damit Tippfehler nicht
   // doppelt bestraft werden – parallele Fluten aber nicht durchkommen).
   app.post('/login/verify', {
     config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
@@ -170,43 +170,13 @@ export default async function authRoutes(app: FastifyInstance) {
     }
     const normalizedEmail = normalizeEmail(email)
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT * FROM login_tokens
-       WHERE email = ? AND used_at IS NULL AND expires_at > NOW()
-       ORDER BY created_at DESC LIMIT 1`,
-      [normalizedEmail]
-    )
-    const tokenRow = rows[0]
-
-    const renderError = (message: string) =>
-      reply.view('/auth/verify.ejs', viewData(request, {
-        title: 'Code eingeben',
-        email: normalizedEmail,
-        error: message,
+    const result = await consumeLoginCode(normalizedEmail, code)
+    if (!result.token) {
+      return reply.view('/auth/verify.ejs', viewData(request, {
+        title: 'Code eingeben', email: normalizedEmail, error: result.error,
       }))
-
-    if (!tokenRow || tokenRow.attempts >= MAX_ATTEMPTS) {
-      return renderError('Der Code ist abgelaufen. Bitte fordere einen neuen an.')
     }
-
-    // Versuch ATOMAR verbrauchen, BEVOR der Code verglichen wird: ein
-    // read-then-write-Zähler ließe sich mit parallelen Requests umgehen
-    // (alle lesen attempts=0) und der MAX_ATTEMPTS-Deckel wäre wirkungslos.
-    const [upd] = await pool.execute<mysql.ResultSetHeader>(
-      'UPDATE login_tokens SET attempts = attempts + 1 WHERE id = ? AND attempts < ?',
-      [tokenRow.id, MAX_ATTEMPTS]
-    )
-    if (upd.affectedRows === 0) {
-      return renderError('Der Code ist abgelaufen. Bitte fordere einen neuen an.')
-    }
-
-    if (code.trim() !== tokenRow.code) {
-      return renderError('Der Code ist nicht korrekt.')
-    }
-
-    await pool.execute('UPDATE login_tokens SET used_at = NOW() WHERE id = ?', [
-      tokenRow.id,
-    ])
+    const tokenRow = result.token
     await loginUserByEmail(request, normalizedEmail, tokenRow.remember === 1)
     return reply.redirect('/anzeigen')
   })
@@ -215,13 +185,7 @@ export default async function authRoutes(app: FastifyInstance) {
   app.get('/login/link/:token', async (request, reply) => {
     const { token } = request.params as { token: string }
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT * FROM login_tokens
-       WHERE token = ? AND used_at IS NULL AND expires_at > NOW()
-       LIMIT 1`,
-      [token]
-    )
-    const tokenRow = rows[0]
+    const tokenRow = await consumeMagicLink(token)
 
     if (!tokenRow) {
       return reply.view('/auth/login.ejs', viewData(request, {
@@ -230,9 +194,6 @@ export default async function authRoutes(app: FastifyInstance) {
       }))
     }
 
-    await pool.execute('UPDATE login_tokens SET used_at = NOW() WHERE id = ?', [
-      tokenRow.id,
-    ])
     await loginUserByEmail(request, tokenRow.email, tokenRow.remember === 1)
     return reply.redirect('/anzeigen')
   })

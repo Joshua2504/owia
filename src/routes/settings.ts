@@ -161,58 +161,78 @@ export default async function settingsRoutes(app: FastifyInstance) {
       return reply.redirect('/einstellungen')
     }
 
-    // 1) Nachrichtenverlauf (Ordnungsamt-Korrespondenz + eigene Mails) samt
-    //    Anhängen löschen – enthält Absenderadresse/Signatur des Erstatters.
-    const [reportRows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id FROM reports WHERE user_id = ?',
-      [userId]
-    )
-    if (reportRows.length) {
-      const ids = reportRows.map((r) => r.id)
-      const ph = ids.map(() => '?').join(',')
-      const [replyRows] = await pool.execute<mysql.RowDataPacket[]>(
-        `SELECT id FROM report_replies WHERE report_id IN (${ph})`,
-        ids
+    // Dieselben Anzeigen-Zeilen wie beim Versand-Claim sperren. Dadurch kann
+    // Kontoschließung keinen begonnenen Versand samt Wiederaufnahme-Daten löschen.
+    const conn = await pool.getConnection()
+    try {
+      await conn.beginTransaction()
+      const [dispatches] = await conn.execute<mysql.RowDataPacket[]>(
+        'SELECT versand_status FROM reports WHERE user_id=? FOR UPDATE', [userId]
       )
-      for (const r of replyRows) {
-        await fs.rm(path.dirname(replyAttachmentPath(r.id, 'x')), { recursive: true, force: true })
+      if (dispatches.some(report => report.versand_status !== null)) {
+        await conn.rollback()
+        setFlash(reply, 'error', 'Eine Anzeige wird noch versendet oder ihr Versand muss geklärt werden. Bitte danach das Konto schließen.')
+        return reply.redirect('/einstellungen')
       }
-      if (replyRows.length) {
-        await pool.execute(
-          `DELETE FROM report_replies WHERE id IN (${replyRows.map(() => '?').join(',')})`,
-          replyRows.map((r) => r.id)
+      // 1) Nachrichtenverlauf (Ordnungsamt-Korrespondenz + eigene Mails) samt
+      //    Anhängen löschen – enthält Absenderadresse/Signatur des Erstatters.
+      const [reportRows] = await conn.execute<mysql.RowDataPacket[]>(
+        'SELECT id FROM reports WHERE user_id = ?',
+        [userId]
+      )
+      if (reportRows.length) {
+        const ids = reportRows.map((r) => r.id)
+        const ph = ids.map(() => '?').join(',')
+        const [replyRows] = await conn.execute<mysql.RowDataPacket[]>(
+          `SELECT id FROM report_replies WHERE report_id IN (${ph})`,
+          ids
         )
+        for (const r of replyRows) {
+          await fs.rm(path.dirname(replyAttachmentPath(r.id, 'x')), { recursive: true, force: true })
+        }
+        if (replyRows.length) {
+          await conn.execute(
+            `DELETE FROM report_replies WHERE id IN (${replyRows.map(() => '?').join(',')})`,
+            replyRows.map((r) => r.id)
+          )
+        }
       }
+
+      // 2) Erzeugte PDFs löschen – das amtliche Formular enthält Name/Anschrift/
+      //    E-Mail des Erstatters. Die Sach-Anzeige (Fotos, Tatort) bleibt erhalten.
+      await fs.rm(path.join(PDF_DIR, String(userId)), { recursive: true, force: true })
+      await conn.execute('UPDATE reports SET pdf_filename = NULL, versand_ergebnis = NULL WHERE user_id = ?', [userId])
+
+      // 3) users-Zeile scrubben (Profil leeren, E-Mail durch eindeutigen
+      //    Platzhalter ersetzen, Konto als anonymisiert markieren = Login gesperrt).
+      const platzhalter = `geloescht-${userId}-${crypto.randomBytes(4).toString('hex')}@anonym.invalid`
+      await conn.execute(
+        `UPDATE users
+            SET vorname=NULL, nachname=NULL, strasse=NULL, plz=NULL, ort=NULL, telefon=NULL,
+                email=?, anonymized_at=NOW(),
+                email_change_neu=NULL, email_change_token=NULL, email_change_expires=NULL
+          WHERE id=?`,
+        [platzhalter, userId]
+      )
+
+      // 4) Login der bisherigen Adresse entwerten, Session beenden. report_images
+      //    und die Dateien unter data/uploads/<userId>/ bleiben bewusst erhalten.
+      await conn.execute('UPDATE login_tokens SET used_at = NOW() WHERE used_at IS NULL AND email = ?', [
+        request.session.userEmail || '',
+      ])
+      // ALLE Sessions des Nutzers beenden, nicht nur die aktuelle – ein weiterhin
+      // eingeloggter Zweitbrowser („Angemeldet bleiben", 30 Tage) könnte das
+      // geschlossene Konto sonst unverändert weiterbenutzen. Die sessions-Tabelle
+      // hat keine user_id-Spalte; JSON_EXTRACT über die (kleine, 6h-gepurgte)
+      // Tabelle reicht für diesen seltenen Vorgang.
+      await conn.execute("DELETE FROM sessions WHERE JSON_EXTRACT(data, '$.userId') = ?", [userId])
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    } finally {
+      conn.release()
     }
-
-    // 2) Erzeugte PDFs löschen – das amtliche Formular enthält Name/Anschrift/
-    //    E-Mail des Erstatters. Die Sach-Anzeige (Fotos, Tatort) bleibt erhalten.
-    await fs.rm(path.join(PDF_DIR, String(userId)), { recursive: true, force: true })
-    await pool.execute('UPDATE reports SET pdf_filename = NULL WHERE user_id = ?', [userId])
-
-    // 3) users-Zeile scrubben (Profil leeren, E-Mail durch eindeutigen
-    //    Platzhalter ersetzen, Konto als anonymisiert markieren = Login gesperrt).
-    const platzhalter = `geloescht-${userId}-${crypto.randomBytes(4).toString('hex')}@anonym.invalid`
-    await pool.execute(
-      `UPDATE users
-          SET vorname=NULL, nachname=NULL, strasse=NULL, plz=NULL, ort=NULL, telefon=NULL,
-              email=?, anonymized_at=NOW(),
-              email_change_neu=NULL, email_change_token=NULL, email_change_expires=NULL
-        WHERE id=?`,
-      [platzhalter, userId]
-    )
-
-    // 4) Login der bisherigen Adresse entwerten, Session beenden. report_images
-    //    und die Dateien unter data/uploads/<userId>/ bleiben bewusst erhalten.
-    await pool.execute('UPDATE login_tokens SET used_at = NOW() WHERE used_at IS NULL AND email = ?', [
-      request.session.userEmail || '',
-    ])
-    // ALLE Sessions des Nutzers beenden, nicht nur die aktuelle – ein weiterhin
-    // eingeloggter Zweitbrowser („Angemeldet bleiben", 30 Tage) könnte das
-    // geschlossene Konto sonst unverändert weiterbenutzen. Die sessions-Tabelle
-    // hat keine user_id-Spalte; JSON_EXTRACT über die (kleine, 6h-gepurgte)
-    // Tabelle reicht für diesen seltenen Vorgang.
-    await pool.execute("DELETE FROM sessions WHERE JSON_EXTRACT(data, '$.userId') = ?", [userId])
     await request.session.destroy()
     app.log.info({ userId }, 'Konto anonymisiert (Anzeigen bleiben ohne Personenbezug erhalten)')
     return reply.redirect('/')

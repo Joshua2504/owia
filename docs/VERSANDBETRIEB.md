@@ -1,0 +1,74 @@
+# Versandbetrieb und Wiederaufnahme
+
+Stand: 06.10.2026. Gilt ab Migration `0032_report_dispatch.sql`.
+
+## Zustände
+
+`reports.status` bleibt `eingereicht`, bis Mailserver-Annahme und lokaler Abschluss
+feststehen. `reports.versand_status` ist die zusätzliche dauerhafte Sperre:
+
+| Wert | Bedeutung | Verhalten |
+| --- | --- | --- |
+| NULL | Kein offener Versandversuch | Freigabe möglich, sofern eingereicht |
+| vorbereitung | Profil, Stadt, PDF und Mail werden vorbereitet | Keine zweite Freigabe/Rücknahme/Ablehnung/Kontoschließung |
+| versand | Versuch gespeichert; SMTP läuft oder Ausgang unklar | Niemals automatisch erneut senden |
+| angenommen | Amts-Empfänger vom SMTP-Server angenommen | Admin kann nur den DB-Abschluss nachholen, ohne weitere Mail |
+
+Nach Abschluss stehen `status=versendet` und `sent_message_id` fest; die erste
+Nachricht wird in derselben Transaktion gespeichert. Temporäre Versanddaten
+werden geleert. SMTP-Annahme ist kein Zustell-/Bearbeitungsnachweis des Amts.
+
+## Fehler behandeln
+
+Normale Vorbereitungsfehler geben die Sperre wieder frei. Fehler ab Beginn von
+SMTP bleiben gesperrt, auch wenn die Fehlermeldung eine Ablehnung nahelegt: Ein
+Timeout kann nach erfolgter Annahme eintreten. Eine erneute Freigabe sendet nicht.
+`versand_ergebnis` enthält die vorab erzeugte Message-ID sowie Betreff/Text/Absender
+für Zuordnung und lokalen Abschluss; diese Inhalte nicht in öffentliche Logs kopieren.
+
+Ein dauerhaftes `vorbereitung` kann nach Prozessabbruch zurückbleiben. `versand`
+kann einen laufenden oder unklar beendeten SMTP-Vorgang bedeuten. Nicht allein
+anhand des Alters entscheiden, dass eine Wiederholung sicher wäre.
+
+Manuelle Klärung durch den Betreiber:
+
+1. Betroffene App in ein Wartungsfenster nehmen/stoppen und sicherstellen, dass
+   kein alter Worker/Prozess noch sendet. Neue Freigaben während der Klärung verhindern.
+2. Datensatz und gespeicherte Message-ID gezielt prüfen; bei `versand` anhand der
+   SMTP-Protokolle feststellen, ob der Amts-Empfänger den Versuch angenommen hat.
+3. Bei bestätigter Annahme ausschließlich diesen Datensatz auf `angenommen`
+   setzen, Payload erhalten. Danach App starten und im Adminbereich
+   „Abschluss speichern (ohne erneuten Versand)“ ausführen.
+4. Nur wenn sicher kein Versand stattgefunden hat (bzw. bei abgebrochener
+   `vorbereitung` vor SMTP), Sperre und temporäre Versanddaten dieses Datensatzes
+   zurücksetzen. Danach ist eine neue explizite Freigabe möglich.
+5. Bleibt der Ausgang unklar, Sperre erhalten und weiter klären. Nie pauschal
+   alle Sperren löschen. SQL-Änderungen mit konkreter ID und erwarteter alter
+   Zustandsbedingung ausführen und protokollieren.
+
+Kein automatisches „exactly once“ gegenüber einem externen SMTP-Server wird
+versprochen. Die Strategie verhindert blinde Wiederholungen und macht unklare
+Ergebnisse sichtbar. Benutzer-Nachrichten im bereits vorhandenen Mailverlauf
+nutzen noch den bisherigen direkten Versand; die neue Sperre betrifft die
+Admin-Freigabe einer Anzeige.
+
+## Posteingang
+
+Neue Nachricht und Anhang-Metadaten werden gemeinsam committed, nachdem die
+Anhang-Dateien geschrieben wurden. Vorher bleiben sie für andere DB-Verbindungen
+unsichtbar. Bei Fehler wird zurückgerollt und IMAP lässt die Mail ungelesen.
+Ein späterer Poll kann sie vollständig neu verarbeiten. Duplikate werden erst
+nach einem vollständigen Commit übersprungen.
+
+Bei unklarem COMMIT-Ausgang bleiben Dateien erhalten, damit eine eventuell
+bereits gespeicherte Nachricht ihre Anhänge nicht verliert. Harte Prozessabbrüche
+können verwaiste Dateien hinterlassen; dies ist der Vermeidung von Datenverlust
+untergeordnet. Hinweis-Mails bleiben best-effort. Bereits vor dieser Änderung
+unvollständig importierte Alt-Mails werden nicht automatisch rekonstruiert.
+
+## Tests
+
+`npm test` startet `compose.test.yml` unter einem eigenen Projektnamen. DB und
+Dateien liegen in flüchtigen Dateisystemen, das Netz ist intern, Mailpit nimmt
+sämtliche Testmails lokal an. Ein `EXIT`-Trap entfernt Container und Netz.
+Keine Tests gegen die laufende Dev-/Produktionsdatenbank ausführen.

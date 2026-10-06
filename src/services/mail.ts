@@ -8,8 +8,11 @@ import { reportDir } from './drafts'
 import { cachedMailVariant } from './pixelate'
 import { renderTatortMap } from './staticmap'
 import { recipientEmailForReport } from './districts'
+import type { PreparedReportMail } from './reportDispatch'
+import { assertProductionMailConfig } from '../config/mail'
 
 function createTransport() {
+  assertProductionMailConfig()
   if (process.env.MAIL_DRIVER === 'smtp') {
     const port = Number(process.env.MAIL_PORT) || 587
     return nodemailer.createTransport({
@@ -18,6 +21,9 @@ function createTransport() {
       // Port 465 = SMTPS (TLS ab Verbindungsaufbau); ohne secure:true wartet
       // nodemailer dort vergeblich auf ein Klartext-Greeting (Timeout).
       secure: port === 465,
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 60_000,
       auth: process.env.MAIL_USER
         ? { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS }
         : undefined,
@@ -203,13 +209,13 @@ export const MailService = {
     })
   },
 
-  /** Anzeige ans Ordnungsamt senden; gibt Message-ID + Betreff/Text zurück
-   *  (Message-ID für die Zuordnung späterer Antworten, Betreff/Text für den
-   *  Nachrichtenverlauf auf der Detailseite). */
-  async sendReport(
+  /** Mail vollständig vorbereiten. Erst der Aufrufer persistiert Message-ID,
+   *  Betreff/Text und Versandsperre, bevor er send() aufruft (reportDispatch.ts). */
+  async prepareReport(
     report: mysql.RowDataPacket,
-    user: mysql.RowDataPacket
-  ): Promise<{ messageId: string; subject: string; text: string }> {
+    user: mysql.RowDataPacket,
+    messageId: string
+  ): Promise<PreparedReportMail> {
     const transport = createTransport()
     const city = getCity(report.city)
     // Empfänger immer aus districts.csv (per Tatort-PLZ) ermitteln.
@@ -237,15 +243,33 @@ export const MailService = {
 
     const { subject, text } = buildReportMail(report, user, photoLines)
 
-    const info = await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
-      to,
-      cc: user.cc_self === 0 ? undefined : user.email,
-      subject,
-      text,
-      attachments,
-    })
-    return { messageId: String(info.messageId || ''), subject, text }
+    // PDF vor dem Claim-Wechsel zu SMTP lesen: fehlende Dateien sind sichere
+    // Vorbereitungsfehler und dürfen ohne manuelle Klärung erneut versucht werden.
+    for (const attachment of attachments) {
+      if (attachment.path) {
+        attachment.content = await fs.readFile(attachment.path)
+        delete attachment.path
+      }
+    }
+    return {
+      messageId, subject, text, from: process.env.MAIL_FROM || null,
+      send: async () => {
+        const info = await transport.sendMail({
+          messageId,
+          from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+          to,
+          cc: user.cc_self === 0 ? undefined : user.email,
+          subject, text, attachments,
+        })
+        // Eine angenommene CC allein ist kein erfolgreicher Versand ans Amt.
+        const accepted = (info.accepted || []).map((address) =>
+          (typeof address === 'string' ? address : address.address).toLowerCase()
+        )
+        if (!accepted.includes(to.toLowerCase())) {
+          throw new Error('Der Amts-Empfänger wurde vom Mailserver nicht angenommen. Versand prüfen.')
+        }
+      },
+    }
   },
 
   /** Nachricht des Nutzers ans Ordnungsamt (Antwort auf eine Rückfrage o.Ä.).

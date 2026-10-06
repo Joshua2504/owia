@@ -64,21 +64,33 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
             </dd>
           </dl>
 
-          <div class="d-flex gap-2 flex-wrap">
+          <% if (r.versand_status) { %>
+            <div class="alert alert-warning small">
+              <% if (r.versand_status === 'angenommen') { %>
+                Der Mailserver hat die Anzeige angenommen. Der lokale Abschluss steht noch aus.
+              <% } else { %>
+                Die Anzeige wird verarbeitet. Bleibt dieser Hinweis bestehen, muss der Versand geprüft werden,
+                bevor erneut verschickt oder abgelehnt werden kann.
+              <% } %>
+            </div>
+          <% } %>
+          <% if (!r.versand_status || r.versand_status === 'angenommen') { %>
             <form method="post" action="/admin/anzeigen/<%= r.id %>/approve"
-                  onsubmit="return confirm('Anzeige <%= r.aktenzeichen %> freigeben und ans Ordnungsamt verschicken?')">
-              <button type="submit" class="btn btn-success">✓ Freigeben &amp; verschicken</button>
+                  onsubmit="return confirm('<%= r.versand_status === 'angenommen' ? 'Versandabschluss ohne erneute Mail speichern?' : 'Anzeige freigeben und ans Ordnungsamt verschicken?' %>')">
+              <button type="submit" class="btn btn-success"><%= r.versand_status === 'angenommen' ? 'Abschluss speichern (ohne erneuten Versand)' : '✓ Freigeben & verschicken' %></button>
             </form>
-            <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse"
+          <% } %>
+          <% if (!r.versand_status) { %>
+            <button type="button" class="btn btn-outline-danger mt-2" data-bs-toggle="collapse"
                     data-bs-target="#reject-<%= r.id %>">✕ Ablehnen</button>
-          </div>
-          <div class="collapse mt-2" id="reject-<%= r.id %>">
-            <form method="post" action="/admin/anzeigen/<%= r.id %>/reject">
-              <textarea name="grund" class="form-control form-control-sm mb-2" rows="2" required
-                        placeholder="Begründung für den Nutzer (z.B. Foto unscharf, Kennzeichen nicht lesbar)"></textarea>
-              <button type="submit" class="btn btn-sm btn-danger">Ablehnen &amp; Nutzer informieren</button>
-            </form>
-          </div>
+            <div class="collapse mt-2" id="reject-<%= r.id %>">
+              <form method="post" action="/admin/anzeigen/<%= r.id %>/reject">
+                <textarea name="grund" class="form-control form-control-sm mb-2" rows="2" required
+                          placeholder="Begründung für den Nutzer"></textarea>
+                <button type="submit" class="btn btn-sm btn-danger">Ablehnen &amp; Nutzer informieren</button>
+              </form>
+            </div>
+          <% } %>
         </div>
         <div class="col-lg-7">
           <!-- Das PDF enthält alle Angaben, Kartenseite und Beweisfotos. -->

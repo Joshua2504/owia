@@ -1164,10 +1164,11 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // Den Grund vorher sichern – die Admin-Mail weist auf die Wiedervorlage hin.
     const vorherigeAblehnung = report.ablehnung_grund as string | null
     await regeneratePdf(report.id, userId)
-    await pool.execute(
-      "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL WHERE id=?",
+    const [submitted] = await pool.execute<mysql.ResultSetHeader>(
+      "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL WHERE id=? AND status='entwurf' AND versand_status IS NULL",
       [report.id]
     )
+    if (!submitted.affectedRows) return reply.redirect(`/anzeige/${az}`)
     // Admins informieren – sonst kann eine Einreichung unbemerkt liegenbleiben.
     try {
       await MailService.sendSubmitNotification(
@@ -1191,9 +1192,14 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
     if (report.status !== 'eingereicht') return reply.redirect(`/anzeige/${az}`)
 
-    await pool.execute("UPDATE reports SET status='entwurf', eingereicht_at=NULL WHERE id=?", [
-      report.id,
-    ])
+    const [withdrawn] = await pool.execute<mysql.ResultSetHeader>(
+      "UPDATE reports SET status='entwurf', eingereicht_at=NULL WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
+      [report.id]
+    )
+    if (!withdrawn.affectedRows) {
+      setFlash(reply, 'error', 'Die Anzeige wird bereits versendet und kann nicht zurückgezogen werden.')
+      return reply.redirect(`/anzeige/${az}`)
+    }
     setFlash(reply, 'success', 'Anzeige zurückgezogen – sie ist wieder ein Entwurf.')
     return reply.redirect(`/anzeige/${az}/bearbeiten`)
   })

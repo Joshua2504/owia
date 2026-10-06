@@ -27,18 +27,23 @@ MAILPIT_BIND=127.0.0.1:8025    # Mailpit-UI nicht öffentlich
 
 DB_PASSWORD / DB_ROOT_PASSWORD # stark; VOR dem ersten Start setzen (Volume-Init)
 
-MAIL_DRIVER=smtp               # exakt "smtp" – alles andere fällt still auf Mailpit zurück!
+MAIL_DRIVER=smtp               # Pflicht in Produktion; falscher Wert verhindert den Start
 MAIL_HOST= / MAIL_PORT=587     # 587/STARTTLS oder 465/SMTPS (secure wird bei 465 automatisch gesetzt)
 MAIL_USER= / MAIL_PASS=
 MAIL_FROM=owia@treudler.net    # Absender = Antwort-Postfach
-MAIL_TO_FRANKFURT=<VERIFIZIERTE Adresse des Ordnungsamts>  # sonst greift der Code-Fallback –
-                               # falsche Adresse = Anzeigen verschwinden lautlos!
 
 IMAP_HOST= / IMAP_USER=owia@treudler.net / IMAP_PASS=   # leer = keine Amts-Antworten in der App
 REPLY_TRUSTED_DOMAINS=stadt-frankfurt.de
 
 ADMIN_EMAILS=<admin@...>       # leer = NIEMAND kann Anzeigen freigeben!
 ```
+
+Die Amts-Empfänger kommen aus `resources/districts.csv` über
+`src/services/districts.ts`; `MAIL_TO_FRANKFURT` wird vom aktuellen Code nicht
+ausgewertet. Empfänger für jede freigeschaltete Stadt vor Versand prüfen.
+`REPLY_TRUSTED_DOMAINS` muss die gewünschten Amts-Domains abdecken, wenn
+Antworten ohne Message-ID-Bezug automatisch per Aktenzeichen zugeordnet werden
+sollen. Der obige Frankfurt-Wert ist nur ein Beispiel.
 
 ## Einmalig auf dem Server einrichten
 
@@ -64,7 +69,13 @@ ADMIN_EMAILS=<admin@...>       # leer = NIEMAND kann Anzeigen freigeben!
 2. `docker compose logs app --tail 20` → keine Fehler, „Posteingang: IMAP-Polling aktiv"
 3. Login per Magic-Link funktioniert (Mail kommt an!)
 4. Eine Test-Anzeige einreichen → Admin-Mail kommt, unter `/admin/anzeigen` sichtbar
-5. Freigeben → Mail (mit PDF) beim Ordnungsamt-Postfach-Test bzw. in Kopie beim Nutzer
+5. Freigabe ausschließlich mit kontrolliertem Testempfänger bzw. in Dev/Mailpit
+   prüfen; keinen Test an ein echtes Ordnungsamt schicken. Frankfurt erhält
+   ein PDF, Bad Soden-Salmünster und Hanau Beweisfotos und ggf. Karte.
+
+`/health` prüft App und DB-Verbindung, aber weder SMTP/IMAP noch Geocoding,
+Karten oder die fachliche Richtigkeit eines Versands. Der manuelle
+GitHub-Actions-Fallback enthält derzeit keinen entsprechenden Healthcheck.
 
 ## Bewusst offene Punkte (nachrangig)
 
@@ -74,3 +85,18 @@ ADMIN_EMAILS=<admin@...>       # leer = NIEMAND kann Anzeigen freigeben!
   (bewusst laut); vor Migrations-Deploys Backup prüfen
 - Verwaiste offene Foto-Import-Batches werden nicht automatisch aufgeräumt
 - Dockerfile läuft als root und installiert devDependencies mit
+
+
+## Vor Deployment der Fehlerbehebung vom 06.10.2026
+
+- `npm run check` und `npm test` ausführen; Tests verwenden ihre eigene Compose-Datei.
+- Migration `0032_report_dispatch.sql` ist additiv (zwei neue Spalten in `reports`).
+  Sie ist in der Testdatenbank und Dev angewandt, noch nicht in Produktion.
+- Datenbanksicherung und Sicherung der zugehörigen Upload-/PDF-Dateien verifizieren.
+  Ein tatsächlicher Restore wurde in dieser Aufgabe nicht durchgeführt.
+- Produktionskonfiguration benötigt `MAIL_DRIVER=smtp`, `MAIL_HOST`, `MAIL_FROM`.
+- Änderungen committen und erst im Rahmen eines Deployment-Auftrags nach Prod übernehmen.
+- Bei einem späteren Code-Rollback dürfen gesperrte Versandvorgänge nicht durch alten
+  Code bearbeitet werden: der alte Code kennt `versand_status` nicht.
+
+Zustände und Wiederaufnahme: [docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md).

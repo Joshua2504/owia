@@ -8,6 +8,7 @@ import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { requireAdmin, viewData, setFlash } from '../middleware/auth'
 import { MailService } from '../services/mail'
+import { dispatchReport, ReportPreparationError } from '../services/reportDispatch'
 import { replyAttachmentPath, repliesDir } from '../services/mailInbox'
 import { resolveSendCity } from '../services/districts'
 import { regeneratePdf, isProfileComplete } from './reports'
@@ -34,7 +35,7 @@ async function loadReportWithUser(
 export default async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/anzeigen', { preHandler: requireAdmin }, async (request, reply) => {
     const [pending] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.kennzeichen_land, r.tattag, r.tattag_bis,
+      `SELECT r.id, r.aktenzeichen, r.versand_status, r.kennzeichen, r.kennzeichen_land, r.tattag, r.tattag_bis,
               r.tatzeit_von, r.tatzeit_bis, r.tatort, r.verstoss_art, r.beschreibung,
               r.behinderung, r.behinderung_text, r.fahrzeug_verlassen,
               DATE_FORMAT(r.eingereicht_at, '%d.%m.%Y %H:%i') AS eingereicht_fmt,
@@ -174,51 +175,30 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
 
-    // Zwischen Einreichung und Freigabe kann sich das Profil geändert haben:
-    // erneut prüfen und das PDF frisch erzeugen, damit Mail und PDF konsistent
-    // den aktuellen Stand tragen.
-    if (!(await isProfileComplete(loaded.report.user_id))) {
-      setFlash(reply, 'error', `Profil von ${loaded.user.email} ist unvollständig – Anzeige nicht versendet (ggf. ablehnen).`)
-      return reply.redirect('/admin/anzeigen')
-    }
-
-    // Nur freigeschaltete Orte versenden (Tatort bestimmt das zuständige Amt).
-    const gate = resolveSendCity(loaded.report.tatort, loaded.report.city)
-    if (!gate.ok) {
-      setFlash(reply, 'error', `${loaded.report.aktenzeichen}: ${gate.message}`)
-      return reply.redirect('/admin/anzeigen')
-    }
-    if (gate.cityId !== loaded.report.city) {
-      await pool.execute('UPDATE reports SET city=? WHERE id=?', [gate.cityId, loaded.report.id])
-      loaded.report.city = gate.cityId
-    }
-
     try {
-      await regeneratePdf(loaded.report.id, loaded.report.user_id)
-      const fresh = await loadReportWithUser(id)
-      if (fresh) loaded.report = fresh.report
-
-      const sent = await MailService.sendReport(loaded.report, loaded.user)
-      await pool.execute(
-        "UPDATE reports SET status='versendet', versand_art='system_email', sent_message_id=? WHERE id=?",
-        [sent.messageId.slice(0, 255) || null, loaded.report.id]
-      )
-      // Die Anzeige-Mail als erste Nachricht des Verlaufs festhalten.
-      await pool.execute(
-        `INSERT INTO report_replies (report_id, direction, message_id, from_address, subject, body_text, received_at, read_at)
-         VALUES (?, 'out', ?, ?, ?, ?, NOW(), NOW())`,
-        [
-          loaded.report.id,
-          sent.messageId.slice(0, 255) || `out:${loaded.report.id}:${Date.now()}`,
-          (process.env.MAIL_FROM || '').slice(0, 255) || null,
-          sent.subject.slice(0, 500),
-          sent.text,
-        ]
-      )
-      setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} freigegeben und ans Ordnungsamt verschickt.`)
+      const result = await dispatchReport(loaded.report.id, async (messageId) => {
+        const fresh = await loadReportWithUser(id)
+        if (!fresh || !(await isProfileComplete(fresh.report.user_id))) {
+          throw new ReportPreparationError('Das Nutzerprofil ist unvollständig. Bitte die Anzeige ablehnen und korrigieren lassen.')
+        }
+        const gate = resolveSendCity(fresh.report.tatort, fresh.report.city)
+        if (!gate.ok) throw new ReportPreparationError(gate.message)
+        await pool.execute('UPDATE reports SET city=? WHERE id=?', [gate.cityId, fresh.report.id])
+        await regeneratePdf(fresh.report.id, fresh.report.user_id)
+        const ready = await loadReportWithUser(id)
+        if (!ready) throw new Error('Anzeige nicht mehr verfügbar.')
+        return MailService.prepareReport(ready.report, ready.user, messageId)
+      })
+      if (result === 'sent') {
+        setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen}: Versand abgeschlossen.`)
+      } else {
+        setFlash(reply, 'error', result === 'uncertain'
+          ? 'Der Versand läuft oder sein Ergebnis ist unklar. Vor einem erneuten Versand muss der Mailserver geprüft werden.'
+          : 'Die Anzeige wird bereits verarbeitet oder ist nicht mehr zur Freigabe verfügbar.')
+      }
     } catch (err) {
-      app.log.error({ err }, 'Versand nach Freigabe fehlgeschlagen')
-      setFlash(reply, 'error', `Versand von ${loaded.report.aktenzeichen} fehlgeschlagen – Anzeige bleibt eingereicht.`)
+      app.log.error({ err }, 'Freigabe/Versandabschluss fehlgeschlagen')
+      setFlash(reply, 'error', err instanceof ReportPreparationError ? err.message : 'Freigabe nicht abgeschlossen. Bitte den angezeigten Versandstatus prüfen; eine bereits verschickte Mail wird nicht automatisch erneut versendet.')
     }
     return reply.redirect('/admin/anzeigen')
   })
@@ -236,10 +216,14 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
 
-    await pool.execute(
-      "UPDATE reports SET status='entwurf', eingereicht_at=NULL, ablehnung_grund=? WHERE id=?",
+    const [rejected] = await pool.execute<mysql.ResultSetHeader>(
+      "UPDATE reports SET status='entwurf', eingereicht_at=NULL, ablehnung_grund=? WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
       [grund, loaded.report.id]
     )
+    if (!rejected.affectedRows) {
+      setFlash(reply, 'error', 'Die Anzeige wird bereits versendet oder wurde inzwischen geändert.')
+      return reply.redirect('/admin/anzeigen')
+    }
     try {
       await MailService.sendReportRejected(loaded.user, loaded.report, grund)
     } catch (err) {

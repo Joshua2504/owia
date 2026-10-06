@@ -1,0 +1,50 @@
+# Vollständig getrennte Wegwerf-Umgebung. Keine Hostports, Produktionsvolumes
+# oder .env-Dateien; das interne Netz hat keinen Internetzugang für Mailversand.
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: test-root-only
+      MARIADB_DATABASE: owia_test
+      MARIADB_USER: owia_test
+      MARIADB_PASSWORD: test-only
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ./src/db/schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  mail:
+    image: axllent/mailpit
+  tests:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app:ro
+    tmpfs:
+      - /app/data
+    environment:
+      NODE_ENV: test
+      OWIA_TEST_ONLY: "1"
+      DB_HOST: db
+      DB_NAME: owia_test
+      DB_USER: owia_test
+      DB_PASSWORD: test-only
+      MAIL_DRIVER: mailpit
+      MAIL_HOST: mail
+      MAIL_FROM: owia@example.invalid
+      ADMIN_EMAILS: admin@example.invalid
+      APP_URL: http://example.invalid
+      ALPR_ENABLED: "off"
+    command: ["node", "--import", "tsx", "--test", "tests/regressions.test.ts"]
+    depends_on:
+      db:
+        condition: service_healthy
+      mail:
+        condition: service_started
+networks:
+  default:
+    internal: true
