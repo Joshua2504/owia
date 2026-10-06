@@ -69,18 +69,18 @@
   }
 
   function moveDragged(moved, body) {
-    fetch('/anzeige/' + moved.az + '/images/' + moved.imageId + '/move', {
+    return fetch('/anzeige/' + moved.az + '/images/' + moved.imageId + '/move', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
       .then(function (res) {
-        if (!res.ok) { alert(res.d.error || 'Verschieben fehlgeschlagen.'); return }
-        if (body.newDraft) insertNewDraftRow(moved, res.d.targetAz)
+        if (!res.ok) throw new Error(res.d.error || 'Verschieben fehlgeschlagen.')
+        if (body.newDraft) return insertNewDraftRow(moved, res.d.targetAz)
         else adoptImage(moved, res.d.targetAz)
       })
-      .catch(function () { alert('Verschieben fehlgeschlagen.') })
+
   }
 
   // Thumbnail ohne Reload in die Ziel-Zeile übernehmen: Element umhängen und
@@ -93,7 +93,12 @@
     img.src = '/anzeige/' + targetAz + '/image/' + moved.imageId + '/thumb.jpg'
     img.setAttribute('data-full-src', '/anzeige/' + targetAz + '/image/' + moved.imageId)
     img.setAttribute('data-drag-az', targetAz)
-    photos.appendChild(img)
+    photos.appendChild(img.closest('.report-photo') || img)
+    var moveButton = img.closest('.report-photo') && img.closest('.report-photo').querySelector('.photo-move')
+    if (moveButton) moveButton.setAttribute('aria-label', 'Foto aus ' + targetAz + ' verschieben')
+    targetRow.querySelector('.cell-photos').classList.remove('cell-empty')
+    updatePhotoCell(moved.az)
+    document.dispatchEvent(new Event('reports:updated'))
   }
 
   // Neue Anzeige: fertig gerenderte Zeile vom Server holen und direkt unter der
@@ -102,7 +107,7 @@
     var source = document.querySelector('[data-drop-az="' + moved.az + '"]')
     var dropNew = document.getElementById('drop-new-draft')
     var queue = dropNew && dropNew.getAttribute('data-queue')
-    fetch('/anzeige/' + targetAz + '/listenzeile' + (queue ? '?queue=' + queue : ''))
+    return fetch('/anzeige/' + targetAz + '/listenzeile' + (queue ? '?queue=' + queue : ''))
       .then(function (r) {
         if (!r.ok) throw new Error()
         return r.text()
@@ -114,10 +119,17 @@
         var row = tbody.querySelector('tr')
         if (!row) { location.reload(); return }
         source.parentNode.insertBefore(row, source.nextSibling)
-        if (moved.el) moved.el.remove() // Foto hängt jetzt in der neuen Zeile
+        if (moved.el) (moved.el.closest('.report-photo') || moved.el).remove() // Foto hängt jetzt in der neuen Zeile
         bindRow(row)
+        updatePhotoCell(moved.az)
+        document.dispatchEvent(new Event('reports:updated'))
       })
       .catch(function () { location.reload() }) // Zeile nicht ladbar – Reload als Fallback
+  }
+
+  function updatePhotoCell(az) {
+    var row = document.querySelector('[data-drop-az="' + az + '"]')
+    if (row) row.querySelector('.cell-photos').classList.toggle('cell-empty', !row.querySelector('[data-full-src]'))
   }
 
   function bindDropTarget(row) {
@@ -136,7 +148,7 @@
       e.preventDefault()
       var moved = dragged
       dragged = null
-      moveDragged(moved, { targetAz: az })
+      moveDragged(moved, { targetAz: az }).catch(function (error) { alert(error.message) })
     })
   }
 
@@ -171,7 +183,7 @@
       e.preventDefault()
       var moved = dragged
       dragged = null
-      moveDragged(moved, { newDraft: true })
+      moveDragged(moved, { newDraft: true }).catch(function (error) { alert(error.message) })
     })
   }
 
@@ -209,42 +221,20 @@
   }
   document.querySelectorAll('[data-full-src]').forEach(bindLightbox)
 
-  // ---------------------------------------------------------------------------
-  // Mehrfachauswahl: Entwürfe anhaken und gesammelt löschen. Delegiert auf
-  // document, damit auch per Drag & Drop nachgeladene Zeilen (listenzeile,
-  // bindRow) ohne extra Verdrahtung funktionieren – ihre Checkboxen hängen
-  // per form-Attribut ohnehin am Sammel-Formular in report-table.ejs.
-  // ---------------------------------------------------------------------------
-  var bulkForm = document.getElementById('bulk-discard-form')
-  if (bulkForm) {
-    var bulkCount = document.getElementById('bulk-count')
-    var selectAll = document.getElementById('bulk-select-all')
-
-    function bulkBoxes() {
-      return Array.prototype.slice.call(document.querySelectorAll('input.bulk-select'))
-    }
-
-    function updateBulkBar() {
-      var boxes = bulkBoxes()
-      var checked = boxes.filter(function (b) { return b.checked })
-      bulkForm.classList.toggle('d-none', checked.length === 0)
-      bulkForm.classList.toggle('d-flex', checked.length > 0)
-      if (bulkCount) {
-        bulkCount.textContent = checked.length + ' ' + (checked.length === 1 ? 'Entwurf' : 'Entwürfe') + ' ausgewählt'
-      }
-      if (selectAll) {
-        selectAll.checked = boxes.length > 0 && checked.length === boxes.length
-        selectAll.indeterminate = checked.length > 0 && checked.length < boxes.length
-      }
-    }
-
-    document.addEventListener('change', function (e) {
-      if (e.target === selectAll) {
-        bulkBoxes().forEach(function (b) { b.checked = selectAll.checked })
-        updateBulkBar()
-      } else if (e.target.classList && e.target.classList.contains('bulk-select')) {
-        updateBulkBar()
-      }
-    })
+  // Auch die Touch-Bedienung verwendet denselben Ablauf wie Drag & Drop.
+  window.reportTableMove = moveDragged
+  window.reportTableRefresh = async function (az) {
+    var old = document.querySelector('[data-drop-az="' + az + '"]')
+    if (!old) return
+    var drop = document.getElementById('drop-new-draft')
+    var queue = drop && drop.getAttribute('data-queue')
+    var response = await fetch('/anzeige/' + az + '/listenzeile' + (queue ? '?queue=' + queue : ''))
+    if (!response.ok || response.redirected) throw new Error('Liste konnte nicht aktualisiert werden.')
+    var tbody = document.createElement('tbody')
+    tbody.innerHTML = await response.text()
+    var row = tbody.querySelector('tr')
+    if (!row) throw new Error('Liste konnte nicht aktualisiert werden.')
+    old.replaceWith(row)
+    bindRow(row)
   }
 })()

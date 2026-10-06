@@ -20,6 +20,7 @@ import { replyAttachmentPath } from '../services/mailInbox'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 import { MailService } from '../services/mail'
 import { adminEmails } from '../config/admin'
+import { previewBulkEdit, applyBulkEdit, BulkEditInputError } from '../services/bulkEdit'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
 export { VERSTOSS_ARTEN }
@@ -305,6 +306,27 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
 }
 
 export default async function reportsRoutes(app: FastifyInstance) {
+  app.get('/anzeigen/bearbeitungsoptionen', { preHandler: requireAuth }, async () => ({ offenses: VERSTOSS_ARTEN }))
+  app.post('/anzeigen/sammelbearbeitung/vorschau', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      return await previewBulkEdit(request.session.userId as number, (request.body || {}) as Record<string, unknown>)
+    } catch (error) {
+      if (error instanceof BulkEditInputError) return reply.status(400).send({ error: error.message })
+      request.log.error(error, 'Sammelbearbeitung: Vorschau fehlgeschlagen')
+      return reply.status(500).send({ error: 'Vorschau fehlgeschlagen. Bitte erneut versuchen.' })
+    }
+  })
+  app.post('/anzeigen/sammelbearbeitung/speichern', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const results = await applyBulkEdit(request.session.userId as number, (request.body as { token?: unknown })?.token)
+      return { results }
+    } catch (error) {
+      if (error instanceof BulkEditInputError) return reply.status(400).send({ error: error.message })
+      request.log.error(error, 'Sammelbearbeitung fehlgeschlagen')
+      return reply.status(500).send({ error: 'Speichern fehlgeschlagen. Bitte erneut prüfen.' })
+    }
+  })
+
   // Eigene, noch nicht versendete Anzeigen (Entwürfe) mit Koordinaten – für die
   // Karte im Dashboard. Versendete erscheinen bereits (anonym) über die
   // öffentliche Übersicht, daher hier ausgenommen.
@@ -651,7 +673,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
     const source = await loadReportByAktenzeichen(az, userId)
     if (!source) return reply.status(404).send({ error: 'not found' })
-    if (source.status !== 'entwurf') return reply.status(409).send({ error: 'not a draft' })
+    if (source.status !== 'entwurf' || source.versand_status !== null) return reply.status(409).send({ error: 'not a draft' })
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, filename, original_filename,
@@ -679,7 +701,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     } else {
       const target = await loadReportByAktenzeichen(targetAz as string, userId)
       if (!target) return reply.status(404).send({ error: 'Ziel-Entwurf nicht gefunden.' })
-      if (target.status !== 'entwurf') {
+      if (target.status !== 'entwurf' || target.versand_status !== null) {
         return reply.status(409).send({ error: 'Ziel-Anzeige ist kein Entwurf mehr.' })
       }
       const [cntRows] = await pool.execute<mysql.RowDataPacket[]>(

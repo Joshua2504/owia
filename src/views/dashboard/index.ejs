@@ -12,18 +12,6 @@
   </div>
 </div>
 
-<!-- Anonyme Übersichtskarte aller versendeter Anzeigen (gleiche Daten wie die Startseite). -->
-<div class="card shadow-sm mb-4">
-  <div class="card-body">
-    <h5 class="card-title mb-1">Übersicht</h5>
-    <p class="text-muted small mb-3">
-      Alle versendeter Anzeigen – anonymisiert, Fotos stark verpixelt.
-      <span class="text-warning-emphasis">Deine eigenen Entwürfe sind orange markiert.</span>
-    </p>
-    <div id="overview-map" class="rounded border map-panel" data-include-own="1"></div>
-  </div>
-</div>
-
 <% if (reports.length === 0) { %>
   <div class="card shadow-sm">
     <div class="card-body text-center py-5 text-muted">
@@ -38,6 +26,20 @@
     <%- include('../partials/report-table', { reports, imagesByReport, queueId: null }) %>
   </div>
 <% } %>
+
+<!-- Anonyme Übersichtskarte aller versendeter Anzeigen (gleiche Daten wie die Startseite). -->
+<details class="card shadow-sm mt-4 mb-4" open>
+  <summary class="p-3 fw-semibold">Übersichtskarte</summary>
+  <div class="card-body">
+    <h5 class="card-title mb-1">Übersicht</h5>
+    <p class="text-muted small mb-3">
+      Alle versendeten Anzeigen – anonymisiert, Fotos stark verpixelt.
+      <span class="text-warning-emphasis">Deine eigenen Entwürfe sind orange markiert.</span>
+    </p>
+    <div id="overview-map" class="rounded border map-panel" data-include-own="1"></div>
+  </div>
+</details>
+
 
 <link rel="stylesheet" href="/public/vendor/leaflet.css">
 <script src="/public/vendor/leaflet.js"></script>

@@ -1,21 +1,21 @@
 // Sammel-Import ("Foto-Import"): viele Fotos auf einmal hochladen, serverseitig
-// EXIF (GPS + Aufnahmezeit) lesen, zu Vorfällen gruppieren und daraus automatisch
+// EXIF (GPS + Aufnahmezeit) im Worker lesen, zu Vorfällen gruppieren und daraus automatisch
 // Entwürfe erzeugen. Der Upload läuft client-seitig in kleinen Chunks (unter dem
 // globalen Multipart-Limit von 10 Dateien); die Gruppierung ("finish") ist ein
-// schneller synchroner Schritt.
+// separater Schritt nach Übertragung und Vorschauberechnung.
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { requireAuth, viewData, setFlash } from '../middleware/auth'
-import { prepareImage, writePreparedImage } from '../services/images'
-import { extractPhotoMeta } from '../services/exif'
+import { processIntakeRaw, processIntakeThumbnail, withIntakeUploadLock } from '../services/intakeImageProcessing'
+import crypto from 'node:crypto'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
 import { createDraft, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
-import { cachedThumbnail, writeThumbnailCache } from '../services/pixelate'
+import { cachedThumbnail } from '../services/pixelate'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 
 // Muss zur Chunk-Größe in public/js/import-upload.js passen und unter dem
@@ -78,7 +78,7 @@ async function loadPhotos(batchId: number, onlyUnassigned = false): Promise<Phot
             DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at,
             gps_lat, gps_lon, report_id, sha256
        FROM intake_photos
-      WHERE batch_id = ?${onlyUnassigned ? ' AND report_id IS NULL' : ''}
+      WHERE batch_id = ? AND processing_status = 'ready'${onlyUnassigned ? ' AND report_id IS NULL' : ''}
       ORDER BY captured_at IS NULL, captured_at, id`,
     [batchId]
   )
@@ -138,38 +138,40 @@ export default async function intakeRoutes(app: FastifyInstance) {
         try {
           // Duplikat? Hash über den unveränderten Upload; frühere Chunks dieses
           // Batches sind bereits in der DB und werden dadurch mit erkannt.
-          const sha256 = photoSha256(buffer)
-          const existing = await findExistingPhoto(userId, sha256)
-          if (existing) {
-            skipped.push(`${part.filename} (${existing})`)
-            continue
-          }
-          // EXIF aus dem Original – die HEIC-Konvertierung entfernt die Metadaten.
-          const meta = await extractPhotoMeta(buffer)
-          const prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
-          const { filename, originalFilename } = await writePreparedImage(
-            intakeDir(userId, batch.id),
-            prepared
-          )
-          // Vorschaubild sofort mitschreiben, damit die Übersicht später nicht
-          // dutzende Vollbilder synchron dekodieren muss.
-          await writeThumbnailCache(intakeDir(userId, batch.id), filename, prepared.buffer, prepared.mimetype)
+          await withIntakeUploadLock(userId, async () => {
+            const current = await loadBatch(batchId, userId)
+            if (!current || current.status !== 'open') throw new Error('Import bereits geschlossen.')
+            const sha256 = photoSha256(buffer)
+            const existing = await findExistingPhoto(userId, sha256)
+            if (existing) {
+              skipped.push(`${part.filename} (${existing})`)
+              return
+            }
+          // Upload und Bildverarbeitung sind getrennt: nur die unveränderten
+          // Bytes werden gespeichert. Konvertierung/EXIF laufen erst bei finish.
+          const ext = (part.filename.match(/\.[a-z0-9]+$/i)?.[0] || '.bin').toLowerCase()
+          const filename = `raw-${crypto.randomUUID()}${ext}`
+          const dir = intakeDir(userId, batch.id)
+          await fs.mkdir(dir, { recursive: true })
+          await fs.writeFile(path.join(dir, filename), buffer)
           const [result] = await pool.execute<mysql.ResultSetHeader>(
             `INSERT INTO intake_photos
                (batch_id, filename, mimetype, original_filename, original_mimetype,
-                upload_name, captured_at, gps_lat, gps_lon, sha256)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [batch.id, filename, prepared.mimetype, originalFilename, prepared.originalMimetype,
-             part.filename, meta.capturedAt, meta.lat, meta.lon, sha256]
+                upload_name, captured_at, gps_lat, gps_lon, sha256, processing_status)
+             VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 'pending')`,
+            [batch.id, filename, part.mimetype || 'application/octet-stream', filename,
+             part.mimetype || 'application/octet-stream', part.filename, sha256]
           )
-          saved.push({
-            id: result.insertId,
-            name: part.filename,
-            capturedAt: meta.capturedAt,
-            hasGps: meta.lat !== null,
+            saved.push({
+              id: result.insertId,
+              name: part.filename,
+            capturedAt: null,
+            hasGps: false,
+            })
           })
-        } catch {
-          errors.push(`${part.filename}: Nur JPG-, PNG- und HEIC/HEIF-Bilder werden unterstützt.`)
+        } catch (error) {
+          request.log.warn(error, 'Foto-Import: Bild konnte nicht gespeichert werden')
+          errors.push(`${part.filename}: Bild konnte nicht gespeichert werden. Bitte JPG, PNG oder HEIC/HEIF verwenden und erneut versuchen.`)
         }
       }
     } catch {
@@ -197,10 +199,43 @@ export default async function intakeRoutes(app: FastifyInstance) {
     if (claim.affectedRows === 0) return reply.send({ redirect: `/import/${batch.id}` })
 
     try {
+      const [pending] = await pool.execute<mysql.RowDataPacket[]>(
+        `SELECT id, filename, mimetype FROM intake_photos
+           WHERE batch_id = ? AND report_id IS NULL AND processing_status = 'pending'
+           ORDER BY id`,
+        [batch.id]
+      )
+      for (const photo of pending) {
+        const dir = intakeDir(userId, batch.id)
+        try {
+          const prepared = await processIntakeRaw(path.join(dir, photo.filename), photo.filename, photo.mimetype, dir)
+          await pool.execute(
+            `UPDATE intake_photos SET filename=?, mimetype=?, original_filename=?, original_mimetype=?,
+             captured_at=?, gps_lat=?, gps_lon=?, processing_status='ready', processing_error=NULL WHERE id=?`,
+            [prepared.filename, prepared.mimetype, prepared.originalFilename, prepared.originalMimetype,
+              prepared.meta.capturedAt, prepared.meta.lat, prepared.meta.lon, photo.id]
+          )
+          if (prepared.filename !== photo.filename) await fs.rm(path.join(dir, photo.filename), { force: true })
+        } catch (error) {
+          request.log.warn(error, 'Intake-Bildverarbeitung fehlgeschlagen')
+          await pool.execute(
+            "UPDATE intake_photos SET processing_status='error', processing_error=? WHERE id=?",
+            ['Bild konnte nicht verarbeitet werden.', photo.id]
+          )
+        }
+      }
+
       const photos = await loadPhotos(batch.id, true)
       if (photos.length === 0) {
         await pool.execute("UPDATE intake_batches SET status = 'open' WHERE id = ?", [batch.id])
         return reply.status(400).send({ error: 'Keine Fotos hochgeladen.' })
+      }
+
+      // Der eigentliche Transfer wartet nicht mehr auf JPEG-Decoding und
+      // Skalierung. Vor der Übersicht erzeugen wir die Caches im Worker;
+      // dabei bleibt der HTTP-Eventloop auch für weitere Uploads ansprechbar.
+      for (const photo of photos) {
+        await processIntakeThumbnail(photo.filename, photo.mimetype, intakeDir(userId, batch.id))
       }
 
       const byId = new Map(photos.map((p) => [p.id, p]))

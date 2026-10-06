@@ -15,7 +15,7 @@
     <div id="intake-picker">
       <input type="file" id="intake-files" class="form-control"
              accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
-      <div class="form-text">JPG, PNG oder HEIC/HEIF · max. 20 MB pro Foto.</div>
+      <div class="form-text">JPG, PNG oder HEIC/HEIF · max. 20 MB pro Foto. Nach der Übertragung werden Vorschaubilder vorbereitet und Fotos gruppiert.</div>
       <!-- Direkteinstieg in die Kamera (PWA: App-Icon -> hier -> Kamera = 2 Taps).
            Eigenes Input, weil capture am Haupt-Input die Galerie-Auswahl
            verdrängen würde; import-upload.js sammelt die Aufnahmen dort ein. -->
@@ -35,10 +35,10 @@
       <div class="progress mb-2" style="height: 1.5rem">
         <div id="intake-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
       </div>
-      <div id="intake-progress-text" class="small text-muted"></div>
+      <div id="intake-progress-text" class="small text-muted" role="status" aria-live="polite"></div>
       <div id="intake-stats" class="small text-muted"></div>
       <div class="alert alert-warning py-2 px-3 mt-2 mb-0 small">
-        ⚠️ Bitte dieses Fenster geöffnet lassen, bis der Upload abgeschlossen ist –
+        ⚠️ Bitte dieses Fenster geöffnet lassen, bis Übertragung und Verarbeitung abgeschlossen sind –
         sonst wird der Import unterbrochen. (Bereits hochgeladene Fotos bleiben unter
         „Bisherige Importe" erhalten.)
       </div>
@@ -70,6 +70,8 @@
                 <td>
                   <% if (b.status === 'open') { %>
                     <span class="badge text-bg-warning">Upload offen</span>
+                  <% } else if (b.status === 'grouping') { %>
+                    <span class="badge text-bg-info">Wird verarbeitet</span>
                   <% } else { %>
                     <span class="badge text-bg-success">Gruppiert</span>
                   <% } %>

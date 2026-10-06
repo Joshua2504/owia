@@ -15,18 +15,21 @@ const _hhmm = (t) => (t ? String(t).slice(0, 5) : '')
 const _queue = queueId ? '?queue=' + queueId : ''
 const _isDraft = r.status === 'entwurf'
 %>
-<tr <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
+<tr data-status="<%= r.status %>" <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
   <td class="cell-select <%= _isDraft ? '' : 'cell-empty' %>">
     <% if (_isDraft) { %>
-      <%# Mehrfachauswahl fürs Sammel-Löschen (Formular in report-table.ejs). %>
+      <%# Mehrfachauswahl für gemeinsame Aktionen (Formular in report-table.ejs). %>
+      <label class="report-checkbox-target">
       <input type="checkbox" class="form-check-input bulk-select" name="az"
              value="<%= r.aktenzeichen %>" form="bulk-discard-form"
              aria-label="Entwurf <%= r.aktenzeichen %> auswählen">
+      </label>
     <% } %>
   </td>
   <td class="cell-photos <%= imgIds.length ? '' : 'cell-empty' %>">
     <div class="d-flex flex-wrap gap-1" data-photos>
       <% for (const imgId of imgIds) { %>
+        <div class="report-photo">
         <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= imgId %>/thumb.jpg" alt=""
              class="rounded border report-thumb" style="cursor:zoom-in"
              loading="lazy" decoding="async"
@@ -37,6 +40,8 @@ const _isDraft = r.status === 'entwurf'
              <% } else { %>
                title="Klick: vergrößern"
              <% } %>>
+        <% if (_isDraft) { %><button type="button" class="btn btn-outline-secondary btn-sm photo-move" aria-label="Foto aus <%= r.aktenzeichen %> verschieben" title="Foto verschieben">↗</button><% } %>
+        </div>
       <% } %>
     </div>
   </td>

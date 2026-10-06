@@ -71,8 +71,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0032_report_dispatch.sql')
-  assert.equal(rows.length, 32)
+  assert.equal(rows.at(-1)?.filename, '0033_intake_processing.sql')
+  assert.equal(rows.length, 33)
 })
 
 test('Parallele Freigaben versenden genau einmal und speichern genau eine Nachricht', async () => {
@@ -348,4 +348,128 @@ test('Adminansicht bietet bei unklarem Versand keinen Wiederholungsbutton an', a
       if (state === 'angenommen') assert.ok(html.includes('Abschluss speichern (ohne erneuten Versand)'))
     }
   }
+})
+
+test('Sammelbearbeitung schützt vorhandene Angaben, fremde Nutzer, Status und veraltete Vorschauen', async () => {
+  const { previewBulkEdit, applyBulkEdit } = await import('../src/services/bulkEdit')
+  const { VERSTOSS_ARTEN } = await import('../src/config/verstoss')
+  const emptyId = await report(), filledId = await report(), sentId = await report(), lockedId = await report()
+  await pool.execute("UPDATE reports SET status='entwurf', verstoss_art=NULL WHERE id IN (?, ?, ?)", [emptyId, filledId, lockedId])
+  await pool.execute('UPDATE reports SET verstoss_art=? WHERE id=?', [VERSTOSS_ARTEN[1], filledId])
+  await pool.execute("UPDATE reports SET versand_status='ungewiss' WHERE id=?", [lockedId])
+  const rows = await query('SELECT id, aktenzeichen FROM reports WHERE id IN (?, ?, ?, ?)', [emptyId, filledId, sentId, lockedId])
+  const az = (id: number) => rows.find(r => r.id === id)!.aktenzeichen as string
+  const body = { az: rows.map(r => r.aktenzeichen), offenseMode: 'set', offense: VERSTOSS_ARTEN[0], leftMode: 'keep', overwrite: false }
+  const preview = await previewBulkEdit(userId, body)
+  assert.equal(preview.count, 1)
+  await assert.rejects(() => applyBulkEdit(userId + 999, preview.token))
+  await assert.rejects(() => applyBulkEdit(userId, preview.token + 'x'))
+  assert.equal((await previewBulkEdit(userId + 999, body)).count, 0)
+  const results = await applyBulkEdit(userId, preview.token)
+  assert.equal(results[0].ok, true)
+  assert.equal((await query('SELECT verstoss_art FROM reports WHERE id=?', [filledId]))[0].verstoss_art, VERSTOSS_ARTEN[1])
+  assert.equal((await query('SELECT verstoss_art FROM reports WHERE id=?', [lockedId]))[0].verstoss_art, null)
+  assert.equal((await applyBulkEdit(userId, preview.token))[0].ok, false)
+  const overwrite = await previewBulkEdit(userId, { ...body, az: [az(filledId)], overwrite: true })
+  await pool.execute('UPDATE reports SET fahrzeug_verlassen=1 WHERE id=?', [filledId])
+  assert.equal((await applyBulkEdit(userId, overwrite.token))[0].ok, false)
+  const statusChange = await previewBulkEdit(userId, { ...body, az: [az(emptyId)], offense: VERSTOSS_ARTEN[1], overwrite: true })
+  await pool.execute("UPDATE reports SET status='eingereicht' WHERE id=?", [emptyId])
+  assert.equal((await applyBulkEdit(userId, statusChange.token))[0].ok, false)
+  const clear = await previewBulkEdit(userId, { ...body, az: [az(filledId)], offenseMode: 'clear', leftMode: 'no', overwrite: true })
+  assert.equal((await applyBulkEdit(userId, clear.token))[0].ok, true)
+  const cleared = (await query('SELECT verstoss_art, fahrzeug_verlassen FROM reports WHERE id=?', [filledId]))[0]
+  assert.equal(cleared.verstoss_art, null)
+  assert.equal(cleared.fahrzeug_verlassen, 0)
+  await assert.rejects(() => previewBulkEdit(userId, { ...body, offense: 'Unbekannter Verstoß' }))
+  await assert.rejects(() => previewBulkEdit(userId, { ...body, az: Array(51).fill(az(filledId)) }))
+})
+
+test('Sammelbearbeitungs-API prüft Anmeldung, Katalog und Vorschau; Foto-Verschieben respektiert Versandsperren', async () => {
+  const { VERSTOSS_ARTEN } = await import('../src/config/verstoss')
+  const id = await report()
+  await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  const app = Fastify()
+  let authenticated = true
+  app.addHook('preHandler', async request => {
+    request.session = { userId: authenticated ? userId : undefined } as typeof request.session
+  })
+  await app.register(reportsRoutes)
+  try {
+    const payload = { az: [az], offenseMode: 'set', offense: VERSTOSS_ARTEN[0], leftMode: 'keep' }
+    const invalid = await app.inject({ method: 'POST', url: '/anzeigen/sammelbearbeitung/vorschau', payload: { ...payload, offense: 'Ungültig' } })
+    assert.equal(invalid.statusCode, 400)
+    const preview = await app.inject({ method: 'POST', url: '/anzeigen/sammelbearbeitung/vorschau', payload })
+    assert.equal(preview.statusCode, 200)
+    assert.equal(preview.json().count, 1)
+    const saved = await app.inject({ method: 'POST', url: '/anzeigen/sammelbearbeitung/speichern', payload: { token: preview.json().token } })
+    assert.equal(saved.statusCode, 200)
+    assert.equal(saved.json().results[0].ok, true)
+    await pool.execute("UPDATE reports SET versand_status='ungewiss' WHERE id=?", [id])
+    const move = await app.inject({ method: 'POST', url: `/anzeige/${az}/images/123/move`, payload: { newDraft: true } })
+    assert.equal(move.statusCode, 409)
+    authenticated = false
+    const unauthorized = await app.inject({ method: 'POST', url: '/anzeigen/sammelbearbeitung/vorschau', payload })
+    assert.equal(unauthorized.statusCode, 302)
+    assert.equal(unauthorized.headers.location, '/login')
+  } finally { await app.close() }
+})
+
+test('Import-Bildworker erhält Originalbytes, erstellt Vorschaubilder und blockiert den HTTP-Eventloop nicht', async () => {
+  const { processIntakeImage, processIntakeThumbnail } = await import('../src/services/intakeImageProcessing')
+  const jpeg = (await import('jpeg-js')).default
+  const pixels = Buffer.alloc(1600 * 1200 * 4, 180)
+  const original = jpeg.encode({ data: pixels, width: 1600, height: 1200 }, 85).data
+  const dir = path.join(process.cwd(), 'data', 'worker-test')
+  let ticks = 0
+  const timer = setInterval(() => { ticks++ }, 5)
+  try {
+    const result = await processIntakeImage(original, 'synthetic.jpg', 'image/jpeg', dir)
+    await processIntakeThumbnail(result.filename, result.mimetype, dir)
+    assert.ok(ticks > 0, 'Server-Timer muss während der Bildverarbeitung weiterlaufen')
+    assert.deepEqual(await fs.readFile(path.join(dir, result.originalFilename)), original)
+    assert.equal(result.meta.capturedAt, null)
+    assert.equal(result.meta.lat, null)
+    const thumb = jpeg.decode(await fs.readFile(path.join(dir, result.filename + '.thumb.jpg')))
+    assert.ok(thumb.width < 1600 && thumb.height < 1200)
+    // Ein ungültiges Foto darf die nächste Worker-Aufgabe nicht blockieren.
+    await assert.rejects(() => processIntakeImage(Buffer.from('invalid'), 'bad.txt', 'text/plain', dir))
+    const second = await processIntakeImage(original, 'second.jpg', 'image/jpeg', dir)
+    assert.equal(second.mimetype, 'image/jpeg')
+  } finally { clearInterval(timer); await fs.rm(dir, { recursive: true, force: true }) }
+})
+
+test('Überlappende Importpakete speichern ein identisches Foto genau einmal', async () => {
+  const intakeRoutes = (await import('../src/routes/intake')).default
+  const jpeg = (await import('jpeg-js')).default
+  const image = jpeg.encode({ data: Buffer.alloc(16 * 16 * 4, 127), width: 16, height: 16 }, 80).data
+  const app = Fastify()
+  const multipart = (await import('@fastify/multipart')).default
+  await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024, files: 10 } })
+  app.addHook('preHandler', async request => { request.session = { userId } as typeof request.session })
+  await app.register(intakeRoutes)
+  try {
+    const created = await app.inject({ method: 'POST', url: '/import/batch' })
+    const batchId = created.json().batchId
+    const boundary = 'owia-test-boundary'
+    const payload = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="bilder"; filename="synthetic.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`),
+      image, Buffer.from(`\r\n--${boundary}--\r\n`),
+    ])
+    const responses = await Promise.all(Array.from({ length: 2 }, () => app.inject({
+      method: 'POST', url: `/import/${batchId}/photos`, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` }, payload,
+    })))
+    assert.ok(responses.every(response => response.statusCode === 200))
+    assert.equal(responses.reduce((count, response) => count + response.json().photos.length, 0), 1)
+    assert.equal(responses.reduce((count, response) => count + response.json().skipped.length, 0), 1)
+    assert.equal((await query('SELECT COUNT(*) n FROM intake_photos WHERE batch_id=?', [batchId]))[0].n, 1)
+    const stored = (await query('SELECT filename FROM intake_photos WHERE batch_id=?', [batchId]))[0]
+    const thumbPath = path.join(process.cwd(), 'data', 'uploads', String(userId), 'intake', String(batchId), stored.filename + '.thumb.jpg')
+    await assert.rejects(() => fs.access(thumbPath), 'Upload darf nicht auf die Vorschauberechnung warten')
+    const finished = await app.inject({ method: 'POST', url: `/import/${batchId}/finish` })
+    assert.equal(finished.statusCode, 200)
+    const lateUpload = await app.inject({ method: 'POST', url: `/import/${batchId}/photos`, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` }, payload })
+    assert.equal(lateUpload.statusCode, 409)
+  } finally { await app.close() }
 })

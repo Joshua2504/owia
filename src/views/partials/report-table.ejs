@@ -1,7 +1,7 @@
 <%
 // Gemeinsame Anzeigen-Tabelle für Dashboard und Foto-Import-Übersicht.
 // Alle Details stehen in der Tabelle (Zeile: report-row.ejs); bearbeitet wird
-// ausschließlich auf der Anzeigen-Seite (Link "Bearbeiten" bei Entwürfen).
+// einzeln auf der Anzeigen-Seite oder gemeinsam über report-bulk.js.
 // Erwartet: reports (Felder s. report-row.ejs inkl. status), imagesByReport
 // ({ reportId: [imageIds] }), optional queueId (Edit-Links öffnen die
 // Review-Queue des Batches).
@@ -14,17 +14,17 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
     report-row.ejs) – der Großteil der Nutzer kommt per Handy und soll nicht
     seitwärts scrollen müssen. Das Markup bleibt bewusst eine Tabelle, weil
     report-table.js an <tr data-drop-az> hängt. %>
+<div class="report-filters p-3 d-flex flex-wrap gap-2">
+  <label class="flex-grow-1">Suchen<input type="search" id="report-search" class="form-control" placeholder="Kennzeichen, Aktenzeichen, Tatort"></label>
+  <label>Status<select id="report-status" class="form-select"><option value="">Alle</option><option value="entwurf">Entwürfe</option><option value="eingereicht">Eingereicht</option><option value="versendet">Versendet</option></select></label>
+  <% if (_hasDrafts) { %><label class="d-flex align-items-center gap-2 report-select-label"><input type="checkbox" id="bulk-select-all" class="form-check-input"> Sichtbare Entwürfe auswählen</label><% } %>
+  <span id="report-visible-count" class="small text-muted w-100" role="status"></span>
+</div>
 <div class="table-responsive report-table-wrap">
   <table class="table table-sm table-hover align-middle mb-0 report-table">
     <thead class="table-light">
       <tr>
-        <th style="width:2rem">
-          <% if (_hasDrafts) { %>
-            <%# Mehrfachauswahl (nur Entwürfe); Verdrahtung in report-table.js. %>
-            <input type="checkbox" class="form-check-input" id="bulk-select-all"
-                   aria-label="Alle Entwürfe auswählen">
-          <% } %>
-        </th>
+        <th style="width:2rem"><span class="visually-hidden">Auswahl</span></th>
         <th>Fotos</th>
         <th>Aktenzeichen</th>
         <th>Kennzeichen</th>
@@ -52,9 +52,11 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
        eigene Einzel-Löschen-Formulare, Verschachtelung ist nicht erlaubt).
        Der POST führt erst auf eine Bestätigungsseite (serverseitig erzwungen). -->
   <form id="bulk-discard-form" method="post" action="/anzeigen/loeschen"
-        class="d-none align-items-center flex-wrap gap-2 mx-3 mt-2">
-    <span id="bulk-count" class="small text-muted"></span>
-    <button type="submit" class="btn btn-sm btn-outline-danger">Ausgewählte löschen</button>
+        class="d-none align-items-center flex-wrap gap-2 bulk-action-bar">
+    <span id="bulk-count" class="small text-muted" role="status"></span>
+    <button type="button" id="bulk-edit" class="btn btn-primary">Gemeinsam bearbeiten</button>
+    <button type="button" id="bulk-clear" class="btn btn-outline-secondary">Auswahl aufheben</button>
+    <button type="submit" class="btn btn-outline-danger">Löschen …</button>
   </form>
 <% } %>
 <% if (_hasDrafts) { %>
@@ -66,3 +68,5 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
     ➕ Foto hierher ziehen, um eine <strong>neue Anzeige</strong> daraus zu erstellen
   </div>
 <% } %>
+
+<script src="/public/js/report-bulk.js" defer></script>
