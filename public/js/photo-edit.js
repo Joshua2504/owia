@@ -10,6 +10,14 @@
 //
 // Bewusst eigenständig statt report-form.js wiederzuverwenden: dessen
 // Leinwand-Code hängt an den Editor-Karten (Autosave, Upload-Status, Karte).
+//
+// Kennzeichen-Abgleich: Bei Entwürfen steht das Kennzeichen der Anzeige im
+// Dialog-Kopf (Wert aus dem Feld [data-inline-field=kennzeichen] der Zeile bzw.
+// Prüf-Karte) – man sieht das Foto und korrigiert es direkt. Gespeichert wird
+// über PATCH /anzeige/:az/felder, beim Bestätigen/Schließen bzw. mit Enter im
+// Feld; danach feuert document das Event 'owia:plate-changed' {az, kennzeichen}.
+// data-detected-plate am Foto (ALPR-Ergebnis dieses Fotos) wird als
+// Übernehmen-Vorschlag angeboten, wenn es abweicht.
 ;(function () {
   var MAX_DIM = 2560 // wie report-form.js
   var MIN_BOX = 6
@@ -39,6 +47,11 @@
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
       '<span class="photo-edit-hint small"></span>' +
+      '<div class="photo-edit-plate" hidden>' +
+      '<label class="small" for="photo-edit-plate-input">Kennzeichen</label>' +
+      '<input type="text" id="photo-edit-plate-input" class="form-control form-control-sm plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false">' +
+      '<button type="button" class="btn btn-sm btn-outline-warning" data-act="plate-suggest" hidden></button>' +
+      '</div>' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
       '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen">🗑</button>' +
@@ -57,17 +70,74 @@
     dlg.querySelector('[data-act=cancel]').addEventListener('click', cancel)
     dlg.querySelector('[data-act=save]').addEventListener('click', save)
     dlg.querySelector('[data-act=delete]').addEventListener('click', remove)
+    dlg.querySelector('[data-act=plate-suggest]').addEventListener('click', function () {
+      plateInput().value = state.detected
+      savePlate().then(updateUi, function () {})
+    })
+    plateInput().addEventListener('input', updateUi)
+    plateInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     dlg.addEventListener('cancel', function (e) {
       e.preventDefault()
       cancel()
     })
     // Enter bestätigt – zügiges Durchklicken ohne Maus.
     dlg.addEventListener('keydown', function (e) {
-      if (e.key !== 'Enter' || e.target.closest('button') || !state || !state.base || state.busy) return
+      if (e.key !== 'Enter' || e.target.closest('button') || !state) return
+      // Enter im Kennzeichen-Feld speichert nur das Kennzeichen – das Foto
+      // bestätigt erst ein zweites Enter (Fokus springt auf „Bestätigen").
+      if (e.target === plateInput()) {
+        e.preventDefault()
+        savePlate().then(function () { dlg.querySelector('[data-act=save]').focus() }, function () {})
+        return
+      }
+      if (!state.base || state.busy) return
       e.preventDefault()
       save()
     })
     attachDrawing()
+  }
+
+  function plateInput() {
+    return dlg.querySelector('#photo-edit-plate-input')
+  }
+  // Gleiche Normalisierung wie normalizePlate() in routes/reports.ts.
+  function normPlate(v) {
+    return String(v || '').toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim().slice(0, 20)
+  }
+  function compact(v) {
+    return normPlate(v).replace(/[^A-Z0-9ÄÖÜ]/g, '')
+  }
+
+  // Geändertes Kennzeichen sichern (no-op, wenn unverändert oder kein Feld).
+  function savePlate() {
+    var s = state
+    if (!s || s.plate == null) return Promise.resolve()
+    var v = normPlate(plateInput().value)
+    if (v === s.plate) return Promise.resolve()
+    return fetch('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ kennzeichen: v }),
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d.error || 'Kennzeichen konnte nicht gespeichert werden.')
+        s.plate = res.d.values.kennzeichen || ''
+        if (state === s) plateInput().value = s.plate
+        // Feld der Zeile/Karte nachziehen (report-inline.js vergleicht mit dataset.saved).
+        var host = rowOf(s.az)
+        var field = host && host.querySelector('[data-inline-field="kennzeichen"]')
+        if (field) {
+          field.value = s.plate
+          field.dataset.saved = s.plate
+        }
+        document.dispatchEvent(new CustomEvent('owia:plate-changed', { detail: { az: s.az, kennzeichen: s.plate } }))
+        if (state === s) updateUi()
+      })
+      .catch(function (err) {
+        alert(err.message || 'Kennzeichen konnte nicht gespeichert werden.')
+        throw err
+      })
   }
 
   function msg(text) {
@@ -97,6 +167,18 @@
     }
     dlg.querySelector('.photo-edit-hint').textContent = state.tool ? tips[state.tool] : 'Werkzeug wählen.'
     canvas.classList.toggle('editing', !!state.tool)
+    var pbox = dlg.querySelector('.photo-edit-plate')
+    pbox.hidden = state.plate == null
+    if (state.plate != null) {
+      var cur = plateInput().value
+      var sug = dlg.querySelector('[data-act=plate-suggest]')
+      sug.hidden = !state.detected || compact(state.detected) === compact(cur)
+      sug.textContent = '↵ Erkannt: ' + (state.detected || '')
+      sug.title = 'Erkanntes Kennzeichen übernehmen'
+      // Leeres oder vom erkannten abweichendes Kennzeichen hervorheben.
+      plateInput().classList.toggle('is-invalid', !normPlate(cur))
+      plateInput().classList.toggle('is-mismatch', !!state.detected && !!normPlate(cur) && compact(state.detected) !== compact(cur))
+    }
   }
 
   function setTool(tool) {
@@ -251,11 +333,16 @@
 
   function cancel() {
     if (state && state.dirty && !confirm('Änderungen am Foto verwerfen?')) return
+    // Ein getipptes Kennzeichen nicht verlieren, nur weil das Foto nicht
+    // bestätigt wurde.
+    savePlate().catch(function () {})
     close()
   }
 
+  // Zeile der Anzeigen-Liste bzw. Karte des Prüf-Modus (review.js).
   function rowOf(az) {
-    return document.querySelector('tr[data-az="' + az + '"]')
+    var q = '="' + (window.CSS && CSS.escape ? CSS.escape(az) : az) + '"'
+    return document.querySelector('tr[data-az' + q + '], [data-review-card][data-az' + q + ']')
   }
 
   // Nach Bestätigen/Löschen: Zeile neu laden (neue Vorschaubilder, Status) und
@@ -289,14 +376,17 @@
           if (!r.ok || r.redirected) throw new Error()
           s.dirty = false
         })
-    upload
+    upload.catch(function () {}) // Fehler meldet die Kette unten
+    savePlate()
+      .then(function () { return upload })
       .then(function () { return fetch(s.put + '/geprueft', { method: 'POST' }) })
       .then(function (r) {
         if (!r.ok || r.redirected) throw new Error()
         return next(s.az)
       })
-      .catch(function () {
-        alert('Speichern fehlgeschlagen – bitte erneut versuchen.')
+      .catch(function (err) {
+        // savePlate() hat seinen Fehler schon gemeldet.
+        if (!err || !err.message) alert('Speichern fehlgeschlagen – bitte erneut versuchen.')
       })
       .finally(function () {
         s.busy = false
@@ -325,7 +415,10 @@
   function openThumb(t) {
     var row = t.closest('[data-az]')
     var all = row ? Array.prototype.slice.call(row.querySelectorAll('[data-photo-edit]')) : [t]
+    var plateEl = row && row.querySelector('[data-inline-field="kennzeichen"]')
     open({
+      plate: plateEl ? plateEl.value : null,
+      detected: t.getAttribute('data-detected-plate') || null,
       src: t.getAttribute('data-full-src'),
       put: t.getAttribute('data-photo-edit'),
       az: row && row.getAttribute('data-az'),
@@ -336,10 +429,14 @@
     })
   }
 
-  // opts: { src: Bild-URL, put: PUT-URL der Fassung, az, ok, pos, total, open, tool }
+  // opts: { src: Bild-URL, put: PUT-URL der Fassung, az, ok, pos, total, open, tool,
+  //         plate (Kennzeichen der Anzeige; null = kein Abgleich), detected }
   function open(opts) {
     if (!dlg) build()
+    var plate = opts.plate != null && opts.az ? normPlate(opts.plate) : null
+    plateInput().value = plate || ''
     state = {
+      plate: plate, detected: opts.detected ? normPlate(opts.detected) : null,
       put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool || null, dirty: false,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
     }

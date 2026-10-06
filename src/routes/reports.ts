@@ -251,7 +251,7 @@ function isComplete(r: mysql.RowDataPacket): boolean {
  *  DB (nur Einträge, die noch im aktuellen Katalog stehen) zuerst, aufgefüllt mit
  *  den kuratierten Defaults (VERSTOSS_HAEUFIG) – so ist die „Häufig"-Gruppe auch
  *  ohne Nutzungshistorie sinnvoll gefüllt. */
-async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
+export async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
   const catalog = new Set(VERSTOSS_ARTEN)
   let used: string[] = []
   try {
@@ -909,6 +909,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // lässt sich dort 30 Tage lang wiederherstellen.
     await trashDrafts(userId, [reportId])
 
+    // Prüf-Modus (review.js) verwirft per fetch und lädt selbst den nächsten.
+    if (String(request.headers.accept || '').includes('application/json')) return reply.send({ ok: true })
     setFlash(reply, 'success', 'Entwurf in den Papierkorb verschoben.')
     // Import-Entwürfe zurück zur Batch-Übersicht, sonst zur Anzeigenliste.
     return reply.redirect(report.intake_batch_id ? `/import/${report.intake_batch_id}` : '/anzeigen')
@@ -1111,7 +1113,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
           detected_plates: [...new Set(images.map((i) => i.detected_plate).filter(Boolean))].join('|'),
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
         },
-        imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename), ok: i.geprueft_at !== null })),
+        imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename), ok: i.geprueft_at !== null, plate: i.detected_plate || null })),
         // ejs.renderFile kennt den defaultContext von @fastify/view (server.ts)
         // nicht – Helfer, die report-row.ejs nutzt, hier explizit mitgeben.
         verjaehrung,
@@ -1403,29 +1405,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
     if (report.status !== 'entwurf') return reply.status(409).send({ error: 'Die Anzeige ist bereits eingereicht.' })
 
-    const problems: { message: string; link?: string }[] = []
-    const missing = [
-      !report.kennzeichen && 'Kennzeichen',
-      !report.tattag && 'Tattag',
-      !report.tatzeit_von && 'Uhrzeit',
-      !report.tatort && 'Tatort',
-      !report.verstoss_art && 'Verstoß',
-    ].filter(Boolean)
-    if (missing.length) problems.push({ message: `Es fehlt: ${missing.join(', ')}.` })
-    if (isVerjaehrt(report)) problems.push({ message: 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.' })
-    const unchecked = await countUncheckedImages(report.id)
-    if (unchecked) problems.push({ message: uncheckedMessage(unchecked) })
-    if (!(await isProfileComplete(userId))) {
-      problems.push({ message: 'Dein Profil ist unvollständig (Name und Anschrift).', link: '/einstellungen' })
-    }
-    if (report.tatort) {
-      const gate = resolveSendCity(report.tatort, report.city)
-      if (!gate.ok) problems.push({ message: gate.message })
-      else if (gate.cityId !== report.city) {
-        await pool.execute("UPDATE reports SET city=? WHERE id=? AND status='entwurf'", [gate.cityId, report.id])
-        report.city = gate.cityId
-      }
-    }
+    const problems = await submitProblems(report, userId)
 
     const city = getCity(report.city)
     await regeneratePdf(report.id, userId)
@@ -1572,6 +1552,42 @@ export default async function reportsRoutes(app: FastifyInstance) {
 // Fotos in einen anderen eigenen Entwurf oder eine neue Anzeige verschieben
 // (Mehrfachauswahl im Editor, Drag & Drop in den Listen). Dateien wandern
 // physisch mit, die Bilder landen am Ende der Ziel-Sortierung.
+/** Was einer Einreichung noch im Weg steht – gemeinsame Prüfliste für die
+ *  Einreichen-Vorschau und den Prüf-Modus (routes/review.ts). Muss zu den
+ *  Prüfungen in POST /anzeige/:az/submit passen, sonst zeigt die Vorschau
+ *  „einreichbar" und der Submit lehnt trotzdem ab. Seiteneffekt wie beim
+ *  Submit: Weicht die aus dem Tatort ermittelte Stadt ab, wird sie
+ *  festgeschrieben (report.city wird mit aktualisiert). */
+export async function submitProblems(
+  report: mysql.RowDataPacket,
+  userId: number
+): Promise<{ message: string; link?: string; kind?: string }[]> {
+  const problems: { message: string; link?: string; kind?: string }[] = []
+  const missing = [
+    !report.kennzeichen && 'Kennzeichen',
+    !report.tattag && 'Tattag',
+    !report.tatzeit_von && 'Uhrzeit',
+    !report.tatort && 'Tatort',
+    !report.verstoss_art && 'Verstoß',
+  ].filter(Boolean)
+  if (missing.length) problems.push({ kind: 'fields', message: `Es fehlt: ${missing.join(', ')}.` })
+  if (isVerjaehrt(report)) problems.push({ kind: 'verjaehrt', message: 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.' })
+  const unchecked = await countUncheckedImages(report.id)
+  if (unchecked) problems.push({ kind: 'photos', message: uncheckedMessage(unchecked) })
+  if (!(await isProfileComplete(userId))) {
+    problems.push({ kind: 'profile', message: 'Dein Profil ist unvollständig (Name und Anschrift).', link: '/einstellungen' })
+  }
+  if (report.tatort) {
+    const gate = resolveSendCity(report.tatort, report.city)
+    if (!gate.ok) problems.push({ kind: 'city', message: gate.message })
+    else if (gate.cityId !== report.city) {
+      await pool.execute("UPDATE reports SET city=? WHERE id=? AND status='entwurf'", [gate.cityId, report.id])
+      report.city = gate.cityId
+    }
+  }
+  return problems
+}
+
 /** Anzahl noch nicht bestätigter Fotos einer Anzeige (Foto-Prüfung). */
 async function countUncheckedImages(reportId: number): Promise<number> {
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(

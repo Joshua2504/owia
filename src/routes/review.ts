@@ -1,0 +1,106 @@
+import { FastifyInstance } from 'fastify'
+import mysql from 'mysql2/promise'
+import { pool } from '../db/connection'
+import { requireAuth, viewData } from '../middleware/auth'
+import { getCity } from '../config/cities'
+import { cityEmail } from '../services/districts'
+import { imageVersion } from '../services/images'
+import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
+import { VERSTOSS_ARTEN } from '../config/verstoss'
+import { submitProblems, mostUsedVerstoesse } from './reports'
+
+// Prüf-Modus: alle offenen Entwürfe nacheinander durchgehen – Fotos prüfen und
+// schwärzen (photo-edit.js, mit Kennzeichen-Abgleich im Dialog), fehlende
+// Angaben ergänzen, einreichen oder überspringen. Gedacht fürs Handy (Bahn)
+// und zum Abarbeiten vieler Entwürfe am Stück. Die Seite lädt die Reihenfolge
+// einmal, die Karten kommen einzeln als JSON (public/js/review.js) – so bleibt
+// jeder Schritt ein kleiner Request, und der nächste Entwurf wird vorgeladen.
+// Einreichen/Verwerfen/Feldänderungen laufen über die bestehenden Endpunkte
+// (POST /anzeige/:az/submit, /discard, PATCH /anzeige/:az/felder).
+export default async function reviewRoutes(app: FastifyInstance) {
+  app.get('/pruefen', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = request.session.userId as number
+    const nurBereit = (request.query as { nur?: string }).nur === 'bereit'
+    // Älteste Tat zuerst: die sind der Verjährung am nächsten. Ohne Tattag ans
+    // Ende (meist Fotos ohne EXIF – brauchen ohnehin mehr Handarbeit).
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT aktenzeichen, tattag, tattag_bis, bereit_at FROM reports
+        WHERE user_id = ? AND status = 'entwurf' AND versand_status IS NULL
+        ORDER BY tattag IS NULL, tattag, tatzeit_von, id`,
+      [userId]
+    )
+    // Verjährte Entwürfe lassen sich nicht mehr einreichen – nur zählen, damit
+    // sie nicht stillschweigend verschwinden (Aufräumen geht über die Liste).
+    const offen = rows.filter((r) => !isVerjaehrt(r))
+    const queue = offen.filter((r) => !nurBereit || r.bereit_at).map((r) => r.aktenzeichen as string)
+    return reply.view('/reports/pruefen.ejs', viewData(request, {
+      title: 'Prüf-Modus',
+      queue,
+      nurBereit,
+      countAlle: offen.length,
+      countBereit: offen.filter((r) => r.bereit_at).length,
+      countVerjaehrt: rows.length - offen.length,
+      verstoss: { haeufig: await mostUsedVerstoesse(), alle: VERSTOSS_ARTEN },
+    }))
+  })
+
+  // Eine Karte des Prüf-Modus. Wie die Einreichen-Vorschau, aber ohne das PDF
+  // neu zu erzeugen (das kostet Zeit und ist auf dem Handy kaum lesbar; der
+  // Submit erzeugt es ohnehin frisch) und mit Rohwerten für die Eingabefelder.
+  app.get('/pruefen/:az/daten', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT *, DATE_FORMAT(tattag, '%Y-%m-%d') AS tattag_iso,
+              DATE_FORMAT(tatzeit_von, '%H:%i') AS von_hhmm, DATE_FORMAT(tatzeit_bis, '%H:%i') AS bis_hhmm
+         FROM reports WHERE aktenzeichen = ? AND user_id = ? AND status <> 'papierkorb'`,
+      [az, userId]
+    )
+    const report = rows[0]
+    if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
+    // Schon eingereicht (anderer Tab/Gerät) oder im Versand: Karte überspringen.
+    if (report.status !== 'entwurf' || report.versand_status !== null) {
+      return reply.send({ az, gone: true, status: report.status })
+    }
+    const problems = await submitProblems(report, userId)
+    const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id, filename, detected_plate, geprueft_at, gps_lat FROM report_images
+        WHERE report_id = ? ORDER BY sort_order, id`,
+      [report.id]
+    )
+    const city = getCity(report.city)
+    const vj = verjaehrung(report)
+    return reply.send({
+      az,
+      bereit: !!report.bereit_at,
+      canSubmit: problems.length === 0,
+      problems,
+      fields: {
+        kennzeichen: report.kennzeichen || '',
+        fahrzeug_marke: report.fahrzeug_marke || '',
+        tattag: report.tattag_iso || '',
+        tatzeit_von: report.von_hhmm || '',
+        tatzeit_bis: report.bis_hhmm || '',
+        tatort: report.tatort || '',
+        verstoss_art: report.verstoss_art || '',
+        beschreibung: report.beschreibung || '',
+        behinderung: report.behinderung === 1,
+        fahrzeug_verlassen: report.fahrzeug_verlassen === 1,
+      },
+      recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
+      verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
+      hasGps: imgs.some((i) => i.gps_lat !== null),
+      images: imgs.map((i) => {
+        const v = imageVersion(i.filename)
+        return {
+          id: Number(i.id),
+          ok: i.geprueft_at !== null,
+          detected: i.detected_plate || null,
+          thumb: `/anzeige/${az}/image/${i.id}/thumb.jpg?v=${v}`,
+          full: `/anzeige/${az}/image/${i.id}?v=${v}`,
+          put: `/anzeige/${az}/images/${i.id}`,
+        }
+      }),
+    })
+  })
+}

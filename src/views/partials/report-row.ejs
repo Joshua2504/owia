@@ -4,7 +4,7 @@
 // die Tabelle nach Drag & Drop, Inline- oder Modal-Bearbeitung ohne
 // Seiten-Reload aktualisiert werden kann.
 // Erwartet: r (Anzeige inkl. reply_count/unread_reply_count), imgs
-// ([{ id, v, ok }] – ok = Foto geprüft, v = Versionskennung der Bildfassung für Cache-Busting, s.
+// ([{ id, v, ok, plate }] – ok = Foto geprüft, plate = ALPR-Ergebnis des Fotos, v = Versionskennung der Bildfassung für Cache-Busting, s.
 // imageVersion() in routes/reports.ts), queueId.
 //
 // Die Zellen tragen feste `cell-*`-Klassen: ab md ist das eine normale
@@ -51,6 +51,7 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
                draggable="true" data-drag-image="<%= img.id %>" data-drag-az="<%= r.aktenzeichen %>"
                data-photo-edit="/anzeige/<%= r.aktenzeichen %>/images/<%= img.id %>"
                data-geprueft="<%= img.ok ? 1 : 0 %>"
+               <% if (img.plate) { %>data-detected-plate="<%= img.plate %>"<% } %>
                title="<%= img.ok ? 'Geprüft' : 'Noch nicht geprüft' %> – Klick: prüfen/schwärzen · Strg-Klick: auswählen · Ziehen: verschieben"
              <% } else { %>
                title="Klick: Vorschau"

@@ -1,0 +1,44 @@
+<%
+// Prüf-Modus (routes/review.ts, public/js/review.js): offene Entwürfe einzeln
+// nacheinander prüfen und einreichen. Die Karte wird komplett von review.js
+// gebaut; hier nur Gerüst, Reihenfolge und Verstoß-Katalog.
+%>
+<div class="review-top">
+  <div class="d-flex align-items-center gap-2 flex-wrap">
+    <h2 class="h4 mb-0 me-auto">Prüf-Modus</h2>
+    <div class="status-chips" role="group" aria-label="Welche Entwürfe">
+      <a class="btn btn-sm <%= nurBereit ? 'btn-outline-secondary' : 'btn-secondary' %>" href="/pruefen">Alle Entwürfe (<%= countAlle %>)</a>
+      <a class="btn btn-sm <%= nurBereit ? 'btn-secondary' : 'btn-outline-secondary' %>" href="/pruefen?nur=bereit">Nur „Bereit" (<%= countBereit %>)</a>
+    </div>
+    <a class="btn btn-sm btn-outline-secondary" href="/anzeigen">Beenden</a>
+  </div>
+  <div class="review-progress mt-2" aria-hidden="true"><div class="review-progress-bar"></div></div>
+  <div class="d-flex flex-wrap gap-3 small text-muted mt-1">
+    <span id="review-pos" role="status"></span>
+    <span id="review-stats"></span>
+    <label class="d-flex align-items-center gap-1 ms-auto">
+      <input type="checkbox" class="form-check-input mt-0" id="review-autophoto"> Fotos automatisch öffnen
+    </label>
+  </div>
+  <% if (countVerjaehrt) { %>
+    <div class="small text-muted mt-1"><%= countVerjaehrt %> verjährte(r) Entwurf/Entwürfe ausgeblendet – die lassen sich nicht mehr einreichen.</div>
+  <% } %>
+</div>
+
+<div id="review-root" class="review-root">
+  <% if (!queue.length) { %>
+    <div class="card shadow-sm"><div class="card-body text-center py-5 text-muted">
+      <p class="mb-3"><%= nurBereit ? 'Keine Entwürfe mit „Bereit"-Markierung.' : 'Keine offenen Entwürfe – alles erledigt. 🎉' %></p>
+      <a class="btn btn-outline-primary" href="/anzeigen">Zu meinen Anzeigen</a>
+    </div></div>
+  <% } else { %>
+    <div class="card shadow-sm"><div class="card-body text-muted">Wird geladen …</div></div>
+  <% } %>
+</div>
+
+<script type="application/json" id="review-data"><%- JSON.stringify({ queue, verstoss }).replace(/</g, '\\u003c') %></script>
+<script src="/public/js/verstoss-select.js" defer></script>
+<script src="/public/js/address-autocomplete.js" defer></script>
+<script src="/public/js/photo-edit.js" defer></script>
+<script src="/public/js/report-modal.js" defer></script>
+<script src="/public/js/review.js" defer></script>
