@@ -24,11 +24,12 @@
       '<span class="small text-muted me-auto" data-msg role="status"></span>' +
       '<button type="button" class="btn btn-outline-secondary" data-close>Abbrechen</button>' +
       '<button type="button" class="btn btn-success" data-go disabled>Jetzt einreichen</button>' +
+      (document.body.hasAttribute('data-admin') ? '<button type="button" class="btn btn-primary" data-go data-sofort disabled title="Prüfung direkt bestätigen und ans Ordnungsamt senden">Einreichen &amp; versenden</button>' : '') +
       '</div>'
     document.body.appendChild(dlg)
     dlg.querySelectorAll('[data-close]').forEach(function (b) { b.addEventListener('click', close) })
     dlg.addEventListener('close', function () { document.documentElement.classList.remove('has-editor-dialog') })
-    dlg.querySelector('[data-go]').addEventListener('click', submit)
+    dlg.querySelectorAll('[data-go]').forEach(function (b) { b.addEventListener('click', submit) })
   }
 
   function close() {
@@ -108,8 +109,7 @@
     } else {
       pdf.appendChild(text('div', 'submit-nopdf', 'Für dieses Ordnungsamt gibt es kein PDF-Formular – die Anzeige geht als E-Mail mit Fotos raus.'))
     }
-    var go = dlg.querySelector('[data-go]')
-    go.disabled = !d.canSubmit
+    dlg.querySelectorAll('[data-go]').forEach(function (b) { b.disabled = !d.canSubmit })
     dlg.querySelector('[data-msg]').textContent = d.canSubmit ? 'Nach dem Einreichen prüft ein Admin und versendet an das Ordnungsamt.' : ''
   }
 
@@ -119,7 +119,7 @@
     dlg.querySelector('h2').textContent = 'Anzeige ' + az + ' einreichen'
     dlg.querySelector('.submit-data').replaceChildren(text('div', 'text-muted', 'Vorschau und PDF werden erstellt …'))
     dlg.querySelector('.submit-pdf').replaceChildren()
-    dlg.querySelector('[data-go]').disabled = true
+    dlg.querySelectorAll('[data-go]').forEach(function (b) { b.disabled = true })
     dlg.querySelector('[data-msg]').textContent = ''
     dlg.querySelector('[data-msg]').className = 'small text-muted me-auto'
     dlg.showModal()
@@ -136,13 +136,16 @@
       })
   }
 
-  function submit() {
-    var go = dlg.querySelector('[data-go]')
+  function submit(e) {
+    var go = e.currentTarget
+    var sofort = go.hasAttribute('data-sofort')
+    var label = go.textContent
     var msg = dlg.querySelector('[data-msg]')
-    go.disabled = true
-    go.textContent = 'Wird eingereicht …'
+    if (sofort && !confirm('Anzeige ohne weitere Prüfung direkt ans Ordnungsamt versenden?')) return
+    dlg.querySelectorAll('[data-go]').forEach(function (b) { b.disabled = true })
+    go.textContent = sofort ? 'Wird versendet …' : 'Wird eingereicht …'
     var az = current
-    fetch('/anzeige/' + encodeURIComponent(az) + '/submit', { method: 'POST', headers: { Accept: 'application/json' } })
+    fetch('/anzeige/' + encodeURIComponent(az) + '/submit' + (sofort ? '?sofort=1' : ''), { method: 'POST', headers: { Accept: 'application/json' } })
       .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { return { ok: r.ok, d: d } }) })
       .then(function (res) {
         if (!res.ok) throw new Error(res.d.error || 'Einreichen fehlgeschlagen.')
@@ -152,9 +155,10 @@
       .catch(function (err) {
         msg.textContent = err.message
         msg.className = 'small text-danger me-auto'
-        go.disabled = false
+        if (window.reportTableRefresh) window.reportTableRefresh(az)
+        if (!/^Eingereicht, aber/.test(err.message)) dlg.querySelectorAll('[data-go]').forEach(function (b) { b.disabled = false })
       })
-      .finally(function () { go.textContent = 'Jetzt einreichen' })
+      .finally(function () { go.textContent = label })
   }
 
   document.addEventListener('click', function (e) {

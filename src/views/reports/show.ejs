@@ -213,6 +213,13 @@ const versandLabel = {
             <button type="submit" class="btn btn-success" <%= complete && locals.profileComplete && !locals.verjaehrt ? '' : 'disabled' %>>
               ✓ Einreichen
             </button>
+            <% if (isAdmin) { %>
+              <button type="submit" class="btn btn-primary ms-1" formaction="/anzeige/<%= report.aktenzeichen %>/submit?sofort=1"
+                      title="Prüfung direkt bestätigen und ans Ordnungsamt senden"
+                      <%= complete && locals.profileComplete && !locals.verjaehrt ? '' : 'disabled' %>>
+                Einreichen &amp; versenden
+              </button>
+            <% } %>
           </form>
         </div>
       </div>

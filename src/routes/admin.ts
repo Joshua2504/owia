@@ -2,7 +2,7 @@
 // gibt sie hier frei (Versand ans Ordnungsamt per E-Mail, Nutzer optional in Kopie) oder
 // lehnt sie mit Begründung ab (zurück in den Entwurf + Info-Mail an den Nutzer).
 import { isVerjaehrt } from '../services/verjaehrung'
-import { FastifyInstance } from 'fastify'
+import { FastifyBaseLogger, FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import path from 'path'
 import fs from 'fs/promises'
@@ -33,6 +33,47 @@ async function loadReportWithUser(
   ])
   if (!users[0]) return null
   return { report, user: users[0] }
+}
+
+/** Admin-Freigabe einer eingereichten Anzeige: Prüfungen, PDF neu, Mail an das
+ *  Ordnungsamt. Genutzt von der Freigabe in /admin/anzeigen und vom
+ *  „Einreichen & versenden" eines Admins für eigene Anzeigen (reports.ts). */
+export async function approveAndDispatch(
+  id: string,
+  aktenzeichen: string,
+  log: FastifyBaseLogger
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const result = await dispatchReport(Number(id), async (messageId) => {
+      const fresh = await loadReportWithUser(id)
+      if (!fresh || !(await isProfileComplete(fresh.report.user_id))) {
+        throw new ReportPreparationError('Das Nutzerprofil ist unvollständig. Bitte die Anzeige ablehnen und korrigieren lassen.')
+      }
+      if (isVerjaehrt(fresh.report)) {
+        throw new ReportPreparationError('Die Tat ist verjährt (mehr als drei Monate her). Bitte die Anzeige ablehnen.')
+      }
+      const gate = resolveSendCity(fresh.report.tatort, fresh.report.city)
+      if (!gate.ok) throw new ReportPreparationError(gate.message)
+      await pool.execute('UPDATE reports SET city=? WHERE id=?', [gate.cityId, fresh.report.id])
+      await regeneratePdf(fresh.report.id, fresh.report.user_id)
+      const ready = await loadReportWithUser(id)
+      if (!ready) throw new Error('Anzeige nicht mehr verfügbar.')
+      return MailService.prepareReport(ready.report, ready.user, messageId)
+    })
+    if (result === 'sent') return { ok: true, message: `Anzeige ${aktenzeichen}: Versand abgeschlossen.` }
+    return {
+      ok: false,
+      message: result === 'uncertain'
+        ? 'Der Versand läuft oder sein Ergebnis ist unklar. Vor einem erneuten Versand muss der Mailserver geprüft werden.'
+        : 'Die Anzeige wird bereits verarbeitet oder ist nicht mehr zur Freigabe verfügbar.',
+    }
+  } catch (err) {
+    log.error({ err }, 'Freigabe/Versandabschluss fehlgeschlagen')
+    return {
+      ok: false,
+      message: err instanceof ReportPreparationError ? err.message : 'Freigabe nicht abgeschlossen. Bitte den angezeigten Versandstatus prüfen; eine bereits verschickte Mail wird nicht automatisch erneut versendet.',
+    }
+  }
 }
 
 export default async function adminRoutes(app: FastifyInstance) {
@@ -199,34 +240,8 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
 
-    try {
-      const result = await dispatchReport(loaded.report.id, async (messageId) => {
-        const fresh = await loadReportWithUser(id)
-        if (!fresh || !(await isProfileComplete(fresh.report.user_id))) {
-          throw new ReportPreparationError('Das Nutzerprofil ist unvollständig. Bitte die Anzeige ablehnen und korrigieren lassen.')
-        }
-        if (isVerjaehrt(fresh.report)) {
-          throw new ReportPreparationError('Die Tat ist verjährt (mehr als drei Monate her). Bitte die Anzeige ablehnen.')
-        }
-        const gate = resolveSendCity(fresh.report.tatort, fresh.report.city)
-        if (!gate.ok) throw new ReportPreparationError(gate.message)
-        await pool.execute('UPDATE reports SET city=? WHERE id=?', [gate.cityId, fresh.report.id])
-        await regeneratePdf(fresh.report.id, fresh.report.user_id)
-        const ready = await loadReportWithUser(id)
-        if (!ready) throw new Error('Anzeige nicht mehr verfügbar.')
-        return MailService.prepareReport(ready.report, ready.user, messageId)
-      })
-      if (result === 'sent') {
-        setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen}: Versand abgeschlossen.`)
-      } else {
-        setFlash(reply, 'error', result === 'uncertain'
-          ? 'Der Versand läuft oder sein Ergebnis ist unklar. Vor einem erneuten Versand muss der Mailserver geprüft werden.'
-          : 'Die Anzeige wird bereits verarbeitet oder ist nicht mehr zur Freigabe verfügbar.')
-      }
-    } catch (err) {
-      app.log.error({ err }, 'Freigabe/Versandabschluss fehlgeschlagen')
-      setFlash(reply, 'error', err instanceof ReportPreparationError ? err.message : 'Freigabe nicht abgeschlossen. Bitte den angezeigten Versandstatus prüfen; eine bereits verschickte Mail wird nicht automatisch erneut versendet.')
-    }
+    const outcome = await approveAndDispatch(id, loaded.report.aktenzeichen, app.log)
+    setFlash(reply, outcome.ok ? 'success' : 'error', outcome.message)
     return reply.redirect('/admin/anzeigen')
   })
 

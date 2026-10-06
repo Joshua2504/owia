@@ -26,7 +26,8 @@ import {
 import { replyAttachmentPath } from '../services/mailInbox'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 import { MailService } from '../services/mail'
-import { adminEmails } from '../config/admin'
+import { adminEmails, isAdminEmail } from '../config/admin'
+import { approveAndDispatch } from './admin'
 import { previewBulkEdit, applyBulkEdit, BulkEditInputError } from '../services/bulkEdit'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
@@ -1511,6 +1512,15 @@ export default async function reportsRoutes(app: FastifyInstance) {
     )
     if (!submitted.affectedRows) {
       return json ? reply.status(409).send({ error: 'Die Anzeige wird bereits bearbeitet.' }) : reply.redirect(`/anzeige/${az}`)
+    }
+    // Admins dürfen eigene Anzeigen direkt freigeben und versenden (?sofort=1) –
+    // dann entfällt die Prüf-Benachrichtigung.
+    const sofort = (request.query as { sofort?: string }).sofort === '1' && isAdminEmail(request.session.userEmail)
+    if (sofort) {
+      const outcome = await approveAndDispatch(String(report.id), az, app.log)
+      if (json) return outcome.ok ? reply.send({ ok: true, sent: true }) : reply.status(502).send({ error: `Eingereicht, aber nicht versendet: ${outcome.message}` })
+      setFlash(reply, outcome.ok ? 'success' : 'error', outcome.ok ? 'Anzeige eingereicht, bestätigt und ans Ordnungsamt verschickt.' : `Eingereicht, aber nicht versendet: ${outcome.message}`)
+      return reply.redirect(`/anzeige/${az}`)
     }
     // Admins informieren – sonst kann eine Einreichung unbemerkt liegenbleiben.
     try {

@@ -50,7 +50,7 @@
 <%# embed: Seite läuft im Editor-Modal der Anzeigen-Liste (report-modal.js) –
     ohne Navigation, Footer und Cookie-Hinweis (die zeigt die umgebende Seite). %>
 <% const _embed = !!locals.embed %>
-<body class="<%= _embed ? 'is-embed' : '' %>">
+<body class="<%= _embed ? 'is-embed' : '' %>"<%= isAdmin ? ' data-admin' : '' %>>
   <% if (!_embed) { %>
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="<%= locals.wide ? 'container-fluid px-3 px-xl-4' : 'container' %>">

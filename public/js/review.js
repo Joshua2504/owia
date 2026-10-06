@@ -233,6 +233,7 @@
       '<button type="button" class="btn btn-outline-danger" data-act="trash" title="In den Papierkorb (30 Tage wiederherstellbar)">🗑<span class="d-none d-sm-inline"> Papierkorb</span></button>' +
       '<button type="button" class="btn btn-outline-secondary" data-act="skip">⏭ Überspringen</button>' +
       '<button type="button" class="btn btn-success flex-grow-1" data-act="submit"' + (d.canSubmit ? '' : ' disabled') + '>✓ Einreichen</button>' +
+      (document.body.hasAttribute('data-admin') ? '<button type="button" class="btn btn-primary" data-act="send"' + (d.canSubmit ? '' : ' disabled') + ' title="Prüfung direkt bestätigen und ans Ordnungsamt senden">📨<span class="d-none d-sm-inline"> Versenden</span></button>' : '') +
       '</div>' +
       '<div class="small mt-2 text-center" data-msg role="status"></div>'
 
@@ -263,7 +264,7 @@
       cur.data = d
       root.querySelector('[data-photos]').innerHTML = photosHtml(d)
       root.querySelector('[data-problems]').innerHTML = problemsHtml(d)
-      root.querySelector('[data-act=submit]').disabled = !d.canSubmit
+      root.querySelectorAll('[data-act=submit],[data-act=send]').forEach(function (b) { b.disabled = !d.canSubmit })
     })
   }
 
@@ -308,15 +309,18 @@
     return p
   }
 
-  function submit() {
+  function submit(sofort) {
     if (!cur || busy) return
+    if (sofort && !confirm('Anzeige ohne weitere Prüfung direkt ans Ordnungsamt versenden?')) return
     var az = cur.az
     busy = true
     var btn = root.querySelector('[data-act=submit]')
     btn.disabled = true
-    btn.textContent = 'Wird eingereicht …'
+    var send = root.querySelector('[data-act=send]')
+    if (send) send.disabled = true
+    btn.textContent = sofort ? 'Wird versendet …' : 'Wird eingereicht …'
     pending
-      .then(function () { return json('/anzeige/' + encodeURIComponent(az) + '/submit', { method: 'POST' }) })
+      .then(function () { return json('/anzeige/' + encodeURIComponent(az) + '/submit' + (sofort ? '?sofort=1' : ''), { method: 'POST' }) })
       .then(function () {
         stats.submitted++
         remaining.shift()
@@ -404,7 +408,7 @@
       if (document.querySelector('dialog.photo-edit-dialog[open]') && !editorOpen) {
         root.querySelector('[data-photos]').innerHTML = photosHtml(d)
         root.querySelector('[data-problems]').innerHTML = problemsHtml(d)
-        root.querySelector('[data-act=submit]').disabled = !d.canSubmit
+        root.querySelectorAll('[data-act=submit],[data-act=send]').forEach(function (b) { b.disabled = !d.canSubmit })
       } else render()
     })
   }
@@ -462,6 +466,7 @@
     if (!b) return
     var act = b.getAttribute('data-act')
     if (act === 'submit') submit()
+    if (act === 'send') submit(true)
     else if (act === 'skip') skip()
     else if (act === 'trash') trash()
     else if (act === 'retry') show()
