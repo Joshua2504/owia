@@ -218,9 +218,42 @@
     }
   }
 
+  // Verlauf für „Rückgängig": Jede Änderung (Markierung, Zuschnitt, Drehung)
+  // legt vorher einen Schnappschuss ab. Rotieren/Zuschneiden ersetzen
+  // item.base durch einen NEUEN Canvas – die Referenz zu speichern genügt.
+  // Dadurch braucht der Zuschnitt keine Sicherheitsabfrage mehr.
+  function snapshot(item) {
+    item.history.push({ base: item.base, redactions: item.redactions.slice(), edited: item.edited })
+  }
+
+  function restore(item, snap) {
+    item.base = snap.base
+    item.redactions = snap.redactions.slice()
+    item.edited = snap.edited
+    item.canvas.width = snap.base.width
+    item.canvas.height = snap.base.height
+    redraw(item)
+    updateToolbar(item)
+    item.saveDebounced()
+  }
+
+  function undoItem(item) {
+    const snap = item.history.pop()
+    if (snap) restore(item, snap)
+  }
+
+  // Alles zurück auf den Stand beim Öffnen (Verlauf bleibt für Rückgängig nicht nötig).
+  function resetItem(item) {
+    const first = item.history[0]
+    if (!first) return
+    item.history = []
+    restore(item, first)
+  }
+
   // Bild um 90° im Uhrzeigersinn drehen; vorhandene Markierungen drehen mit.
   function rotateItem(item) {
     if (!item.base) return
+    snapshot(item)
     const old = item.base
     const rotated = document.createElement('canvas')
     rotated.width = old.height
@@ -256,6 +289,7 @@
     const w = Math.min(old.width - x, Math.round(rect.w))
     const h = Math.min(old.height - y, Math.round(rect.h))
     if (w < 1 || h < 1) return
+    snapshot(item)
 
     const cropped = document.createElement('canvas')
     cropped.width = w
@@ -365,11 +399,13 @@
       const h = Math.abs(p.y - start.y)
       if (item.tool === 'crop') {
         // Mindestgröße, damit ein versehentlicher Klick nicht alles wegschneidet.
-        if (w >= 40 && h >= 40 && confirm('Bild auf den markierten Bereich zuschneiden?')) {
+        // Keine Rückfrage: „Rückgängig" holt das ganze Bild zurück.
+        if (w >= 40 && h >= 40) {
           applyCrop(item, { x, y, w, h })
           return
         }
       } else if (w >= MIN_BOX && h >= MIN_BOX) {
+        snapshot(item)
         item.redactions.push({ x, y, w, h, type: item.tool === 'pixel' ? 'pixel' : 'black' })
         updateToolbar(item)
         item.saveDebounced()
@@ -388,16 +424,19 @@
 
   function updateToolbar(item) {
     if (!item.els) return
-    const has = item.redactions.length > 0
+    const has = item.history.length > 0
     item.els.undo.disabled = !has
     item.els.clear.disabled = !has
-    if (item.tool === 'crop') {
-      item.els.count.textContent = 'Bereich zum Zuschneiden aufziehen'
-    } else {
-      item.els.count.textContent = has
+    const tips = {
+      black: 'Mit der Maus bzw. dem Finger Rechtecke über Gesichter oder fremde Kennzeichen ziehen.',
+      pixel: 'Rechtecke über die zu verpixelnden Bereiche ziehen.',
+      crop: 'Den Bildausschnitt aufziehen, der übrig bleiben soll.',
+    }
+    item.els.count.textContent = item.tool
+      ? tips[item.tool]
+      : item.redactions.length
         ? item.redactions.length + ' Bereich(e) unkenntlich gemacht'
         : ''
-    }
   }
 
   // Aktives Zeichen-Werkzeug der Karte umschalten (Schwärzen/Verpixeln/Zuschneiden);
@@ -530,7 +569,8 @@
     moveRight.title = 'Weiter nach hinten'
     moveRight.setAttribute('aria-label', 'Foto weiter nach hinten')
     moveRight.addEventListener('click', () => moveItem(item, 1))
-    const editBtn = mkBtn('✏️ Bearbeiten', 'btn-outline-primary flex-fill')
+    const editBtn = mkBtn('Mehr …', 'btn-outline-secondary flex-fill')
+    editBtn.title = 'Weitere Werkzeuge: Verpixeln, Drehen'
     editBtn.setAttribute('aria-expanded', 'false')
     editBtn.addEventListener('click', () => toggleTools(item))
     const remove = mkBtn('🗑', 'btn-outline-danger')
@@ -541,6 +581,20 @@
     actions.appendChild(moveRight)
     actions.appendChild(editBtn)
     actions.appendChild(remove)
+
+    // Die häufigsten Werkzeuge direkt auf der Karte: ein Klick öffnet das Foto
+    // groß mit bereits aktivem Werkzeug – sofort losziehen.
+    const quick = document.createElement('div')
+    quick.className = 'photo-card-quick'
+    const quickBlack = mkBtn('⬛ Schwärzen', 'btn-outline-dark flex-fill')
+    quickBlack.title = 'Bereiche schwarz übermalen (Gesichter, fremde Kennzeichen)'
+    quickBlack.addEventListener('click', () => openWithTool(item, 'black'))
+    const quickCrop = mkBtn('✂️ Zuschneiden', 'btn-outline-dark flex-fill')
+    quickCrop.title = 'Bildausschnitt wählen'
+    quickCrop.addEventListener('click', () => openWithTool(item, 'crop'))
+    quick.appendChild(quickBlack)
+    quick.appendChild(quickCrop)
+    col.appendChild(quick)
     col.appendChild(actions)
 
     // Ausklappbare Werkzeuge: Schwärzen, Verpixeln, Zuschneiden, Drehen. Jeder
@@ -564,20 +618,11 @@
     rotate.addEventListener('click', () => rotateItem(item))
     const undo = mkBtn('↩︎ Rückgängig', 'btn-outline-secondary')
     undo.disabled = true
-    undo.addEventListener('click', () => {
-      item.redactions.pop()
-      redraw(item)
-      updateToolbar(item)
-      item.saveDebounced()
-    })
-    const clear = mkBtn('Alle entfernen', 'btn-outline-secondary')
+    undo.addEventListener('click', () => undoItem(item))
+    const clear = mkBtn('Zurücksetzen', 'btn-outline-secondary')
+    clear.title = 'Alle Änderungen dieser Sitzung verwerfen'
     clear.disabled = true
-    clear.addEventListener('click', () => {
-      item.redactions = []
-      redraw(item)
-      updateToolbar(item)
-      item.saveDebounced()
-    })
+    clear.addEventListener('click', () => resetItem(item))
     const done = mkBtn('Fertig', 'btn-primary')
     done.addEventListener('click', () => toggleTools(item, false))
     ;[toolBlack, toolPixel, toolCrop, rotate, undo, clear, done].forEach((b) => toolbar.appendChild(b))
@@ -587,7 +632,7 @@
     tools.appendChild(count)
     const hint = document.createElement('div')
     hint.className = 'form-text mt-0'
-    hint.textContent = 'Werkzeug wählen, dann auf dem Foto einen Bereich aufziehen. Änderungen werden automatisch gespeichert.'
+    hint.textContent = 'Änderungen werden automatisch gespeichert. „Rückgängig" nimmt den letzten Schritt zurück – auch einen Zuschnitt.'
     tools.appendChild(hint)
     col.appendChild(tools)
 
@@ -605,7 +650,6 @@
     const open = typeof force === 'boolean' ? force : !item.els.col.classList.contains('is-editing')
     item.els.col.classList.toggle('is-editing', open)
     item.els.editBtn.setAttribute('aria-expanded', String(open))
-    item.els.editBtn.textContent = open ? '✏️ Bearbeiten ▴' : '✏️ Bearbeiten'
     if (!open) {
       setTool(item, null)
       return
@@ -613,6 +657,11 @@
     if (window.imagePreview) window.imagePreview.hide()
     item.els.col.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
     await ensureMedia(item)
+  }
+
+  async function openWithTool(item, tool) {
+    await toggleTools(item, true)
+    if (item.canvas) setTool(item, tool)
   }
 
   // Vollbild laden und Leinwand aufbauen (einmalig).
@@ -719,6 +768,7 @@
       file,
       kind: 'passthrough',
       redactions: [],
+      history: [], // Schnappschüsse für Rückgängig (s. snapshot)
       tool: null, // aktives Zeichen-Werkzeug: black | pixel | crop; null = Ansichtsmodus (Wischen scrollt)
       edited: false, // true nach Drehen/Zuschneiden (auch ohne Markierungen speichern)
       gps: null,
@@ -1739,12 +1789,66 @@
     }
   }
 
+  // „Speichern & Einreichen": offene Änderungen sichern, Entwurf speichern
+  // (PDF), dann einreichen. Fehler (fehlende Pflichtfelder, Profil, Stadt)
+  // erscheinen direkt in der Aktionsleiste statt per Umleitung.
+  function initSubmit(form) {
+    const btn = document.querySelector('#btn-submit')
+    const errBox = document.querySelector('#submit-error')
+    if (!btn) return
+    const post = (url, body) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      })
+    btn.addEventListener('click', async () => {
+      if (busyUploads() && !confirm('Fotos werden noch hochgeladen. Trotzdem jetzt einreichen?')) return
+      errBox.hidden = true
+      btn.disabled = true
+      const label = btn.textContent
+      btn.textContent = 'Wird eingereicht …'
+      try {
+        if (flushAutosave) await flushAutosave()
+        const saved = await post(form.action, new URLSearchParams(new FormData(form)).toString())
+        if (!saved.ok || saved.redirected) throw new Error('Speichern fehlgeschlagen – bitte erneut versuchen.')
+        const res = await post('/anzeige/' + encodeURIComponent(reportId) + '/submit', '')
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          const err = new Error(data.error || 'Einreichen fehlgeschlagen.')
+          err.redirect = data.redirect
+          throw err
+        }
+        notifyParent(true)
+        if (isEmbed && !form.dataset.queue) {
+          window.parent.postMessage({ type: 'owia:close' }, location.origin)
+        } else {
+          location.href = btn.dataset.after
+        }
+      } catch (err) {
+        errBox.textContent = err.message
+        // Profil unvollständig: Link zu den Einstellungen (im Modal: neuer Tab).
+        if (err.redirect === '/einstellungen') {
+          const a = document.createElement('a')
+          a.href = '/einstellungen'
+          a.textContent = ' Zu den Einstellungen →'
+          if (isEmbed) a.target = '_blank'
+          errBox.appendChild(a)
+        }
+        errBox.hidden = false
+        btn.disabled = false
+        btn.textContent = label
+      }
+    })
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     const form = document.querySelector('#report-form[data-report-id]')
     if (!form) return
     reportId = form.dataset.reportId
     isEmbed = form.hasAttribute('data-embed') && window.parent !== window
     if (isEmbed) initEmbed(form)
+    initSubmit(form)
 
     initCurrentLocation()
     initImageEditor()

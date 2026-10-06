@@ -8,7 +8,8 @@ import { pool } from '../db/connection'
 import { requireAuth, viewData, setFlash } from '../middleware/auth'
 import { PdfService } from '../services/pdf'
 import { getCity, CITIES, unlockedCities, hasPdfForm } from '../config/cities'
-import { resolveSendCity, cityEmail } from '../services/districts'
+import { resolveSendCity, cityEmail, detectCityByLabel } from '../services/districts'
+import { reverseGeocode } from '../services/geocode'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
 import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage, imageVersion } from '../services/images'
 import { cachedMailVariant } from '../services/pixelate'
@@ -515,6 +516,39 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, values: out })
   })
 
+  // Tatort aus den GPS-Daten der Fotos übernehmen (Button „Tatort fehlt" in
+  // der Anzeigen-Liste): erstes Foto mit Koordinaten → Adresse per Photon,
+  // zuständige Stadt aus der PLZ. Wie im Editor nur für Entwürfe.
+  app.post('/anzeige/:az/tatort-aus-fotos', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
+    if (report.status !== 'entwurf' || report.versand_status !== null) {
+      return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
+    }
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT gps_lat, gps_lon FROM report_images
+        WHERE report_id = ? AND gps_lat IS NOT NULL AND gps_lon IS NOT NULL
+        ORDER BY sort_order, id LIMIT 1`,
+      [report.id]
+    )
+    if (!rows[0]) return reply.status(422).send({ error: 'Die Fotos enthalten keine Standortdaten.' })
+    const lat = Number(rows[0].gps_lat)
+    const lon = Number(rows[0].gps_lon)
+    const place = await reverseGeocode(lat, lon)
+    if (!place?.label) {
+      return reply.status(502).send({ error: 'Zu den Foto-Koordinaten wurde keine Adresse gefunden – bitte im Editor eintragen.' })
+    }
+    const det = detectCityByLabel(place.label)
+    await pool.execute(
+      `UPDATE reports SET tatort=?, tatort_lat=?, tatort_lon=?, city=COALESCE(?, city)
+        WHERE id=? AND user_id=? AND status='entwurf' AND versand_status IS NULL`,
+      [place.label, lat, lon, det.status === 'unlocked' ? det.city.id : null, report.id, userId]
+    )
+    return reply.send({ ok: true, tatort: place.label })
+  })
+
   // Einzelnes (ggf. bereits geschwärztes) Bild sofort zum Entwurf hochladen.
   app.post('/anzeige/:az/images', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
@@ -975,7 +1009,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+      'SELECT id, filename, gps_lat, gps_lon FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
     const [counts] = await pool.execute<mysql.RowDataPacket[]>(
@@ -991,6 +1025,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
         r: {
           ...report,
           reply_count: Number(counts[0]?.reply_count) || 0,
+          photo_gps_count: images.filter((i) => i.gps_lat !== null && i.gps_lon !== null).length,
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
         },
         imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename) })),
@@ -1274,29 +1309,41 @@ export default async function reportsRoutes(app: FastifyInstance) {
   app.post('/anzeige/:az/submit', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
+    // „Speichern & Einreichen" im Editor schickt per fetch (Accept: JSON) und
+    // zeigt Fehler direkt an, statt umzuleiten.
+    const json = String(request.headers.accept || '').includes('application/json')
+    const fail = (message: string, to: string) => {
+      if (json) return reply.status(422).send({ error: message, redirect: to })
+      setFlash(reply, 'error', message)
+      return reply.redirect(to)
+    }
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
-    if (report.status !== 'entwurf') return reply.redirect(`/anzeige/${az}`)
+    if (report.status !== 'entwurf') {
+      return json ? reply.status(409).send({ error: 'Die Anzeige ist bereits eingereicht.' }) : reply.redirect(`/anzeige/${az}`)
+    }
 
     if (!isComplete(report)) {
-      setFlash(reply, 'error', 'Bitte zuerst alle Pflichtfelder ausfüllen.')
-      return reply.redirect(`/anzeige/${az}/bearbeiten`)
+      const missing = [
+        !report.kennzeichen && 'Kennzeichen',
+        !report.tattag && 'Tattag',
+        !report.tatzeit_von && 'Uhrzeit',
+        !report.tatort && 'Tatort',
+        !report.verstoss_art && 'Verstoß',
+      ].filter(Boolean).join(', ')
+      return fail(`Bitte zuerst alle Pflichtfelder ausfüllen (es fehlt: ${missing}).`, `/anzeige/${az}/bearbeiten`)
     }
 
     // Ohne vollständiges Profil (Name + Anschrift) keine Einreichung – das
     // Ordnungsamt bearbeitet anonyme Anzeigen nicht.
     if (!(await isProfileComplete(userId))) {
-      setFlash(reply, 'error', 'Bitte zuerst dein Profil vervollständigen (Name und Anschrift) – anonyme Anzeigen werden vom Ordnungsamt nicht bearbeitet.')
-      return reply.redirect('/einstellungen')
+      return fail('Bitte zuerst dein Profil vervollständigen (Name und Anschrift) – anonyme Anzeigen werden vom Ordnungsamt nicht bearbeitet.', '/einstellungen')
     }
 
     // Nur freigeschaltete Orte: aus dem Tatort das zuständige Amt ableiten. Liegt
     // der Tatort in einem (noch) nicht freigeschalteten Ort, wird abgewiesen.
     const gate = resolveSendCity(report.tatort, report.city)
-    if (!gate.ok) {
-      setFlash(reply, 'error', gate.message)
-      return reply.redirect(`/anzeige/${az}/bearbeiten`)
-    }
+    if (!gate.ok) return fail(gate.message, `/anzeige/${az}/bearbeiten`)
     // Zuständige Stadt festschreiben (Tatort ist maßgeblich) – vor der PDF-/E-Mail-
     // Erzeugung, damit Formularwahl und Empfänger konsistent sind.
     if (gate.cityId !== report.city) {
@@ -1312,7 +1359,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
       "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL WHERE id=? AND status='entwurf' AND versand_status IS NULL",
       [report.id]
     )
-    if (!submitted.affectedRows) return reply.redirect(`/anzeige/${az}`)
+    if (!submitted.affectedRows) {
+      return json ? reply.status(409).send({ error: 'Die Anzeige wird bereits bearbeitet.' }) : reply.redirect(`/anzeige/${az}`)
+    }
     // Admins informieren – sonst kann eine Einreichung unbemerkt liegenbleiben.
     try {
       await MailService.sendSubmitNotification(
@@ -1324,6 +1373,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     } catch (err) {
       app.log.error({ err }, 'Admin-Benachrichtigung zur Einreichung fehlgeschlagen')
     }
+    if (json) return reply.send({ ok: true })
     setFlash(reply, 'success', 'Anzeige eingereicht – sie wird geprüft und dann ans Ordnungsamt verschickt.')
     return reply.redirect(`/anzeige/${az}`)
   })

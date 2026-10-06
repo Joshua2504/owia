@@ -752,7 +752,7 @@ html.has-editor-dialog { overflow: hidden; }
 .photo-card .redact-stage,
 .photo-card .photo-card-tools { display: none; }
 .photo-card.is-editing { grid-column: 1 / -1; }
-.photo-card.is-editing .photo-card-img { display: none; }
+.photo-card.is-editing .photo-card-media { display: none; } /* Häkchen läge sonst über der Leinwand */
 .photo-card.is-editing .redact-stage,
 .photo-card.is-editing .photo-card-tools { display: block; }
 .photo-card.is-editing .img-redact {
@@ -812,3 +812,9 @@ body.is-embed main { padding-bottom: 0 !important; }
 @media (max-width: 767.98px) {
   .ss-input { font-size: 16px; }
 }
+
+/* Direkt-Werkzeuge auf der Foto-Karte (Schwärzen/Zuschneiden). */
+.photo-card-quick { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.photo-card-quick .btn { flex: 1 1 auto; white-space: nowrap; padding-left: 0.35rem; padding-right: 0.35rem; }
+[data-bs-theme="dark"] .photo-card-quick .btn-outline-dark { --bs-btn-color: var(--bs-body-color); --bs-btn-border-color: var(--bs-border-color); }
+.photo-card.is-editing .photo-card-quick { display: none; }

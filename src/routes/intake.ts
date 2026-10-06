@@ -318,6 +318,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
       `SELECT r.id, r.aktenzeichen, r.status, r.tattag, r.tattag_bis, r.tatzeit_von, r.tatzeit_bis,
               r.tatort, r.verstoss_art, r.kennzeichen, r.kennzeichen_land,
               r.fahrzeug_marke, r.beschreibung, r.fahrzeug_verlassen, r.behinderung, r.behinderung_text,
+              (SELECT COUNT(*) FROM report_images gi WHERE gi.report_id = r.id AND gi.gps_lat IS NOT NULL AND gi.gps_lon IS NOT NULL) AS photo_gps_count,
               DATE_FORMAT(r.tattag, '%d.%m.%Y') AS tattag_fmt,
               TIME_FORMAT(r.tatzeit_von, '%H:%i') AS von_fmt,
               TIME_FORMAT(r.tatzeit_bis, '%H:%i') AS bis_fmt,

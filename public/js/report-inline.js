@@ -116,6 +116,31 @@
     }
   })
 
+  // „Tatort fehlt" → Tatort aus den GPS-Daten der Fotos übernehmen (Server
+  // ermittelt Adresse + zuständige Stadt), danach Zeile neu laden.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-tatort-from-photos]')
+    if (!btn) return
+    var row = rowOf(btn)
+    btn.disabled = true
+    btn.textContent = 'Wird ermittelt …'
+    fetch('/anzeige/' + encodeURIComponent(row.dataset.az) + '/tatort-aus-fotos', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d.error || 'Übernahme fehlgeschlagen.')
+        return window.reportTableRefresh(row.dataset.az)
+      })
+      .catch(function (err) {
+        btn.disabled = false
+        btn.textContent = '📍 Aus Fotos übernehmen'
+        btn.title = err.message
+        alert(err.message)
+      })
+  })
+
   // Verstoß: Auswahlfeld lazy initialisieren und gewählte Einträge speichern.
   document.addEventListener('focusin', function (e) {
     var input = e.target

@@ -103,8 +103,9 @@ const embedQ = embed ? '&embed=1' : ''
           Noch keine Fotos. Über „+ Fotos hinzufügen" auswählen oder hierher ziehen.
         </div>
         <div class="form-text mt-2">
-          Foto antippen zum Vergrößern · „✏️ Bearbeiten" zum Schwärzen, Verpixeln, Zuschneiden und Drehen
-          (wird automatisch gespeichert) · Häkchen setzen, um Fotos in eine andere Anzeige zu verschieben.
+          Foto antippen zum Vergrößern · „⬛ Schwärzen" bzw. „✂️ Zuschneiden" öffnen das Foto direkt
+          mit dem Werkzeug (Verpixeln/Drehen unter „Mehr …"; alles wird automatisch gespeichert) ·
+          Häkchen setzen, um Fotos in eine andere Anzeige zu verschieben.
         </div>
       </div>
     </section>
@@ -294,11 +295,19 @@ const embedQ = embed ? '&embed=1' : ''
     <%# Aktionsleiste klebt am unteren Rand – Speichern ist immer erreichbar. %>
     <div class="editor-actions">
       <span id="save-status" class="small text-muted me-auto" role="status" aria-live="polite"></span>
+      <div id="submit-error" class="alert alert-danger py-2 px-3 small mb-0 w-100" role="alert" hidden></div>
       <%# Verwerfen führt erst auf eine Bestätigungsseite (serverseitig erzwungen);
           im Modal fragt report-form.js direkt nach. %>
       <button type="submit" form="discard-form" class="btn btn-outline-danger" id="btn-discard">Verwerfen</button>
-      <button type="submit" class="btn btn-primary" id="btn-save">
+      <button type="submit" class="btn btn-outline-primary" id="btn-save">
         <%= embed ? 'Speichern & schließen' : 'Entwurf speichern' %>
+      </button>
+      <%# Speichert und reicht direkt zur Prüfung ein (report-form.js: initSubmit).
+          Ziel danach: nächster Entwurf der Import-Queue, sonst Detailseite bzw.
+          im Modal zurück zur Liste. %>
+      <button type="button" class="btn btn-success" id="btn-submit"
+              data-after="<%= locals.queue ? (queue.nextAz ? `/anzeige/${queue.nextAz}/bearbeiten?queue=${queue.batchId}${embedQ}` : `/import/${queue.batchId}`) : `/anzeige/${r.aktenzeichen}` %>">
+        Speichern &amp; Einreichen
       </button>
     </div>
   </form>
