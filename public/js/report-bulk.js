@@ -67,7 +67,20 @@
   }
   window.addEventListener('resize', update)
   search.addEventListener('input', update)
-  status.addEventListener('change', update)
+  // Status-Filter pro Browser merken (reine Ansichts-Vorliebe → localStorage;
+  // gesperrter Speicher, z.B. privates Fenster, wird still ignoriert).
+  var STATUS_KEY = 'owia.reportStatusFilter'
+  try {
+    var savedStatus = localStorage.getItem(STATUS_KEY)
+    if (savedStatus && Array.from(status.options).some(function (o) { return o.value === savedStatus })) {
+      status.value = savedStatus
+      if (window.searchableSelect) window.searchableSelect.sync(status)
+    }
+  } catch (_) {}
+  status.addEventListener('change', function () {
+    try { localStorage.setItem(STATUS_KEY, status.value) } catch (_) {}
+    update()
+  })
   document.addEventListener('reports:updated', update)
   document.addEventListener('change', function (event) {
     if (selectAlls.indexOf(event.target) !== -1) {
