@@ -35,15 +35,23 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
   <td class="cell-photos <%= _imgs.length ? '' : 'cell-empty' %>">
     <div class="report-photos <%= _imgs.length > 6 ? 'has-more' : '' %>" data-photos>
       <% for (const img of _imgs) { %>
+        <%# thumb-wrap: Hülle für das Auswahl-Häkchen (photo-picks.js, nur Entwürfe). %>
+        <span class="thumb-wrap">
         <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= img.id %>/thumb.jpg?v=<%= img.v %>" alt="Beweisfoto"
              class="report-thumb" loading="lazy" decoding="async"
              data-full-src="/anzeige/<%= r.aktenzeichen %>/image/<%= img.id %>?v=<%= img.v %>"
              <% if (_isDraft) { %>
                draggable="true" data-drag-image="<%= img.id %>" data-drag-az="<%= r.aktenzeichen %>"
-               title="Klick: groß anzeigen · Ziehen: in anderen Entwurf verschieben"
+               data-photo-edit="/anzeige/<%= r.aktenzeichen %>/images/<%= img.id %>"
+               title="Klick: Vorschau (Schwärzen/Zuschneiden) · Strg-Klick: auswählen · Ziehen: verschieben"
              <% } else { %>
-               title="Klick: groß anzeigen"
+               title="Klick: Vorschau"
              <% } %>>
+        <% if (_isDraft) { %>
+          <input type="checkbox" class="thumb-pick" data-pick-az="<%= r.aktenzeichen %>" data-pick-id="<%= img.id %>"
+                 aria-label="Foto zum Verschieben auswählen" title="Foto auswählen">
+        <% } %>
+        </span>
       <% } %>
       <%# Mehr als 6 Fotos: 5 zeigen + Kachel „+N" (Rest per CSS ausgeblendet, Zeilen bleiben kompakt). %>
       <% if (_imgs.length > 6) { %>

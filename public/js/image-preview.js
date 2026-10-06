@@ -43,8 +43,26 @@
   preview.innerHTML =
     '<img alt="" class="img-preview-img">' +
     '<div class="img-preview-lens"></div>' +
-    '<div class="img-preview-hint">Klicken zum Zoomen</div>'
+    '<div class="img-preview-hint">Klicken zum Zoomen</div>' +
+    '<div class="img-preview-actions" hidden>' +
+    '<button type="button" class="btn btn-sm btn-light" data-pe="black">⬛ Schwärzen</button>' +
+    '<button type="button" class="btn btn-sm btn-light" data-pe="crop">✂️ Zuschneiden</button>' +
+    '<button type="button" class="btn btn-sm btn-light" data-pe="">Mehr …</button>' +
+    '</div>'
   var previewImg = preview.querySelector('img')
+  var actions = preview.querySelector('.img-preview-actions')
+  // Entwurfs-Fotos (data-photo-edit = PUT-URL der Fassung) direkt aus der
+  // Vorschau bearbeiten: photo-edit.js öffnet den Foto-Editor.
+  actions.addEventListener('mousedown', function (e) { e.stopPropagation() })
+  actions.addEventListener('click', function (e) {
+    e.stopPropagation()
+    var b = e.target.closest('[data-pe]')
+    if (!b || !current || !window.photoEditor) return
+    var t = current
+    var row = t.closest('[data-az]')
+    window.photoEditor.open({ src: srcOf(t), put: t.getAttribute('data-photo-edit'), az: row && row.getAttribute('data-az'), tool: b.getAttribute('data-pe') || null })
+    hideAll()
+  })
   var lens = preview.querySelector('.img-preview-lens')
   var hint = preview.querySelector('.img-preview-hint')
 
@@ -117,6 +135,7 @@
     preview.classList.remove('is-zooming')
     zoom.classList.remove('is-visible')
     hint.textContent = 'Klick: Lupe · Doppelklick: Vollbild'
+    actions.hidden = !(thumb.hasAttribute('data-photo-edit') && window.photoEditor)
     var ratio = thumb.naturalWidth && thumb.naturalHeight ? thumb.naturalWidth / thumb.naturalHeight : 4 / 3
     place(e.clientX, e.clientY, sizeFor(ratio))
     // Sofort das (schon geladene) Vorschaubild zeigen, dann das Original

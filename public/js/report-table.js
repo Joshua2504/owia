@@ -98,7 +98,7 @@
     img.src = '/anzeige/' + targetAz + '/image/' + moved.imageId + '/thumb.jpg' + suffix
     img.setAttribute('data-full-src', '/anzeige/' + targetAz + '/image/' + moved.imageId + suffix)
     img.setAttribute('data-drag-az', targetAz)
-    photos.appendChild(img)
+    photos.appendChild(img.closest('.thumb-wrap') || img)
     targetRow.querySelector('.cell-photos').classList.remove('cell-empty')
     updatePhotoCell(moved.az)
     // Beide Zeilen frisch vom Server (Fotozahl „+N", Reihenfolge).
@@ -125,7 +125,7 @@
         var row = tbody.querySelector('tr')
         if (!row) { location.reload(); return }
         source.parentNode.insertBefore(row, source.nextSibling)
-        if (moved.el) moved.el.remove() // Foto hängt jetzt in der neuen Zeile
+        if (moved.el) (moved.el.closest('.thumb-wrap') || moved.el).remove() // Foto hängt jetzt in der neuen Zeile
         bindRow(row)
         updatePhotoCell(moved.az)
         document.dispatchEvent(new Event('reports:updated'))
@@ -154,6 +154,8 @@
       e.preventDefault()
       var moved = dragged
       dragged = null
+      // Teil einer Mehrfachauswahl (photo-picks.js): alle ausgewählten mitnehmen.
+      if (window.photoPicks && window.photoPicks.handles(moved.imageId)) return window.photoPicks.moveTo({ targetAz: az })
       moveDragged(moved, { targetAz: az }).catch(function (error) { alert(error.message) })
     })
   }
@@ -187,6 +189,7 @@
       e.preventDefault()
       var moved = dragged
       dragged = null
+      if (window.photoPicks && window.photoPicks.handles(moved.imageId)) return window.photoPicks.moveTo({ newDraft: true })
       moveDragged(moved, { newDraft: true }).catch(function (error) { alert(error.message) })
     })
   }
