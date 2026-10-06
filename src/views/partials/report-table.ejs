@@ -39,14 +39,20 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
             </label>
           <% } %>
         </th>
-        <th>Fotos</th>
-        <th>Aktenzeichen</th>
-        <th>Kennzeichen / Marke</th>
-        <%# Klick sortiert nach Tatzeit (report-bulk.js, Wahl wird gemerkt). %>
-        <th aria-sort="none"><button type="button" class="sort-btn" id="sort-tatzeit">Tatzeit <span aria-hidden="true"></span></button></th>
-        <th>Tatort</th>
-        <th>Verstoß</th>
-        <th>Status</th>
+        <%# Spaltenköpfe sortieren server-seitig (routes/dashboard.ts übergibt sort);
+            erneuter Klick dreht die Richtung. Ohne sort (Import-Übersicht) bleibt
+            die Reihenfolge der Seite. %>
+        <% for (const [key, label] of [['photos', 'Fotos'], ['az', 'Aktenzeichen'], ['plate', 'Kennzeichen / Marke'], ['ts', 'Tatzeit'], ['place', 'Tatort'], ['offense', 'Verstoß'], ['status', 'Status']]) { %>
+          <% if (typeof sort !== 'undefined' && sort) { %>
+            <% const _on = sort.key === key %>
+            <% const _next = _on ? (sort.dir === 'asc' ? 'desc' : 'asc') : (key === 'ts' || key === 'photos' ? 'desc' : 'asc') %>
+            <th aria-sort="<%= _on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none' %>">
+              <a class="sort-btn" href="?sort=<%= key %>&amp;dir=<%= _next %>"><%= label %> <span aria-hidden="true"><%= _on ? (sort.dir === 'asc' ? '▲' : '▼') : '' %></span></a>
+            </th>
+          <% } else { %>
+            <th><%= label %></th>
+          <% } %>
+        <% } %>
         <th><span class="visually-hidden">Aktionen</span></th>
       </tr>
     </thead>

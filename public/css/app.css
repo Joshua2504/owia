@@ -929,5 +929,5 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 @media (max-width: 991.98px) { .submit-body { grid-template-columns: 1fr; } }
 
 /* Sortierbarer Spaltenkopf (Tatzeit). */
-.sort-btn { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
+.sort-btn { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; text-decoration: none; white-space: nowrap; }
 .sort-btn:hover { color: var(--bs-primary); }
