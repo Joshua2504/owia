@@ -69,7 +69,9 @@ export function findDuplicateGroups<T extends ReportLike>(reports: T[]): Duplica
     const sorted = [...list].sort((a, b) => (minutes(a)?.t ?? 0) - (minutes(b)?.t ?? 0))
     let current: T[] = []
     const flush = () => {
-      if (current.length >= 2) {
+      // Nur Gruppen mit mindestens einem Entwurf – sind alle schon eingereicht/versendet,
+      // gibt es nichts mehr zu entscheiden (z.B. versehentlich doppelt versendet).
+      if (current.length >= 2 && current.some((r) => r.status === 'entwurf')) {
         groups.push({
           kennzeichen: current[0].kennzeichen as string,
           reports: current,
