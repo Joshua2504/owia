@@ -25,7 +25,7 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
 // Sortierschlüssel Tatzeit (report-bulk.js): „YYYY-MM-DD HH:MM", leer = ohne Datum.
 const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if (isNaN(d)) return ''; return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + (r.tatzeit_von ? String(r.tatzeit_von).slice(0, 5) : '00:00') })()
 %>
-<tr data-status="<%= r.status %>" data-az="<%= r.aktenzeichen %>" data-sort-ts="<%= _ts %>" <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
+<tr data-status="<%= _isDraft && r.bereit_at ? 'bereit' : r.status %>" data-az="<%= r.aktenzeichen %>" data-sort-ts="<%= _ts %>" <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
   <td class="cell-select <%= _isDraft ? '' : 'cell-empty' %>">
     <% if (_isDraft) { %>
       <%# Mehrfachauswahl für gemeinsame Aktionen (Formular in report-table.ejs). %>
@@ -181,7 +181,12 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
     <% if (r.status === 'versendet') { %>
       <span class="badge rounded-pill text-bg-success">Versendet</span>
     <% } else if (_isDraft) { %>
-      <span class="badge rounded-pill text-bg-warning">Entwurf</span>
+      <%# Status Entwurf ⇄ Bereit per Klick umschalten (report-table.js). „Bereit"
+          ist eine Markierung am Entwurf (bereit_at) – bleibt also voll bearbeitbar. %>
+      <form method="post" action="/anzeige/<%= r.aktenzeichen %>/bereit" class="d-inline m-0" data-bereit-toggle>
+        <button type="submit" class="badge rounded-pill border-0 <%= r.bereit_at ? 'text-bg-primary' : 'text-bg-warning' %>"
+                title="<%= r.bereit_at ? 'Bereit zum Einreichen – Klick: zurück auf Entwurf' : 'Entwurf – Klick: als bereit markieren' %>"><%= r.bereit_at ? '✔ Bereit' : 'Entwurf' %></button>
+      </form>
       <% const _vj = verjaehrung(r) %>
       <% if (_vj.verjaehrt) { %>
         <span class="badge rounded-pill text-bg-danger" title="Tat liegt mehr als drei Monate zurück – kann nicht mehr eingereicht werden">⌛ Verjährt</span>
@@ -190,6 +195,9 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       <% } %>
     <% } else { %>
       <span class="badge rounded-pill text-bg-info">Eingereicht</span>
+    <% } %>
+    <% if (typeof isDuplicate !== 'undefined' && isDuplicate) { %>
+      <span class="badge rounded-pill text-bg-warning border border-dark-subtle" title="Gleiches Kennzeichen im selben Zeitraum – siehe Hinweis oben">⚠️ Doppelt?</span>
     <% } %>
     <%# Antwort des Ordnungsamts liegt vor (Spalten liefert nur das Dashboard). %>
     <% if (r.reply_count) { %>
@@ -206,9 +214,9 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
         <%# Einreichen: Modal mit Datenvorschau + PDF (report-submit.js). %>
         <button type="button" class="btn btn-sm btn-success" data-submit-preview title="Prüfen und einreichen">Einreichen</button>
         <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary" data-edit-modal title="Alle Angaben im Editor">✏️</a>
-        <%# Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
+        <%# Löschen verschiebt in den Papierkorb (wiederherstellbar). %>
         <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0">
-          <button type="submit" class="btn btn-sm btn-outline-danger" title="Entwurf löschen" aria-label="Entwurf <%= r.aktenzeichen %> löschen">🗑</button>
+          <button type="submit" class="btn btn-sm btn-outline-danger" title="In den Papierkorb" aria-label="Entwurf <%= r.aktenzeichen %> in den Papierkorb verschieben">🗑</button>
         </form>
       <% } else { %>
         <a href="/anzeige/<%= r.aktenzeichen %>" class="btn btn-sm btn-outline-secondary">Details</a>

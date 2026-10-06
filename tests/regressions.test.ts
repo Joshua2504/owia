@@ -18,6 +18,7 @@ import { MailService } from '../src/services/mail'
 import adminRoutes from '../src/routes/admin'
 import reportsRoutes from '../src/routes/reports'
 import settingsRoutes from '../src/routes/settings'
+import { trashDrafts, restoreDrafts, purgeTrash } from '../src/services/drafts'
 import { groupPhotos } from '../src/services/intakeGrouping'
 import { resolveSendCity } from '../src/services/districts'
 import { assertProductionMailConfig } from '../src/config/mail'
@@ -72,8 +73,23 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0033_intake_processing.sql')
-  assert.equal(rows.length, 33)
+  assert.equal(rows.at(-1)?.filename, '0035_bereit.sql')
+  assert.equal(rows.length, 35)
+})
+
+test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
+  const id = await report()
+  await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
+  const sent = await report() // eingereicht – darf nicht im Papierkorb landen
+  assert.equal(await trashDrafts(userId, [id, sent]), 1)
+  assert.equal((await query('SELECT status FROM reports WHERE id=?', [id]))[0].status, 'papierkorb')
+  assert.equal(await restoreDrafts(userId, [id]), 1)
+  assert.equal((await query('SELECT status, papierkorb_at FROM reports WHERE id=?', [id]))[0].papierkorb_at, null)
+  await trashDrafts(userId, [id])
+  assert.equal(await purgeTrash(), 0) // noch nicht abgelaufen
+  await pool.execute('UPDATE reports SET papierkorb_at = DATE_SUB(NOW(), INTERVAL 31 DAY) WHERE id=?', [id])
+  assert.equal(await purgeTrash(), 1)
+  assert.equal((await query('SELECT COUNT(*) n FROM reports WHERE id=?', [id]))[0].n, 0)
 })
 
 test('Parallele Freigaben versenden genau einmal und speichern genau eine Nachricht', async () => {

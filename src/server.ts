@@ -31,6 +31,7 @@ import rateLimit from '@fastify/rate-limit'
 import { initDb } from './db/init'
 import { MySQLSessionStore } from './db/session-store'
 import { pool } from './db/connection'
+import { purgeTrash } from './services/drafts'
 
 // trustProxy: hinter Caddy sonst falsches Protokoll (secure-Cookies) und
 // Docker-interne IPs statt Client-IPs in Logs und Rate-Limits.
@@ -194,6 +195,8 @@ async function main() {
       await pool.execute(
         'DELETE FROM newsletter_subscribers WHERE confirmed_at IS NULL AND expires_at < NOW()'
       )
+      // Papierkorb: Entwürfe nach PAPIERKORB_TAGE endgültig löschen.
+      await purgeTrash()
     } catch (err) {
       app.log.warn({ err }, 'Session-/Token-Aufräumen fehlgeschlagen')
     }

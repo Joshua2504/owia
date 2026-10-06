@@ -170,9 +170,8 @@
     })
   }
   // ---------------------------------------------------------------------------
-  // Löschen im Modal statt über die Bestätigungsseite: Einzel-Löschen (🗑 in
-  // der Zeile) und Sammel-Löschen. Der Server verlangt weiterhin confirmed=1
-  // (ohne JS bleibt die Bestätigungsseite der Fallback).
+  // Löschen per fetch statt Seitenwechsel: Einzel-Löschen (🗑 in der Zeile)
+  // und Sammel-Löschen.
   // ---------------------------------------------------------------------------
   function rowSummary(row) {
     var val = function (sel) { var el = row.querySelector(sel); return el ? (el.value || el.textContent || '').trim() : '' }
@@ -182,66 +181,30 @@
     return parts.join(' · ')
   }
 
-  function confirmDelete(azList) {
-    open(azList.length === 1 ? 'Entwurf löschen?' : azList.length + ' Entwürfe löschen?')
-    var list = document.createElement('ul')
-    list.className = 'small mb-3'
-    azList.forEach(function (az) {
-      var row = table.querySelector('tr[data-az="' + az + '"]')
-      var li = document.createElement('li')
-      var code = document.createElement('code')
-      code.textContent = az
-      li.appendChild(code)
-      var info = row ? rowSummary(row) : ''
-      if (info) li.appendChild(document.createTextNode(' – ' + info))
-      list.appendChild(li)
-    })
-    var note = document.createElement('p')
-    note.className = 'small text-muted'
-    note.textContent = 'Fotos und Angaben werden endgültig gelöscht.'
-    var actions = document.createElement('div')
-    actions.className = 'd-flex gap-2 justify-content-end'
-    var cancel = document.createElement('button')
-    cancel.type = 'button'
-    cancel.className = 'btn btn-outline-secondary'
-    cancel.textContent = 'Abbrechen'
-    cancel.addEventListener('click', function () { dialog.close() })
-    var go = document.createElement('button')
-    go.type = 'button'
-    go.className = 'btn btn-danger'
-    go.textContent = azList.length === 1 ? 'Endgültig löschen' : azList.length + ' Entwürfe löschen'
-    actions.appendChild(cancel)
-    actions.appendChild(go)
-    content.append(list, note, actions)
-    go.focus()
-    go.addEventListener('click', async function () {
-      working(true)
-      message.textContent = 'Wird gelöscht …'
-      try {
-        var single = azList.length === 1
-        var body = new URLSearchParams({ confirmed: '1' })
-        if (!single) azList.forEach(function (az) { body.append('az', az) })
-        var res = await fetch(single ? '/anzeige/' + encodeURIComponent(azList[0]) + '/discard' : '/anzeigen/loeschen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString(),
-          // Erfolg = Weiterleitung zur Liste; ihr nicht folgen (die Seite
-          // bleibt, die Zeilen werden unten entfernt).
-          redirect: 'manual',
-        })
-        if (!res.ok && res.type !== 'opaqueredirect') throw new Error()
-        // Zeilen entfernen (Server hat nur Entwürfe gelöscht – Rest bleibt).
-        await Promise.all(azList.map(function (az) {
-          return window.reportTableRefresh ? window.reportTableRefresh(az).catch(function () {}) : null
-        }))
-        working(false)
-        dialog.close()
-        update()
-      } catch (_) {
-        working(false)
-        message.textContent = 'Löschen fehlgeschlagen – bitte erneut versuchen.'
-      }
-    })
+  // Löschen verschiebt in den Papierkorb (wiederherstellbar) – daher ohne
+  // Rückfrage; nur bei Fehlern erscheint der Dialog.
+  async function confirmDelete(azList) {
+    try {
+      var single = azList.length === 1
+      var body = new URLSearchParams()
+      if (!single) azList.forEach(function (az) { body.append('az', az) })
+      var res = await fetch(single ? '/anzeige/' + encodeURIComponent(azList[0]) + '/discard' : '/anzeigen/loeschen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+        // Erfolg = Weiterleitung zur Liste; ihr nicht folgen (die Seite
+        // bleibt, die Zeilen werden unten entfernt).
+        redirect: 'manual',
+      })
+      if (!res.ok && res.type !== 'opaqueredirect') throw new Error()
+      await Promise.all(azList.map(function (az) {
+        return window.reportTableRefresh ? window.reportTableRefresh(az).catch(function () {}) : null
+      }))
+      update()
+    } catch (_) {
+      open('Löschen fehlgeschlagen')
+      message.textContent = 'Verschieben in den Papierkorb fehlgeschlagen – bitte erneut versuchen.'
+    }
   }
 
   document.addEventListener('submit', function (e) {

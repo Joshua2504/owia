@@ -38,7 +38,7 @@
 
 <% if (drafts.length) { %>
   <div class="card shadow-sm mb-4">
-    <%- include('../partials/report-table', { reports: drafts, imagesByReport, queueId: batch.id }) %>
+    <%- include('../partials/report-table', { reports: drafts, imagesByReport, queueId: batch.id, duplicateGroups, mergeBack }) %>
   </div>
 <% } %>
 

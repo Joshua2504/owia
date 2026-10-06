@@ -6,6 +6,10 @@
   <div class="d-flex gap-2">
     <a class="btn btn-outline-primary flex-fill d-flex align-items-center justify-content-center"
        href="/import">📸 Foto-Import</a>
+    <% if (locals.trashCount) { %>
+      <a class="btn btn-outline-secondary d-flex align-items-center justify-content-center"
+         href="/papierkorb" title="Papierkorb">🗑 <span class="ms-1"><%= trashCount %></span></a>
+    <% } %>
     <form method="post" action="/anzeige/neu" class="m-0 flex-fill d-grid">
       <button type="submit" class="btn btn-primary">+ Neue Anzeige</button>
     </form>
@@ -23,7 +27,7 @@
   </div>
 <% } else { %>
   <div class="card shadow-sm report-card">
-    <%- include('../partials/report-table', { reports, imagesByReport, queueId: null }) %>
+    <%- include('../partials/report-table', { reports, imagesByReport, queueId: null, duplicateGroups, mergeBack }) %>
   </div>
 <% } %>
 

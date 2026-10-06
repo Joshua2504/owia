@@ -1768,19 +1768,16 @@
       })
     }
 
-    // Verwerfen ohne Bestätigungsseite im iframe: hier nachfragen, dann mit
-    // confirmed=1 löschen (der Server verlangt die Bestätigung weiterhin).
+    // Verwerfen im iframe per fetch: verschiebt in den Papierkorb.
     const discard = document.querySelector('#btn-discard')
     if (discard) {
       discard.addEventListener('click', async (e) => {
         e.preventDefault()
-        if (!confirm('Diesen Entwurf samt Fotos endgültig löschen?')) return
         discard.disabled = true
         try {
           const res = await fetch('/anzeige/' + encodeURIComponent(reportId) + '/discard', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'confirmed=1',
           })
           if (!res.ok) throw new Error()
           notifyParent(true)

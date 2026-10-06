@@ -196,6 +196,21 @@
 
   // Auch die Touch-Bedienung verwendet denselben Ablauf wie Drag & Drop.
   window.reportTableMove = moveDragged
+  // „Bereit"-Knopf ohne Seiten-Reload umschalten.
+  document.addEventListener('submit', async function (e) {
+    var form = e.target.closest && e.target.closest('form[data-bereit-toggle]')
+    if (!form) return
+    e.preventDefault()
+    var row = form.closest('tr[data-az]')
+    try {
+      var res = await fetch(form.action, { method: 'POST', headers: { Accept: 'application/json' } })
+      if (!res.ok) throw new Error()
+      await window.reportTableRefresh(row.getAttribute('data-az'))
+    } catch (_) {
+      form.submit()
+    }
+  })
+
   window.reportTableRefresh = async function (az) {
     var old = document.querySelector('[data-drop-az="' + az + '"]')
     if (!old) return

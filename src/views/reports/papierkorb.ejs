@@ -1,0 +1,61 @@
+<%
+// Papierkorb: gelöschte Entwürfe (status='papierkorb'), wiederherstellbar bis
+// zum automatischen endgültigen Löschen (PAPIERKORB_TAGE, services/drafts.ts).
+%>
+<div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
+  <h2 class="mb-0">🗑 Papierkorb</h2>
+  <a href="/anzeigen" class="btn btn-outline-secondary">Zurück zu meinen Anzeigen</a>
+</div>
+
+<% if (items.length === 0) { %>
+  <div class="card shadow-sm">
+    <div class="card-body text-center py-5 text-muted">Der Papierkorb ist leer.</div>
+  </div>
+<% } else { %>
+  <p class="text-muted small">
+    Gelöschte Entwürfe bleiben <%= tage %> Tage im Papierkorb und werden danach samt Fotos endgültig gelöscht.
+  </p>
+  <div class="card shadow-sm">
+    <ul class="list-group list-group-flush">
+      <% for (const d of items) { %>
+        <li class="list-group-item d-flex flex-wrap align-items-center gap-3">
+          <% if (d.thumb_id) { %>
+            <img src="/anzeige/<%= d.aktenzeichen %>/image/<%= d.thumb_id %>/thumb.jpg" alt=""
+                 class="rounded border" style="width:64px;height:48px;object-fit:cover" loading="lazy" decoding="async">
+          <% } %>
+          <div class="flex-grow-1 small">
+            <div>
+              <code><%= d.aktenzeichen %></code>
+              <% if (d.kennzeichen) { %> · <strong><%= d.kennzeichen %></strong><% } %>
+              <% if (d.tattag_fmt) { %> · <%= d.tattag_fmt %><% } %>
+              <% if (d.tatort) { %> · <%= d.tatort %><% } %>
+              · <%= d.image_count %> Foto<%= Number(d.image_count) === 1 ? '' : 's' %>
+            </div>
+            <div class="text-muted">Gelöscht am <%= d.geloescht_fmt %> · endgültig am <%= d.endgueltig_fmt %></div>
+          </div>
+          <div class="d-flex gap-2">
+            <form method="post" action="/papierkorb/wiederherstellen" class="m-0">
+              <input type="hidden" name="az" value="<%= d.aktenzeichen %>">
+              <button type="submit" class="btn btn-sm btn-outline-primary">Wiederherstellen</button>
+            </form>
+            <form method="post" action="/papierkorb/loeschen" class="m-0"
+                  data-confirm="Entwurf <%= d.aktenzeichen %> samt Fotos endgültig löschen?">
+              <input type="hidden" name="az" value="<%= d.aktenzeichen %>">
+              <button type="submit" class="btn btn-sm btn-outline-danger">Endgültig löschen</button>
+            </form>
+          </div>
+        </li>
+      <% } %>
+    </ul>
+  </div>
+  <form method="post" action="/papierkorb/loeschen" class="mt-3 text-end"
+        data-confirm="Alle <%= items.length %> Entwürfe im Papierkorb endgültig löschen?">
+    <input type="hidden" name="alle" value="1">
+    <button type="submit" class="btn btn-danger">Papierkorb leeren</button>
+  </form>
+<% } %>
+<script>
+  document.querySelectorAll('form[data-confirm]').forEach(function (f) {
+    f.addEventListener('submit', function (e) { if (!confirm(f.dataset.confirm)) e.preventDefault() })
+  })
+</script>

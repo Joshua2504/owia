@@ -13,6 +13,7 @@ import { imageVersion } from '../services/images'
 import { processIntakeRaw, processIntakeThumbnail, withIntakeUploadLock, loadThumbnail } from '../services/intakeImageProcessing'
 import crypto from 'node:crypto'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
+import { findDuplicateGroups } from '../services/duplicates'
 import { createDraft, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
@@ -324,7 +325,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
               TIME_FORMAT(r.tatzeit_bis, '%H:%i') AS bis_fmt,
               (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count
          FROM reports r
-        WHERE r.intake_batch_id = ? AND r.user_id = ?
+        WHERE r.intake_batch_id = ? AND r.user_id = ? AND r.status <> 'papierkorb'
         ORDER BY r.tattag, r.tatzeit_von, r.id`,
       [batch.id, userId]
     )
@@ -333,7 +334,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
       `SELECT ri.id, ri.report_id, ri.filename
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
-        WHERE r.intake_batch_id = ? AND r.user_id = ?
+        WHERE r.intake_batch_id = ? AND r.user_id = ? AND r.status <> 'papierkorb'
         ORDER BY ri.report_id, ri.sort_order, ri.id`,
       [batch.id, userId]
     )
@@ -356,6 +357,8 @@ export default async function intakeRoutes(app: FastifyInstance) {
       skippedCount,
       drafts,
       imagesByReport: Object.fromEntries(imagesByReport),
+      duplicateGroups: findDuplicateGroups(drafts as any),
+      mergeBack: `/import/${batch.id}`,
       unassigned,
       firstOpenAz: openDrafts.length ? openDrafts[0].aktenzeichen : null,
       openCount: openDrafts.length,
@@ -513,7 +516,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
          FROM reports WHERE intake_batch_id = ? AND user_id = ?`,
       [batch.id, userId]
     )
-    const draftsToDelete = reports.filter((r) => r.status === 'entwurf')
+    const draftsToDelete = reports.filter((r) => r.status === 'entwurf' || r.status === 'papierkorb')
     const keptCount = reports.length - draftsToDelete.length
     const unassignedCount = (await loadPhotos(batch.id, true)).length
 

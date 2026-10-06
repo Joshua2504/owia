@@ -104,6 +104,58 @@ export async function deleteDraft(
   }
 }
 
+/** Tage, die ein Entwurf im Papierkorb bleibt, bevor er endgültig verschwindet. */
+export const PAPIERKORB_TAGE = 30
+
+/** Entwürfe in den Papierkorb verschieben (nur eigene, unversendete Entwürfe).
+ *  Dateien bleiben liegen – erst purgeTrash/deleteDraft entfernt sie. */
+export async function trashDrafts(userId: number, reportIds: number[]): Promise<number> {
+  if (reportIds.length === 0) return 0
+  const [res] = await pool.execute<mysql.ResultSetHeader>(
+    `UPDATE reports SET status = 'papierkorb', papierkorb_at = NOW()
+      WHERE id IN (${reportIds.map(() => '?').join(',')}) AND user_id = ?
+        AND status = 'entwurf' AND versand_status IS NULL`,
+    [...reportIds, userId]
+  )
+  return res.affectedRows
+}
+
+/** Entwürfe aus dem Papierkorb wiederherstellen. */
+export async function restoreDrafts(userId: number, reportIds: number[]): Promise<number> {
+  if (reportIds.length === 0) return 0
+  const [res] = await pool.execute<mysql.ResultSetHeader>(
+    `UPDATE reports SET status = 'entwurf', papierkorb_at = NULL
+      WHERE id IN (${reportIds.map(() => '?').join(',')}) AND user_id = ? AND status = 'papierkorb'`,
+    [...reportIds, userId]
+  )
+  return res.affectedRows
+}
+
+/** Papierkorb-Einträge endgültig löschen – ohne userId alle abgelaufenen
+ *  (Aufräum-Job), mit userId die angegebenen bzw. alle des Nutzers. */
+export async function purgeTrash(opts: { userId?: number; reportIds?: number[] } = {}): Promise<number> {
+  const where = ["status = 'papierkorb'"]
+  const params: (number | string)[] = []
+  if (opts.userId === undefined) {
+    where.push('papierkorb_at < DATE_SUB(NOW(), INTERVAL ? DAY)')
+    params.push(PAPIERKORB_TAGE)
+  } else {
+    where.push('user_id = ?')
+    params.push(opts.userId)
+    if (opts.reportIds) {
+      if (opts.reportIds.length === 0) return 0
+      where.push(`id IN (${opts.reportIds.map(() => '?').join(',')})`)
+      params.push(...opts.reportIds)
+    }
+  }
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT id, user_id, pdf_filename FROM reports WHERE ${where.join(' AND ')}`,
+    params
+  )
+  for (const r of rows) await deleteDraft(r.user_id, { id: r.id, pdf_filename: r.pdf_filename })
+  return rows.length
+}
+
 export type ImageRowMeta = {
   filename: string
   mimetype: string

@@ -10,6 +10,7 @@ import { getCity, unlockedCities, DEFAULT_CITY_ID } from '../config/cities'
 import { isValidEmail, normalizeEmail } from './auth'
 import { MailService } from '../services/mail'
 import { createChallenge, verifyCaptcha } from '../services/captcha'
+import { huPlaketten } from '../services/huPlakette'
 
 // Öffentliche, anonyme Übersicht aller versendeter Anzeigen auf einer Karte.
 // Bewusst ohne Auth: Startseite und Daten sind öffentlich sichtbar. Es werden
@@ -65,6 +66,7 @@ export default async function publicRoutes(app: FastifyInstance) {
         topVerstoss: topRows[0]?.verstoss_art || null,
       },
       cities: unlockedCities(),
+      huPlaketten: huPlaketten(),
     }))
   })
 

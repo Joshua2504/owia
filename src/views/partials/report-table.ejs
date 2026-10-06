@@ -11,7 +11,52 @@
 // Ziehen = in anderen Entwurf verschieben (report-table.js).
 const _queueId = typeof queueId !== 'undefined' && queueId ? queueId : null
 const _hasDrafts = reports.some((r) => r.status === 'entwurf')
+// Mögliche Doppel-Anzeigen (services/duplicates.ts): Hinweis oben + Badge in der Zeile.
+const _dupGroups = (typeof duplicateGroups !== 'undefined' && duplicateGroups) || []
+const _dupAz = new Set(_dupGroups.flatMap((g) => g.reports.map((x) => x.aktenzeichen)))
+const _back = (typeof mergeBack !== 'undefined' && mergeBack) || '/anzeigen'
+const _dFmt = (r) => { const d = r.tattag ? new Date(r.tattag).toLocaleDateString('de-DE') : '—'; return d + (r.tatzeit_von ? ' ' + String(r.tatzeit_von).slice(0, 5) : '') }
 %>
+<% if (_dupGroups.length) { %>
+  <div class="alert alert-warning m-3 mb-0 dup-hint" role="status">
+    <strong>⚠️ Mögliche Doppel-Anzeigen:</strong> gleiches Kennzeichen im selben Zeitraum.
+    Wenn es derselbe Vorfall ist, führe die Entwürfe zusammen (Fotos wandern in den gewählten Entwurf, die übrigen werden gelöscht).
+    <% _dupGroups.forEach((g, gi) => { %>
+      <form method="post" action="/anzeigen/zusammenfuehren" class="dup-group mt-2 pt-2 border-top"
+            onsubmit="return confirm('Entwürfe wirklich zusammenführen? Die übrigen Entwürfe werden danach gelöscht.')">
+        <input type="hidden" name="back" value="<%= _back %>">
+        <span class="plate-chip me-2"><%= g.kennzeichen %></span>
+        <% const _firstDraft = g.reports.find((x) => x.status === 'entwurf') %>
+        <% for (const x of g.reports) { %>
+          <span class="d-inline-flex align-items-center gap-1 me-3 small">
+            <% if (g.mergeable && x.status === 'entwurf') { %>
+              <input type="hidden" name="az" value="<%= x.aktenzeichen %>">
+              <input type="radio" class="form-check-input" name="target" value="<%= x.aktenzeichen %>"
+                     id="dup-<%= gi %>-<%= x.aktenzeichen %>" <%= x === _firstDraft ? 'checked' : '' %>
+                     title="Diesen Entwurf behalten">
+            <% } %>
+            <label for="dup-<%= gi %>-<%= x.aktenzeichen %>"><a href="#" data-dup-jump="<%= x.aktenzeichen %>"><%= x.aktenzeichen %></a>
+              · <%= _dFmt(x) %><% if (x.status !== 'entwurf') { %> · <em><%= x.status %></em><% } %></label>
+          </span>
+        <% } %>
+        <% if (g.mergeable) { %>
+          <button type="submit" class="btn btn-sm btn-warning">Zusammenführen</button>
+          <span class="small text-muted">(ausgewählter Entwurf bleibt)</span>
+        <% } else { %>
+          <span class="small text-muted">Bereits eingereicht – bitte prüfen, ob der Entwurf noch nötig ist.</span>
+        <% } %>
+      </form>
+    <% }) %>
+  </div>
+  <script>
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-dup-jump]'); if (!a) return
+      e.preventDefault()
+      const row = document.querySelector('tr[data-az="' + CSS.escape(a.dataset.dupJump) + '"]')
+      if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('table-warning'); setTimeout(() => row.classList.remove('table-warning'), 1500) }
+    })
+  </script>
+<% } %>
 <%# Ab md eine Tabelle, darunter Karten (Regeln in app.css, Zellklassen in
     report-row.ejs) – der Großteil der Nutzer kommt per Handy und soll nicht
     seitwärts scrollen müssen. Das Markup bleibt bewusst eine Tabelle, weil
@@ -23,7 +68,7 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
   </label>
   <label class="report-filter-status">
     <span class="visually-hidden">Status</span>
-    <select id="report-status" class="form-select"><option value="">Alle Status</option><option value="entwurf">Entwürfe</option><option value="eingereicht">Eingereicht</option><option value="versendet">Versendet</option></select>
+    <select id="report-status" class="form-select"><option value="">Alle Status</option><option value="entwurf">Entwürfe</option><option value="bereit">Bereit</option><option value="eingereicht">Eingereicht</option><option value="versendet">Versendet</option></select>
   </label>
   <% if (_hasDrafts) { %><label class="d-md-none d-flex align-items-center gap-2 report-select-label"><input type="checkbox" id="bulk-select-all-m" class="form-check-input"> Alle Entwürfe</label><% } %>
   <span id="report-visible-count" class="small text-muted ms-auto" role="status"></span>
@@ -62,6 +107,7 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
           r,
           imgs: (typeof imagesByReport !== 'undefined' && imagesByReport && imagesByReport[r.id]) || [],
           queueId: _queueId,
+          isDuplicate: _dupAz.has(r.aktenzeichen),
         }) %>
       <% } %>
     </tbody>
@@ -71,12 +117,12 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
   <!-- Aktionsleiste für angehakte Entwürfe. Die Checkboxen in den Zeilen
        hängen per form-Attribut an diesem Formular (Zeilen enthalten bereits
        eigene Einzel-Löschen-Formulare, Verschachtelung ist nicht erlaubt).
-       Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). -->
+       Löschen verschiebt in den Papierkorb. -->
   <form id="bulk-discard-form" method="post" action="/anzeigen/loeschen"
         class="d-none align-items-center flex-wrap gap-2 bulk-action-bar">
     <span id="bulk-count" class="fw-semibold" role="status"></span>
     <button type="button" id="bulk-edit" class="btn btn-primary">Gemeinsam bearbeiten</button>
-    <button type="submit" class="btn btn-outline-danger">Löschen …</button>
+    <button type="submit" class="btn btn-outline-danger">🗑 In den Papierkorb</button>
     <button type="button" id="bulk-clear" class="btn btn-link">Auswahl aufheben</button>
   </form>
   <!-- Drop-Ziel: Foto hierher ziehen, um dafür eine neue Anzeige anzulegen.

@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
 import { imageVersion } from '../services/images'
+import { findDuplicateGroups } from '../services/duplicates'
 
 // Sortierbare Spalten der Anzeigen-Liste → SQL. Leere Werte stehen in beiden
 // Richtungen unten (erster ORDER-BY-Teil, '' = Spalte ist nie leer), danach das eigentliche Kriterium;
@@ -14,7 +15,7 @@ const SORTS: Record<string, { empty: string; expr: string }> = {
   plate: { empty: "COALESCE(kennzeichen, '') = ''", expr: 'kennzeichen {dir}' },
   place: { empty: "COALESCE(tatort, '') = ''", expr: 'tatort {dir}' },
   offense: { empty: "COALESCE(verstoss_art, '') = ''", expr: 'verstoss_art {dir}' },
-  status: { empty: '', expr: "FIELD(status, 'entwurf', 'eingereicht', 'versendet') {dir}" },
+  status: { empty: '', expr: "(CASE WHEN status = 'entwurf' AND bereit_at IS NULL THEN 1 WHEN status = 'entwurf' THEN 2 WHEN status = 'eingereicht' THEN 3 ELSE 4 END) {dir}" },
   photos: { empty: '', expr: '(SELECT COUNT(*) FROM report_images pc WHERE pc.report_id = reports.id) {dir}' },
 }
 const DEFAULT_SORT = { key: 'ts', dir: 'desc' as const }
@@ -37,12 +38,12 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const orderBy = `${s.empty ? s.empty + ', ' : ''}${s.expr.replace(/\{dir\}/g, sort.dir === 'asc' ? 'ASC' : 'DESC')}, created_at DESC`
     const [reports] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tattag, tattag_bis, tatzeit_von, tatzeit_bis,
-              tatort, tatort_lat, tatort_lon, verstoss_art, status, created_at,
+              tatort, tatort_lat, tatort_lon, verstoss_art, status, bereit_at, created_at,
               fahrzeug_marke, beschreibung, fahrzeug_verlassen, behinderung, behinderung_text,
               (SELECT COUNT(*) FROM report_images gi WHERE gi.report_id = reports.id AND gi.gps_lat IS NOT NULL AND gi.gps_lon IS NOT NULL) AS photo_gps_count,
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in') AS reply_count,
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in' AND rr.read_at IS NULL) AS unread_reply_count
-       FROM reports WHERE user_id = ? ORDER BY ${orderBy}`,
+       FROM reports WHERE user_id = ? AND status <> 'papierkorb' ORDER BY ${orderBy}`,
       [userId]
     )
 
@@ -51,7 +52,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       `SELECT ri.id, ri.report_id, ri.filename
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
-        WHERE r.user_id = ?
+        WHERE r.user_id = ? AND r.status <> 'papierkorb'
         ORDER BY ri.report_id, ri.sort_order, ri.id`,
       [userId]
     )
@@ -60,12 +61,20 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       ;(imagesByReport[img.report_id] ??= []).push({ id: img.id, v: imageVersion(img.filename) })
     }
 
+    const [[trash]] = await pool.execute<mysql.RowDataPacket[]>(
+      "SELECT COUNT(*) AS c FROM reports WHERE user_id = ? AND status = 'papierkorb'",
+      [userId]
+    )
+
     return reply.view('/dashboard/index.ejs', viewData(request, {
+      trashCount: Number(trash.c),
       title: 'Meine Anzeigen',
       wide: true, // Tabelle über die volle Breite (layout.ejs)
       sort, // aktive Sortierung für die Spaltenköpfe (report-table.ejs)
       reports,
       imagesByReport,
+      duplicateGroups: findDuplicateGroups(reports as any),
+      mergeBack: '/anzeigen',
     }))
   })
 }
