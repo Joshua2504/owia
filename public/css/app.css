@@ -1093,3 +1093,27 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
   .photo-edit-run .ms-auto { margin-left: 0 !important; width: 100%; }
   .photo-edit-run .ms-auto .btn[data-act=submit] { flex: 1 1 auto; }
 }
+/* Restliche Angaben im Foto-Dialog: Tatzeit, verlassen, Behinderung. */
+.photo-edit-details { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.photo-edit-details[hidden] { display: none; }
+.photo-edit-details label { color: #bbb; }
+.photo-edit-details input[type=date], .photo-edit-details input[type=time] { width: auto; background: #fff; color: #000; }
+.photo-edit-details .form-check { display: flex; align-items: center; gap: 0.3rem; padding-left: 0; }
+.photo-edit-details .form-check-input { margin: 0; float: none; }
+.photo-edit-details .btn-group .btn { --bs-btn-color: #333; background: #f8f9fa; border-color: #ced4da; }
+.photo-edit-details .btn-check:checked + .btn { background: #0d6efd; border-color: #0d6efd; color: #fff; }
+.photo-edit-beh-text { flex: 1 1 18rem; min-width: 12rem; background: #fff; color: #000; }
+@media (max-width: 575.98px) {
+  /* Einreichen-Vorschau: Hinweis über die volle Breite, Knöpfe darunter umbrechen
+     (mit Admin-Knopf passten sie nicht mehr in eine Zeile). */
+  .submit-foot { flex-wrap: wrap; }
+  .submit-foot [data-msg] { flex: 1 1 100%; }
+  .submit-foot .btn { flex: 1 1 auto; }
+}
+/* Einreichen-Vorschau einspaltig: untereinander und als Ganzes scrollen – im
+   Grid wurde der Datenteil zugunsten des 60vh-PDFs abgeschnitten. */
+@media (max-width: 991.98px) {
+  .submit-body { display: block; }
+  .submit-data { overflow: visible; margin-bottom: 1rem; }
+}
+.submit-pdf:has(.submit-nopdf) { min-height: 0; }

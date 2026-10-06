@@ -2,10 +2,14 @@
 // und dem frisch erzeugten PDF (POST /anzeige/:az/einreichen-vorschau). Erst
 // „Jetzt einreichen" schickt POST /anzeige/:az/submit (JSON-Modus, dieselben
 // serverseitigen Prüfungen). Danach wird die Zeile neu geladen.
+//
+// Auch der Foto-Dialog (photo-edit.js, Liste und Prüf-Modus) öffnet die
+// Vorschau: window.submitPreview.open(az, { onSubmitted }) – onSubmitted
+// ersetzt dann das Neuladen der Zeile (der Foto-Dialog macht weiter).
 ;(function () {
-  if (!document.querySelector('.report-table')) return
   var dlg = null
   var current = null
+  var onSubmitted = null
 
   function build() {
     dlg = document.createElement('dialog')
@@ -113,9 +117,10 @@
     dlg.querySelector('[data-msg]').textContent = d.canSubmit ? 'Nach dem Einreichen prüft ein Admin und versendet an das Ordnungsamt.' : ''
   }
 
-  function open(az) {
+  function open(az, opts) {
     if (!dlg) build()
     current = az
+    onSubmitted = (opts && opts.onSubmitted) || null
     dlg.querySelector('h2').textContent = 'Anzeige ' + az + ' einreichen'
     dlg.querySelector('.submit-data').replaceChildren(text('div', 'text-muted', 'Vorschau und PDF werden erstellt …'))
     dlg.querySelector('.submit-pdf').replaceChildren()
@@ -150,6 +155,7 @@
       .then(function (res) {
         if (!res.ok) throw new Error(res.d.error || 'Einreichen fehlgeschlagen.')
         close()
+        if (onSubmitted) return onSubmitted(az, sofort)
         if (window.reportTableRefresh) return window.reportTableRefresh(az)
       })
       .catch(function (err) {
@@ -167,4 +173,6 @@
     var row = b.closest('tr[data-az]')
     if (row) open(row.dataset.az)
   })
+
+  window.submitPreview = { open: open }
 })()

@@ -154,6 +154,8 @@
     // Einreichen/Verwerfen hat photo-edit.js schon erledigt; hier nur weiter.
     done: function (az, action) {
       if (!cur || cur.az !== az) return
+      // Im Dialog Geändertes nicht aus dem Zwischenspeicher wiederbeleben.
+      delete cache[az]
       if (action === 'skipped') return skip()
       if (action === 'submitted') stats.submitted++
       else if (action === 'trashed') stats.trashed++

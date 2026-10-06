@@ -71,6 +71,31 @@
       ' autocomplete="off" spellcheck="false" placeholder="Tatort – Adresse eingeben …" aria-label="Tatort">' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="tatort-photo" title="Tatort aus den GPS-Daten der Fotos">📍</button>' +
       '</div>' +
+      // Restliche Angaben der Anzeige (Werte aus GET /pruefen/:az/daten,
+      // gespeichert je Feld über PATCH /anzeige/:az/felder).
+      '<div class="photo-edit-details" hidden>' +
+      '<label class="small" for="pe-tattag">Tattag</label>' +
+      '<input type="date" id="pe-tattag" class="form-control form-control-sm" data-detail="tattag">' +
+      '<input type="time" class="form-control form-control-sm" data-detail="tatzeit_von" aria-label="Uhrzeit von" title="Uhrzeit von">' +
+      '<span class="small">–</span>' +
+      '<input type="time" class="form-control form-control-sm" data-detail="tatzeit_bis" aria-label="Uhrzeit bis" title="Uhrzeit bis (optional)">' +
+      '<label class="form-check small mb-0"><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> Fahrzeug war verlassen</label>' +
+      '<span class="small">Behindert?</span>' +
+      '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">' +
+      '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-ja" value="1" data-detail="behinderung">' +
+      '<label class="btn btn-outline-light" for="pe-beh-ja">Ja</label>' +
+      '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-nein" value="0" data-detail="behinderung">' +
+      '<label class="btn btn-outline-light" for="pe-beh-nein">Nein</label>' +
+      '</span>' +
+      '<input type="text" class="form-control form-control-sm photo-edit-beh-text" data-detail="behinderung_text" list="pe-beh-vorschlaege"' +
+      ' placeholder="Wer wurde wie behindert? (Vorschläge beim Antippen)" hidden>' +
+      '<datalist id="pe-beh-vorschlaege">' +
+      // Wie die Schnellauswahl in reports/edit.ejs.
+      ['Ich musste auf die Straße ausweichen.', 'Ich musste auf den Gehweg ausweichen.', 'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
+        'Fußgänger mussten auf die Straße ausweichen.', 'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.']
+        .map(function (t) { return '<option value="' + t + '">' }).join('') +
+      '</datalist>' +
+      '</div>' +
       '</div>' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
@@ -86,7 +111,10 @@
       '<span class="ms-auto d-flex flex-wrap gap-2">' +
       '<button type="button" class="btn btn-sm btn-outline-danger" data-act="trash-report" title="Anzeige in den Papierkorb (30 Tage wiederherstellbar)">🗑 Anzeige verwerfen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="skip">⏭ Überspringen</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-success" data-act="submit" disabled>✓ Anzeige einreichen</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-success" data-act="submit" disabled title="Vorschau mit PDF öffnen und einreichen">✓ Anzeige einreichen …</button>' +
+      (document.body.hasAttribute('data-admin')
+        ? '<button type="button" class="btn btn-sm btn-primary" data-act="send" disabled title="Ohne Prüfung direkt ans Ordnungsamt senden (nur Admins)">📨 Sofort versenden</button>'
+        : '') +
       '</span></div>' +
       '</div>' +
       '<div class="photo-edit-body">' +
@@ -171,7 +199,21 @@
       setTimeout(function () { savePlate().catch(function () {}) }, 250)
     })
     dlg.querySelector('[data-act=tatort-photo]').addEventListener('click', tatortFromPhotos)
-    dlg.querySelector('[data-act=submit]').addEventListener('click', submitReport)
+    dlg.querySelector('[data-act=submit]').addEventListener('click', function () { submitReport(false) })
+    var sendBtn = dlg.querySelector('[data-act=send]')
+    if (sendBtn) sendBtn.addEventListener('click', function () { submitReport(true) })
+    dlg.querySelector('.photo-edit-details').addEventListener('change', function (e) {
+      var f = e.target.getAttribute && e.target.getAttribute('data-detail')
+      if (!f) return
+      var v = e.target.type === 'checkbox' ? (e.target.checked ? '1' : '0') : e.target.value.trim()
+      if (f === 'behinderung') {
+        dlg.querySelector('[data-detail=behinderung_text]').hidden = v !== '1'
+        if (v === '1') setTimeout(function () { dlg.querySelector('[data-detail=behinderung_text]').focus() }, 0)
+      }
+      var body = {}
+      body[f] = v
+      saveDetail(body)
+    })
     dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
     dlg.querySelector('[data-act=trash-report]').addEventListener('click', trashReport)
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
@@ -209,6 +251,11 @@
       // Enter im Kennzeichen-Feld speichert nur das Kennzeichen – das Foto
       // bestätigt erst ein zweites Enter (Fokus springt auf „Bestätigen").
       if (e.target === tatortInput()) return // Auswahl übernimmt address-autocomplete.js
+      if (e.target.closest('.photo-edit-details')) {
+        e.preventDefault()
+        e.target.blur() // löst change → speichern aus
+        return
+      }
       if (e.target === plateInput() || e.target === markeInput()) {
         e.preventDefault()
         savePlate().then(function () { dlg.querySelector('[data-act=save]').focus() }, function () {})
@@ -463,6 +510,46 @@
 
   // ---- Anzeige als Ganzes: Prüfliste + Einreichen (beide Prüf-Modi) --------
   // Status kommt von GET /pruefen/:az/daten (dieselben Prüfungen wie der Submit).
+  // Details-Felder aus den Daten der Anzeige befüllen – einmal je Anzeige
+  // (nicht bei jedem Foto/Status-Update, sonst überschriebe das Eingaben).
+  var detailsAz = null
+  var detailsChanged = {}
+  function fillDetails(s) {
+    var box = dlg.querySelector('.photo-edit-details')
+    box.hidden = !s.report
+    if (!s.report || detailsAz === s.az) return
+    detailsAz = s.az
+    var f = s.report.fields
+    box.querySelector('[data-detail=tattag]').value = f.tattag || ''
+    box.querySelector('[data-detail=tatzeit_von]').value = f.tatzeit_von || ''
+    box.querySelector('[data-detail=tatzeit_bis]').value = f.tatzeit_bis || ''
+    box.querySelector('[data-detail=fahrzeug_verlassen]').checked = !!f.fahrzeug_verlassen
+    box.querySelector('#pe-beh-ja').checked = !!f.behinderung
+    box.querySelector('#pe-beh-nein').checked = !f.behinderung
+    var bt = box.querySelector('[data-detail=behinderung_text]')
+    bt.value = f.behinderung_text || ''
+    bt.hidden = !f.behinderung
+  }
+  function saveDetail(body) {
+    var s = state
+    if (!s) return
+    detailsChanged[s.az] = true
+    fetch('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
+      .then(function () { loadStatus(s) })
+      .catch(function (err) { alert(err.message) })
+  }
+  // Zeile/Karte nach Detail-Änderungen auffrischen (beim Schließen/Weitergehen).
+  function flushHost(az) {
+    if (!detailsChanged[az]) return
+    delete detailsChanged[az]
+    if (window.reportTableRefresh) Promise.resolve(window.reportTableRefresh(az)).catch(function () {})
+  }
+
   function loadStatus(s) {
     if (!s || s.plate == null) return
     var seq = (s.statusSeq = (s.statusSeq || 0) + 1)
@@ -472,6 +559,7 @@
       .then(function (d) {
         if (state !== s || seq !== s.statusSeq || !d || d.gone) return
         s.report = d
+        fillDetails(s)
         updateRun()
       })
   }
@@ -507,6 +595,8 @@
       probs.classList.toggle('is-ok', !list.length)
       btn.disabled = !s.report.canSubmit || !!s.busy
     }
+    var send = box.querySelector('[data-act=send]')
+    if (send) send.disabled = btn.disabled
     btn.classList.toggle('btn-success', ready)
     btn.classList.toggle('btn-outline-success', !ready)
     // Ist alles erledigt, tritt „Bestätigen" zurück.
@@ -519,22 +609,31 @@
     var s = state
     if (!s) return
     var run = window.photoEditorRun
+    delete detailsChanged[s.az]
     if (run) return run.done(s.az, action)
     close()
     if (window.reportTableRefresh) window.reportTableRefresh(s.az).catch(function () {})
   }
 
-  function submitReport() {
+  // Einreichen: Vorschau mit PDF (report-submit.js) über dem Foto-Dialog; erst
+  // dort wird abgeschickt (Admins dort auch „Einreichen & versenden").
+  // sofort = Admin-Knopf „📨 Sofort versenden" direkt im Dialog.
+  function submitReport(sofort) {
     var s = state
     if (!s || s.busy || !s.report || !s.report.canSubmit) return
     if (s.dirty && !confirm('Ungespeicherte Änderungen am Foto verwerfen und einreichen?')) return
+    if (sofort && !confirm('Anzeige ohne weitere Prüfung direkt ans Ordnungsamt versenden?')) return
+    var done = function () { if (state === s) runDone('submitted') }
+    if (!sofort && window.submitPreview) {
+      return savePlate().then(function () {
+        window.submitPreview.open(s.az, { onSubmitted: done })
+      }, function () {})
+    }
     s.busy = true
-    var btn = dlg.querySelector('[data-act=submit]')
-    btn.textContent = 'Wird eingereicht …'
     updateUi()
     savePlate()
       .then(function () {
-        return fetch('/anzeige/' + encodeURIComponent(s.az) + '/submit', { method: 'POST', headers: { Accept: 'application/json' } })
+        return fetch('/anzeige/' + encodeURIComponent(s.az) + '/submit' + (sofort ? '?sofort=1' : ''), { method: 'POST', headers: { Accept: 'application/json' } })
       })
       .then(function (r) {
         return r.json().catch(function () { return {} }).then(function (d) {
@@ -543,17 +642,14 @@
       })
       .then(function () {
         s.busy = false
-        if (state === s) runDone('submitted')
+        done()
       })
       .catch(function (err) {
         if (err && err.message) alert(err.message)
         s.busy = false
         loadStatus(s)
       })
-      .finally(function () {
-        btn.textContent = '✓ Anzeige einreichen'
-        if (state === s) updateUi()
-      })
+      .finally(function () { if (state === s) updateUi() })
   }
 
   function trashReport() {
@@ -745,9 +841,13 @@
   }
 
   function close() {
+    var az = state && state.az
     dlg.close()
     document.documentElement.classList.remove('has-editor-dialog')
     state = null
+    detailsAz = null
+    // Erst nach dem Schließen: review.js baut die Karte dann komplett neu.
+    if (az) flushHost(az)
   }
 
   function cancel() {
