@@ -1002,7 +1002,10 @@
       )
       if (!dest.newDraft) {
         const opt = document.querySelector('#photo-move-target')
-        if (opt) opt.value = ''
+        if (opt) {
+          opt.value = ''
+          if (window.searchableSelect) window.searchableSelect.sync(opt)
+        }
       }
     } catch (err) {
       setMoveStatus(err.message || 'Verschieben fehlgeschlagen.', true)
@@ -1020,7 +1023,10 @@
     target.addEventListener('change', () => {
       if (!target.value) return
       const label = target.options[target.selectedIndex].textContent
-      moveSelected({ targetAz: target.value }, label).then(() => { target.value = '' })
+      moveSelected({ targetAz: target.value }, label).then(() => {
+        target.value = ''
+        if (window.searchableSelect) window.searchableSelect.sync(target)
+      })
     })
     document.querySelector('#photo-move-new').addEventListener('click', () => moveSelected({ newDraft: true }))
     document.querySelector('#photo-select-clear').addEventListener('click', () => {

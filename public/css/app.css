@@ -785,3 +785,30 @@ body.is-embed main { padding-bottom: 0 !important; }
   .editor-actions .btn { flex: 1 1 0; min-height: 44px; }
   .editor-actions #save-status { width: 100%; }
 }
+
+/* Durchsuchbare Auswahllisten (public/js/searchable-select.js): Das native
+   Select bleibt fürs Formular im DOM, sichtbar ist das Suchfeld davor. */
+.ss-native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0;
+  pointer-events: none;
+}
+.ss-input { cursor: pointer; text-overflow: ellipsis; }
+.ss-input:focus { cursor: text; }
+.ss-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(36rem, 92vw);
+  max-height: 20rem;
+  overflow-y: auto;
+  z-index: 1060;
+}
+.ss-menu .list-group-item { white-space: normal; }
+@media (max-width: 767.98px) {
+  .ss-input { font-size: 16px; }
+}

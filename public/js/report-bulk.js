@@ -84,19 +84,13 @@
       working(true)
       try {
         var options = await request('/anzeigen/bearbeitungsoptionen')
-        content.innerHTML = '<form data-edit><label class="form-label d-block">Verstoßart<select name="offenseMode" class="form-select"><option value="keep">Unverändert lassen</option><option value="set">Setzen</option><option value="clear">Leeren</option></select></label><label class="form-label d-block" data-offense-search-label hidden>Verstoß suchen<input type="search" name="offenseSearch" class="form-control" placeholder="z. B. Gehweg oder Tatbestandsnummer"></label><label class="form-label d-block" data-offense-label hidden>Verstoß auswählen<select name="offense" class="form-select"></select></label><label class="report-select-label d-flex gap-2 mb-3"><input name="overwrite" type="checkbox" class="form-check-input"> Vorhandene Verstoßarten überschreiben oder leeren</label><p class="small text-muted">Ohne diese Auswahl werden nur leere Verstoßarten ergänzt. „Fahrzeug verlassen“ setzt die gewählte Angabe für alle ausgewählten Entwürfe.</p><label class="form-label d-block">Fahrzeug verlassen<select name="leftMode" class="form-select"><option value="keep">Unverändert lassen</option><option value="yes">Ja</option><option value="no">Nein</option></select></label><button class="btn btn-primary mt-2" type="submit">Änderungen prüfen</button></form><div data-preview class="mt-3"></div>'
+        content.innerHTML = '<form data-edit><label class="form-label d-block">Verstoßart<select name="offenseMode" class="form-select"><option value="keep">Unverändert lassen</option><option value="set">Setzen</option><option value="clear">Leeren</option></select></label><label class="form-label d-block" data-offense-label hidden>Verstoß auswählen<select name="offense" class="form-select"></select></label><label class="report-select-label d-flex gap-2 mb-3"><input name="overwrite" type="checkbox" class="form-check-input"> Vorhandene Verstoßarten überschreiben oder leeren</label><p class="small text-muted">Ohne diese Auswahl werden nur leere Verstoßarten ergänzt. „Fahrzeug verlassen“ setzt die gewählte Angabe für alle ausgewählten Entwürfe.</p><label class="form-label d-block">Fahrzeug verlassen<select name="leftMode" class="form-select"><option value="keep">Unverändert lassen</option><option value="yes">Ja</option><option value="no">Nein</option></select></label><button class="btn btn-primary mt-2" type="submit">Änderungen prüfen</button></form><div data-preview class="mt-3"></div>'
         var form = content.querySelector('form')
-        function filterOffenses() {
-          var term = form.elements.offenseSearch.value.trim().toLocaleLowerCase('de')
-          var matches = options.offenses.filter(function (offense) { return offense.toLocaleLowerCase('de').includes(term) })
-          form.elements.offense.replaceChildren(new Option(matches.length > 100 ? 'Bitte Suche eingrenzen (erste 100 Treffer) …' : 'Bitte Verstoß auswählen …', ''))
-          matches.slice(0, 100).forEach(function (offense) { form.elements.offense.add(new Option(offense, offense)) })
-        }
-        filterOffenses()
-        form.elements.offenseSearch.addEventListener('input', filterOffenses)
+        // Ganzer Katalog; durchsucht wird im Auswahlfeld selbst (searchable-select.js).
+        form.elements.offense.replaceChildren(new Option('Verstoß suchen oder auswählen …', ''))
+        options.offenses.forEach(function (offense) { form.elements.offense.add(new Option(offense, offense)) })
         form.elements.offenseMode.addEventListener('change', function () {
           content.querySelector('[data-offense-label]').hidden = form.elements.offenseMode.value !== 'set'
-          content.querySelector('[data-offense-search-label]').hidden = form.elements.offenseMode.value !== 'set'
         })
         form.addEventListener('input', function () { content.querySelector('[data-preview]').replaceChildren() })
         form.addEventListener('change', function () { content.querySelector('[data-preview]').replaceChildren() })
