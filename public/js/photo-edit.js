@@ -46,14 +46,6 @@
     dlg.setAttribute('aria-label', 'Foto bearbeiten')
     dlg.innerHTML =
       '<div class="photo-edit-head">' +
-      '<div class="btn-group btn-group-sm" role="group" aria-label="Werkzeug">' +
-      '<button type="button" class="btn btn-outline-light" data-tool="black">⬛ Schwärzen</button>' +
-      '<button type="button" class="btn btn-outline-light" data-tool="pixel">▩ Verpixeln</button>' +
-      '<button type="button" class="btn btn-outline-light" data-tool="crop">✂️ Zuschneiden</button>' +
-      '</div>' +
-      '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
-      '<span class="photo-edit-hint small"></span>' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
       '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen">🗑</button>' +
@@ -63,7 +55,22 @@
       '</div>' +
       '<div class="photo-edit-body">' +
       '<div class="photo-edit-strip" aria-label="Alle Fotos der Anzeige"></div>' +
-      '<div class="photo-edit-stage"><canvas></canvas><div class="photo-edit-msg"></div></div>' +
+      '<div class="photo-edit-stage">' +
+      '<div class="photo-edit-canvas"><canvas></canvas><div class="photo-edit-msg"></div></div>' +
+      // Bildwerkzeuge unten mittig unter dem Foto (nicht darüber – sonst
+      // ließe sich am unteren Bildrand nicht schwärzen).
+      '<div class="photo-edit-tools">' +
+      '<span class="photo-edit-hint small"></span>' +
+      '<div class="d-flex flex-wrap justify-content-center gap-2">' +
+      '<div class="btn-group btn-group-sm" role="group" aria-label="Werkzeug">' +
+      '<button type="button" class="btn btn-outline-light" data-tool="black">⬛ Schwärzen</button>' +
+      '<button type="button" class="btn btn-outline-light" data-tool="pixel">▩ Verpixeln</button>' +
+      '<button type="button" class="btn btn-outline-light" data-tool="crop">✂️ Zuschneiden</button>' +
+      '</div>' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
+      '</div></div>' +
+      '</div>' +
       // Seitenleiste mit den Angaben der Anzeige (nur bei Entwürfen). Helles
       // Theme fest, damit Felder/Dropdowns auch im Dark Mode lesbar sind.
       '<aside class="photo-edit-side photo-edit-plate" data-bs-theme="light" hidden>' +
