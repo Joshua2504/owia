@@ -36,6 +36,37 @@
     if (!response.ok) throw new Error(data.error || 'Anfrage fehlgeschlagen.')
     return data
   }
+  // Sortierung nach Tatzeit (Spaltenkopf „Tatzeit"): neueste zuerst ↔ älteste
+  // zuerst, gemerkt pro Browser. Zeilen ohne Datum landen immer unten.
+  // Schlüssel: data-sort-ts der Zeile (report-row.ejs).
+  var SORT_KEY = 'owia.reportSort'
+  var sortBtn = document.getElementById('sort-tatzeit')
+  var sortDir = 'desc'
+  try { if (localStorage.getItem(SORT_KEY) === 'asc') sortDir = 'asc' } catch (_) {}
+  function applySort() {
+    if (!sortBtn) return
+    var tbody = table.tBodies[0]
+    var rows = Array.from(tbody.querySelectorAll('tr[data-az]'))
+    rows.sort(function (a, b) {
+      var x = a.dataset.sortTs || ''
+      var y = b.dataset.sortTs || ''
+      if (!x || !y) return x ? -1 : y ? 1 : 0
+      return sortDir === 'asc' ? x.localeCompare(y) : y.localeCompare(x)
+    })
+    rows.forEach(function (r) { tbody.appendChild(r) })
+    sortBtn.querySelector('span').textContent = sortDir === 'asc' ? '▲' : '▼'
+    sortBtn.title = sortDir === 'asc' ? 'Älteste zuerst – klicken für neueste zuerst' : 'Neueste zuerst – klicken für älteste zuerst'
+    sortBtn.parentNode.setAttribute('aria-sort', sortDir === 'asc' ? 'ascending' : 'descending')
+  }
+  if (sortBtn) {
+    sortBtn.addEventListener('click', function () {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc'
+      try { localStorage.setItem(SORT_KEY, sortDir) } catch (_) {}
+      applySort()
+    })
+    applySort()
+  }
+
   function boxes() { return Array.from(table.querySelectorAll('.bulk-select')) }
   function selected() { return boxes().filter(function (box) { return box.checked }) }
   function update() {

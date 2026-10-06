@@ -21,7 +21,11 @@ const _queue = queueId ? '?queue=' + queueId : ''
 const _isDraft = r.status === 'entwurf'
 const _imgs = (typeof imgs !== 'undefined' && imgs) || []
 %>
-<tr data-status="<%= r.status %>" data-az="<%= r.aktenzeichen %>" <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
+<%
+// Sortierschlüssel Tatzeit (report-bulk.js): „YYYY-MM-DD HH:MM", leer = ohne Datum.
+const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if (isNaN(d)) return ''; return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + (r.tatzeit_von ? String(r.tatzeit_von).slice(0, 5) : '00:00') })()
+%>
+<tr data-status="<%= r.status %>" data-az="<%= r.aktenzeichen %>" data-sort-ts="<%= _ts %>" <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
   <td class="cell-select <%= _isDraft ? '' : 'cell-empty' %>">
     <% if (_isDraft) { %>
       <%# Mehrfachauswahl für gemeinsame Aktionen (Formular in report-table.ejs). %>
@@ -160,7 +164,7 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
                   aria-label="Verstoß von <%= r.aktenzeichen %>"><%= r.verstoss_art || '' %></textarea>
       </div>
       <div class="inline-flags">
-        <label><input type="checkbox" class="form-check-input" data-inline-field="fahrzeug_verlassen" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>> verlassen</label>
+        <label><input type="checkbox" class="form-check-input" data-inline-field="fahrzeug_verlassen" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>> Fahrzeug verlassen</label>
         <label><input type="checkbox" class="form-check-input" data-inline-field="behinderung" <%= r.behinderung === 1 ? 'checked' : '' %>> Behinderung</label>
       </div>
       <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="behinderung_text"

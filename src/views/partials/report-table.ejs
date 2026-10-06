@@ -42,7 +42,8 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
         <th>Fotos</th>
         <th>Aktenzeichen</th>
         <th>Kennzeichen / Marke</th>
-        <th>Tatzeit</th>
+        <%# Klick sortiert nach Tatzeit (report-bulk.js, Wahl wird gemerkt). %>
+        <th aria-sort="none"><button type="button" class="sort-btn" id="sort-tatzeit">Tatzeit <span aria-hidden="true"></span></button></th>
         <th>Tatort</th>
         <th>Verstoß</th>
         <th>Status</th>
