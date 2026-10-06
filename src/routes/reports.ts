@@ -1,4 +1,4 @@
-import { isVerjaehrt } from '../services/verjaehrung'
+import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
 import { FastifyInstance, FastifyRequest } from 'fastify'
 import mysql from 'mysql2/promise'
 import crypto from 'crypto'
@@ -1057,6 +1057,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
         },
         imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename) })),
+        // ejs.renderFile kennt den defaultContext von @fastify/view (server.ts)
+        // nicht – Helfer, die report-row.ejs nutzt, hier explizit mitgeben.
+        verjaehrung,
         queueId: Number.isInteger(queueParam) && queueParam > 0 ? queueParam : null,
       }
     )

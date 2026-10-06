@@ -498,3 +498,17 @@ test('Inline-Bearbeitung ändert nur übergebene Felder, nur Katalog-Verstöße 
     assert.equal(locked.statusCode, 409)
   } finally { await app.close() }
 })
+
+test('Einzelne Listenzeile lässt sich nachladen (Helfer wie verjaehrung stehen bereit)', async () => {
+  const id = await report()
+  await pool.execute("UPDATE reports SET status='entwurf', tattag=CURDATE() WHERE id=?", [id])
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  const app = Fastify()
+  app.addHook('preHandler', async request => { request.session = { userId } as typeof request.session })
+  await app.register(reportsRoutes)
+  try {
+    const row = await app.inject({ method: 'GET', url: `/anzeige/${az}/listenzeile` })
+    assert.equal(row.statusCode, 200)
+    assert.ok(row.body.includes(`data-az="${az}"`))
+  } finally { await app.close() }
+})
