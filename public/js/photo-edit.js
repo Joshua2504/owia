@@ -18,6 +18,13 @@
 // Feld; danach feuert document das Event 'owia:plate-changed' {az, kennzeichen}.
 // data-detected-plate am Foto (ALPR-Ergebnis dieses Fotos) wird als
 // Übernehmen-Vorschlag angeboten, wenn es abweicht.
+//
+// Ein Prüf-Lauf für beide Modi: Kopfzeile mit Kennzeichen, Marke, Verstoß,
+// Tatort; Statuszeile mit der Prüfliste der Anzeige und „Einreichen". In der
+// Liste schließt der Dialog nach dem Einreichen. Im Prüf-Modus (/pruefen)
+// setzt review.js window.photoEditorRun = { label(), done(az, action) } –
+// dann gibt es zusätzlich Überspringen/Verwerfen und es geht mit der nächsten
+// Anzeige weiter (action: 'submitted' | 'skipped' | 'trashed').
 ;(function () {
   var MAX_DIM = 2560 // wie report-form.js
   var MIN_BOX = 6
@@ -59,13 +66,29 @@
       '<input type="hidden">' +
       '<input type="text" class="form-control form-control-sm" data-verstoss-input autocomplete="off" spellcheck="false" placeholder="Verstoß wählen …" aria-label="Verstoß">' +
       '</div>' +
+      '<div class="photo-edit-tatort">' +
+      '<input type="text" id="photo-edit-tatort-input" class="form-control form-control-sm" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
+      ' autocomplete="off" spellcheck="false" placeholder="Tatort – Adresse eingeben …" aria-label="Tatort">' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="tatort-photo" title="Tatort aus den GPS-Daten der Fotos">📍</button>' +
+      '</div>' +
       '</div>' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
       '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen">🗑</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel">Schließen</button>' +
       '<button type="button" class="btn btn-sm btn-success" data-act="save" title="Enter">✓ Bestätigen</button>' +
-      '</div></div>' +
+      '</div>' +
+      // Anzeige als Ganzes: was fehlt noch, einreichen. Im Prüf-Modus (/pruefen,
+      // window.photoEditorRun) zusätzlich Position, Überspringen, Verwerfen.
+      '<div class="photo-edit-run" hidden>' +
+      '<span class="photo-edit-run-label small fw-semibold"></span>' +
+      '<span class="photo-edit-problems small"></span>' +
+      '<span class="ms-auto d-flex flex-wrap gap-2">' +
+      '<button type="button" class="btn btn-sm btn-outline-danger" data-act="trash-report" title="Anzeige in den Papierkorb (30 Tage wiederherstellbar)">🗑 Anzeige verwerfen</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="skip">⏭ Überspringen</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-success" data-act="submit" disabled>✓ Anzeige einreichen</button>' +
+      '</span></div>' +
+      '</div>' +
       '<div class="photo-edit-body">' +
       '<div class="photo-edit-strip" aria-label="Alle Fotos der Anzeige"></div>' +
       '<div class="photo-edit-stage"><canvas></canvas><div class="photo-edit-msg"></div></div>' +
@@ -132,6 +155,25 @@
       strip.querySelectorAll('.is-drop').forEach(function (x) { x.classList.remove('is-drop') })
     })
     plateInput().addEventListener('change', function () { savePlate().catch(function () {}) })
+    // Tatort: Vorschläge (address-autocomplete.js, im Layout geladen) beim
+    // ersten Fokus; gewählter Vorschlag speichert mit Koordinaten, frei
+    // getippter Text beim Verlassen ohne (wie report-inline.js).
+    tatortInput().addEventListener('focus', function () {
+      if (window.addressAutocomplete) window.addressAutocomplete.init(tatortInput())
+    })
+    tatortInput().addEventListener('address:chosen', function (e) {
+      var d = e.detail || {}
+      chosenCoords = Number.isFinite(d.lat) && Number.isFinite(d.lon) ? { tatort_lat: d.lat, tatort_lon: d.lon } : null
+      savePlate().catch(function () {})
+    })
+    tatortInput().addEventListener('change', function () {
+      // Kurz warten: Antippen eines Vorschlags löst erst blur/change, dann die Auswahl aus.
+      setTimeout(function () { savePlate().catch(function () {}) }, 250)
+    })
+    dlg.querySelector('[data-act=tatort-photo]').addEventListener('click', tatortFromPhotos)
+    dlg.querySelector('[data-act=submit]').addEventListener('click', submitReport)
+    dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
+    dlg.querySelector('[data-act=trash-report]').addEventListener('click', trashReport)
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     // Verstoß: Katalog erst beim ersten Fokus laden (wie report-inline.js);
     // die Auswahl meldet verstoss-select.js per change am versteckten Feld.
@@ -166,6 +208,7 @@
       }
       // Enter im Kennzeichen-Feld speichert nur das Kennzeichen – das Foto
       // bestätigt erst ein zweites Enter (Fokus springt auf „Bestätigen").
+      if (e.target === tatortInput()) return // Auswahl übernimmt address-autocomplete.js
       if (e.target === plateInput() || e.target === markeInput()) {
         e.preventDefault()
         savePlate().then(function () { dlg.querySelector('[data-act=save]').focus() }, function () {})
@@ -173,7 +216,9 @@
       }
       if (!state.base || state.busy) return
       e.preventDefault()
-      save()
+      // Alles geprüft und vollständig: Enter reicht die Anzeige ein.
+      if (readyToSubmit()) submitReport()
+      else save()
     })
     attachDrawing()
   }
@@ -184,6 +229,10 @@
   function markeInput() {
     return dlg.querySelector('#photo-edit-marke-input')
   }
+  function tatortInput() {
+    return dlg.querySelector('#photo-edit-tatort-input')
+  }
+  var chosenCoords = null // Koordinaten des zuletzt gewählten Adressvorschlags
   function verstossHidden() {
     return dlg.querySelector('.photo-edit-verstoss input[type=hidden]')
   }
@@ -238,6 +287,15 @@
     if (s.marke != null && mk !== s.marke) body.fahrzeug_marke = mk
     var vs = verstossHidden().value
     if (s.verstoss != null && vs !== s.verstoss) body.verstoss_art = vs
+    var to = tatortInput().value.replace(/\s+/g, ' ').trim()
+    if (s.tatort != null && (to !== s.tatort || chosenCoords)) {
+      body.tatort = to
+      if (chosenCoords) {
+        body.tatort_lat = chosenCoords.tatort_lat
+        body.tatort_lon = chosenCoords.tatort_lon
+      }
+    }
+    chosenCoords = null
     if (!Object.keys(body).length) return Promise.resolve()
     return fetch('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
       method: 'PATCH',
@@ -251,13 +309,14 @@
         if ('kennzeichen' in vals) s.plate = vals.kennzeichen || ''
         if ('fahrzeug_marke' in vals) s.marke = vals.fahrzeug_marke || ''
         if ('verstoss_art' in vals) s.verstoss = vals.verstoss_art || ''
+        if ('tatort' in vals) s.tatort = vals.tatort || ''
         if (state === s) {
           plateInput().value = s.plate
           markeInput().value = s.marke || ''
         }
         // Felder der Zeile/Karte nachziehen (report-inline.js vergleicht mit dataset.saved).
         var host = rowOf(s.az)
-        ;[['kennzeichen', s.plate], ['fahrzeug_marke', s.marke], ['verstoss_art', s.verstoss]].forEach(function (p) {
+        ;[['kennzeichen', s.plate], ['fahrzeug_marke', s.marke], ['verstoss_art', s.verstoss], ['tatort', s.tatort]].forEach(function (p) {
           if (!(p[0] in vals)) return
           var field = host && host.querySelector('[data-inline-field="' + p[0] + '"]')
           if (field) {
@@ -270,6 +329,7 @@
         })
         document.dispatchEvent(new CustomEvent('owia:plate-changed', { detail: { az: s.az, kennzeichen: s.plate } }))
         if (state === s) updateUi()
+        loadStatus(s)
       })
       .catch(function (err) {
         alert(err.message || 'Kennzeichen konnte nicht gespeichert werden.')
@@ -396,7 +456,148 @@
       plateInput().classList.toggle('is-invalid', !normPlate(cur))
       verstossInput().classList.toggle('is-missing', state.verstoss != null && !verstossHidden().value)
       plateInput().classList.toggle('is-mismatch', !!state.detected && !!normPlate(cur) && compact(state.detected) !== compact(cur))
+      tatortInput().classList.toggle('is-missing', !tatortInput().value.trim())
     }
+    updateRun()
+  }
+
+  // ---- Anzeige als Ganzes: Prüfliste + Einreichen (beide Prüf-Modi) --------
+  // Status kommt von GET /pruefen/:az/daten (dieselben Prüfungen wie der Submit).
+  function loadStatus(s) {
+    if (!s || s.plate == null) return
+    var seq = (s.statusSeq = (s.statusSeq || 0) + 1)
+    fetch('/pruefen/' + encodeURIComponent(s.az) + '/daten', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok && !r.redirected ? r.json() : null })
+      .catch(function () { return null })
+      .then(function (d) {
+        if (state !== s || seq !== s.statusSeq || !d || d.gone) return
+        s.report = d
+        updateRun()
+      })
+  }
+  function readyToSubmit() {
+    var s = state
+    return !!(s && s.report && s.report.canSubmit && s.ok && !s.open && !s.dirty)
+  }
+  function updateRun() {
+    var box = dlg.querySelector('.photo-edit-run')
+    var s = state
+    box.hidden = !s || s.plate == null
+    if (box.hidden) return
+    var run = window.photoEditorRun
+    dlg.querySelector('.photo-edit-run-label').textContent = (run && run.label ? run.label() + ' · ' : '') + s.az
+    box.querySelector('[data-act=skip]').hidden = !run
+    box.querySelector('[data-act=trash-report]').hidden = !run
+    var probs = dlg.querySelector('.photo-edit-problems')
+    var btn = box.querySelector('[data-act=submit]')
+    var ready = readyToSubmit()
+    if (!s.report) {
+      probs.textContent = ''
+      btn.disabled = true
+    } else {
+      var list = s.report.problems.map(function (p) {
+        if (p.kind === 'photos') {
+          var n = (s.thumbs || []).filter(function (t) { return t.getAttribute('data-geprueft') !== '1' }).length
+          return n === 1 ? '1 Foto ungeprüft' : n + ' Fotos ungeprüft'
+        }
+        return p.message.replace(/\.$/, '')
+      })
+      probs.textContent = list.length ? '⚠ ' + list.join(' · ') : (ready ? '✓ Bereit – Enter reicht ein' : '✓ Vollständig')
+      probs.classList.toggle('is-open', list.length > 0)
+      probs.classList.toggle('is-ok', !list.length)
+      btn.disabled = !s.report.canSubmit || !!s.busy
+    }
+    btn.classList.toggle('btn-success', ready)
+    btn.classList.toggle('btn-outline-success', !ready)
+    // Ist alles erledigt, tritt „Bestätigen" zurück.
+    var saveBtn = dlg.querySelector('[data-act=save]')
+    saveBtn.classList.toggle('btn-success', !ready)
+    saveBtn.classList.toggle('btn-outline-light', ready)
+  }
+
+  function runDone(action) {
+    var s = state
+    if (!s) return
+    var run = window.photoEditorRun
+    if (run) return run.done(s.az, action)
+    close()
+    if (window.reportTableRefresh) window.reportTableRefresh(s.az).catch(function () {})
+  }
+
+  function submitReport() {
+    var s = state
+    if (!s || s.busy || !s.report || !s.report.canSubmit) return
+    if (s.dirty && !confirm('Ungespeicherte Änderungen am Foto verwerfen und einreichen?')) return
+    s.busy = true
+    var btn = dlg.querySelector('[data-act=submit]')
+    btn.textContent = 'Wird eingereicht …'
+    updateUi()
+    savePlate()
+      .then(function () {
+        return fetch('/anzeige/' + encodeURIComponent(s.az) + '/submit', { method: 'POST', headers: { Accept: 'application/json' } })
+      })
+      .then(function (r) {
+        return r.json().catch(function () { return {} }).then(function (d) {
+          if (!r.ok || r.redirected) throw new Error(d.error || 'Einreichen fehlgeschlagen.')
+        })
+      })
+      .then(function () {
+        s.busy = false
+        if (state === s) runDone('submitted')
+      })
+      .catch(function (err) {
+        if (err && err.message) alert(err.message)
+        s.busy = false
+        loadStatus(s)
+      })
+      .finally(function () {
+        btn.textContent = '✓ Anzeige einreichen'
+        if (state === s) updateUi()
+      })
+  }
+
+  function trashReport() {
+    var s = state
+    if (!s || s.busy) return
+    s.busy = true
+    fetch('/anzeige/' + encodeURIComponent(s.az) + '/discard', { method: 'POST', headers: { Accept: 'application/json' } })
+      .then(function (r) {
+        if (!r.ok || r.redirected) throw new Error()
+        s.busy = false
+        if (state === s) runDone('trashed')
+      })
+      .catch(function () {
+        s.busy = false
+        alert('Anzeige konnte nicht verworfen werden.')
+      })
+  }
+
+  function tatortFromPhotos() {
+    var s = state
+    var b = dlg.querySelector('[data-act=tatort-photo]')
+    b.disabled = true
+    fetch('/anzeige/' + encodeURIComponent(s.az) + '/tatort-aus-fotos', { method: 'POST', headers: { Accept: 'application/json' } })
+      .then(function (r) {
+        return r.json().catch(function () { return {} }).then(function (d) {
+          if (!r.ok) throw new Error(d.error || 'Kein Tatort aus den Fotos ermittelbar.')
+          return d
+        })
+      })
+      .then(function (d) {
+        if (state !== s) return
+        s.tatort = d.tatort
+        tatortInput().value = d.tatort
+        var host = rowOf(s.az)
+        var field = host && host.querySelector('[data-inline-field="tatort"]')
+        if (field) {
+          field.value = d.tatort
+          field.dataset.saved = d.tatort
+        }
+        updateUi()
+        loadStatus(s)
+      })
+      .catch(function (err) { alert(err.message) })
+      .finally(function () { b.disabled = false })
   }
 
   function setTool(tool) {
@@ -565,12 +766,29 @@
 
   // Nach Bestätigen/Löschen: Zeile neu laden (neue Vorschaubilder, Status) und
   // das nächste ungeprüfte Foto derselben Anzeige öffnen – sonst schließen.
+  // Sind alle geprüft, bleibt der Dialog auf dem aktuellen Foto stehen – die
+  // Statuszeile zeigt dann, ob die Anzeige eingereicht werden kann.
   function next(az) {
+    var s = state
     var done = function () {
       var row = rowOf(az)
       var t = row && row.querySelector('[data-photo-edit][data-geprueft="0"]')
-      if (t) openThumb(t)
-      else close()
+      if (t) return openThumb(t)
+      var all = row ? Array.prototype.slice.call(row.querySelectorAll('[data-photo-edit]')) : []
+      var mine = all.filter(function (x) { return x.getAttribute('data-photo-edit') === s.put })[0]
+      if (!mine) return all.length ? openThumb(all[0]) : close()
+      if (state !== s) return
+      s.thumbs = all
+      s.thumb = mine
+      s.ok = true
+      s.open = 0
+      s.pos = all.indexOf(mine) + 1
+      s.total = all.length
+      renderStrip()
+      updateUi()
+      loadStatus(s)
+      var sub = dlg.querySelector('[data-act=submit]')
+      setTimeout(function () { if (readyToSubmit()) sub.focus() }, 400)
     }
     if (!window.reportTableRefresh) return close()
     return Promise.resolve(window.reportTableRefresh(az)).then(done, close)
@@ -636,7 +854,9 @@
     var plateEl = row && row.querySelector('[data-inline-field="kennzeichen"]')
     var markeEl = row && row.querySelector('[data-inline-field="fahrzeug_marke"]')
     var verstossEl = row && row.querySelector('[data-inline-field="verstoss_art"]')
+    var tatortEl = row && row.querySelector('[data-inline-field="tatort"]')
     open({
+      tatort: tatortEl ? tatortEl.value : null,
       verstoss: verstossEl ? verstossEl.value : null,
       marke: markeEl ? markeEl.value : null,
       thumb: t,
@@ -663,12 +883,18 @@
     verstossHidden().value = verstoss || ''
     verstossInput().value = verstoss || ''
     verstossHidden().parentNode.hidden = verstoss == null
+    var tatort = plate != null && opts.tatort != null ? String(opts.tatort).replace(/\s+/g, ' ').trim() : null
+    tatortInput().value = tatort || ''
+    tatortInput().closest('.photo-edit-tatort').hidden = tatort == null
+    chosenCoords = null
+    // Bericht-Status nur behalten, wenn es dieselbe Anzeige bleibt (kein Flackern).
+    var keepReport = state && state.az === opts.az ? state.report : null
     plateInput().value = plate || ''
     markeInput().value = marke || ''
     markeInput().hidden = marke == null
     markeInput().previousElementSibling.hidden = marke == null
     state = {
-      plate: plate, marke: marke, verstoss: verstoss, detected: opts.detected ? normPlate(opts.detected) : null,
+      plate: plate, marke: marke, verstoss: verstoss, tatort: tatort, report: keepReport, detected: opts.detected ? normPlate(opts.detected) : null,
       thumb: opts.thumb || null, thumbs: opts.thumbs || null,
       put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool || null, dirty: false,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
@@ -681,6 +907,7 @@
     document.documentElement.classList.add('has-editor-dialog')
     updateUi()
     var s = state
+    loadStatus(s)
     var img = new Image()
     img.onload = function () {
       if (state !== s) return
@@ -708,5 +935,10 @@
     if (t) openThumb(t)
   })
 
-  window.photoEditor = { open: open, openThumb: openThumb }
+  window.photoEditor = {
+    open: open,
+    openThumb: openThumb,
+    close: function () { if (dlg && dlg.open) close() },
+    isOpen: function () { return !!(dlg && dlg.open) },
+  }
 })()

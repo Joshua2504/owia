@@ -1027,7 +1027,7 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 .review-actions .btn { padding-top: 0.6rem; padding-bottom: 0.6rem; }
 
 /* Kennzeichen-Abgleich im Foto-Dialog (photo-edit.js). */
-.photo-edit-plate { display: flex; align-items: center; gap: 0.4rem; flex: 1 1 40rem; }
+.photo-edit-plate { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; flex: 1 1 40rem; }
 .photo-edit-plate label { color: #bbb; }
 .photo-edit-plate .form-control::placeholder { color: #6c757d; opacity: 1; }
 .photo-edit-plate [data-act=plate-suggest] { white-space: nowrap; }
@@ -1072,4 +1072,24 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 @media (min-width: 768px) {
   /* Senkrechter Streifen: ‹ = nach oben, › = nach unten. */
   .photo-edit-move .btn { transform: rotate(90deg); }
+}
+/* Tatort im Foto-Dialog + Statuszeile der Anzeige (Prüfliste, Einreichen). */
+.photo-edit-tatort { display: flex; gap: 0.3rem; flex: 1 1 22rem; min-width: 14rem; }
+.photo-edit-tatort[hidden] { display: none; }
+.photo-edit-tatort .address-ac { flex: 1 1 auto; }
+.photo-edit-tatort input { background: #fff; color: #000; }
+.photo-edit-tatort input.is-missing { border-color: #ffc107; box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.5); }
+.photo-edit-tatort .btn-outline-light { --bs-btn-color: #333; --bs-btn-border-color: #ced4da; background: #f8f9fa; }
+.photo-edit-run {
+  flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  padding-top: 0.5rem; border-top: 1px solid #3a3a3a;
+}
+.photo-edit-run[hidden] { display: none; }
+.photo-edit-run-label { color: #ddd; }
+.photo-edit-problems.is-open { color: #ffda6a; }
+.photo-edit-problems.is-ok { color: #75b798; }
+@media (max-width: 575.98px) {
+  .photo-edit-tatort { flex-basis: 100%; }
+  .photo-edit-run .ms-auto { margin-left: 0 !important; width: 100%; }
+  .photo-edit-run .ms-auto .btn[data-act=submit] { flex: 1 1 auto; }
 }

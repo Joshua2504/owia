@@ -135,10 +135,32 @@
     })
   }
 
+  // Der eigentliche Prüf-Lauf ist der Foto-Dialog (photo-edit.js): Fotos,
+  // Kennzeichen/Marke/Verstoß/Tatort und Einreichen in einem. Er öffnet je
+  // Anzeige auf dem ersten ungeprüften (sonst dem ersten) Foto; die Karte
+  // dahinter bleibt für alles Weitere (Karte, Zeit, Behinderung …).
   function maybeOpenPhotos() {
     if (!autoBox.checked || !window.photoEditor) return
-    var t = root.querySelector('[data-photo-edit][data-geprueft="0"]')
+    var t = root.querySelector('[data-photo-edit][data-geprueft="0"]') || root.querySelector('[data-photo-edit]')
     if (t) window.photoEditor.openThumb(t)
+    else window.photoEditor.close()
+  }
+
+  window.photoEditorRun = {
+    label: function () {
+      var done = stats.submitted + stats.trashed + skipped.length
+      return 'Anzeige ' + (done + 1) + ' von ' + (done + remaining.length)
+    },
+    // Einreichen/Verwerfen hat photo-edit.js schon erledigt; hier nur weiter.
+    done: function (az, action) {
+      if (!cur || cur.az !== az) return
+      if (action === 'skipped') return skip()
+      if (action === 'submitted') stats.submitted++
+      else if (action === 'trashed') stats.trashed++
+      remaining.shift()
+      delete cache[az]
+      show()
+    },
   }
 
   function photosHtml(d) {
@@ -321,7 +343,7 @@
       (d.photoTimes ? '<div class="review-wide small text-muted">Fotos: ' + esc(photoSpan(d.photoTimes)) +
         ' <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times">🕒 Uhrzeit aus Fotos übernehmen</button></div>' : '') +
       '<div class="review-wide"><label class="form-label small mb-1" for="rv-ort">Tatort</label>' +
-      '<textarea id="rv-ort" rows="2" class="form-control' + (f.tatort ? '' : ' is-invalid') + '" data-f="tatort" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
+      '<textarea id="rv-ort" rows="2" class="form-control' + (f.tatort ? '' : ' is-invalid') + '" data-f="tatort" data-inline-field="tatort" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
       ' placeholder="Adresse eingeben" autocomplete="off" spellcheck="false">' + esc(f.tatort) + '</textarea>' +
       '<div class="d-flex flex-wrap gap-3 mt-1 small">' +
       '<button type="button" class="btn btn-link btn-sm p-0" data-act="here">📍 Aktueller Standort</button>' +
@@ -573,6 +595,7 @@
   }
 
   function renderDone() {
+    if (window.photoEditor) window.photoEditor.close()
     cur = null
     destroyMap()
     var html = '<div class="card shadow-sm"><div class="card-body text-center py-5">' +
