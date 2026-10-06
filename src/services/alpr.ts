@@ -1,5 +1,5 @@
 // Kennzeichen-Erkennung über den selbst-gehosteten ALPR-Dienst (docker/alpr,
-// YOLOv11 + PaddleOCR). Muster wie src/services/geocode.ts: native fetch +
+// YOLOv9 + fast-plate-ocr). Muster wie src/services/geocode.ts: native fetch +
 // AbortController, jeder Fehler -> null (das Feld bleibt dann einfach leer).
 import fs from 'fs/promises'
 

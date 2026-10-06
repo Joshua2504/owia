@@ -71,7 +71,7 @@ Die Trennung schützt den Live-Betrieb vor normalen Entwicklungsänderungen. Bei
 | Datenbank | `src/db/`, `migrations/` | MariaDB, Session-Store, Basisschema und nummerierte Migrationen |
 | Betrieb | `docker-compose.yml`, `docker/`, `deploy.sh`, `.github/workflows/deploy.yml` | Dienste, Proxy, lokales Deployment, manueller Actions-Fallback |
 
-Node.js/TypeScript mit Fastify 4 und EJS; kein SPA-Build. Das Node-Image basiert auf Node 22 und führt TypeScript mit `tsx` aus. MariaDB wird über `mysql2` angesprochen. Der ALPR-Dienst nutzt Python/FastAPI, YOLOv11-Detektion und RapidOCR mit PP-OCRv5 über ONNX Runtime; keine PaddlePaddle-Laufzeit.
+Node.js/TypeScript mit Fastify 4 und EJS; kein SPA-Build. Das Node-Image basiert auf Node 22 und führt TypeScript mit `tsx` aus. MariaDB wird über `mysql2` angesprochen. Der ALPR-Dienst nutzt Python/FastAPI, YOLOv9-Kennzeichendetektion (open-image-models) und das Kennzeichen-OCR fast-plate-ocr (cct-s-v2) über ONNX Runtime; keine PaddlePaddle-Laufzeit.
 
 ## Datenfluss und wichtige Invarianten
 

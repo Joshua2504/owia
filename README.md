@@ -19,7 +19,7 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 - **Anzeige erstellen** – Beweisfotos hochladen (inkl. HEIC-Konvertierung),
   Tatort per Adresssuche oder Kartenklick verorten, Verstoß und Fahrzeugdaten
   erfassen.
-- **Automatische Kennzeichenerkennung** (ALPR, YOLOv11 + RapidOCR/PP-OCRv5 über ONNX) – befüllt
+- **Automatische Kennzeichenerkennung** (ALPR, YOLOv9 + fast-plate-ocr über ONNX) – befüllt
   das Kennzeichen-Feld aus dem Beweisfoto vor. Läuft lokal, die Fotos verlassen
   den Host nie.
 - **EXIF-/GPS-Auswertung** – Aufnahmezeitpunkt und Position aus den Fotos.
@@ -52,7 +52,7 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 | Bilder           | `heic-convert`, `exifr`, `jpeg-js`, `pngjs` (Pixelierung) |
 | E-Mail           | `nodemailer` (Versand), `imapflow` + `mailparser` (Posteingang) |
 | Geodaten         | Photon (Geocoding), OSM-Tileserver (Kacheln) |
-| Kennzeichen      | eigener ALPR-Dienst (YOLOv11 + RapidOCR/PP-OCRv5 über ONNX, CPU-only) |
+| Kennzeichen      | eigener ALPR-Dienst (YOLOv9 + fast-plate-ocr über ONNX, CPU-only) |
 | Reverse-Proxy    | Caddy (automatisches HTTPS via Let's Encrypt, nur Produktion) |
 | Orchestrierung   | Docker Compose |
 

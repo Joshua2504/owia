@@ -1451,7 +1451,11 @@
       })
       if (!res.ok) return { status: 'done' }
       const data = await res.json()
-      if (data && data.suggestions) applyPlateSuggestion(form, data.suggestions)
+      // Erst übernehmen, wenn alle Fotos analysiert sind: Der Vorschlag ist die
+      // Mehrheit über alle Fotos, ein Zwischenstand könnte ein anderes Auto sein.
+      if (data && data.suggestions && data.status !== 'pending') {
+        applyPlateSuggestion(form, data.suggestions)
+      }
       // Einzelergebnisse an den Foto-Karten aktualisieren ("Kennzeichen übernehmen").
       if (data && Array.isArray(data.images)) {
         data.images.forEach((info) => {

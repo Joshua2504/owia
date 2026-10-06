@@ -15,8 +15,13 @@ import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFile
 import { cachedMailVariant } from '../services/pixelate'
 import { processReportImage, processReportImageDerivatives, loadThumbnail } from '../services/intakeImageProcessing'
 import { createDraft, deleteDraft, reportDir, UPLOAD_DIR, PDF_DIR } from '../services/drafts'
-import { alprEnabled, ALPR_MIN_CONFIDENCE } from '../services/alpr'
-import { queuePlateAnalysis, plateCropName } from '../services/plateAnalysis'
+import { alprEnabled } from '../services/alpr'
+import {
+  queuePlateAnalysis,
+  plateCropName,
+  bestPlateForReport,
+  prefillReportPlate,
+} from '../services/plateAnalysis'
 import { replyAttachmentPath } from '../services/mailInbox'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 import { MailService } from '../services/mail'
@@ -746,15 +751,10 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // Nur 'pending' zählt als "läuft noch" – NULL sind Altbilder von vor dem
     // Feature (bzw. per 0026 'skipped'), die nie analysiert werden.
     const pending = rows.some((r) => r.analysis_status === 'pending')
-    // Vorschlag = sicherste Lesung über alle Bilder; unsichere Lesungen (unter
-    // der Prefill-Schwelle) werden dem Nutzer gar nicht erst vorgeschlagen.
-    let best: { plate: string; confidence: number } | null = null
-    for (const r of rows) {
-      if (!r.detected_plate || r.plate_confidence === null) continue
-      const confidence = Number(r.plate_confidence)
-      if (confidence < ALPR_MIN_CONFIDENCE) continue
-      if (!best || confidence > best.confidence) best = { plate: r.detected_plate, confidence }
-    }
+    // Vorschlag = Mehrheit der sicheren Lesungen über alle Bilder (dieselbe
+    // Regel wie die serverseitige Vorbefüllung); unsichere Lesungen werden dem
+    // Nutzer gar nicht erst vorgeschlagen.
+    const best = await bestPlateForReport(report.id)
     return reply.send({
       status: pending ? 'pending' : 'done',
       suggestions: { kennzeichen: best?.plate ?? null, confidence: best?.confidence ?? null },
@@ -885,6 +885,12 @@ export default async function reportsRoutes(app: FastifyInstance) {
         img.id,
       ])
     }
+
+    // Kennzeichen des Ziels aus den mitgewanderten Lesungen vorbefüllen (z.B.
+    // neue Anzeige per Drag & Drop) – vor der Antwort, damit die neu geholte
+    // Listenzeile es schon zeigt. Noch laufende Analysen schlagen selbst unter
+    // der neuen Anzeige nach (runAnalysis) und befüllen danach.
+    await prefillReportPlate(userId, targetId).catch(() => {})
 
     // PDFs im Hintergrund nachziehen: Beide sind Entwürfe, „Speichern" und
     // „Einreichen" erzeugen das PDF ohnehin neu – der Nutzer soll nach dem

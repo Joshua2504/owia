@@ -9,6 +9,7 @@
 // gleichzeitig würden die CPU sättigen (der Dienst serialisiert zusätzlich).
 import fs from 'fs/promises'
 import path from 'path'
+import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { alprEnabled, recognizePlate, ALPR_MIN_CONFIDENCE } from './alpr'
 import { reportDir } from './drafts'
@@ -72,6 +73,21 @@ async function runAnalysis(
   filename: string,
   mimetype: string
 ): Promise<void> {
+  // Aktuellen Ort des Bildes nachschlagen: Während es in der Warteschlange
+  // stand, kann es in eine andere Anzeige verschoben worden sein (Drag & Drop
+  // in der Liste) – dann liegt die Datei im Ordner der neuen Anzeige, und auch
+  // das Kennzeichen gehört dorthin.
+  try {
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT report_id, filename FROM report_images WHERE id = ?',
+      [imageId]
+    )
+    if (!rows.length) return // inzwischen gelöscht
+    reportId = Number(rows[0].report_id)
+    filename = String(rows[0].filename)
+  } catch {
+    /* DB kurz weg – mit den eingereihten Werten weitermachen */
+  }
   const filePath = path.join(reportDir(userId, reportId), filename)
 
   try {
@@ -100,19 +116,70 @@ async function runAnalysis(
       }
     }
 
-    // Leeres Kennzeichen-Feld der Anzeige vorbefüllen – nur bei sicherer,
-    // aufs deutsche Format normalisierter Lesung und nur solange Entwurf.
-    // Manuell eingetragene Werte werden nie überschrieben.
-    if (best && best.normalized && best.confidence >= ALPR_MIN_CONFIDENCE) {
-      await pool.execute(
-        `UPDATE reports SET kennzeichen=?
-          WHERE id=? AND user_id=? AND status='entwurf'
-            AND (kennzeichen IS NULL OR kennzeichen='')`,
-        [best.plate, reportId, userId]
-      )
-    }
+    await prefillReportPlate(userId, reportId)
   } catch (err) {
     console.error('Kennzeichen-Analyse fehlgeschlagen', err)
     await setStatus(imageId, 'failed')
   }
+}
+
+/** Kennzeichen-Vorschlag einer Anzeige aus den Lesungen aller ihrer Fotos.
+ *  Berücksichtigt nur sichere Lesungen (ab ALPR_MIN_CONFIDENCE; nicht aufs
+ *  deutsche Format normalisierbare drückt der Dienst darunter) – der Dienst
+ *  liefert pro Foto das Schild des Autos im Vordergrund. Es
+ *  gewinnt das Kennzeichen, das auf den meisten Fotos erkannt wurde, dann die
+ *  höhere Summen-Konfidenz, dann das frühere Foto – so setzt sich bei Fotos
+ *  mehrerer Autos (Import-Gruppen, Übersichtsbilder) das gemeinte Auto durch
+ *  statt zufällig das zuerst analysierte. */
+export async function bestPlateForReport(
+  reportId: number
+): Promise<{ plate: string; confidence: number; pending: boolean } | null> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT analysis_status, detected_plate, plate_confidence
+       FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
+    [reportId]
+  )
+  const pending = rows.some((r) => r.analysis_status === 'pending')
+  const votes = new Map<string, { count: number; sum: number; max: number; first: number }>()
+  rows.forEach((r, i) => {
+    if (!r.detected_plate || r.plate_confidence === null) return
+    const confidence = Number(r.plate_confidence)
+    if (confidence < ALPR_MIN_CONFIDENCE) return
+    const v = votes.get(r.detected_plate)
+    if (v) {
+      v.count++
+      v.sum += confidence
+      v.max = Math.max(v.max, confidence)
+    } else {
+      votes.set(r.detected_plate, { count: 1, sum: confidence, max: confidence, first: i })
+    }
+  })
+  let best: [string, { count: number; sum: number; max: number; first: number }] | null = null
+  for (const entry of votes) {
+    const [, v] = entry
+    if (
+      !best ||
+      v.count > best[1].count ||
+      (v.count === best[1].count && v.sum > best[1].sum) ||
+      (v.count === best[1].count && v.sum === best[1].sum && v.first < best[1].first)
+    ) {
+      best = entry
+    }
+  }
+  return best ? { plate: best[0], confidence: best[1].max, pending } : null
+}
+
+/** Leeres Kennzeichen-Feld eines Entwurfs aus den Foto-Lesungen vorbefüllen –
+ *  erst wenn alle Fotos analysiert sind (sonst entschiede das zuerst
+ *  analysierte Foto statt der Mehrheit). Manuell eingetragene Werte werden nie
+ *  überschrieben. Auch nach dem Verschieben von Fotos aufgerufen. */
+export async function prefillReportPlate(userId: number, reportId: number): Promise<void> {
+  const best = await bestPlateForReport(reportId)
+  if (!best || best.pending) return
+  await pool.execute(
+    `UPDATE reports SET kennzeichen=?
+      WHERE id=? AND user_id=? AND status='entwurf'
+        AND (kennzeichen IS NULL OR kennzeichen='')`,
+    [best.plate, reportId, userId]
+  )
 }
