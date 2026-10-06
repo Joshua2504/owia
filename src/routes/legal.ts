@@ -25,7 +25,7 @@ export default async function legalRoutes(app: FastifyInstance) {
         title: 'Feuerwehrzufahrt zugeparkt – Frankfurt',
         pageTitle: 'Zugeparkte Feuerwehrzufahrt in Frankfurt melden – Hotlines | OWiA-Anzeiger',
         metaDescription:
-          'Feuerwehrzufahrt, Gehweg oder Radweg in Frankfurt zugeparkt? Die richtigen Nummern: Notruf 110, Städtische Verkehrspolizei 069 212-36360, Polizei 069 755-0 – und was du am Telefon sagst.',
+          'Feuerwehrzufahrt, Gehweg oder Radweg in Frankfurt zugeparkt? Die richtigen Nummern: Städtische Verkehrspolizei 069 212-36360, Stadtpolizei 069 212-44044 (24/7), Polizei – und was du am Telefon sagst.',
         canonical: `${appUrl}/falschparker-melden`,
       })
     )

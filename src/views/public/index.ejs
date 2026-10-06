@@ -21,22 +21,18 @@
       <% } %>
     </div>
 
-    <!-- Akute Gefahr gehört ans Telefon, nicht in eine Anzeige → Ratgeber /falschparker-melden -->
-    <div class="alert alert-danger d-flex flex-column flex-md-row align-items-md-center gap-3 mb-5 shadow-sm">
-      <div class="fs-1 lh-1 d-none d-md-block">🚒</div>
+    <!-- Akute Behinderung gehört ans Telefon, nicht in eine Anzeige → Ratgeber /falschparker-melden -->
+    <div class="card shadow-sm mb-5"><div class="card-body d-flex flex-column flex-md-row align-items-md-center gap-3">
       <div class="flex-grow-1">
-        <div class="fw-semibold">Feuerwehrzufahrt oder Rettungsweg gerade zugeparkt?</div>
-        <div class="small">
-          Dann nicht anzeigen, sondern anrufen: Verkehrspolizei Frankfurt
-          <a href="tel:+496921236360" class="alert-link text-nowrap">069 212-36360</a>,
-          bei akuter Gefahr Notruf 110.
+        <div class="fw-semibold">🚒 Feuerwehrzufahrt oder Rettungsweg gerade zugeparkt?</div>
+        <div class="small text-muted">
+          Dann lieber anrufen: Verkehrspolizei
+          <a href="tel:+496921236360" class="text-nowrap">069 212-36360</a>
+          oder Stadtpolizei <a href="tel:+496921244044" class="text-nowrap">069 212-44044</a> (24/7).
         </div>
       </div>
-      <div class="d-flex gap-2 flex-shrink-0">
-        <a href="tel:110" class="btn btn-danger fw-bold">📞 110</a>
-        <a href="/falschparker-melden" class="btn btn-outline-danger">Alle Nummern &amp; Tipps</a>
-      </div>
-    </div>
+      <a href="/falschparker-melden" class="btn btn-outline-secondary btn-sm flex-shrink-0">Alle Nummern &amp; Tipps</a>
+    </div></div>
 
     <!-- So funktioniert's (liefert Suchmaschinen Kontext) -->
     <section class="mb-5">
