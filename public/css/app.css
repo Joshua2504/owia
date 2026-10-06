@@ -955,3 +955,7 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 .sort-btn:hover { color: var(--bs-primary); }
 
 .plate-suggest { font-size: 0.75rem; text-decoration: none; }
+
+/* Status-Filter als Umschalt-Chips (Mehrfachauswahl). */
+.status-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.status-chips .btn { border-radius: 999px; }

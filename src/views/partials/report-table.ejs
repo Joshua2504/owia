@@ -67,10 +67,13 @@ const _dFmt = (r) => { const d = r.tattag ? new Date(r.tattag).toLocaleDateStrin
     <span class="visually-hidden">Suchen</span>
     <input type="search" id="report-search" class="form-control" placeholder="🔍 Kennzeichen, Aktenzeichen, Tatort, Verstoß …">
   </label>
-  <label class="report-filter-status">
-    <span class="visually-hidden">Status</span>
-    <select id="report-status" class="form-select"><option value="">Alle Status</option><option value="entwurf">Entwürfe</option><option value="bereit">Bereit</option><option value="eingereicht">Eingereicht</option><option value="versendet">Versendet</option></select>
-  </label>
+  <%# Status-Filter mit Mehrfachauswahl (report-bulk.js): nichts gewählt = alle. %>
+  <div class="status-chips" id="report-status" role="group" aria-label="Nach Status filtern">
+    <% for (const [v, label] of [['entwurf', 'Entwürfe'], ['bereit', 'Bereit'], ['eingereicht', 'Eingereicht'], ['versendet', 'Versendet']]) { %>
+      <input type="checkbox" class="btn-check" id="status-<%= v %>" value="<%= v %>" autocomplete="off">
+      <label class="btn btn-sm btn-outline-secondary" for="status-<%= v %>"><%= label %></label>
+    <% } %>
+  </div>
   <% if (_hasDrafts) { %><label class="d-md-none d-flex align-items-center gap-2 report-select-label"><input type="checkbox" id="bulk-select-all-m" class="form-check-input"> Alle Entwürfe</label><% } %>
   <span id="report-visible-count" class="small text-muted ms-auto" role="status"></span>
 </div>

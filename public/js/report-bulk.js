@@ -36,15 +36,18 @@
     if (!response.ok) throw new Error(data.error || 'Anfrage fehlgeschlagen.')
     return data
   }
+  function statusBoxes() { return Array.from(status.querySelectorAll('input[type="checkbox"]')) }
+  function statusValues() { return statusBoxes().filter(function (b) { return b.checked }).map(function (b) { return b.value }) }
   function boxes() { return Array.from(table.querySelectorAll('.bulk-select')) }
   function selected() { return boxes().filter(function (box) { return box.checked }) }
   function update() {
     var rows = Array.from(table.querySelectorAll('tbody > tr[data-status]'))
+    var wanted = statusValues()
     var term = search.value.trim().toLocaleLowerCase('de')
     rows.forEach(function (row) {
       // Inline-Felder (Kennzeichen, Marke, Verstoß) stehen nicht im textContent.
       var text = row.textContent + ' ' + Array.from(row.querySelectorAll('input[data-inline-field], textarea[data-inline-field]')).map(function (el) { return el.value }).join(' ')
-      var matches = (!status.value || row.dataset.status === status.value) && (!term || text.toLocaleLowerCase('de').includes(term))
+      var matches = (!wanted.length || wanted.indexOf(row.dataset.status) !== -1) && (!term || text.toLocaleLowerCase('de').includes(term))
       row.hidden = !matches
       if (!matches) { var box = row.querySelector('.bulk-select'); if (box) box.checked = false }
     })
@@ -67,18 +70,21 @@
   }
   window.addEventListener('resize', update)
   search.addEventListener('input', update)
-  // Status-Filter pro Browser merken (reine Ansichts-Vorliebe → localStorage;
-  // gesperrter Speicher, z.B. privates Fenster, wird still ignoriert).
-  var STATUS_KEY = 'owia.reportStatusFilter'
+  // Status-Filter (Mehrfachauswahl, nichts gewählt = alle) pro Browser merken
+  // (reine Ansichts-Vorliebe → localStorage; gesperrter Speicher, z.B.
+  // privates Fenster, wird still ignoriert). Der frühere Einzelwert-Schlüssel
+  // wird übernommen.
+  var STATUS_KEY = 'owia.reportStatusFilter2'
   try {
-    var savedStatus = localStorage.getItem(STATUS_KEY)
-    if (savedStatus && Array.from(status.options).some(function (o) { return o.value === savedStatus })) {
-      status.value = savedStatus
-      if (window.searchableSelect) window.searchableSelect.sync(status)
+    var savedStatus = JSON.parse(localStorage.getItem(STATUS_KEY) || 'null')
+    if (!savedStatus) {
+      var old = localStorage.getItem('owia.reportStatusFilter')
+      savedStatus = old ? [old] : []
     }
+    statusBoxes().forEach(function (b) { b.checked = savedStatus.indexOf(b.value) !== -1 })
   } catch (_) {}
   status.addEventListener('change', function () {
-    try { localStorage.setItem(STATUS_KEY, status.value) } catch (_) {}
+    try { localStorage.setItem(STATUS_KEY, JSON.stringify(statusValues())) } catch (_) {}
     update()
   })
   document.addEventListener('reports:updated', update)
