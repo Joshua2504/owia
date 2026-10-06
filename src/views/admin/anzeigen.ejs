@@ -105,36 +105,86 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
 
 <% const unmatched = locals.unmatched || [] %>
 <% if (unmatched.length) { %>
-  <div class="card shadow-sm mb-4 border-warning">
+  <div class="card shadow-sm mb-4 border-warning" id="antworten" style="scroll-margin-top:1rem">
     <div class="card-body">
       <h5 class="card-title mb-1">Nicht zugeordnete Antworten (<%= unmatched.length %>)</h5>
       <p class="text-muted small mb-3">
-        Eingegangene Mails ohne erkennbares Aktenzeichen – bitte manuell einer Anzeige zuordnen.
+        Eingegangene Mails ohne erkennbares Aktenzeichen. Spam markieren und gesammelt verwerfen,
+        echte Antworten aufklappen und per Aktenzeichen zuordnen.
       </p>
-      <% for (const m of unmatched) { %>
-        <div class="border rounded p-2 mb-2">
-          <div class="small text-muted">
-            <strong><%= m.from_address || 'Unbekannt' %></strong>
-            <% if (m.received_at) { %>· <%= new Date(m.received_at).toLocaleString('de-DE') %><% } %>
-            <% if (m.attachment_count) { %>· 📎 <%= m.attachment_count %> Anhang/Anhänge<% } %>
-            <% if (m.subject) { %><br><%= m.subject %><% } %>
-          </div>
-          <div class="small border-top mt-1 pt-1" style="white-space:pre-wrap; max-height:18rem; overflow-y:auto"><%= m.body_text || '' %></div>
-          <div class="d-flex gap-2 mt-2 flex-wrap">
-            <form method="post" action="/admin/replies/<%= m.id %>/assign" class="d-flex gap-2">
-              <input type="text" name="aktenzeichen" class="form-control form-control-sm w-auto"
-                     placeholder="OWiA-123456" required>
-              <button type="submit" class="btn btn-sm btn-outline-primary">Zuordnen</button>
-            </form>
-            <form method="post" action="/admin/replies/<%= m.id %>/discard" class="ms-auto"
-                  onsubmit="return confirm('Antwort endgültig verwerfen? Text und Anhänge werden gelöscht.')">
-              <button type="submit" class="btn btn-sm btn-outline-danger">🗑 Verwerfen</button>
-            </form>
-          </div>
+      <form method="post" action="/admin/replies/bulk-discard" id="reply-bulk-form">
+        <div class="d-flex gap-2 align-items-center flex-wrap mb-2">
+          <input type="search" class="form-control form-control-sm w-auto" id="reply-filter" placeholder="Filtern (Absender/Betreff)…">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="reply-select-visible">Sichtbare markieren</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="reply-select-none">Keine</button>
+          <button type="submit" class="btn btn-sm btn-danger ms-auto" id="reply-bulk-btn" disabled>🗑 Markierte verwerfen (<span id="reply-count">0</span>)</button>
         </div>
-      <% } %>
+      </form>
+      <div class="table-responsive" style="max-height:70vh; overflow-y:auto">
+        <table class="table table-sm table-hover align-middle mb-0 small">
+          <thead class="sticky-top bg-body">
+            <tr>
+              <th style="width:2rem"><input type="checkbox" class="form-check-input" id="reply-all" title="Alle sichtbaren"></th>
+              <th>Eingang</th><th>Absender</th><th>Betreff</th><th class="text-end">📎</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <% for (const m of unmatched) { %>
+              <tr class="reply-row" data-search="<%= ((m.from_address || '') + ' ' + (m.subject || '')).toLowerCase() %>">
+                <td><input type="checkbox" class="form-check-input reply-check" name="ids" value="<%= m.id %>" form="reply-bulk-form"></td>
+                <td class="text-nowrap text-muted"><%= m.received_at ? new Date(m.received_at).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '' %></td>
+                <td class="text-truncate" style="max-width:16rem"><%= m.from_address || 'Unbekannt' %></td>
+                <td class="text-truncate" style="max-width:28rem"><%= m.subject || '(kein Betreff)' %></td>
+                <td class="text-end text-muted"><%= m.attachment_count || '' %></td>
+                <td class="text-end"><button type="button" class="btn btn-sm btn-link p-0" data-bs-toggle="collapse" data-bs-target="#reply-<%= m.id %>">Details</button></td>
+              </tr>
+              <tr class="collapse" id="reply-<%= m.id %>">
+                <td colspan="6" class="bg-body-tertiary">
+                  <div style="white-space:pre-wrap; max-height:18rem; overflow-y:auto"><%= m.body_text || '' %></div>
+                  <div class="d-flex gap-2 mt-2 flex-wrap">
+                    <form method="post" action="/admin/replies/<%= m.id %>/assign" class="d-flex gap-2">
+                      <input type="text" name="aktenzeichen" class="form-control form-control-sm w-auto" placeholder="OWiA-123456" required>
+                      <button type="submit" class="btn btn-sm btn-outline-primary">Zuordnen</button>
+                    </form>
+                    <form method="post" action="/admin/replies/<%= m.id %>/discard" class="ms-auto"
+                          onsubmit="return confirm('Antwort endgültig verwerfen? Text und Anhänge werden gelöscht.')">
+                      <button type="submit" class="btn btn-sm btn-outline-danger">🗑 Verwerfen</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
+  <script>
+    (() => {
+      const checks = () => [...document.querySelectorAll('.reply-check')]
+      const visible = () => checks().filter((c) => !c.closest('tr').hidden)
+      const update = () => {
+        const n = checks().filter((c) => c.checked).length
+        document.getElementById('reply-count').textContent = n
+        document.getElementById('reply-bulk-btn').disabled = n === 0
+      }
+      document.getElementById('reply-bulk-form').addEventListener('submit', (e) => {
+        const n = checks().filter((c) => c.checked).length
+        if (!n || !confirm(n + ' Antwort(en) endgültig verwerfen? Text und Anhänge werden gelöscht.')) e.preventDefault()
+      })
+      document.addEventListener('change', (e) => { if (e.target.classList.contains('reply-check')) update() })
+      document.getElementById('reply-all').addEventListener('change', (e) => { visible().forEach((c) => (c.checked = e.target.checked)); update() })
+      document.getElementById('reply-select-visible').addEventListener('click', () => { visible().forEach((c) => (c.checked = true)); update() })
+      document.getElementById('reply-select-none').addEventListener('click', () => { checks().forEach((c) => (c.checked = false)); document.getElementById('reply-all').checked = false; update() })
+      document.getElementById('reply-filter').addEventListener('input', (e) => {
+        const q = e.target.value.trim().toLowerCase()
+        document.querySelectorAll('.reply-row').forEach((tr) => {
+          tr.hidden = q && !tr.dataset.search.includes(q)
+          if (tr.hidden) tr.nextElementSibling.classList.remove('show')
+        })
+      })
+    })()
+  </script>
 <% } %>
 
 <% if (recent.length) { %>

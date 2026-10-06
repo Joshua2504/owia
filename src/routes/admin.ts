@@ -65,7 +65,7 @@ export default async function adminRoutes(app: FastifyInstance) {
          FROM report_replies rr
         WHERE rr.report_id IS NULL
         ORDER BY rr.received_at DESC, rr.id DESC
-        LIMIT 50`
+        LIMIT 2000`
     )
 
     return reply.view('/admin/anzeigen.ejs', viewData(request, {
@@ -113,23 +113,44 @@ export default async function adminRoutes(app: FastifyInstance) {
   // Anhängen löschen (DB-Kaskade + Dateien). Bewusst auf report_id IS NULL
   // beschränkt – zugeordnete Antworten sind Aktenbestandteil und bleiben.
   // Die Mail ist im Postfach bereits \Seen, der IMAP-Poll holt sie nicht erneut.
-  app.post('/admin/replies/:id/discard', { preHandler: requireAdmin }, async (request, reply) => {
-    const { id } = request.params as { id: string }
-    const [result] = await pool.execute<mysql.ResultSetHeader>(
-      'DELETE FROM report_replies WHERE id = ? AND report_id IS NULL',
-      [id]
-    )
-    if (result.affectedRows === 1) {
+  async function discardUnmatchedReplies(ids: number[]): Promise<number> {
+    let removed = 0
+    for (const id of ids) {
+      const [result] = await pool.execute<mysql.ResultSetHeader>(
+        'DELETE FROM report_replies WHERE id = ? AND report_id IS NULL',
+        [id]
+      )
+      if (result.affectedRows !== 1) continue
+      removed++
       try {
-        await fs.rm(repliesDir(Number(id)), { recursive: true, force: true })
+        await fs.rm(repliesDir(id), { recursive: true, force: true })
       } catch (err) {
         app.log.error({ err, replyId: id }, 'Anhang-Verzeichnis der verworfenen Antwort nicht löschbar')
       }
+    }
+    return removed
+  }
+
+  app.post('/admin/replies/:id/discard', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    if (await discardUnmatchedReplies([Number(id)])) {
       setFlash(reply, 'success', 'Antwort verworfen.')
     } else {
       setFlash(reply, 'error', 'Antwort nicht gefunden oder bereits zugeordnet.')
     }
-    return reply.redirect('/admin/anzeigen')
+    return reply.redirect('/admin/anzeigen#antworten')
+  })
+
+  // Sammel-Verwerfen markierter, nicht zugeordneter Antworten (Spam-Flut).
+  app.post('/admin/replies/bulk-discard', { preHandler: requireAdmin }, async (request, reply) => {
+    const raw = (request.body as { ids?: string | string[] })?.ids
+    const ids = (Array.isArray(raw) ? raw : raw ? [raw] : [])
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0)
+    const removed = await discardUnmatchedReplies(ids)
+    setFlash(reply, removed ? 'success' : 'error',
+      removed ? `${removed} Antwort(en) verworfen.` : 'Keine Antwort markiert.')
+    return reply.redirect('/admin/anzeigen#antworten')
   })
 
   // Anhang einer (auch nicht zugeordneten) Antwort ansehen (Admin).
