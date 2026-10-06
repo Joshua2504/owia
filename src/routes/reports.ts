@@ -829,107 +829,6 @@ export default async function reportsRoutes(app: FastifyInstance) {
     return reply.send({ ok: true })
   })
 
-  // Fotos in einen anderen eigenen Entwurf oder eine neue Anzeige verschieben
-  // (Mehrfachauswahl im Editor, Drag & Drop in den Listen). Dateien wandern
-  // physisch mit, die Bilder landen am Ende der Ziel-Sortierung.
-  async function moveImages(
-    userId: number,
-    az: string,
-    imageIds: number[],
-    dest: { targetAz?: string; newDraft?: boolean }
-  ): Promise<{ status: number; body: Record<string, unknown> }> {
-    if (!dest.newDraft && (!dest.targetAz || dest.targetAz === az)) {
-      return { status: 400, body: { error: 'Ziel-Anzeige fehlt.' } }
-    }
-    if (!imageIds.length) return { status: 400, body: { error: 'Keine Fotos ausgewählt.' } }
-
-    const source = await loadReportByAktenzeichen(az, userId)
-    if (!source) return { status: 404, body: { error: 'not found' } }
-    if (source.status !== 'entwurf' || source.versand_status !== null) return { status: 409, body: { error: 'not a draft' } }
-
-    const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, filename, original_filename,
-              DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at, gps_lat, gps_lon
-         FROM report_images WHERE report_id = ? AND id IN (${imageIds.map(() => '?').join(',')})
-        ORDER BY sort_order, id`,
-      [source.id, ...imageIds]
-    )
-    if (imgs.length !== imageIds.length) return { status: 404, body: { error: 'Bild nicht gefunden.' } }
-
-    // Ziel: bestehender Entwurf oder neue Anzeige (mit EXIF des ersten Fotos
-    // vorbelegt; ein Import-Entwurf bleibt Teil seines Batches, damit die
-    // Übersicht ihn zeigt).
-    let targetId: number
-    let resolvedTargetAz: string
-    if (dest.newDraft) {
-      const first = imgs.find((i) => i.captured_at) || imgs[0]
-      const gps = imgs.find((i) => i.gps_lat !== null && i.gps_lon !== null)
-      const draft = await createDraft(userId, {
-        tattag: first.captured_at ? first.captured_at.slice(0, 10) : null,
-        tatzeitVon: first.captured_at ? first.captured_at.slice(11, 19) : null,
-        tatortLat: gps ? Number(gps.gps_lat) : null,
-        tatortLon: gps ? Number(gps.gps_lon) : null,
-        intakeBatchId: source.intake_batch_id ?? null,
-      })
-      targetId = draft.id
-      resolvedTargetAz = draft.aktenzeichen
-    } else {
-      const target = await loadReportByAktenzeichen(dest.targetAz as string, userId)
-      if (!target) return { status: 404, body: { error: 'Ziel-Entwurf nicht gefunden.' } }
-      if (target.status !== 'entwurf' || target.versand_status !== null) {
-        return { status: 409, body: { error: 'Ziel-Anzeige ist kein Entwurf mehr.' } }
-      }
-      const [cntRows] = await pool.execute<mysql.RowDataPacket[]>(
-        'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
-        [target.id]
-      )
-      if (Number(cntRows[0].c) + imgs.length > MAX_IMAGES) {
-        return { status: 400, body: { error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` } }
-      }
-      targetId = target.id
-      resolvedTargetAz = target.aktenzeichen
-    }
-
-    const from = reportDir(userId, source.id)
-    const to = reportDir(userId, targetId)
-    await fs.mkdir(to, { recursive: true })
-    const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
-      [targetId]
-    )
-    let sortOrder = Number(maxRows[0].next)
-    for (const img of imgs) {
-      await fs.rename(path.join(from, img.filename), path.join(to, img.filename))
-      if (img.original_filename && img.original_filename !== img.filename) {
-        await fs.rename(path.join(from, img.original_filename), path.join(to, img.original_filename))
-      }
-      // Gecachte Ableitungen (Vorschau, Pixelbild, Versandfassung, Kennzeichen-
-      // Ausschnitt) mitnehmen, falls vorhanden.
-      for (const suffix of ['.thumb.jpg', '.pixel.jpg', '.mail.jpg', '.plate.jpg']) {
-        await fs
-          .rename(path.join(from, img.filename + suffix), path.join(to, img.filename + suffix))
-          .catch(() => {})
-      }
-      await pool.execute('UPDATE report_images SET report_id = ?, sort_order = ? WHERE id = ?', [
-        targetId,
-        sortOrder++,
-        img.id,
-      ])
-    }
-
-    // Kennzeichen des Ziels aus den mitgewanderten Lesungen vorbefüllen (z.B.
-    // neue Anzeige per Drag & Drop) – vor der Antwort, damit die neu geholte
-    // Listenzeile es schon zeigt. Noch laufende Analysen schlagen selbst unter
-    // der neuen Anzeige nach (runAnalysis) und befüllen danach.
-    await prefillReportPlate(userId, targetId).catch(() => {})
-
-    // PDFs im Hintergrund nachziehen: Beide sind Entwürfe, „Speichern" und
-    // „Einreichen" erzeugen das PDF ohnehin neu – der Nutzer soll nach dem
-    // Verschieben nicht auf zwei PDF-Läufe warten.
-    void regeneratePdf(source.id, userId).then(() => regeneratePdf(targetId, userId)).catch(() => {})
-    return { status: 200, body: { ok: true, targetAz: resolvedTargetAz, moved: imgs.length } }
-  }
-
   app.post('/anzeige/:az/images/:imageId/move', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const dest = (request.body || {}) as { targetAz?: string; newDraft?: boolean }
@@ -1644,4 +1543,105 @@ export default async function reportsRoutes(app: FastifyInstance) {
     setFlash(reply, 'success', 'Anzeige zurückgezogen – sie ist wieder ein Entwurf.')
     return reply.redirect(`/anzeige/${az}/bearbeiten`)
   })
+}
+
+// Fotos in einen anderen eigenen Entwurf oder eine neue Anzeige verschieben
+// (Mehrfachauswahl im Editor, Drag & Drop in den Listen). Dateien wandern
+// physisch mit, die Bilder landen am Ende der Ziel-Sortierung.
+export async function moveImages(
+  userId: number,
+  az: string,
+  imageIds: number[],
+  dest: { targetAz?: string; newDraft?: boolean }
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!dest.newDraft && (!dest.targetAz || dest.targetAz === az)) {
+    return { status: 400, body: { error: 'Ziel-Anzeige fehlt.' } }
+  }
+  if (!imageIds.length) return { status: 400, body: { error: 'Keine Fotos ausgewählt.' } }
+
+  const source = await loadReportByAktenzeichen(az, userId)
+  if (!source) return { status: 404, body: { error: 'not found' } }
+  if (source.status !== 'entwurf' || source.versand_status !== null) return { status: 409, body: { error: 'not a draft' } }
+
+  const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT id, filename, original_filename,
+            DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at, gps_lat, gps_lon
+       FROM report_images WHERE report_id = ? AND id IN (${imageIds.map(() => '?').join(',')})
+      ORDER BY sort_order, id`,
+    [source.id, ...imageIds]
+  )
+  if (imgs.length !== imageIds.length) return { status: 404, body: { error: 'Bild nicht gefunden.' } }
+
+  // Ziel: bestehender Entwurf oder neue Anzeige (mit EXIF des ersten Fotos
+  // vorbelegt; ein Import-Entwurf bleibt Teil seines Batches, damit die
+  // Übersicht ihn zeigt).
+  let targetId: number
+  let resolvedTargetAz: string
+  if (dest.newDraft) {
+    const first = imgs.find((i) => i.captured_at) || imgs[0]
+    const gps = imgs.find((i) => i.gps_lat !== null && i.gps_lon !== null)
+    const draft = await createDraft(userId, {
+      tattag: first.captured_at ? first.captured_at.slice(0, 10) : null,
+      tatzeitVon: first.captured_at ? first.captured_at.slice(11, 19) : null,
+      tatortLat: gps ? Number(gps.gps_lat) : null,
+      tatortLon: gps ? Number(gps.gps_lon) : null,
+      intakeBatchId: source.intake_batch_id ?? null,
+    })
+    targetId = draft.id
+    resolvedTargetAz = draft.aktenzeichen
+  } else {
+    const target = await loadReportByAktenzeichen(dest.targetAz as string, userId)
+    if (!target) return { status: 404, body: { error: 'Ziel-Entwurf nicht gefunden.' } }
+    if (target.status !== 'entwurf' || target.versand_status !== null) {
+      return { status: 409, body: { error: 'Ziel-Anzeige ist kein Entwurf mehr.' } }
+    }
+    const [cntRows] = await pool.execute<mysql.RowDataPacket[]>(
+      'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
+      [target.id]
+    )
+    if (Number(cntRows[0].c) + imgs.length > MAX_IMAGES) {
+      return { status: 400, body: { error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` } }
+    }
+    targetId = target.id
+    resolvedTargetAz = target.aktenzeichen
+  }
+
+  const from = reportDir(userId, source.id)
+  const to = reportDir(userId, targetId)
+  await fs.mkdir(to, { recursive: true })
+  const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
+    [targetId]
+  )
+  let sortOrder = Number(maxRows[0].next)
+  for (const img of imgs) {
+    await fs.rename(path.join(from, img.filename), path.join(to, img.filename))
+    if (img.original_filename && img.original_filename !== img.filename) {
+      await fs.rename(path.join(from, img.original_filename), path.join(to, img.original_filename))
+    }
+    // Gecachte Ableitungen (Vorschau, Pixelbild, Versandfassung, Kennzeichen-
+    // Ausschnitt) mitnehmen, falls vorhanden.
+    for (const suffix of ['.thumb.jpg', '.pixel.jpg', '.mail.jpg', '.plate.jpg']) {
+      await fs
+        .rename(path.join(from, img.filename + suffix), path.join(to, img.filename + suffix))
+        .catch(() => {})
+    }
+    await pool.execute('UPDATE report_images SET report_id = ?, sort_order = ? WHERE id = ?', [
+      targetId,
+      sortOrder++,
+      img.id,
+    ])
+  }
+
+  // Kennzeichen des Ziels aus den mitgewanderten Lesungen vorbefüllen (z.B.
+  // neue Anzeige per Drag & Drop) – vor der Antwort, damit die neu geholte
+  // Listenzeile es schon zeigt. Noch laufende Analysen schlagen selbst unter
+  // der neuen Anzeige nach (runAnalysis) und befüllen danach.
+  await prefillReportPlate(userId, targetId).catch(() => {})
+
+  // PDFs im Hintergrund nachziehen: Beide sind Entwürfe, „Speichern" und
+  // „Einreichen" erzeugen das PDF ohnehin neu – der Nutzer soll nach dem
+  // Verschieben nicht auf zwei PDF-Läufe warten.
+  void regeneratePdf(source.id, userId).then(() => regeneratePdf(targetId, userId)).catch(() => {})
+  return { status: 200, body: { ok: true, targetAz: resolvedTargetAz, moved: imgs.length } }
 }
