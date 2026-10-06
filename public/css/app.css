@@ -1053,3 +1053,9 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 @media (max-width: 575.98px) {
   .photo-edit-plate label[for="photo-edit-marke-input"] { display: none; }
 }
+/* Verstoß-Auswahl im Foto-Dialog: Dropdown (verstoss-select.js) liegt über der Leinwand. */
+.photo-edit-verstoss { flex: 1 1 18rem; min-width: 12rem; max-width: 32rem; }
+.photo-edit-verstoss [data-verstoss-input] { background: #fff; color: #000; }
+.photo-edit-verstoss [data-verstoss-input].is-missing { border-color: #ffc107; box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.5); }
+.photo-edit-verstoss .list-group { color: var(--bs-body-color); }
+@media (max-width: 575.98px) { .photo-edit-verstoss { flex-basis: 100%; max-width: none; } }

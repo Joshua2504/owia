@@ -11,8 +11,8 @@
 // Bewusst eigenständig statt report-form.js wiederzuverwenden: dessen
 // Leinwand-Code hängt an den Editor-Karten (Autosave, Upload-Status, Karte).
 //
-// Kennzeichen-Abgleich: Bei Entwürfen steht das Kennzeichen der Anzeige im
-// Dialog-Kopf (Wert aus dem Feld [data-inline-field=kennzeichen] der Zeile bzw.
+// Kennzeichen-Abgleich: Bei Entwürfen stehen Kennzeichen, Marke und Verstoß der
+// Anzeige im Dialog-Kopf (Wert aus dem Feld [data-inline-field=kennzeichen] der Zeile bzw.
 // Prüf-Karte) – man sieht das Foto und korrigiert es direkt. Gespeichert wird
 // über PATCH /anzeige/:az/felder, beim Bestätigen/Schließen bzw. mit Enter im
 // Feld; danach feuert document das Event 'owia:plate-changed' {az, kennzeichen}.
@@ -53,6 +53,10 @@
       '<button type="button" class="btn btn-sm btn-outline-warning" data-act="plate-suggest" hidden></button>' +
       '<label class="small" for="photo-edit-marke-input">Marke</label>' +
       '<input type="text" id="photo-edit-marke-input" class="form-control form-control-sm photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. VW Golf, grau">' +
+      '<div class="photo-edit-verstoss position-relative">' +
+      '<input type="hidden">' +
+      '<input type="text" class="form-control form-control-sm" data-verstoss-input autocomplete="off" spellcheck="false" placeholder="Verstoß wählen …" aria-label="Verstoß">' +
+      '</div>' +
       '</div>' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
@@ -91,6 +95,21 @@
     })
     plateInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
+    // Verstoß: Katalog erst beim ersten Fokus laden (wie report-inline.js);
+    // die Auswahl meldet verstoss-select.js per change am versteckten Feld.
+    verstossHidden().addEventListener('change', function () { savePlate().then(updateUi, function () {}) })
+    verstossInput().addEventListener('focus', function () {
+      var root = verstossHidden().parentNode
+      if (root.dataset.verstossReady || !window.verstossSelect) return
+      loadCatalog().then(function (data) {
+        if (root.dataset.verstossReady) return
+        window.verstossSelect.init(root, data)
+        if (document.activeElement === verstossInput()) verstossInput().dispatchEvent(new Event('focus'))
+      }, function () {
+        verstossInput().classList.add('is-invalid')
+        verstossInput().title = 'Verstoß-Katalog nicht ladbar.'
+      })
+    })
     dlg.addEventListener('cancel', function (e) {
       e.preventDefault()
       cancel()
@@ -98,6 +117,12 @@
     // Enter bestätigt – zügiges Durchklicken ohne Maus.
     dlg.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter' || e.target.closest('button') || !state) return
+      // Enter im Verstoß-Suchfeld wählt einen Eintrag (verstoss-select.js) –
+      // darf das Foto nicht nebenbei bestätigen.
+      if (e.target === verstossInput()) {
+        e.preventDefault()
+        return
+      }
       // Enter im Kennzeichen-Feld speichert nur das Kennzeichen – das Foto
       // bestätigt erst ein zweites Enter (Fokus springt auf „Bestätigen").
       if (e.target === plateInput() || e.target === markeInput()) {
@@ -118,6 +143,25 @@
   function markeInput() {
     return dlg.querySelector('#photo-edit-marke-input')
   }
+  function verstossHidden() {
+    return dlg.querySelector('.photo-edit-verstoss input[type=hidden]')
+  }
+  function verstossInput() {
+    return dlg.querySelector('.photo-edit-verstoss [data-verstoss-input]')
+  }
+  var catalog = null
+  function loadCatalog() {
+    if (!catalog) {
+      catalog = fetch('/anzeigen/bearbeitungsoptionen', { headers: { Accept: 'application/json' } })
+        .then(function (r) {
+          if (!r.ok || r.redirected) throw new Error()
+          return r.json()
+        })
+        .then(function (d) { return { alle: d.offenses || [], haeufig: d.frequent || [] } })
+      catalog.catch(function () { catalog = null })
+    }
+    return catalog
+  }
   // Gleiche Normalisierung wie normalizePlate() in routes/reports.ts.
   function normPlate(v) {
     return String(v || '').toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim().slice(0, 20)
@@ -136,6 +180,8 @@
     if (v !== s.plate) body.kennzeichen = v
     var mk = markeInput().value.replace(/\s+/g, ' ').trim()
     if (s.marke != null && mk !== s.marke) body.fahrzeug_marke = mk
+    var vs = verstossHidden().value
+    if (s.verstoss != null && vs !== s.verstoss) body.verstoss_art = vs
     if (!Object.keys(body).length) return Promise.resolve()
     return fetch('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
       method: 'PATCH',
@@ -148,18 +194,22 @@
         var vals = res.d.values || {}
         if ('kennzeichen' in vals) s.plate = vals.kennzeichen || ''
         if ('fahrzeug_marke' in vals) s.marke = vals.fahrzeug_marke || ''
+        if ('verstoss_art' in vals) s.verstoss = vals.verstoss_art || ''
         if (state === s) {
           plateInput().value = s.plate
           markeInput().value = s.marke || ''
         }
         // Felder der Zeile/Karte nachziehen (report-inline.js vergleicht mit dataset.saved).
         var host = rowOf(s.az)
-        ;[['kennzeichen', s.plate], ['fahrzeug_marke', s.marke]].forEach(function (p) {
+        ;[['kennzeichen', s.plate], ['fahrzeug_marke', s.marke], ['verstoss_art', s.verstoss]].forEach(function (p) {
           if (!(p[0] in vals)) return
           var field = host && host.querySelector('[data-inline-field="' + p[0] + '"]')
           if (field) {
             field.value = p[1] || ''
             field.dataset.saved = p[1] || ''
+            // Verstoß: sichtbares Suchfeld neben dem versteckten Wert mitziehen.
+            var vis = field.type === 'hidden' && field.parentNode.querySelector('[data-verstoss-input]')
+            if (vis) vis.value = p[1] || ''
           }
         })
         document.dispatchEvent(new CustomEvent('owia:plate-changed', { detail: { az: s.az, kennzeichen: s.plate } }))
@@ -232,6 +282,7 @@
       sug.title = 'Erkanntes Kennzeichen übernehmen'
       // Leeres oder vom erkannten abweichendes Kennzeichen hervorheben.
       plateInput().classList.toggle('is-invalid', !normPlate(cur))
+      verstossInput().classList.toggle('is-missing', state.verstoss != null && !verstossHidden().value)
       plateInput().classList.toggle('is-mismatch', !!state.detected && !!normPlate(cur) && compact(state.detected) !== compact(cur))
     }
   }
@@ -472,7 +523,9 @@
     var all = row ? Array.prototype.slice.call(row.querySelectorAll('[data-photo-edit]')) : [t]
     var plateEl = row && row.querySelector('[data-inline-field="kennzeichen"]')
     var markeEl = row && row.querySelector('[data-inline-field="fahrzeug_marke"]')
+    var verstossEl = row && row.querySelector('[data-inline-field="verstoss_art"]')
     open({
+      verstoss: verstossEl ? verstossEl.value : null,
       marke: markeEl ? markeEl.value : null,
       thumb: t,
       thumbs: all,
@@ -489,17 +542,21 @@
   }
 
   // opts: { src: Bild-URL, put: PUT-URL der Fassung, az, ok, pos, total, open, tool,
-  //         plate (Kennzeichen der Anzeige; null = kein Abgleich), marke, detected }
+  //         plate (Kennzeichen der Anzeige; null = kein Abgleich), marke, verstoss, detected }
   function open(opts) {
     if (!dlg) build()
     var plate = opts.plate != null && opts.az ? normPlate(opts.plate) : null
     var marke = plate != null && opts.marke != null ? String(opts.marke).trim() : null
+    var verstoss = plate != null && opts.verstoss != null && window.verstossSelect ? String(opts.verstoss) : null
+    verstossHidden().value = verstoss || ''
+    verstossInput().value = verstoss || ''
+    verstossHidden().parentNode.hidden = verstoss == null
     plateInput().value = plate || ''
     markeInput().value = marke || ''
     markeInput().hidden = marke == null
     markeInput().previousElementSibling.hidden = marke == null
     state = {
-      plate: plate, marke: marke, detected: opts.detected ? normPlate(opts.detected) : null,
+      plate: plate, marke: marke, verstoss: verstoss, detected: opts.detected ? normPlate(opts.detected) : null,
       thumb: opts.thumb || null, thumbs: opts.thumbs || null,
       put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool || null, dirty: false,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
