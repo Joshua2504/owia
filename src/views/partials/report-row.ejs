@@ -79,6 +79,14 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="fahrzeug_marke"
              value="<%= r.fahrzeug_marke || '' %>" placeholder="Marke / Farbe" maxlength="100"
              autocomplete="off" aria-label="Fahrzeugmarke von <%= r.aktenzeichen %>">
+      <%# Von der Kennzeichen-Erkennung gelesene Kennzeichen der Fotos, die noch
+          nicht im Feld stehen: Klick übernimmt (report-inline.js). %>
+      <% const _norm = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '') %>
+      <% const _plates = String(r.detected_plates || '').split('|').filter((p) => p && _norm(p) !== _norm(r.kennzeichen)).slice(0, 3) %>
+      <% for (const p of _plates) { %>
+        <button type="button" class="btn btn-link p-0 d-block small plate-suggest" data-plate-suggest="<%= p %>"
+                title="Aus den Fotos erkannt – übernehmen">🚗 <%= p %> übernehmen</button>
+      <% } %>
     <% } else { %>
       <% if (r.kennzeichen) { %>
         <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>

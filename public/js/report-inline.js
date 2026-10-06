@@ -138,6 +138,18 @@
     }
   })
 
+  // Erkanntes Kennzeichen aus den Fotos übernehmen (Links unter dem Feld).
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-plate-suggest]')
+    if (!btn) return
+    var input = rowOf(btn).querySelector('[data-inline-field="kennzeichen"]')
+    if (!input) return
+    input.value = btn.getAttribute('data-plate-suggest')
+    save(input)
+    var row = rowOf(btn)
+    setTimeout(function () { if (window.reportTableRefresh) window.reportTableRefresh(row.dataset.az).catch(function () {}) }, 900)
+  })
+
   // Tatort: Adressvorschläge beim ersten Fokus aktivieren; Auswahl eines
   // Vorschlags speichert Adresse + Koordinaten (+ Stadt, serverseitig aus der PLZ).
   // Frei getippter Text wird beim Verlassen ohne Koordinaten gespeichert.

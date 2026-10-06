@@ -931,3 +931,5 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 /* Sortierbarer Spaltenkopf (Tatzeit). */
 .sort-btn { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; text-decoration: none; white-space: nowrap; }
 .sort-btn:hover { color: var(--bs-primary); }
+
+.plate-suggest { font-size: 0.75rem; text-decoration: none; }

@@ -1074,7 +1074,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, gps_lat, gps_lon FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+      'SELECT id, filename, gps_lat, gps_lon, detected_plate FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
     const [counts] = await pool.execute<mysql.RowDataPacket[]>(
@@ -1091,6 +1091,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
           ...report,
           reply_count: Number(counts[0]?.reply_count) || 0,
           photo_gps_count: images.filter((i) => i.gps_lat !== null && i.gps_lon !== null).length,
+          detected_plates: [...new Set(images.map((i) => i.detected_plate).filter(Boolean))].join('|'),
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
         },
         imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename) })),

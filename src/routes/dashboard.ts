@@ -40,6 +40,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tattag, tattag_bis, tatzeit_von, tatzeit_bis,
               tatort, tatort_lat, tatort_lon, verstoss_art, status, bereit_at, created_at,
               fahrzeug_marke, beschreibung, fahrzeug_verlassen, behinderung, behinderung_text,
+              (SELECT GROUP_CONCAT(DISTINCT dp.detected_plate ORDER BY dp.detected_plate SEPARATOR '|') FROM report_images dp WHERE dp.report_id = reports.id AND dp.detected_plate IS NOT NULL AND dp.detected_plate <> '') AS detected_plates,
               (SELECT COUNT(*) FROM report_images gi WHERE gi.report_id = reports.id AND gi.gps_lat IS NOT NULL AND gi.gps_lon IS NOT NULL) AS photo_gps_count,
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in') AS reply_count,
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in' AND rr.read_at IS NULL) AS unread_reply_count
