@@ -47,7 +47,9 @@
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
       '<span class="photo-edit-hint small"></span>' +
-      '<div class="photo-edit-plate" hidden>' +
+      // Weiße Eingabefelder auf dunklem Kopf: fest helles Theme, sonst kommen
+      // Text/Platzhalter/Dropdown im Dark Mode hellgrau auf Weiß.
+      '<div class="photo-edit-plate" data-bs-theme="light" hidden>' +
       '<label class="small" for="photo-edit-plate-input">Kennzeichen</label>' +
       '<input type="text" id="photo-edit-plate-input" class="form-control form-control-sm plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false">' +
       '<button type="button" class="btn btn-sm btn-outline-warning" data-act="plate-suggest" hidden></button>' +
@@ -98,12 +100,15 @@
     // Verstoß: Katalog erst beim ersten Fokus laden (wie report-inline.js);
     // die Auswahl meldet verstoss-select.js per change am versteckten Feld.
     verstossHidden().addEventListener('change', function () { savePlate().then(updateUi, function () {}) })
+    window.addEventListener('resize', function () { if (dlg.open) fitVerstossMenu() })
     verstossInput().addEventListener('focus', function () {
+      fitVerstossMenu()
       var root = verstossHidden().parentNode
       if (root.dataset.verstossReady || !window.verstossSelect) return
       loadCatalog().then(function (data) {
         if (root.dataset.verstossReady) return
         window.verstossSelect.init(root, data)
+        fitVerstossMenu()
         if (document.activeElement === verstossInput()) verstossInput().dispatchEvent(new Event('focus'))
       }, function () {
         verstossInput().classList.add('is-invalid')
@@ -149,6 +154,21 @@
   function verstossInput() {
     return dlg.querySelector('.photo-edit-verstoss [data-verstoss-input]')
   }
+  // Verstoß-Liste breiter als das Feld (lange Tatbestände), aber im Bild:
+  // nach rechts aufklappen, wenn Platz ist, sonst nach links bündig.
+  function fitVerstossMenu() {
+    var menu = verstossHidden().parentNode.querySelector('.list-group')
+    if (!menu) return
+    var r = verstossHidden().parentNode.getBoundingClientRect()
+    var w = Math.max(r.width, Math.min(736, window.innerWidth - 32))
+    menu.style.width = w + 'px'
+    menu.style.right = 'auto'
+    var left = 0
+    if (r.left + w > window.innerWidth - 16) left = window.innerWidth - 16 - w - r.left
+    if (r.left + left < 16) left = 16 - r.left
+    menu.style.left = left + 'px'
+  }
+
   var catalog = null
   function loadCatalog() {
     if (!catalog) {

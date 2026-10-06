@@ -1027,8 +1027,9 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 .review-actions .btn { padding-top: 0.6rem; padding-bottom: 0.6rem; }
 
 /* Kennzeichen-Abgleich im Foto-Dialog (photo-edit.js). */
-.photo-edit-plate { display: flex; align-items: center; gap: 0.4rem; }
+.photo-edit-plate { display: flex; align-items: center; gap: 0.4rem; flex: 1 1 40rem; }
 .photo-edit-plate label { color: #bbb; }
+.photo-edit-plate .form-control::placeholder { color: #6c757d; opacity: 1; }
 .photo-edit-plate [data-act=plate-suggest] { white-space: nowrap; }
 .photo-edit-plate .plate-field {
   width: 9.5rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
