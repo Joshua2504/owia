@@ -427,7 +427,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 42px;
+  height: 55px;
   border-radius: 0.3rem;
   background: var(--bs-secondary-bg);
   color: var(--bs-secondary-color);

@@ -34,7 +34,10 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
   </td>
   <td class="cell-photos <%= _imgs.length ? '' : 'cell-empty' %>">
     <div class="report-photos" data-photos>
-      <% for (const img of _imgs) { %>
+      <%# Nicht mehr bearbeitbare Anzeigen kompakt: höchstens eine Reihe (3 Kacheln),
+          bei mehr Fotos 2 + „+N" (Link zur Detailseite). Entwürfe zeigen alle. %>
+      <% const _shown = _isDraft || _imgs.length <= 3 ? _imgs : _imgs.slice(0, 2) %>
+      <% for (const img of _shown) { %>
         <%# thumb-wrap: Hülle für das Auswahl-Häkchen (photo-picks.js, nur Entwürfe). %>
         <span class="thumb-wrap">
         <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= img.id %>/thumb.jpg?v=<%= img.v %>" alt="Beweisfoto"
@@ -52,6 +55,9 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
                  aria-label="Foto zum Verschieben auswählen" title="Foto auswählen">
         <% } %>
         </span>
+      <% } %>
+      <% if (_shown.length < _imgs.length) { %>
+        <a class="report-photos-more" href="/anzeige/<%= r.aktenzeichen %>" title="Alle <%= _imgs.length %> Fotos ansehen">+<%= _imgs.length - _shown.length %></a>
       <% } %>
     </div>
   </td>
