@@ -153,7 +153,7 @@ body {
 @media (min-width: 768px) {
   .report-table { table-layout: fixed; width: 100%; }
   .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 3.25rem; }
-  .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 12.25rem; }
+  .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 15.25rem; }
   .report-table th:nth-child(3), .report-table td:nth-child(3) { width: 8.5rem; }
   .report-table th:nth-child(4), .report-table td:nth-child(4) { width: 14%; }
   .report-table th:nth-child(5), .report-table td:nth-child(5) { width: 12.5rem; }
@@ -369,7 +369,7 @@ body {
 /* Foto-Miniaturen: Raster mit festen Kacheln, Hover-Vorschau in image-preview.js. */
 .report-photos {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 56px);
+  grid-template-columns: repeat(auto-fill, 73px);
   gap: 4px;
 }
 .thumb-wrap { position: relative; display: block; }
@@ -437,8 +437,8 @@ body {
 }
 .report-thumb {
   display: block;
-  width: 56px;
-  height: 42px;
+  width: 73px;
+  height: 55px;
   object-fit: cover;
   border-radius: 0.3rem;
   border: 1px solid var(--bs-border-color);
