@@ -146,6 +146,11 @@
     var input = e.target
     if (!input.matches || !input.matches('[data-inline-verstoss] [data-verstoss-input]')) return
     var root = input.closest('[data-inline-verstoss]')
+    // Ausgangswert merken: Bei <input type="hidden"> ändert das Setzen von
+    // .value auch defaultValue – ohne diesen Merker hielt save() jede Auswahl
+    // für „unverändert" und speicherte den Verstoß nie.
+    var hidden = root.querySelector('input[type="hidden"]')
+    if (hidden.dataset.saved === undefined) hidden.dataset.saved = hidden.value
     if (root.dataset.verstossReady) return
     loadCatalog().then(function (data) {
       if (!window.verstossSelect || root.dataset.verstossReady) return
