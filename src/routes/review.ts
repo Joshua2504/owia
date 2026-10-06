@@ -49,6 +49,40 @@ export default async function reviewRoutes(app: FastifyInstance) {
     }))
   })
 
+  // Ziele für „Foto verschieben" im Foto-Dialog (photo-edit.js): andere offene
+  // Entwürfe, zeitlich nächste zuerst – meist gehört ein falsch zugeordnetes
+  // Foto zu einem Vorfall kurz davor/danach.
+  app.get('/pruefen/:az/ziele', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const [cur] = await pool.execute<mysql.RowDataPacket[]>(
+      "SELECT id, CONCAT(COALESCE(tattag, CURDATE()), ' ', COALESCE(tatzeit_von, '00:00:00')) AS ts FROM reports WHERE aktenzeichen = ? AND user_id = ?",
+      [az, userId]
+    )
+    if (!cur[0]) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT r.aktenzeichen, r.kennzeichen, r.tatort,
+              DATE_FORMAT(r.tattag, '%d.%m.%Y') AS tag, DATE_FORMAT(r.tatzeit_von, '%H:%i') AS zeit,
+              (SELECT ri.id FROM report_images ri WHERE ri.report_id = r.id ORDER BY ri.sort_order, ri.id LIMIT 1) AS image_id,
+              (SELECT ri.filename FROM report_images ri WHERE ri.report_id = r.id ORDER BY ri.sort_order, ri.id LIMIT 1) AS image_file
+         FROM reports r
+        WHERE r.user_id = ? AND r.status = 'entwurf' AND r.versand_status IS NULL AND r.id <> ?
+        ORDER BY r.tattag IS NULL,
+                 ABS(TIMESTAMPDIFF(MINUTE, CONCAT(r.tattag, ' ', COALESCE(r.tatzeit_von, '00:00:00')), ?)), r.id DESC
+        LIMIT 60`,
+      [userId, cur[0].id, cur[0].ts]
+    )
+    return reply.send({
+      drafts: rows.map((r) => ({
+        az: r.aktenzeichen,
+        kennzeichen: r.kennzeichen || '',
+        tatort: r.tatort || '',
+        wann: [r.tag, r.zeit].filter(Boolean).join(' '),
+        thumb: r.image_id ? `/anzeige/${r.aktenzeichen}/image/${r.image_id}/thumb.jpg?v=${imageVersion(r.image_file)}` : null,
+      })),
+    })
+  })
+
   // Eine Karte des Prüf-Modus. Wie die Einreichen-Vorschau, aber ohne das PDF
   // neu zu erzeugen (das kostet Zeit und ist auf dem Handy kaum lesbar; der
   // Submit erzeugt es ohnehin frisch) und mit Rohwerten für die Eingabefelder.

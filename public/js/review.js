@@ -146,6 +146,18 @@
     else window.photoEditor.close()
   }
 
+  // Foto(s) im Dialog verschoben: Ziel ist nicht mehr aktuell; eine dabei neu
+  // entstandene Anzeige kommt ans Ende der Warteschlange (wird mitgeprüft).
+  document.addEventListener('owia:photos-moved', function (e) {
+    var d = e.detail || {}
+    delete cache[d.to]
+    delete cache[d.from]
+    if (d.newDraft && d.to && remaining.indexOf(d.to) === -1 && skipped.indexOf(d.to) === -1) {
+      remaining.push(d.to)
+      updateHead()
+    }
+  })
+
   window.photoEditorRun = {
     label: function () {
       var done = stats.submitted + stats.trashed + skipped.length

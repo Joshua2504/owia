@@ -1097,3 +1097,11 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 }
 .photo-edit-map { height: 220px; }
 .photo-edit-map[hidden] { display: none; }
+/* „Verschieben" im Foto-Dialog: Zielauswahl + Häkchen an den Kacheln. */
+.photo-edit-move-menu {
+  position: fixed; z-index: 20; width: min(380px, calc(100vw - 16px)); max-height: 70vh; overflow-y: auto;
+  padding: 0.75rem; border-radius: 0.5rem; background: var(--bs-body-bg); color: var(--bs-body-color);
+}
+.photo-edit-move-menu[hidden] { display: none; }
+.photo-edit-move-menu img { width: 52px; height: 39px; object-fit: cover; flex: 0 0 auto; }
+.photo-edit-pick { position: absolute; right: 5px; top: 5px; width: 1.15rem; height: 1.15rem; margin: 0; cursor: pointer; }

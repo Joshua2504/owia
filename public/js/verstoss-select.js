@@ -153,25 +153,34 @@
         appendBrowseBatch()
       } else {
         const tokens = norm(q).split(/\s+/).filter(Boolean)
+        const matches = (n) => tokens.every((t) => n.indexOf(t) !== -1)
+        // Auch beim Suchen stehen die häufig genutzten Treffer oben (in ihrer
+        // Häufigkeits-Reihenfolge), darunter die übrigen aus dem Katalog.
+        const top = haeufig.filter((t) => matches(norm(t)))
         const hits = []
         let capped = false
         for (const item of normAlle) {
-          if (tokens.every((t) => item.n.indexOf(t) !== -1)) {
-            if (hits.length >= MAX_RESULTS) {
-              capped = true
-              break
-            }
-            hits.push(item.text)
+          if (haeufigSet.has(item.text) || !matches(item.n)) continue
+          if (hits.length >= MAX_RESULTS) {
+            capped = true
+            break
           }
+          hits.push(item.text)
         }
-        if (!hits.length) {
+        if (!top.length && !hits.length) {
           const none = document.createElement('div')
           none.className = 'list-group-item disabled py-2 small text-muted'
           none.textContent = 'Keine Treffer für „' + q + '"'
           menu.appendChild(none)
         } else {
-          addHeader('Treffer' + (capped ? ' (Top ' + MAX_RESULTS + ' – bitte eingrenzen)' : ''))
-          hits.forEach(addItem)
+          if (top.length) {
+            addHeader('Häufig verwendet')
+            top.forEach(addItem)
+          }
+          if (hits.length) {
+            addHeader((top.length ? 'Weitere Treffer' : 'Treffer') + (capped ? ' (Top ' + MAX_RESULTS + ' – bitte eingrenzen)' : ''))
+            hits.forEach(addItem)
+          }
         }
       }
 

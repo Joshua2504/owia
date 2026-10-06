@@ -48,10 +48,18 @@
       '<div class="photo-edit-head">' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="move-menu" title="Foto(s) in eine neue oder andere Anzeige verschieben – mehrere über die Häkchen an den Kacheln">↗ Verschieben</button>' +
       '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen">🗑</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel">Schließen</button>' +
       '<button type="button" class="btn btn-sm btn-success" data-act="save" title="Enter">✓ Bestätigen</button>' +
       '</div>' +
+      '</div>' +
+      // Zielauswahl für „Verschieben" (fest positioniert unter dem Knopf).
+      '<div class="photo-edit-move-menu shadow" data-bs-theme="light" hidden>' +
+      '<div class="small fw-semibold mb-2" data-move-title></div>' +
+      '<button type="button" class="btn btn-sm btn-primary w-100 mb-2" data-move-new>➕ In eine neue Anzeige</button>' +
+      '<input type="search" class="form-control form-control-sm mb-2" data-move-search placeholder="Entwurf suchen (Kennzeichen, Ort, Aktenzeichen) …">' +
+      '<div class="list-group list-group-flush" data-move-list></div>' +
       '</div>' +
       '<div class="photo-edit-body">' +
       '<div class="photo-edit-strip" aria-label="Alle Fotos der Anzeige"></div>' +
@@ -163,6 +171,15 @@
     // Kachel-Streifen: anderes Foto derselben Anzeige öffnen.
     var strip = dlg.querySelector('.photo-edit-strip')
     strip.addEventListener('click', function (e) {
+      var pick = e.target.closest('.photo-edit-pick')
+      if (pick) {
+        if (!state) return
+        var put = pick.getAttribute('data-pick-put')
+        if (pick.checked) state.picked[put] = true
+        else delete state.picked[put]
+        updateMoveLabel()
+        return
+      }
       var mv = e.target.closest('[data-move]')
       if (mv) {
         var i = state && state.thumbs ? state.thumbs.indexOf(state.thumb) : -1
@@ -223,6 +240,18 @@
       setTimeout(function () { savePlate().catch(function () {}) }, 250)
     })
     dlg.querySelector('[data-act=tatort-photo]').addEventListener('click', tatortFromPhotos)
+    dlg.querySelector('[data-act=move-menu]').addEventListener('click', toggleMoveMenu)
+    var menuEl = dlg.querySelector('.photo-edit-move-menu')
+    menuEl.querySelector('[data-move-new]').addEventListener('click', function () { moveTo({ newDraft: true }) })
+    menuEl.querySelector('[data-move-search]').addEventListener('input', renderMoveList)
+    menuEl.querySelector('[data-move-list]').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-move-az]')
+      if (b) moveTo({ targetAz: b.getAttribute('data-move-az') })
+    })
+    // Klick außerhalb schließt das Menü.
+    dlg.addEventListener('pointerdown', function (e) {
+      if (!menuEl.hidden && !e.target.closest('.photo-edit-move-menu, [data-act=move-menu]')) menuEl.hidden = true
+    })
     dlg.querySelector('[data-act=photo-times]').addEventListener('click', applyPhotoTimes)
     dlg.querySelector('[data-act=submit]').addEventListener('click', function () { submitReport(false) })
     var sendBtn = dlg.querySelector('[data-act=send]')
@@ -451,6 +480,14 @@
       b.appendChild(img)
       b.appendChild(el('span', 'thumb-check', t.getAttribute('data-geprueft') === '1' ? '✓' : '?'))
       b.appendChild(el('span', 'photo-edit-tile-no', String(i + 1)))
+      if (state.plate != null) {
+        var pk = el('input', 'form-check-input photo-edit-pick')
+        pk.type = 'checkbox'
+        pk.title = 'Zum Verschieben auswählen'
+        pk.setAttribute('data-pick-put', t.getAttribute('data-photo-edit'))
+        pk.checked = !!state.picked[t.getAttribute('data-photo-edit')]
+        b.appendChild(pk)
+      }
       if (t === state.thumb) {
         var mv = el('span', 'photo-edit-move')
         var back = el('button', 'btn btn-sm btn-light', '‹')
@@ -523,6 +560,9 @@
     saveBtn.disabled = !state.base || !!state.busy
     if (!state.busy) saveBtn.textContent = state.dirty ? '✓ Speichern & bestätigen' : '✓ Bestätigen'
     dlg.querySelector('[data-act=delete]').disabled = !!state.busy
+    var mvb = dlg.querySelector('[data-act=move-menu]')
+    mvb.hidden = state.plate == null
+    mvb.disabled = !!state.busy
     var st = dlg.querySelector('.photo-edit-status')
     st.textContent = 'Foto ' + state.pos + '/' + state.total + ' · ' + (state.ok ? '✓ geprüft' : 'ungeprüft') +
       (state.open ? ' · noch ' + state.open + ' offen' : '')
@@ -690,7 +730,13 @@
         map.setView(has ? [f.tatort_lat, f.tatort_lon] : [c.lat, c.lon], has ? MAP_ZOOM : 13)
       }
       if (has) placeMarker(f.tatort_lat, f.tatort_lon, false)
-      setTimeout(function () { if (map) map.invalidateSize() }, 50)
+      // Die Seitenleiste hat ihre Größe evtl. erst jetzt – neu vermessen und
+      // auf den Marker zentrieren, sonst liegt er außerhalb des Ausschnitts.
+      setTimeout(function () {
+        if (!map || state !== s) return
+        map.invalidateSize()
+        if (has && marker) map.setView(marker.getLatLng(), map.getZoom(), { animate: false })
+      }, 120)
     }, function () { el.hidden = true })
   }
   function placeMarker(lat, lon, recenter) {
@@ -1012,8 +1058,140 @@
     })
   }
 
+  // ---- Foto(s) verschieben: neue Anzeige oder anderer Entwurf --------------
+  // POST /anzeige/:az/images/move (wie Drag & Drop in der Liste). Ausgewählt
+  // sind die angehakten Kacheln, ohne Häkchen das aktuelle Foto.
+  var moveTargets = null
+  var reloadOnClose = false
+  function pickedIds() {
+    var s = state
+    var puts = Object.keys(s.picked)
+    if (!puts.length) puts = [s.put]
+    return puts.map(function (u) { return Number(String(u).split('/').pop()) })
+  }
+  function updateMoveLabel() {
+    var n = state ? Object.keys(state.picked).length : 0
+    dlg.querySelector('[data-act=move-menu]').textContent = n ? '↗ ' + n + ' verschieben' : '↗ Verschieben'
+  }
+  function toggleMoveMenu() {
+    var s = state
+    var menu = dlg.querySelector('.photo-edit-move-menu')
+    if (!menu.hidden || !s) { menu.hidden = true; return }
+    var n = pickedIds().length
+    menu.querySelector('[data-move-title]').textContent = (n === 1 ? (Object.keys(s.picked).length ? '1 Foto' : 'Dieses Foto') : n + ' Fotos') + ' verschieben nach …'
+    menu.querySelector('[data-move-search]').value = ''
+    var btn = dlg.querySelector('[data-act=move-menu]').getBoundingClientRect()
+    menu.hidden = false
+    // Rechtsbündig unter dem Knopf, aber immer ganz im Bild (Handy).
+    var w = menu.offsetWidth
+    menu.style.top = btn.bottom + 6 + 'px'
+    menu.style.left = Math.max(8, Math.min(btn.right - w, window.innerWidth - w - 8)) + 'px'
+    moveTargets = null
+    renderMoveList()
+    var az = s.az
+    fetch('/pruefen/' + encodeURIComponent(az) + '/ziele', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok && !r.redirected ? r.json() : { drafts: [] } })
+      .catch(function () { return { drafts: [] } })
+      .then(function (d) {
+        if (!state || state.az !== az) return
+        moveTargets = d.drafts || []
+        renderMoveList()
+      })
+  }
+  function renderMoveList() {
+    var list = dlg.querySelector('[data-move-list]')
+    list.replaceChildren()
+    if (!moveTargets) return list.appendChild(el('div', 'small text-muted', 'Entwürfe werden geladen …'))
+    var q = dlg.querySelector('[data-move-search]').value.toLowerCase().trim()
+    var shown = moveTargets.filter(function (d) {
+      return !q || (d.az + ' ' + d.kennzeichen + ' ' + d.tatort + ' ' + d.wann).toLowerCase().indexOf(q) !== -1
+    }).slice(0, 30)
+    if (!shown.length) list.appendChild(el('div', 'small text-muted', 'Keine passenden Entwürfe.'))
+    shown.forEach(function (d) {
+      var b = el('button', 'list-group-item list-group-item-action d-flex gap-2 align-items-center px-1')
+      b.type = 'button'
+      b.setAttribute('data-move-az', d.az)
+      if (d.thumb) {
+        var im = el('img', 'rounded')
+        im.src = d.thumb
+        im.alt = ''
+        b.appendChild(im)
+      }
+      var tx = el('span', 'small text-start')
+      tx.appendChild(el('strong', '', d.kennzeichen || '(ohne Kennzeichen)'))
+      tx.appendChild(el('span', 'text-muted', ' · ' + [d.wann, d.az].filter(Boolean).join(' · ')))
+      if (d.tatort) {
+        tx.appendChild(document.createElement('br'))
+        tx.appendChild(el('span', 'text-muted', d.tatort))
+      }
+      b.appendChild(tx)
+      list.appendChild(b)
+    })
+  }
+  function moveTo(dest) {
+    var s = state
+    if (!s || s.busy) return
+    if (s.dirty && !confirm('Ungespeicherte Änderungen am Foto verwerfen?')) return
+    var ids = pickedIds()
+    dlg.querySelector('.photo-edit-move-menu').hidden = true
+    s.busy = true
+    updateUi()
+    fetch('/anzeige/' + encodeURIComponent(s.az) + '/images/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ imageIds: ids, targetAz: dest.targetAz, newDraft: !!dest.newDraft }),
+    })
+      .then(function (r) {
+        return r.json().catch(function () { return {} }).then(function (d) {
+          if (!r.ok || r.redirected) throw new Error(d.error || 'Verschieben fehlgeschlagen.')
+          return d
+        })
+      })
+      .then(function (d) {
+        var to = d.targetAz
+        document.dispatchEvent(new CustomEvent('owia:photos-moved', { detail: { from: s.az, to: to, newDraft: !!dest.newDraft } }))
+        // Liste: Zielzeile auffrischen; neue Anzeige hat noch keine Zeile.
+        if (rowOf(to) && window.reportTableRefresh) Promise.resolve(window.reportTableRefresh(to)).catch(function () {})
+        else if (!window.photoEditorRun) reloadOnClose = true
+        s.busy = false
+        s.picked = {}
+        var movedCurrent = ids.indexOf(Number(String(s.put).split('/').pop())) !== -1
+        return Promise.resolve(window.reportTableRefresh ? window.reportTableRefresh(s.az) : null).then(function () {
+          if (state !== s) return
+          var host = rowOf(s.az)
+          var all = host ? Array.prototype.slice.call(host.querySelectorAll('[data-photo-edit]')) : []
+          if (!all.length) {
+            // Keine Fotos mehr übrig: leere Anzeige gleich verwerfen?
+            if (confirm('Diese Anzeige hat keine Fotos mehr. In den Papierkorb verschieben?')) return trashReport()
+            return runDone('skipped')
+          }
+          if (!movedCurrent) {
+            var mine = all.filter(function (x) { return x.getAttribute('data-photo-edit') === s.put })[0]
+            if (mine) {
+              s.thumbs = all
+              s.thumb = mine
+              s.pos = all.indexOf(mine) + 1
+              s.total = all.length
+              renderStrip()
+              updateMoveLabel()
+              updateUi()
+              loadStatus(s)
+              return
+            }
+          }
+          openThumb(all.filter(function (x) { return x.getAttribute('data-geprueft') === '0' })[0] || all[0])
+        })
+      })
+      .catch(function (err) {
+        s.busy = false
+        if (state === s) updateUi()
+        alert(err.message)
+      })
+  }
+
   function close() {
     var az = state && state.az
+    dlg.querySelector('.photo-edit-move-menu').hidden = true
     dlg.close()
     document.documentElement.classList.remove('has-editor-dialog')
     state = null
@@ -1021,6 +1199,11 @@
     mapAz = null
     // Erst nach dem Schließen: review.js baut die Karte dann komplett neu.
     if (az) flushHost(az)
+    // Liste: nach Verschieben in eine neue Anzeige gibt es eine neue Zeile.
+    if (reloadOnClose) {
+      reloadOnClose = false
+      location.reload()
+    }
   }
 
   function cancel() {
@@ -1168,10 +1351,13 @@
     state = {
       plate: plate, marke: marke, verstoss: verstoss, tatort: tatort, report: keepReport, detected: opts.detected ? normPlate(opts.detected) : null,
       thumb: opts.thumb || null, thumbs: opts.thumbs || null,
+      // Häkchen für „Verschieben" bleiben beim Fotowechsel derselben Anzeige.
+      picked: state && state.az === opts.az && state.picked ? state.picked : {},
       put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool || null, dirty: false,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
     }
     renderStrip()
+    updateMoveLabel()
     canvas.width = 1
     canvas.height = 1
     msg('Foto wird geladen …')
