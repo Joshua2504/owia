@@ -594,6 +594,36 @@ export default async function reportsRoutes(app: FastifyInstance) {
   // Tatort aus den GPS-Daten der Fotos übernehmen (Button „Tatort fehlt" in
   // der Anzeigen-Liste): erstes Foto mit Koordinaten → Adresse per Photon,
   // zuständige Stadt aus der PLZ. Wie im Editor nur für Entwürfe.
+  // Tatzeit aus den Aufnahmezeiten der Fotos übernehmen (Link in der Liste):
+  // von = frühestes, bis = spätestes Foto (wie „Uhrzeit aus Fotos" im Editor,
+  // report-form.js applyPhotoTimes). Zeitstempel bleiben Strings – kein JS-Date.
+  app.post('/anzeige/:az/zeit-aus-fotos', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
+    if (report.status !== 'entwurf' || report.versand_status !== null) {
+      return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
+    }
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT DATE_FORMAT(MIN(captured_at), '%Y-%m-%d %H:%i:%s') AS von,
+              DATE_FORMAT(MAX(captured_at), '%Y-%m-%d %H:%i:%s') AS bis
+         FROM report_images WHERE report_id = ? AND captured_at IS NOT NULL`,
+      [report.id]
+    )
+    const von = rows[0]?.von as string | null
+    const bis = rows[0]?.bis as string | null
+    if (!von || !bis) return reply.status(422).send({ error: 'Die Fotos enthalten keine Aufnahmezeit.' })
+    const sameDay = von.slice(0, 10) === bis.slice(0, 10)
+    const sameMinute = von.slice(0, 16) === bis.slice(0, 16)
+    await pool.execute(
+      `UPDATE reports SET tattag=?, tatzeit_von=?, tattag_bis=?, tatzeit_bis=?
+        WHERE id=? AND user_id=? AND status='entwurf' AND versand_status IS NULL`,
+      [von.slice(0, 10), von.slice(11, 19), sameDay ? null : bis.slice(0, 10), sameMinute ? null : bis.slice(11, 19), report.id, userId]
+    )
+    return reply.send({ ok: true })
+  })
+
   app.post('/anzeige/:az/tatort-aus-fotos', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
@@ -1111,7 +1141,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
 
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, gps_lat, gps_lon, detected_plate, geprueft_at FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+      `SELECT id, filename, gps_lat, gps_lon, detected_plate, geprueft_at,
+              DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i') AS captured
+         FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
     )
     const [counts] = await pool.execute<mysql.RowDataPacket[]>(
@@ -1129,6 +1161,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
           reply_count: Number(counts[0]?.reply_count) || 0,
           photo_gps_count: images.filter((i) => i.gps_lat !== null && i.gps_lon !== null).length,
           detected_plates: [...new Set(images.map((i) => i.detected_plate).filter(Boolean))].join('|'),
+          // Früheste Aufnahmezeit (Strings sortieren chronologisch, s. Konvention Foto-Zeitstempel).
+          photo_time_min: images.map((i) => i.captured).filter(Boolean).sort()[0] || null,
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
         },
         imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename), ok: i.geprueft_at !== null, plate: i.detected_plate || null })),

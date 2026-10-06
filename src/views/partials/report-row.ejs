@@ -125,6 +125,11 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
         <input type="time" class="form-control form-control-sm inline-input" data-inline-field="tatzeit_bis"
                value="<%= _hhmm(r.tatzeit_bis) %>" aria-label="Uhrzeit bis">
       </div>
+      <%# Fotos haben eine andere Aufnahmezeit als eingetragen: per Klick übernehmen (report-inline.js). %>
+      <% if (r.photo_time_min && r.photo_time_min !== _ts) { %>
+        <button type="button" class="btn btn-link p-0 d-block small tatort-from-photos" data-time-from-photos
+                title="Fotos aufgenommen ab <%= r.photo_time_min %>">🕒 Zeit aus Fotos übernehmen</button>
+      <% } %>
     <% } else { %>
     <%= _fmtDate(r.tattag) || '—' %><% if (r.tattag_bis && _fmtDate(r.tattag_bis) !== _fmtDate(r.tattag)) { %> – <%= _fmtDate(r.tattag_bis) %><% } %>
     <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>

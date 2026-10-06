@@ -255,6 +255,24 @@
     else showPeek(btn)
   })
 
+  // Tatzeit aus den Aufnahmezeiten der Fotos übernehmen, danach Zeile neu laden.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-time-from-photos]')
+    if (!btn) return
+    var row = rowOf(btn)
+    btn.disabled = true
+    fetch('/anzeige/' + encodeURIComponent(row.dataset.az) + '/zeit-aus-fotos', { method: 'POST', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d.error || 'Übernahme fehlgeschlagen.')
+        return window.reportTableRefresh(row.dataset.az)
+      })
+      .catch(function (err) {
+        btn.disabled = false
+        alert(err.message)
+      })
+  })
+
   // „Tatort fehlt" → Tatort aus den GPS-Daten der Fotos übernehmen (Server
   // ermittelt Adresse + zuständige Stadt), danach Zeile neu laden.
   document.addEventListener('click', function (e) {
