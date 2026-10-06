@@ -1060,3 +1060,16 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 .photo-edit-verstoss [data-verstoss-input].is-missing { border-color: #ffc107; box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.5); }
 .photo-edit-verstoss .list-group { color: var(--bs-body-color); }
 @media (max-width: 575.98px) { .photo-edit-verstoss { flex-basis: 100%; max-width: none; } }
+/* Reihenfolge im Kachel-Streifen (photo-edit.js): Nummer, Pfeile an der aktuellen Kachel, Drop-Ziel. */
+.photo-edit-tile-no {
+  position: absolute; left: 4px; top: 4px; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 9px; background: rgba(0, 0, 0, 0.65); color: #fff; font-size: 11px; font-weight: 700;
+  line-height: 18px; text-align: center; pointer-events: none;
+}
+.photo-edit-move { position: absolute; left: 4px; bottom: 4px; display: flex; gap: 2px; }
+.photo-edit-move .btn { padding: 0 0.45rem; line-height: 1.3; font-weight: 700; }
+.photo-edit-tile.is-drop { outline: 3px dashed #0d6efd; outline-offset: 1px; }
+@media (min-width: 768px) {
+  /* Senkrechter Streifen: ‹ = nach oben, › = nach unten. */
+  .photo-edit-move .btn { transform: rotate(90deg); }
+}

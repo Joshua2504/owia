@@ -87,13 +87,49 @@
     })
     plateInput().addEventListener('input', updateUi)
     // Kachel-Streifen: anderes Foto derselben Anzeige öffnen.
-    dlg.querySelector('.photo-edit-strip').addEventListener('click', function (e) {
+    var strip = dlg.querySelector('.photo-edit-strip')
+    strip.addEventListener('click', function (e) {
+      var mv = e.target.closest('[data-move]')
+      if (mv) {
+        var i = state && state.thumbs ? state.thumbs.indexOf(state.thumb) : -1
+        if (i !== -1) reorder(i, i + Number(mv.getAttribute('data-move')))
+        return
+      }
       var b = e.target.closest('[data-strip-index]')
       if (!b || !state || state.busy || !state.thumbs) return
       var t = state.thumbs[Number(b.getAttribute('data-strip-index'))]
       if (!t || t === state.thumb) return
       if (state.dirty && !confirm('Änderungen am Foto verwerfen?')) return
       savePlate().then(function () { openThumb(t) }, function () {})
+    })
+    // Reihenfolge per Drag & Drop (Desktop); auf dem Handy die Pfeile.
+    var dragFrom = null
+    strip.addEventListener('dragstart', function (e) {
+      var b = e.target.closest('[data-strip-index]')
+      if (!b) return
+      dragFrom = Number(b.getAttribute('data-strip-index'))
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', String(dragFrom))
+      e.stopPropagation() // nicht report-table.js (Foto in andere Anzeige ziehen)
+    })
+    strip.addEventListener('dragover', function (e) {
+      if (dragFrom === null) return
+      e.preventDefault()
+      strip.querySelectorAll('.is-drop').forEach(function (x) { x.classList.remove('is-drop') })
+      var b = e.target.closest('[data-strip-index]')
+      if (b) b.classList.add('is-drop')
+    })
+    strip.addEventListener('drop', function (e) {
+      if (dragFrom === null) return
+      e.preventDefault()
+      var b = e.target.closest('[data-strip-index]')
+      var from = dragFrom
+      dragFrom = null
+      if (b) reorder(from, Number(b.getAttribute('data-strip-index')))
+    })
+    strip.addEventListener('dragend', function () {
+      dragFrom = null
+      strip.querySelectorAll('.is-drop').forEach(function (x) { x.classList.remove('is-drop') })
     })
     plateInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
@@ -250,9 +286,12 @@
     strip.hidden = thumbs.length < 2
     dlg.classList.toggle('has-strip', thumbs.length >= 2)
     thumbs.forEach(function (t, i) {
-      var b = el('button', 'photo-edit-tile' + (t === state.thumb ? ' is-current' : '') +
+      // div statt button: die aktuelle Kachel enthält die Verschiebe-Knöpfe.
+      var b = el('div', 'photo-edit-tile' + (t === state.thumb ? ' is-current' : '') +
         (t.getAttribute('data-geprueft') === '1' ? ' is-geprueft' : ' is-ungeprueft'))
-      b.type = 'button'
+      b.setAttribute('role', 'button')
+      b.tabIndex = 0
+      b.draggable = true
       b.setAttribute('data-strip-index', String(i))
       b.title = 'Foto ' + (i + 1) + (t.getAttribute('data-geprueft') === '1' ? ' – geprüft' : ' – ungeprüft')
       var img = el('img')
@@ -260,9 +299,62 @@
       img.alt = ''
       b.appendChild(img)
       b.appendChild(el('span', 'thumb-check', t.getAttribute('data-geprueft') === '1' ? '✓' : '?'))
+      b.appendChild(el('span', 'photo-edit-tile-no', String(i + 1)))
+      if (t === state.thumb) {
+        var mv = el('span', 'photo-edit-move')
+        var back = el('button', 'btn btn-sm btn-light', '‹')
+        back.type = 'button'
+        back.setAttribute('data-move', '-1')
+        back.title = 'Foto nach vorne'
+        back.disabled = i === 0
+        var fwd = el('button', 'btn btn-sm btn-light', '›')
+        fwd.type = 'button'
+        fwd.setAttribute('data-move', '1')
+        fwd.title = 'Foto nach hinten'
+        fwd.disabled = i === thumbs.length - 1
+        mv.appendChild(back)
+        mv.appendChild(fwd)
+        b.appendChild(mv)
+      }
       strip.appendChild(b)
       if (t === state.thumb) setTimeout(function () { b.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }, 0)
     })
+  }
+
+  // Foto von Position from nach to verschieben: POST …/images/reorder, dann
+  // Zeile/Karte neu laden und den Streifen aus den neuen Miniaturen bauen –
+  // das Foto in Bearbeitung (samt ungespeicherter Schwärzungen) bleibt offen.
+  function reorder(from, to) {
+    var s = state
+    if (!s || !s.thumbs || s.busy || to < 0 || to >= s.thumbs.length || from === to) return
+    var list = s.thumbs.slice()
+    list.splice(to, 0, list.splice(from, 1)[0])
+    var idOf = function (t) { return Number(String(t.getAttribute('data-photo-edit')).split('/').pop()) }
+    s.thumbs = list
+    renderStrip()
+    fetch('/anzeige/' + encodeURIComponent(s.az) + '/images/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ order: list.map(idOf) }),
+    })
+      .then(function (r) {
+        if (!r.ok || r.redirected) throw new Error()
+        return window.reportTableRefresh ? window.reportTableRefresh(s.az) : null
+      })
+      .then(function () {
+        if (state !== s) return
+        var host = rowOf(s.az)
+        if (!host) return
+        var fresh = Array.prototype.slice.call(host.querySelectorAll('[data-photo-edit]'))
+        var mine = fresh.filter(function (t) { return t.getAttribute('data-photo-edit') === s.put })[0]
+        if (!mine) return
+        s.thumbs = fresh
+        s.thumb = mine
+        s.pos = fresh.indexOf(mine) + 1
+        renderStrip()
+        updateUi()
+      })
+      .catch(function () { alert('Reihenfolge konnte nicht gespeichert werden.') })
   }
 
   function msg(text) {
