@@ -216,6 +216,7 @@
   var BEHINDERUNG_VORSCHLAEGE = [
     'Ich musste auf die Straße ausweichen.',
     'Ich musste auf den Gehweg ausweichen.',
+    'Ich musste auf den Radweg ausweichen.',
     'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
     'Fußgänger mussten auf die Straße ausweichen.',
     'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.',
