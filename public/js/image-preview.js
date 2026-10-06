@@ -1,10 +1,14 @@
 // Foto-Vorschau für alle Listen, den Editor und die Detailseite.
 //
-//   Hover über ein Vorschaubild  → größere Vorschau direkt unter der Maus
+//   Klick aufs Vorschaubild      → größere Vorschau direkt unter der Maus
+//                                  (bewusst NICHT beim Hover: das störte beim
+//                                  Ziehen von Fotos per Drag & Drop)
 //   Klick auf die Vorschau       → Lupe rechts daneben (Ausschnitt folgt dem
 //                                  Cursor, Mausrad ändert die Vergrößerung);
 //                                  erneuter Klick schaltet die Lupe wieder aus
-//   Klick aufs Vorschaubild      → Vollbild (Lightbox, Klick = 100 % / eingepasst)
+//   Doppelklick auf die Vorschau → Vollbild (Lightbox, Klick = 100 % / eingepasst)
+//   Maus verlässt Vorschau+Bild, Escape oder Klick daneben → schließen
+// Ohne Maus (Handy) öffnet ein Tipp direkt die Lightbox.
 //
 // Bindet sich per Event-Delegation an jedes <img data-full-src> bzw.
 // <img data-zoom-src> (Attribut = URL des Originals). Dadurch funktionieren auch
@@ -17,7 +21,6 @@
 // Lupen-Fläche ist ein echtes <img> (kein CSS-Background), damit die
 // EXIF-Drehung der Fotos in allen Browsern korrekt angewendet wird.
 ;(function () {
-  var SHOW_DELAY_MS = 120 // kurzes Verweilen nötig – kein Laden beim Vorbeifahren
   var HIDE_DELAY_MS = 220 // Zeit, um von der Miniatur in die Vorschau zu wechseln
   var PREVIEW_MAX_W = 560
   var PREVIEW_MAX_H = 440
@@ -113,7 +116,7 @@
     zoomOn = false
     preview.classList.remove('is-zooming')
     zoom.classList.remove('is-visible')
-    hint.textContent = 'Klicken zum Zoomen'
+    hint.textContent = 'Klick: Lupe · Doppelklick: Vollbild'
     var ratio = thumb.naturalWidth && thumb.naturalHeight ? thumb.naturalWidth / thumb.naturalHeight : 4 / 3
     place(e.clientX, e.clientY, sizeFor(ratio))
     // Sofort das (schon geladene) Vorschaubild zeigen, dann das Original
@@ -190,7 +193,7 @@
   function setZoom(on, e) {
     zoomOn = on
     preview.classList.toggle('is-zooming', on)
-    hint.textContent = on ? 'Mausrad: Vergrößerung · Klick: Lupe aus' : 'Klicken zum Zoomen'
+    hint.textContent = on ? 'Mausrad: Vergrößerung · Klick: Lupe aus' : 'Klick: Lupe · Doppelklick: Vollbild'
     if (on) {
       if (zoomImg.getAttribute('src') !== previewImg.getAttribute('data-src')) zoomImg.src = previewImg.getAttribute('data-src')
       placeZoom()
@@ -208,7 +211,14 @@
     if (current && e.relatedTarget === current) return
     scheduleHide()
   })
-  preview.addEventListener('click', function (e) { setZoom(!zoomOn, e) })
+  preview.addEventListener('click', function (e) {
+    if (e.detail > 1) return // Teil eines Doppelklicks
+    setZoom(!zoomOn, e)
+  })
+  preview.addEventListener('dblclick', function () {
+    var src = previewImg.getAttribute('data-src')
+    if (src) openBox(src)
+  })
   preview.addEventListener('mousemove', updateZoom)
   preview.addEventListener('wheel', function (e) {
     if (!zoomOn) return
@@ -218,21 +228,22 @@
   }, { passive: false })
 
   if (canHover) {
+    // Zurück von der Vorschau aufs Bild: offen lassen.
     document.addEventListener('mouseover', function (e) {
-      var t = e.target
-      if (!isThumb(t)) return
-      clearTimeout(hideTimer)
-      if (current === t) return
-      clearTimeout(showTimer)
-      var ev = e
-      showTimer = setTimeout(function () { show(t, ev) }, current ? 0 : SHOW_DELAY_MS)
+      if (current && e.target === current) clearTimeout(hideTimer)
     })
     document.addEventListener('mouseout', function (e) {
       var t = e.target
       if (!isThumb(t)) return
       clearTimeout(showTimer)
       if (e.relatedTarget && (e.relatedTarget === preview || preview.contains(e.relatedTarget))) return
-      if (current) scheduleHide()
+      if (current && t === current) scheduleHide()
+    })
+    // Klick daneben schließt.
+    document.addEventListener('mousedown', function (e) {
+      if (!current) return
+      if (preview.contains(e.target) || e.target === current) return
+      hideAll()
     })
   }
   // Beim Ziehen (Foto verschieben), Scrollen und Tastatur-Escape stört die Vorschau.
@@ -284,8 +295,15 @@
   }, true)
   document.addEventListener('click', function (e) {
     var t = e.target
-    if (!isThumb(t) || t.hasAttribute('data-no-lightbox') || justDragged) return
+    if (!isThumb(t) || justDragged) return
     e.preventDefault()
+    if (canHover) {
+      // Mit Maus: Vorschau unter dem Cursor (erneuter Klick schließt sie).
+      if (current === t) hideAll()
+      else show(t, e)
+      return
+    }
+    if (t.hasAttribute('data-no-lightbox')) return
     openBox(srcOf(t))
   })
   document.addEventListener('keydown', function (e) {

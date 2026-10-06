@@ -135,7 +135,7 @@
       })
       .catch(function (err) {
         btn.disabled = false
-        btn.textContent = '📍 Aus Fotos übernehmen'
+        btn.textContent = '📍 aus Fotos übernehmen'
         btn.title = err.message
         alert(err.message)
       })

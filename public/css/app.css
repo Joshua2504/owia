@@ -818,3 +818,5 @@ body.is-embed main { padding-bottom: 0 !important; }
 .photo-card-quick .btn { flex: 1 1 auto; white-space: nowrap; padding-left: 0.35rem; padding-right: 0.35rem; }
 [data-bs-theme="dark"] .photo-card-quick .btn-outline-dark { --bs-btn-color: var(--bs-body-color); --bs-btn-border-color: var(--bs-border-color); }
 .photo-card.is-editing .photo-card-quick { display: none; }
+
+.tatort-from-photos { font-size: 0.75rem; text-decoration: none; }

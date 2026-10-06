@@ -90,7 +90,7 @@ const _imgs = (typeof imgs !== 'undefined' && imgs) || []
     <span class="clamp-2" title="<%= r.tatort || '' %>"><%= r.tatort || '' %><% if (!r.tatort && _isDraft) { %><span class="text-warning-emphasis">Tatort fehlt</span><% } %></span>
     <%# Fehlender Tatort, aber Fotos mit GPS: per Klick übernehmen (report-inline.js). %>
     <% if (!r.tatort && _isDraft && Number(r.photo_gps_count) > 0) { %>
-      <button type="button" class="btn btn-sm btn-outline-primary mt-1 d-block" data-tatort-from-photos>📍 Aus Fotos übernehmen</button>
+      <button type="button" class="btn btn-link p-0 d-block small tatort-from-photos" data-tatort-from-photos>📍 aus Fotos übernehmen</button>
     <% } %>
   </td>
   <%
