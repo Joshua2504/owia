@@ -416,7 +416,33 @@ body {
 .photo-edit-dialog::backdrop { background: #000; }
 .photo-edit-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; background: #222; }
 .photo-edit-hint { color: #bbb; }
-.photo-edit-stage { position: relative; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 1rem; min-height: 0; }
+.photo-edit-body { flex: 1 1 auto; display: flex; min-height: 0; }
+.photo-edit-stage { position: relative; flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 1rem; min-height: 0; min-width: 0; }
+/* Kachel-Streifen aller Fotos der Anzeige: links senkrecht, auf dem Handy unten waagerecht. */
+.photo-edit-strip {
+  flex: 0 0 136px; display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 0.75rem; overflow-y: auto; background: #1a1a1a; border-right: 1px solid #333;
+}
+.photo-edit-strip[hidden] { display: none; }
+.photo-edit-tile {
+  position: relative; flex: 0 0 auto; padding: 0; border: 2px solid #444; border-radius: 0.4rem;
+  background: #000; overflow: hidden; cursor: pointer;
+}
+.photo-edit-tile img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.photo-edit-tile.is-ungeprueft { border-color: #ffc107; }
+.photo-edit-tile.is-geprueft { border-color: #198754; }
+.photo-edit-tile.is-current { outline: 3px solid #0d6efd; outline-offset: 1px; }
+.photo-edit-tile .thumb-check { right: 4px; bottom: 4px; }
+.photo-edit-tile.is-ungeprueft .thumb-check { background: #ffc107; color: #000; }
+.photo-edit-tile.is-geprueft .thumb-check { background: #198754; color: #fff; }
+@media (max-width: 767.98px) {
+  .photo-edit-body { flex-direction: column; }
+  .photo-edit-strip {
+    order: 2; flex: 0 0 auto; flex-direction: row; overflow-x: auto; overflow-y: hidden;
+    padding: 0.5rem; border-right: 0; border-top: 1px solid #333;
+  }
+  .photo-edit-tile { width: 76px; }
+}
 .photo-edit-stage canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
 .photo-edit-stage canvas.editing { cursor: crosshair; touch-action: none; }
 .photo-edit-msg { position: absolute; color: #ccc; }
@@ -985,7 +1011,8 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
    Grid sonst über den Kartenrand (Handy). */
 .review-fields > *, .review-time > * { min-width: 0; }
 .review-fields .review-wide, .review-fields .review-time { grid-column: 1 / -1; }
-.review-time { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; }
+.review-time { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr); gap: 0.5rem; }
+@media (max-width: 575.98px) { .review-time { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
 .review-plate .plate-field { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .review-fields .is-saving { border-color: var(--bs-warning-border-subtle); background-color: var(--bs-warning-bg-subtle); }
 @media (max-width: 575.98px) {
@@ -1016,4 +1043,13 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
   .photo-edit-hint { display: none; }
   .photo-edit-plate { width: 100%; }
   .photo-edit-plate .plate-field { flex: 1 1 auto; width: auto; min-width: 0; }
+}
+.photo-edit-marke { width: 11rem; background: #fff; color: #000; }
+.review-map { height: 260px; }
+@media (max-width: 575.98px) {
+  .photo-edit-plate { flex-wrap: wrap; }
+  .photo-edit-marke { flex: 1 1 8rem; width: auto; }
+}
+@media (max-width: 575.98px) {
+  .photo-edit-plate label[for="photo-edit-marke-input"] { display: none; }
 }

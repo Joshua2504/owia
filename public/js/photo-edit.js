@@ -51,6 +51,8 @@
       '<label class="small" for="photo-edit-plate-input">Kennzeichen</label>' +
       '<input type="text" id="photo-edit-plate-input" class="form-control form-control-sm plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false">' +
       '<button type="button" class="btn btn-sm btn-outline-warning" data-act="plate-suggest" hidden></button>' +
+      '<label class="small" for="photo-edit-marke-input">Marke</label>' +
+      '<input type="text" id="photo-edit-marke-input" class="form-control form-control-sm photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. VW Golf, grau">' +
       '</div>' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
@@ -58,7 +60,10 @@
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel">Schließen</button>' +
       '<button type="button" class="btn btn-sm btn-success" data-act="save" title="Enter">✓ Bestätigen</button>' +
       '</div></div>' +
-      '<div class="photo-edit-stage"><canvas></canvas><div class="photo-edit-msg"></div></div>'
+      '<div class="photo-edit-body">' +
+      '<div class="photo-edit-strip" aria-label="Alle Fotos der Anzeige"></div>' +
+      '<div class="photo-edit-stage"><canvas></canvas><div class="photo-edit-msg"></div></div>' +
+      '</div>'
     document.body.appendChild(dlg)
     canvas = dlg.querySelector('canvas')
     ctx = canvas.getContext('2d')
@@ -75,7 +80,17 @@
       savePlate().then(updateUi, function () {})
     })
     plateInput().addEventListener('input', updateUi)
+    // Kachel-Streifen: anderes Foto derselben Anzeige öffnen.
+    dlg.querySelector('.photo-edit-strip').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-strip-index]')
+      if (!b || !state || state.busy || !state.thumbs) return
+      var t = state.thumbs[Number(b.getAttribute('data-strip-index'))]
+      if (!t || t === state.thumb) return
+      if (state.dirty && !confirm('Änderungen am Foto verwerfen?')) return
+      savePlate().then(function () { openThumb(t) }, function () {})
+    })
     plateInput().addEventListener('change', function () { savePlate().catch(function () {}) })
+    markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     dlg.addEventListener('cancel', function (e) {
       e.preventDefault()
       cancel()
@@ -85,7 +100,7 @@
       if (e.key !== 'Enter' || e.target.closest('button') || !state) return
       // Enter im Kennzeichen-Feld speichert nur das Kennzeichen – das Foto
       // bestätigt erst ein zweites Enter (Fokus springt auf „Bestätigen").
-      if (e.target === plateInput()) {
+      if (e.target === plateInput() || e.target === markeInput()) {
         e.preventDefault()
         savePlate().then(function () { dlg.querySelector('[data-act=save]').focus() }, function () {})
         return
@@ -100,6 +115,9 @@
   function plateInput() {
     return dlg.querySelector('#photo-edit-plate-input')
   }
+  function markeInput() {
+    return dlg.querySelector('#photo-edit-marke-input')
+  }
   // Gleiche Normalisierung wie normalizePlate() in routes/reports.ts.
   function normPlate(v) {
     return String(v || '').toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim().slice(0, 20)
@@ -108,29 +126,42 @@
     return normPlate(v).replace(/[^A-Z0-9ÄÖÜ]/g, '')
   }
 
-  // Geändertes Kennzeichen sichern (no-op, wenn unverändert oder kein Feld).
+  // Geändertes Kennzeichen/geänderte Marke sichern (no-op, wenn unverändert
+  // oder kein Feld). Name historisch: die Marke kam später dazu.
   function savePlate() {
     var s = state
     if (!s || s.plate == null) return Promise.resolve()
+    var body = {}
     var v = normPlate(plateInput().value)
-    if (v === s.plate) return Promise.resolve()
+    if (v !== s.plate) body.kennzeichen = v
+    var mk = markeInput().value.replace(/\s+/g, ' ').trim()
+    if (s.marke != null && mk !== s.marke) body.fahrzeug_marke = mk
+    if (!Object.keys(body).length) return Promise.resolve()
     return fetch('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ kennzeichen: v }),
+      body: JSON.stringify(body),
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
       .then(function (res) {
         if (!res.ok) throw new Error(res.d.error || 'Kennzeichen konnte nicht gespeichert werden.')
-        s.plate = res.d.values.kennzeichen || ''
-        if (state === s) plateInput().value = s.plate
-        // Feld der Zeile/Karte nachziehen (report-inline.js vergleicht mit dataset.saved).
-        var host = rowOf(s.az)
-        var field = host && host.querySelector('[data-inline-field="kennzeichen"]')
-        if (field) {
-          field.value = s.plate
-          field.dataset.saved = s.plate
+        var vals = res.d.values || {}
+        if ('kennzeichen' in vals) s.plate = vals.kennzeichen || ''
+        if ('fahrzeug_marke' in vals) s.marke = vals.fahrzeug_marke || ''
+        if (state === s) {
+          plateInput().value = s.plate
+          markeInput().value = s.marke || ''
         }
+        // Felder der Zeile/Karte nachziehen (report-inline.js vergleicht mit dataset.saved).
+        var host = rowOf(s.az)
+        ;[['kennzeichen', s.plate], ['fahrzeug_marke', s.marke]].forEach(function (p) {
+          if (!(p[0] in vals)) return
+          var field = host && host.querySelector('[data-inline-field="' + p[0] + '"]')
+          if (field) {
+            field.value = p[1] || ''
+            field.dataset.saved = p[1] || ''
+          }
+        })
         document.dispatchEvent(new CustomEvent('owia:plate-changed', { detail: { az: s.az, kennzeichen: s.plate } }))
         if (state === s) updateUi()
       })
@@ -138,6 +169,30 @@
         alert(err.message || 'Kennzeichen konnte nicht gespeichert werden.')
         throw err
       })
+  }
+
+  // Alle Fotos der Anzeige als Kacheln (links bzw. auf dem Handy unten) –
+  // Überblick, was schon geprüft ist, und Sprung zu einem beliebigen Foto.
+  function renderStrip() {
+    var strip = dlg.querySelector('.photo-edit-strip')
+    strip.replaceChildren()
+    var thumbs = state.thumbs || []
+    strip.hidden = thumbs.length < 2
+    dlg.classList.toggle('has-strip', thumbs.length >= 2)
+    thumbs.forEach(function (t, i) {
+      var b = el('button', 'photo-edit-tile' + (t === state.thumb ? ' is-current' : '') +
+        (t.getAttribute('data-geprueft') === '1' ? ' is-geprueft' : ' is-ungeprueft'))
+      b.type = 'button'
+      b.setAttribute('data-strip-index', String(i))
+      b.title = 'Foto ' + (i + 1) + (t.getAttribute('data-geprueft') === '1' ? ' – geprüft' : ' – ungeprüft')
+      var img = el('img')
+      img.src = t.getAttribute('src')
+      img.alt = ''
+      b.appendChild(img)
+      b.appendChild(el('span', 'thumb-check', t.getAttribute('data-geprueft') === '1' ? '✓' : '?'))
+      strip.appendChild(b)
+      if (t === state.thumb) setTimeout(function () { b.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }, 0)
+    })
   }
 
   function msg(text) {
@@ -416,7 +471,11 @@
     var row = t.closest('[data-az]')
     var all = row ? Array.prototype.slice.call(row.querySelectorAll('[data-photo-edit]')) : [t]
     var plateEl = row && row.querySelector('[data-inline-field="kennzeichen"]')
+    var markeEl = row && row.querySelector('[data-inline-field="fahrzeug_marke"]')
     open({
+      marke: markeEl ? markeEl.value : null,
+      thumb: t,
+      thumbs: all,
       plate: plateEl ? plateEl.value : null,
       detected: t.getAttribute('data-detected-plate') || null,
       src: t.getAttribute('data-full-src'),
@@ -430,16 +489,22 @@
   }
 
   // opts: { src: Bild-URL, put: PUT-URL der Fassung, az, ok, pos, total, open, tool,
-  //         plate (Kennzeichen der Anzeige; null = kein Abgleich), detected }
+  //         plate (Kennzeichen der Anzeige; null = kein Abgleich), marke, detected }
   function open(opts) {
     if (!dlg) build()
     var plate = opts.plate != null && opts.az ? normPlate(opts.plate) : null
+    var marke = plate != null && opts.marke != null ? String(opts.marke).trim() : null
     plateInput().value = plate || ''
+    markeInput().value = marke || ''
+    markeInput().hidden = marke == null
+    markeInput().previousElementSibling.hidden = marke == null
     state = {
-      plate: plate, detected: opts.detected ? normPlate(opts.detected) : null,
+      plate: plate, marke: marke, detected: opts.detected ? normPlate(opts.detected) : null,
+      thumb: opts.thumb || null, thumbs: opts.thumbs || null,
       put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool || null, dirty: false,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
     }
+    renderStrip()
     canvas.width = 1
     canvas.height = 1
     msg('Foto wird geladen …')

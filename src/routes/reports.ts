@@ -526,13 +526,18 @@ export default async function reportsRoutes(app: FastifyInstance) {
       }
     }
     // Tatzeit: leere Werte leeren das Feld, ungültige Formate werden abgewiesen.
-    if (typeof body.tattag === 'string') {
-      const v = body.tattag.trim()
+    for (const f of ['tattag', 'tattag_bis'] as const) {
+      if (typeof body[f] !== 'string') continue
+      const v = (body[f] as string).trim()
       if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return reply.status(400).send({ error: 'Ungültiges Datum.' })
-      out.tattag = v || null
-      sets.push('tattag=?')
-      values.push(out.tattag)
+      out[f] = v || null
+      sets.push(`${f}=?`)
+      values.push(out[f])
     }
+    // tattag_bis nur bei Tatzeitraum über Mitternacht (wie persistFields): gleicher
+    // Tag wie tattag = leer. Einzel-UPDATEs werten Zuweisungen von links nach
+    // rechts aus – hier stehen also schon die neuen Werte beider Spalten.
+    if ('tattag' in out || 'tattag_bis' in out) sets.push('tattag_bis=IF(tattag_bis=tattag, NULL, tattag_bis)')
     for (const f of ['tatzeit_von', 'tatzeit_bis'] as const) {
       if (typeof body[f] !== 'string') continue
       const v = (body[f] as string).trim()
@@ -548,6 +553,18 @@ export default async function reportsRoutes(app: FastifyInstance) {
       out[f] = on ? '1' : '0'
       sets.push(`${f}=?`)
       values.push(out[f])
+    }
+    if (typeof body.beschreibung === 'string') {
+      out.beschreibung = body.beschreibung.trim().slice(0, 5000) || null
+      sets.push('beschreibung=?')
+      values.push(out.beschreibung)
+    }
+    // Zuständige Stadt manuell (Prüf-Modus): nur freigeschaltete IDs, wie im Editor.
+    if (typeof body.city === 'string') {
+      if (!unlockedCities().some((c) => c.id === body.city)) return reply.status(400).send({ error: 'Unbekannte Stadt.' })
+      out.city = body.city
+      sets.push('city=?')
+      values.push(out.city)
     }
     if (typeof body.behinderung_text === 'string') {
       out.behinderung_text = body.behinderung_text.trim().slice(0, 2000) || null

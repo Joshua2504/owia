@@ -115,6 +115,7 @@
     if (!remaining.length) return renderDone()
     var az = remaining[0]
     cur = null
+    destroyMap()
     root.innerHTML = '<div class="card shadow-sm"><div class="card-body text-muted">' + esc(az) + ' wird geladen …</div></div>'
     return load(az).then(function (d) {
       if (remaining[0] !== az) return
@@ -175,6 +176,110 @@
       }).join('') + '</ul></div>'
   }
 
+  // Schnellauswahl wie im Editor (reports/edit.ejs).
+  var BEHINDERUNG_VORSCHLAEGE = [
+    'Ich musste auf die Straße ausweichen.',
+    'Ich musste auf den Gehweg ausweichen.',
+    'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
+    'Fußgänger mussten auf die Straße ausweichen.',
+    'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.',
+  ]
+
+  function fmtDay(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '')
+    return m ? m[3] + '.' + m[2] + '.' + m[1] : iso
+  }
+  function photoSpan(t) {
+    if (t.vonTag !== t.bisTag) return fmtDay(t.vonTag) + ' ' + t.von + ' – ' + fmtDay(t.bisTag) + ' ' + t.bis
+    return fmtDay(t.vonTag) + ', ' + t.von + (t.bis !== t.von ? ' – ' + t.bis : '') + ' Uhr'
+  }
+
+  // ---- Tatort-Karte (Leaflet, wie report-map.js im Editor) ------------------
+  // report-map.js hängt fest an #tatort-map beim Seitenladen; hier wird pro
+  // Karte neu gebaut. Marker ziehen → Reverse-Geocoding → Tatort + Koordinaten
+  // speichern; Adressvorschlag/Standort/Fotos → Marker versetzen.
+  var map = null
+  var marker = null
+  var boundaries = null // GeoJSON der freigeschalteten Städte, einmal geladen
+  if (window.L && L.Icon && L.Icon.Default) {
+    var lbase = '/public/vendor/leaflet/images/'
+    L.Icon.Default.mergeOptions({ iconRetinaUrl: lbase + 'marker-icon-2x.png', iconUrl: lbase + 'marker-icon.png', shadowUrl: lbase + 'marker-shadow.png' })
+  }
+  function validCoord(v) {
+    return typeof v === 'number' && isFinite(v) && v !== 0
+  }
+  function photoIcon(url) {
+    return L.divIcon({
+      className: 'photo-marker',
+      html: '<img src="' + encodeURI(url) + '" alt="" style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:2px solid #0d6efd;box-shadow:0 1px 4px rgba(0,0,0,.45)">',
+      iconSize: [48, 48],
+      iconAnchor: [24, 24],
+    })
+  }
+  function destroyMap() {
+    if (map) map.remove()
+    map = null
+    marker = null
+  }
+  function initMap(d) {
+    destroyMap()
+    var el = root.querySelector('[data-map]')
+    if (!el || !window.L) {
+      if (el) el.hidden = true
+      return
+    }
+    var f = d.fields
+    var has = validCoord(f.tatort_lat) && validCoord(f.tatort_lon)
+    var city = init.cities.filter(function (c) { return c.id === f.city })[0] || init.cities[0] || { lat: 50.1109, lon: 8.6821 }
+    map = L.map(el).setView(has ? [f.tatort_lat, f.tatort_lon] : [city.lat, city.lon], has ? 17 : 13)
+    L.tileLayer('/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap-Mitwirkende' }).addTo(map)
+    if (!boundaries) {
+      boundaries = fetch('/api/geo/boundaries', { headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null })
+        .catch(function () { return null })
+    }
+    var m = map
+    boundaries.then(function (g) {
+      if (g && map === m) {
+        L.geoJSON(g, { interactive: false, style: { color: '#6f42c1', weight: 2.5, dashArray: '6 4', fillColor: '#6f42c1', fillOpacity: 0.05 } }).addTo(m)
+      }
+    })
+    setTimeout(function () { if (map === m) m.invalidateSize() }, 200)
+    if (has) placeMarker(f.tatort_lat, f.tatort_lon, false)
+    // Ohne Tatort: Klick in die Karte setzt den Marker.
+    map.on('click', function (e) {
+      if (marker) return
+      placeMarker(e.latlng.lat, e.latlng.lng, false)
+      markerMoved()
+    })
+  }
+  function placeMarker(lat, lon, recenter) {
+    if (!map) return
+    var thumb = cur && cur.data.images[0] ? cur.data.images[0].thumb : null
+    if (marker) marker.setLatLng([lat, lon])
+    else {
+      marker = L.marker([lat, lon], thumb ? { draggable: true, icon: photoIcon(thumb) } : { draggable: true }).addTo(map)
+      marker.on('dragend', markerMoved)
+    }
+    if (recenter) map.setView([lat, lon], Math.max(map.getZoom(), 17))
+  }
+  // Marker gezogen: Adresse der Stelle holen und mit genau diesen Koordinaten
+  // speichern (wie im Editor bleibt der Marker, wo er abgelegt wurde).
+  function markerMoved() {
+    var p = marker.getLatLng()
+    var ort = root.querySelector('#rv-ort')
+    fetch('/api/geo/reverse?lat=' + p.lat + '&lon=' + p.lng, { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .catch(function () { return null })
+      .then(function (data) {
+        var label = data && data.result && data.result.label
+        if (!ort || !ort.isConnected) return
+        if (label) ort.value = label
+        else msg('Zu dieser Stelle wurde keine Adresse gefunden – Position trotzdem gespeichert.', 'text-warning')
+        saveField(ort, { tatort_lat: Number(p.lat.toFixed(6)), tatort_lon: Number(p.lng.toFixed(6)) })
+      })
+  }
+
   function render() {
     var d = cur.data
     var f = d.fields
@@ -202,31 +307,63 @@
       }).join('') +
       '</div>' +
       '<div><label class="form-label small mb-1" for="rv-marke">Marke</label>' +
-      '<input id="rv-marke" type="text" class="form-control" data-f="fahrzeug_marke" value="' + esc(f.fahrzeug_marke) + '" maxlength="100"></div>' +
+      '<input id="rv-marke" type="text" class="form-control" data-f="fahrzeug_marke" data-inline-field="fahrzeug_marke" value="' + esc(f.fahrzeug_marke) + '" maxlength="100"></div>' +
       '<div class="review-time">' +
       '<div><label class="form-label small mb-1" for="rv-tag">Tattag</label>' +
       '<input id="rv-tag" type="date" class="form-control' + (f.tattag ? '' : ' is-invalid') + '" data-f="tattag" value="' + esc(f.tattag) + '"></div>' +
       '<div><label class="form-label small mb-1" for="rv-von">von</label>' +
       '<input id="rv-von" type="time" class="form-control' + (f.tatzeit_von ? '' : ' is-invalid') + '" data-f="tatzeit_von" value="' + esc(f.tatzeit_von) + '"></div>' +
+      '<div><label class="form-label small mb-1" for="rv-tagbis" title="Nur wenn der Verstoß über Mitternacht andauerte">Tag bis</label>' +
+      '<input id="rv-tagbis" type="date" class="form-control" data-f="tattag_bis" value="' + esc(f.tattag_bis) + '"></div>' +
       '<div><label class="form-label small mb-1" for="rv-bis">bis</label>' +
       '<input id="rv-bis" type="time" class="form-control" data-f="tatzeit_bis" value="' + esc(f.tatzeit_bis) + '"></div>' +
       '</div>' +
+      (d.photoTimes ? '<div class="review-wide small text-muted">Fotos: ' + esc(photoSpan(d.photoTimes)) +
+        ' <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times">🕒 Uhrzeit aus Fotos übernehmen</button></div>' : '') +
       '<div class="review-wide"><label class="form-label small mb-1" for="rv-ort">Tatort</label>' +
       '<textarea id="rv-ort" rows="2" class="form-control' + (f.tatort ? '' : ' is-invalid') + '" data-f="tatort" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
       ' placeholder="Adresse eingeben" autocomplete="off" spellcheck="false">' + esc(f.tatort) + '</textarea>' +
-      (!f.tatort && d.hasGps ? '<button type="button" class="btn btn-sm btn-outline-primary mt-1" data-act="tatort-fotos">📍 aus Fotos übernehmen</button>' : '') +
+      '<div class="d-flex flex-wrap gap-3 mt-1 small">' +
+      '<button type="button" class="btn btn-link btn-sm p-0" data-act="here">📍 Aktueller Standort</button>' +
+      (d.hasGps ? '<button type="button" class="btn btn-link btn-sm p-0" data-act="tatort-fotos">🖼️ Tatort aus Fotos</button>' : '') +
+      '</div>' +
+      '<div class="review-map rounded border mt-2" data-map></div>' +
+      '<div class="small text-muted mt-1">Marker zur genauen Stelle ziehen – die Adresse wird übernommen.</div>' +
+      '</div>' +
+      '<div class="review-wide"><label class="form-label small mb-1" for="rv-city">Zuständiges Ordnungsamt</label>' +
+      '<select id="rv-city" class="form-select" data-f="city">' +
+      init.cities.map(function (c) {
+        return '<option value="' + esc(c.id) + '"' + (c.id === f.city ? ' selected' : '') + '>' + esc(c.name) + '</option>'
+      }).join('') +
+      '</select>' +
+      '<div class="small text-muted mt-1" data-recipient>An: ' + esc(d.recipient.ordnungsamt) + (d.recipient.email ? ' (' + esc(d.recipient.email) + ')' : '') + '</div>' +
       '</div>' +
       '<div class="review-wide position-relative" data-verstoss-root><label class="form-label small mb-1" for="rv-verstoss">Verstoß</label>' +
       '<input type="hidden" data-f="verstoss_art" value="' + esc(f.verstoss_art) + '">' +
       '<textarea id="rv-verstoss" rows="2" class="form-control' + (f.verstoss_art ? '' : ' is-invalid') + '" data-verstoss-input placeholder="Verstoß suchen …">' + esc(f.verstoss_art) + '</textarea>' +
       '</div>' +
-      '<div class="review-wide d-flex flex-wrap gap-3">' +
-      '<label class="form-check"><input type="checkbox" class="form-check-input" data-f="fahrzeug_verlassen"' + (f.fahrzeug_verlassen ? ' checked' : '') + '> <span class="form-check-label">Fahrzeug verlassen</span></label>' +
-      '<label class="form-check"><input type="checkbox" class="form-check-input" data-f="behinderung"' + (f.behinderung ? ' checked' : '') + '> <span class="form-check-label">Behinderung</span></label>' +
+      '<div class="review-wide"><label class="form-label small mb-1" for="rv-beschreibung">Beschreibung <span class="text-muted">(optional)</span></label>' +
+      '<textarea id="rv-beschreibung" rows="2" class="form-control" data-f="beschreibung" placeholder="Optionale Schilderung des Vorfalls">' + esc(f.beschreibung) + '</textarea></div>' +
+      '<div class="review-wide d-flex flex-wrap align-items-center gap-3">' +
+      '<label class="form-check mb-0"><input type="checkbox" class="form-check-input" data-f="fahrzeug_verlassen"' + (f.fahrzeug_verlassen ? ' checked' : '') + '> <span class="form-check-label">Fahrzeug war verlassen</span></label>' +
+      '<span class="d-flex align-items-center gap-2"><span class="small">Wurde jemand behindert?</span>' +
+      '<input type="hidden" data-f="behinderung" value="' + (f.behinderung ? '1' : '0') + '">' +
+      '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">' +
+      '<input type="radio" class="btn-check" name="rv-behinderung" id="rv-beh-ja" value="1" data-behinderung' + (f.behinderung ? ' checked' : '') + '>' +
+      '<label class="btn btn-outline-secondary" for="rv-beh-ja">Ja</label>' +
+      '<input type="radio" class="btn-check" name="rv-behinderung" id="rv-beh-nein" value="0" data-behinderung' + (f.behinderung ? '' : ' checked') + '>' +
+      '<label class="btn btn-outline-secondary" for="rv-beh-nein">Nein</label>' +
+      '</span></span></div>' +
+      '<div class="review-wide" data-behinderung-detail' + (f.behinderung ? '' : ' hidden') + '>' +
+      '<label class="form-label small mb-1" for="rv-beh-text">Wer wurde wie behindert?</label>' +
+      '<textarea id="rv-beh-text" rows="2" class="form-control' + (f.behinderung && !f.behinderung_text ? ' is-invalid' : '') + '" data-f="behinderung_text"' +
+      ' placeholder="z. B. Rollstuhlfahrer musste auf die Straße ausweichen">' + esc(f.behinderung_text) + '</textarea>' +
+      '<div class="d-flex flex-wrap gap-1 mt-1">' +
+      BEHINDERUNG_VORSCHLAEGE.map(function (t) {
+        return '<button type="button" class="btn btn-sm btn-outline-secondary" data-beh-vorschlag="' + esc(t) + '">' + esc(t) + '</button>'
+      }).join('') +
+      '</div></div>' +
       '</div>' +
-      (f.beschreibung ? '<div class="review-wide small text-muted">Beschreibung: ' + esc(f.beschreibung) + '</div>' : '') +
-      '</div>' +
-      '<div class="small text-muted my-2">An: ' + esc(d.recipient.ordnungsamt) + (d.recipient.email ? ' (' + esc(d.recipient.email) + ')' : '') + '</div>' +
       '<div data-problems>' + problemsHtml(d) + '</div>' +
       '</div></div>' +
       '<div class="review-actions">' +
@@ -241,6 +378,7 @@
     if (window.verstossSelect) window.verstossSelect.init(vroot, init.verstoss)
     var ort = root.querySelector('#rv-ort')
     if (window.addressAutocomplete) window.addressAutocomplete.init(ort)
+    initMap(d)
     root.querySelectorAll('[data-f]').forEach(function (el) {
       el.dataset.saved = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value
     })
@@ -265,6 +403,14 @@
       root.querySelector('[data-photos]').innerHTML = photosHtml(d)
       root.querySelector('[data-problems]').innerHTML = problemsHtml(d)
       root.querySelectorAll('[data-act=submit],[data-act=send]').forEach(function (b) { b.disabled = !d.canSubmit })
+      // Stadt kann der Server aus der Tatort-PLZ ändern.
+      var sel = root.querySelector('[data-f=city]')
+      if (sel && document.activeElement !== sel && d.fields.city) {
+        sel.value = d.fields.city
+        sel.dataset.saved = d.fields.city
+      }
+      var rec = root.querySelector('[data-recipient]')
+      if (rec) rec.textContent = 'An: ' + d.recipient.ordnungsamt + (d.recipient.email ? ' (' + d.recipient.email + ')' : '')
     })
   }
 
@@ -278,7 +424,7 @@
     var body = extra || {}
     body[field] = value
     // Verstoß: Wert im versteckten Feld, sichtbar ist das Suchfeld.
-    var shown = el.type === 'hidden' ? root.querySelector('[data-verstoss-input]') : el
+    var shown = (el.type === 'hidden' && field === 'verstoss_art' && root.querySelector('[data-verstoss-input]')) || el
     shown.classList.remove('is-invalid')
     shown.classList.add('is-saving')
     var p = pending.then(function () {
@@ -368,18 +514,67 @@
         ort.value = d.tatort
         ort.dataset.saved = d.tatort
         ort.classList.remove('is-invalid')
-        btn.remove()
-        return refreshStatus()
+        btn.disabled = false
+        btn.textContent = '🖼️ Tatort aus Fotos'
+        return refreshStatus().then(function () {
+          var f = cur && cur.data.fields
+          if (f && validCoord(f.tatort_lat) && validCoord(f.tatort_lon)) placeMarker(f.tatort_lat, f.tatort_lon, true)
+        })
       })
       .catch(function (err) {
         btn.disabled = false
-        btn.textContent = '📍 aus Fotos übernehmen'
+        btn.textContent = '🖼️ Tatort aus Fotos'
         msg(err.message, 'text-danger')
       })
   }
 
+  // „Uhrzeit aus Fotos": von = frühestes, bis = spätestes Foto (wie report-form.js).
+  function applyPhotoTimes() {
+    var t = cur && cur.data.photoTimes
+    if (!t) return
+    var set = function (sel, v) {
+      var el = root.querySelector(sel)
+      el.value = v
+      el.classList.remove('is-invalid')
+      saveField(el)
+    }
+    set('[data-f=tattag]', t.vonTag)
+    set('[data-f=tatzeit_von]', t.von)
+    set('[data-f=tattag_bis]', t.bisTag !== t.vonTag ? t.bisTag : '')
+    set('[data-f=tatzeit_bis]', t.bis !== t.von || t.bisTag !== t.vonTag ? t.bis : '')
+  }
+
+  function currentLocation(btn) {
+    if (!navigator.geolocation) return msg('Standort wird von diesem Browser nicht unterstützt.', 'text-danger')
+    var az = cur.az
+    btn.disabled = true
+    msg('Standort wird ermittelt …')
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = pos.coords.latitude
+      var lon = pos.coords.longitude
+      fetch('/api/geo/reverse?lat=' + lat + '&lon=' + lon, { headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null })
+        .catch(function () { return null })
+        .then(function (data) {
+          btn.disabled = false
+          if (!cur || cur.az !== az) return
+          var label = data && data.result && data.result.label
+          if (!label) return msg('Zu diesem Standort wurde keine Adresse gefunden.', 'text-warning')
+          var ort = root.querySelector('#rv-ort')
+          ort.value = label
+          placeMarker(lat, lon, true)
+          saveField(ort, { tatort_lat: Number(lat.toFixed(6)), tatort_lon: Number(lon.toFixed(6)) })
+          msg('Adresse übernommen – bitte prüfen.')
+        })
+    }, function () {
+      btn.disabled = false
+      msg('Standort nicht verfügbar (Berechtigung?).', 'text-danger')
+    }, { enableHighAccuracy: true, timeout: 15000 })
+  }
+
   function renderDone() {
     cur = null
+    destroyMap()
     var html = '<div class="card shadow-sm"><div class="card-body text-center py-5">' +
       '<p class="fs-5 mb-1">Durch! 🎉</p><p class="text-muted">' +
       stats.submitted + ' eingereicht' +
@@ -414,6 +609,15 @@
   }
 
   root.addEventListener('change', function (e) {
+    if (e.target.matches && e.target.matches('[data-behinderung]')) {
+      var on = e.target.value === '1'
+      var hid = root.querySelector('[data-f=behinderung]')
+      hid.value = on ? '1' : '0'
+      root.querySelector('[data-behinderung-detail]').hidden = !on
+      saveField(hid)
+      if (on) root.querySelector('[data-f=behinderung_text]').focus()
+      return
+    }
     var el = e.target.closest('[data-f]')
     if (!el || el.getAttribute('data-f') === 'tatort') return
     saveField(el)
@@ -436,6 +640,7 @@
     el.dataset.chosen = '1'
     var s = e.detail || {}
     var extra = Number.isFinite(s.lat) && Number.isFinite(s.lon) ? { tatort_lat: s.lat, tatort_lon: s.lon } : {}
+    if (extra.tatort_lat) placeMarker(s.lat, s.lon, true)
     var p = saveField(el, extra)
     Promise.resolve(p).then(function () { delete el.dataset.chosen })
   })
@@ -452,6 +657,15 @@
     var t = e.target.closest('[data-photo-edit]')
     if (t && window.photoEditor) {
       window.photoEditor.openThumb(t)
+      return
+    }
+    var vb = e.target.closest('[data-beh-vorschlag]')
+    if (vb) {
+      var ta = root.querySelector('[data-f=behinderung_text]')
+      var satz = vb.getAttribute('data-beh-vorschlag')
+      var now = ta.value.trim()
+      if (now.indexOf(satz) === -1) ta.value = now ? now + ' ' + satz : satz
+      saveField(ta)
       return
     }
     var sug = e.target.closest('[data-plate-suggest]')
@@ -471,6 +685,8 @@
     else if (act === 'trash') trash()
     else if (act === 'retry') show()
     else if (act === 'tatort-fotos') tatortFromPhotos(b)
+    else if (act === 'here') currentLocation(b)
+    else if (act === 'photo-times') applyPhotoTimes()
     else if (act === 'again') {
       remaining = skipped
       skipped = []

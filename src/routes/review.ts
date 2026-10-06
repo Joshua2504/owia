@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
-import { getCity } from '../config/cities'
+import { getCity, unlockedCities } from '../config/cities'
 import { cityEmail } from '../services/districts'
 import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
@@ -41,6 +41,10 @@ export default async function reviewRoutes(app: FastifyInstance) {
       countBereit: offen.filter((r) => r.bereit_at).length,
       countVerjaehrt: rows.length - offen.length,
       verstoss: { haeufig: await mostUsedVerstoesse(), alle: VERSTOSS_ARTEN },
+      // Ordnungsamt-Auswahl + Kartenmitte ohne Tatort (wie edit.ejs).
+      cities: unlockedCities().map((c) => ({
+        id: c.id, name: c.name, ordnungsamt: c.ordnungsamt, email: cityEmail(c) || '', lat: c.geo.mapLat, lon: c.geo.mapLon,
+      })),
     }))
   })
 
@@ -51,7 +55,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT *, DATE_FORMAT(tattag, '%Y-%m-%d') AS tattag_iso,
+      `SELECT *, DATE_FORMAT(tattag, '%Y-%m-%d') AS tattag_iso, DATE_FORMAT(tattag_bis, '%Y-%m-%d') AS tattag_bis_iso,
               DATE_FORMAT(tatzeit_von, '%H:%i') AS von_hhmm, DATE_FORMAT(tatzeit_bis, '%H:%i') AS bis_hhmm
          FROM reports WHERE aktenzeichen = ? AND user_id = ? AND status <> 'papierkorb'`,
       [az, userId]
@@ -64,12 +68,19 @@ export default async function reviewRoutes(app: FastifyInstance) {
     }
     const problems = await submitProblems(report, userId)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, filename, detected_plate, geprueft_at, gps_lat FROM report_images
-        WHERE report_id = ? ORDER BY sort_order, id`,
+      `SELECT id, filename, detected_plate, geprueft_at, gps_lat,
+              DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i') AS captured
+         FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
     )
     const city = getCity(report.city)
     const vj = verjaehrung(report)
+    // Zeitspanne der Fotos (EXIF) für „Uhrzeit aus Fotos" – als Strings, nie
+    // über ein JS-Date (Zeitzonen, s. CLAUDE.md).
+    const times = imgs.map((i) => i.captured as string | null).filter((t): t is string => !!t).sort()
+    const photoTimes = times.length
+      ? { vonTag: times[0].slice(0, 10), von: times[0].slice(11), bisTag: times[times.length - 1].slice(0, 10), bis: times[times.length - 1].slice(11) }
+      : null
     return reply.send({
       az,
       bereit: !!report.bereit_at,
@@ -79,17 +90,23 @@ export default async function reviewRoutes(app: FastifyInstance) {
         kennzeichen: report.kennzeichen || '',
         fahrzeug_marke: report.fahrzeug_marke || '',
         tattag: report.tattag_iso || '',
+        tattag_bis: report.tattag_bis_iso || '',
         tatzeit_von: report.von_hhmm || '',
         tatzeit_bis: report.bis_hhmm || '',
         tatort: report.tatort || '',
         verstoss_art: report.verstoss_art || '',
         beschreibung: report.beschreibung || '',
         behinderung: report.behinderung === 1,
+        behinderung_text: report.behinderung_text || '',
+        tatort_lat: report.tatort_lat !== null ? Number(report.tatort_lat) : null,
+        tatort_lon: report.tatort_lon !== null ? Number(report.tatort_lon) : null,
+        city: report.city || '',
         fahrzeug_verlassen: report.fahrzeug_verlassen === 1,
       },
       recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
       verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
       hasGps: imgs.some((i) => i.gps_lat !== null),
+      photoTimes,
       images: imgs.map((i) => {
         const v = imageVersion(i.filename)
         return {

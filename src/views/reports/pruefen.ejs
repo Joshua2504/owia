@@ -36,7 +36,9 @@
   <% } %>
 </div>
 
-<script type="application/json" id="review-data"><%- JSON.stringify({ queue, verstoss }).replace(/</g, '\\u003c') %></script>
+<script type="application/json" id="review-data"><%- JSON.stringify({ queue, verstoss, cities }).replace(/</g, '\\u003c') %></script>
+<link rel="stylesheet" href="/public/vendor/leaflet.css">
+<script src="/public/vendor/leaflet.js"></script>
 <script src="/public/js/verstoss-select.js" defer></script>
 <script src="/public/js/address-autocomplete.js" defer></script>
 <script src="/public/js/photo-edit.js" defer></script>
