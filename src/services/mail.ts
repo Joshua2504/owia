@@ -54,6 +54,12 @@ function formatTatzeit(report: mysql.RowDataPacket): { tattag: string; tatzeit: 
   return { tattag, tatzeit }
 }
 
+/** Absender für Mails ans Amt: Name des erstattenden Nutzers statt App-Name. */
+function userFrom(user: mysql.RowDataPacket): { name: string; address: string } {
+  const name = [user.vorname, user.nachname].filter(Boolean).join(' ').trim()
+  return { name: name || process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger', address: process.env.MAIL_FROM || '' }
+}
+
 /** Betreff + Text der Anzeige-E-Mail. Wird für den echten Versand und als
  *  Beispieltext für den Selbst-Versand auf der Detailseite verwendet. */
 export function buildReportMail(
@@ -97,6 +103,9 @@ export function buildReportMail(
     // Aufnahmezeit je Beweisfoto (nur bei roher E-Mail übergeben; bei Frankfurt
     // stehen die Zeiten stattdessen als Beschriftung auf den PDF-Fotoseiten).
     ...(photoLines.length ? ['', 'Beweisfotos (Aufnahmezeit):', ...photoLines.map((l) => `- ${l}`)] : []),
+    '',
+    'Für Rückfragen können Sie direkt auf diese E-Mail antworten; bitte lassen Sie',
+    'dabei das Aktenzeichen im Betreff stehen.',
     '',
     'Mit freundlichen Grüßen',
     [user.vorname, user.nachname].filter(Boolean).join(' ') || user.email,
@@ -256,7 +265,7 @@ export const MailService = {
       send: async () => {
         const info = await transport.sendMail({
           messageId,
-          from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+          from: userFrom(user),
           to,
           cc: user.cc_self === 0 ? undefined : user.email,
           subject, text, attachments,
@@ -286,7 +295,7 @@ export const MailService = {
     const to = recipientEmailForReport(report)
     if (!to) throw new Error('Keine Empfänger-Adresse für den Tatort ermittelbar (PLZ fehlt in districts.csv).')
     const info = await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: userFrom(user),
       to,
       cc: user.cc_self === 0 ? undefined : user.email,
       subject,
