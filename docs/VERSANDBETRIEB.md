@@ -130,3 +130,13 @@ unvollständig importierte Alt-Mails werden nicht automatisch rekonstruiert.
 Dateien liegen in flüchtigen Dateisystemen, das Netz ist intern, Mailpit nimmt
 sämtliche Testmails lokal an. Ein `EXIT`-Trap entfernt Container und Netz.
 Keine Tests gegen die laufende Dev-/Produktionsdatenbank ausführen.
+
+## Versand-Takt
+
+Die Warteschlange verschickt höchstens **eine Anzeige alle 10 Minuten** – Mail
+(`report.dispatch`) wie Portal (`portal.start`), gemeinsam gezählt
+(`services/versandTakt.ts`, Tabelle `versand_takt`). Wartende Jobs stehen mit
+„Versand-Takt: nächster Versand frühestens in … min" in `jobs.error` und laufen
+automatisch weiter. Ein manueller Start auf `/versand` wird nicht aufgehalten,
+zählt aber mit. Neustarts eines verlorenen Portal-Laufs sind ausgenommen.
+Abstand per `VERSAND_ABSTAND_SEK` (Default 600) änderbar.

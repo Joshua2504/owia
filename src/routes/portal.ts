@@ -15,6 +15,7 @@ import {
   lastKnownStatus, proxy, portalHealthy, PortalError, wartendeStarts,
 } from '../services/portalDispatch'
 import { letzterSelbsttest, enqueueSelbsttest } from '../services/portalSelbsttest'
+import { versandMerken } from '../services/versandTakt'
 
 const adapterOf = (r: mysql.RowDataPacket) => portalFuer(r.city)!
 const portalCities = () => unlockedCities().filter((c) => c.portal).map((c) => c.id)
@@ -129,7 +130,9 @@ export default async function portalRoutes(app: FastifyInstance) {
   app.post('/versand/:id/start', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const auto = (request.body as { auto?: unknown } | undefined)?.auto === true
-      return { runId: await startPortalRun(reportIdOf(request), { auto }) }
+      const runId = await startPortalRun(reportIdOf(request), { auto })
+      await versandMerken()
+      return { runId }
     } catch (err) {
       return fail(reply, err)
     }

@@ -21,6 +21,7 @@ import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
 import { runMigrations } from '../src/db/migrate'
 import { dispatchReport } from '../src/services/reportDispatch'
+import { versandPlatzBelegen, versandPlatzFreigeben, versandMerken } from '../src/services/versandTakt'
 import { resumeWatchers } from '../src/services/portalDispatch'
 import { consumeLoginCode, consumeMagicLink, MAX_LOGIN_ATTEMPTS } from '../src/services/loginTokens'
 import { processInboundMail, repliesDir } from '../src/services/mailInbox'
@@ -90,8 +91,22 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0043_kennzeichen_bestaetigt.sql')
-  assert.equal(rows.length, 43)
+  assert.equal(rows.at(-1)?.filename, '0044_versand_takt.sql')
+  assert.equal(rows.length, 44)
+})
+
+test('Versand-Takt: höchstens ein Versand je 10 Minuten, Freigabe gibt den Platz zurück', async () => {
+  await pool.execute("UPDATE versand_takt SET letzter='2000-01-01', vorher='2000-01-01' WHERE id=1")
+  const [a, b] = await Promise.all([versandPlatzBelegen(), versandPlatzBelegen()])
+  assert.deepEqual([a, b].filter((x) => x === null).length, 1)
+  const warten = a ?? b
+  assert.ok(warten! > 590 && warten! <= 600)
+  await versandPlatzFreigeben()
+  assert.equal(await versandPlatzBelegen(), null)
+  await pool.execute("UPDATE versand_takt SET letzter='2000-01-01', vorher='2000-01-01' WHERE id=1")
+  await versandMerken()
+  assert.notEqual(await versandPlatzBelegen(), null)
+  await pool.execute("UPDATE versand_takt SET letzter='2000-01-01', vorher='2000-01-01' WHERE id=1")
 })
 
 test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
@@ -186,7 +201,7 @@ test('Portal-Start, den ein Neustart abbrach, beginnt komplett von vorn', async 
   assert.equal(r.versand_ergebnis, null)
   const jobs = await query("SELECT payload FROM jobs WHERE type='portal.start' AND status='queued'")
   const payloads = jobs.map((j) => JSON.parse(j.payload))
-  assert.deepEqual(payloads.filter((p) => p.reportId === id), [{ reportId: id, auto: true }])
+  assert.deepEqual(payloads.filter((p) => p.reportId === id), [{ reportId: id, auto: true, neustart: true }])
   assert.equal(payloads.filter((p) => p.reportId === unklar).length, 0)
   assert.equal((await query('SELECT versand_status FROM reports WHERE id=?', [unklar]))[0].versand_status, 'versand')
   await pool.execute("DELETE FROM jobs WHERE type='portal.start'")

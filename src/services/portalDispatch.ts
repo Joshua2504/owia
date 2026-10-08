@@ -35,6 +35,7 @@ import { isProfileComplete, drittProblem } from '../routes/reports'
 import { isVerjaehrt } from './verjaehrung'
 import { prewarmPublicImages } from './publicImages'
 import { enqueueJob, registerJob, JobRetryLater } from './jobs'
+import { versandPlatzBelegen, versandPlatzFreigeben } from './versandTakt'
 
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
@@ -282,7 +283,8 @@ async function restartFromScratch(reportId: number, auto: boolean, grund: string
     [reportId]
   )
   if (!rel.affectedRows) return
-  await enqueueJob('portal.start', { reportId, auto }, { key: `portal.start:${reportId}`, maxAttempts: 3 })
+  // neustart: kein neuer Versand, sondern derselbe – nicht erneut takten.
+  await enqueueJob('portal.start', { reportId, auto, neustart: true }, { key: `portal.start:${reportId}`, maxAttempts: 3 })
   log?.warn({ reportId, grund }, 'Portal-Lauf verloren – Versand startet neu')
 }
 
@@ -481,15 +483,19 @@ function sekundenBisMorgen(): number {
   return 24 * 3600 - (h * 3600 + m * 60 + s) + 5 * 60
 }
 
-registerJob('portal.start', async ({ reportId, auto }) => {
+registerJob('portal.start', async ({ reportId, auto, neustart }) => {
   const report = await loadReport(Number(reportId))
   // Inzwischen abgelehnt, von Hand auf /versand gestartet oder erledigt.
   if (!report || report.status !== 'eingereicht' || report.versand_status) return
+  // Höchstens eine Anzeige je 10 Minuten (services/versandTakt.ts).
+  const warten = neustart ? null : await versandPlatzBelegen()
+  if (warten !== null) throw new JobRetryLater('Versand-Takt: nächster Versand frühestens in ' + Math.ceil(warten / 60) + ' min', warten)
   try {
     // auto fehlt bei Starts nach der Freigabe (= ohne Rückfrage absenden);
     // ein Neustart übernimmt die Einstellung des verlorenen Laufs.
     await startPortalRun(Number(reportId), { auto: auto !== false })
   } catch (err) {
+    if (!neustart) await versandPlatzFreigeben()
     // Belegt oder (nach Deploy/Neustart) noch nicht wieder da: warten, kein Fehlversuch.
     if (err instanceof PortalBusyError || err instanceof PortalUnerreichbarError) throw new JobRetryLater(err.message, 60)
     if (err instanceof PortalAbMorgenError) throw new JobRetryLater(err.message, sekundenBisMorgen())
