@@ -148,6 +148,9 @@
       '<div class="d-flex gap-2 mt-1"><button type="button" class="btn btn-sm btn-primary" data-act="adr-ok">Übernehmen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-secondary" data-act="adr-nein">Adresse behalten</button></div></div>' +
       '</div>' +
+      // Zuständige Behörde (aus der Stadt der Anzeige, nur lesbar).
+      '<div class="pe-field" data-empfaenger-row hidden><span class="form-label">Zuständig</span>' +
+      '<div class="form-control-plaintext py-0" data-empfaenger></div></div>' +
       // Restliche Angaben (Werte aus GET /pruefen/:az/daten, gespeichert je
       // Feld über PATCH /anzeige/:az/felder).
       '<div class="photo-edit-details" hidden>' +
@@ -162,7 +165,7 @@
       '<button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times" title="Tattag und Uhrzeit aus den Aufnahmezeiten der Fotos übernehmen">🕒 Zeit aus Fotos übernehmen</button>' +
       ' <span data-photo-span></span></div>' +
       '</div>' +
-      '<label class="form-check"><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> <span class="form-check-label">Fahrzeug war verlassen</span></label>' +
+      '<label class="form-check" data-verlassen-row><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> <span class="form-check-label">Fahrzeug war verlassen</span></label>' +
       '<div class="pe-field"><div class="d-flex align-items-center gap-2"><span class="form-label mb-0">Wurde jemand behindert?</span>' +
       '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">' +
       '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-ja" value="1" data-detail="behinderung">' +
@@ -1313,6 +1316,13 @@
       return '<option' + (o === cur ? ' selected' : '') + '>' + esc(o) + '</option>'
     }).join('')
     sel.classList.toggle('is-invalid', opts.length > 0 && !cur)
+    dlg.querySelector('[data-verlassen-row]').hidden = !!(s.report && s.report.verlassenFrage === false)
+    var emp = s.report && s.report.recipient
+    var empRow = dlg.querySelector('[data-empfaenger-row]')
+    empRow.hidden = !(emp && emp.ordnungsamt)
+    empRow.querySelector('[data-empfaenger]').textContent = emp && emp.ordnungsamt
+      ? emp.ordnungsamt + (s.report.portal ? ' (Online-Formular)' : emp.email ? ' (' + emp.email + ')' : '')
+      : ''
     var lp = dlg.querySelector('[data-langparker]')
     var lang = s.report && s.report.langparker
     lp.hidden = !lang
