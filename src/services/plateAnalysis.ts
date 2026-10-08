@@ -2,7 +2,8 @@
 // Wird von den Upload-Handlern per fire-and-forget angestoßen; das Ergebnis
 // landet pro Bild in report_images und wird vom Bearbeiten-Formular über
 // GET /anzeige/:az/analysis abgeholt. Ist das Kennzeichen-Feld der Anzeige
-// noch leer, wird es serverseitig direkt vorbefüllt (nur Entwürfe).
+// noch leer, wird es serverseitig direkt vorbefüllt (nur Entwürfe); ebenso
+// Fahrzeugmarke und -farbe (derselbe Dienstaufruf liefert sie mit).
 //
 // Die Verarbeitung läuft SERIELL über eine einfache Promise-Kette: die
 // CPU-Inferenz teilt sich die Maschine mit dem Tileserver – mehrere Bilder
@@ -138,6 +139,7 @@ async function runAnalysis(
     }
 
     await prefillReportPlate(userId, reportId)
+    await prefillReportFahrzeug(userId, reportId)
   } catch (err) {
     logger.error({ err, imageId, reportId }, 'Kennzeichen-Analyse fehlgeschlagen')
     await setStatus(imageId, 'failed')
@@ -203,4 +205,72 @@ export async function prefillReportPlate(userId: number, reportId: number): Prom
         AND (kennzeichen IS NULL OR kennzeichen='')`,
     [best.plate, reportId, userId]
   )
+}
+
+/** Ab dieser gemittelten Wahrscheinlichkeit befüllt die erkannte Marke bzw.
+ *  Farbe ein leeres Feld vor. Gemessen an 160 Prod-Anzeigen mit von Hand
+ *  eingetragenen Werten (10/2026, docker/alpr/fahrzeug.py): bei 0,8 werden
+ *  ~75 % der Marken (98 % richtig) und ~50 % der Farben (96 % richtig)
+ *  befüllt. Hängt an der festen Softmax-Temperatur des Dienstes. */
+export const FAHRZEUG_MIN_P = 0.8
+
+export type FahrzeugVorschlag = { wert: string; p: number }
+
+/** Marke/Farbe einer Anzeige: Wahrscheinlichkeiten aller analysierten Fotos
+ *  gemittelt (wie die Messung), Vorschlag nur ab FAHRZEUG_MIN_P. */
+export async function bestFahrzeugForReport(reportId: number): Promise<{
+  marke: FahrzeugVorschlag | null
+  farbe: FahrzeugVorschlag | null
+  pending: boolean
+}> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT analysis_status, analyse_json FROM report_images WHERE report_id = ?',
+    [reportId]
+  )
+  const pending = rows.some((r) => r.analysis_status === 'pending')
+  const sums = { marke: new Map<string, number>(), farbe: new Map<string, number>() }
+  let n = 0
+  for (const r of rows) {
+    let fz: { marke?: Record<string, number>; farbe?: Record<string, number> } | undefined
+    try {
+      fz = r.analyse_json ? JSON.parse(String(r.analyse_json)).fahrzeug : undefined
+    } catch {
+      continue
+    }
+    if (!fz) continue
+    n++
+    for (const g of ['marke', 'farbe'] as const) {
+      for (const [label, p] of Object.entries(fz[g] || {})) {
+        if (typeof p === 'number') sums[g].set(label, (sums[g].get(label) || 0) + p)
+      }
+    }
+  }
+  const pick = (m: Map<string, number>): FahrzeugVorschlag | null => {
+    let best: FahrzeugVorschlag | null = null
+    for (const [wert, sum] of m) if (!best || sum / n > best.p) best = { wert, p: sum / n }
+    return best && best.p >= FAHRZEUG_MIN_P ? best : null
+  }
+  return { marke: n ? pick(sums.marke) : null, farbe: n ? pick(sums.farbe) : null, pending }
+}
+
+/** Leere Marke/Farbe eines Entwurfs aus den Fotos vorbefüllen – wie beim
+ *  Kennzeichen erst, wenn alle Fotos analysiert sind, und nie über eine
+ *  Eingabe des Nutzers. */
+export async function prefillReportFahrzeug(userId: number, reportId: number): Promise<void> {
+  const fz = await bestFahrzeugForReport(reportId)
+  if (fz.pending) return
+  if (fz.marke) {
+    await pool.execute(
+      `UPDATE reports SET fahrzeug_marke=?
+        WHERE id=? AND user_id=? AND status='entwurf' AND (fahrzeug_marke IS NULL OR fahrzeug_marke='')`,
+      [fz.marke.wert, reportId, userId]
+    )
+  }
+  if (fz.farbe) {
+    await pool.execute(
+      `UPDATE reports SET fahrzeug_farbe=?
+        WHERE id=? AND user_id=? AND status='entwurf' AND (fahrzeug_farbe IS NULL OR fahrzeug_farbe='')`,
+      [fz.farbe.wert, reportId, userId]
+    )
+  }
 }

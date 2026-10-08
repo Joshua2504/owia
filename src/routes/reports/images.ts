@@ -13,7 +13,7 @@ import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFile
 import { processReportImage, processReportImageDerivatives, loadThumbnail, withIntakeUploadLock } from '../../services/intakeImageProcessing'
 import { createDraft, reportDir, UPLOAD_DIR } from '../../services/drafts'
 import { alprEnabled, recognizePlate } from '../../services/alpr'
-import { queuePlateAnalysis, queueAnalyseOnly, plateCropName, bestPlateForReport, prefillReportPlate } from '../../services/plateAnalysis'
+import { queuePlateAnalysis, queueAnalyseOnly, plateCropName, bestPlateForReport, prefillReportPlate, bestFahrzeugForReport, prefillReportFahrzeug } from '../../services/plateAnalysis'
 import { photoSha256, findExistingPhoto } from '../../services/photoDedup'
 import { parseKennzeichenBox } from '../../services/dritte'
 import { MAX_IMAGES, loadReportByAktenzeichen, enqueuePdf } from './shared'
@@ -407,9 +407,15 @@ export default async function imageRoutes(app: FastifyInstance) {
     // Regel wie die serverseitige Vorbefüllung); unsichere Lesungen werden dem
     // Nutzer gar nicht erst vorgeschlagen.
     const best = await bestPlateForReport(report.id)
+    const fz = await bestFahrzeugForReport(report.id)
     return reply.send({
       status: pending ? 'pending' : 'done',
-      suggestions: { kennzeichen: best?.plate ?? null, confidence: best?.confidence ?? null },
+      suggestions: {
+        kennzeichen: best?.plate ?? null,
+        confidence: best?.confidence ?? null,
+        fahrzeug_marke: fz.marke?.wert ?? null,
+        fahrzeug_farbe: fz.farbe?.wert ?? null,
+      },
       // Einzelergebnisse pro Foto: speisen die "Kennzeichen übernehmen"-Buttons
       // auf den Bild-Karten (auch Lesungen unter der Prefill-Schwelle).
       images: rows
@@ -706,11 +712,12 @@ export async function moveImages(
   }
   for (const img of imgs) for (const f of dateien(img)) await fs.rm(path.join(from, f), { force: true }).catch(() => {})
 
-  // Kennzeichen des Ziels aus den mitgewanderten Lesungen vorbefüllen (z.B.
+  // Kennzeichen, Marke und Farbe des Ziels aus den mitgewanderten Lesungen vorbefüllen (z.B.
   // neue Anzeige per Drag & Drop) – vor der Antwort, damit die neu geholte
   // Listenzeile es schon zeigt. Noch laufende Analysen schlagen selbst unter
   // der neuen Anzeige nach (runAnalysis) und befüllen danach.
   await prefillReportPlate(userId, targetId).catch(() => {})
+  await prefillReportFahrzeug(userId, targetId).catch(() => {})
 
   // PDFs im Hintergrund nachziehen: Beide sind Entwürfe, „Speichern" und
   // „Einreichen" erzeugen das PDF ohnehin neu – der Nutzer soll nach dem

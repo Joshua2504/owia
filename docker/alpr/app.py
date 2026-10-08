@@ -19,6 +19,7 @@ from fastapi import FastAPI, File, UploadFile
 from fast_plate_ocr import LicensePlateRecognizer
 from open_image_models import create_detector
 
+from fahrzeug import Fahrzeug
 from plate import normalize
 from segment import district_length
 
@@ -53,6 +54,9 @@ detector = create_detector(
 recognizer = LicensePlateRecognizer(
     OCR_MODEL, providers=["CPUExecutionProvider"], sess_options=_session_options()
 )
+
+# Marke/Farbe (SigLIP2, s. fahrzeug.py); Kennzeichen bleiben die Hauptsache.
+fahrzeug = Fahrzeug(_session_options())
 
 # Inferenz serialisieren: eine Anfrage darf die CPU nutzen, weitere warten.
 inference_lock = threading.Lock()
@@ -131,7 +135,7 @@ async def recognize(file: UploadFile = File(...)):
     data = await file.read()
     img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
-        return {"plates": [], "best": None, "faces": [], "width": 0, "height": 0}
+        return {"plates": [], "best": None, "faces": [], "fahrzeug": None, "width": 0, "height": 0}
     h, w = img.shape[:2]
 
     plates = []
@@ -174,4 +178,12 @@ async def recognize(file: UploadFile = File(...)):
     plates.sort(key=rank, reverse=True)
     for p in plates:
         del p["width"]
-    return {"plates": plates, "best": plates[0] if plates else None, "faces": faces, "width": w, "height": h}
+
+    # Marke/Farbe am Auto des besten Kennzeichens (dem angezeigten), sonst am
+    # ganzen Foto. Fehler hier dürfen die Kennzeichen-Antwort nicht kosten.
+    try:
+        with inference_lock:
+            vehicle = fahrzeug.classify(img, plates[0]["bbox"] if plates else None)
+    except Exception:
+        vehicle = None
+    return {"plates": plates, "best": plates[0] if plates else None, "faces": faces, "fahrzeug": vehicle, "width": w, "height": h}

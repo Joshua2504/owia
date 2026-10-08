@@ -121,8 +121,10 @@ code {
   font-weight: 400;
 }
 
-/* Kurzes Aufblitzen, wenn die Kennzeichen-Erkennung das Feld vorbefüllt hat. */
-.plate-field.alpr-filled {
+/* Kurzes Aufblitzen, wenn die Erkennung ein Feld vorbefüllt hat (Kennzeichen,
+   Marke, Farbe – report-form.js). */
+.plate-field.alpr-filled,
+.form-control.alpr-filled {
   animation: alpr-filled-flash 1.6s ease-out 1;
 }
 

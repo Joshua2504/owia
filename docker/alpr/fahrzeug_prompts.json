@@ -1,0 +1,187 @@
+{
+ "marke": {
+  "vorlagen": [
+   "a photo of a {} car.",
+   "a photo of a {}.",
+   "the back of a {} car.",
+   "the front of a {} car.",
+   "a {} parked on the street.",
+   "the {} logo."
+  ],
+  "labels": {
+   "Alfa Romeo": [
+    "Alfa Romeo"
+   ],
+   "Audi": [
+    "Audi"
+   ],
+   "BMW": [
+    "BMW"
+   ],
+   "BYD": [
+    "BYD"
+   ],
+   "Chevrolet": [
+    "Chevrolet"
+   ],
+   "Citroën": [
+    "Citroen"
+   ],
+   "Cupra": [
+    "Cupra"
+   ],
+   "Dacia": [
+    "Dacia"
+   ],
+   "DAF": [
+    "DAF truck"
+   ],
+   "Fiat": [
+    "Fiat"
+   ],
+   "Ford": [
+    "Ford"
+   ],
+   "Honda": [
+    "Honda"
+   ],
+   "Hyundai": [
+    "Hyundai"
+   ],
+   "Iveco": [
+    "Iveco"
+   ],
+   "Jaguar": [
+    "Jaguar"
+   ],
+   "Jeep": [
+    "Jeep"
+   ],
+   "Kia": [
+    "Kia"
+   ],
+   "Land Rover": [
+    "Land Rover"
+   ],
+   "Lexus": [
+    "Lexus"
+   ],
+   "MAN": [
+    "MAN truck"
+   ],
+   "Mazda": [
+    "Mazda"
+   ],
+   "Mercedes-Benz": [
+    "Mercedes-Benz"
+   ],
+   "MG": [
+    "MG"
+   ],
+   "Mini": [
+    "Mini Cooper"
+   ],
+   "Mitsubishi": [
+    "Mitsubishi"
+   ],
+   "Nissan": [
+    "Nissan"
+   ],
+   "Opel": [
+    "Opel"
+   ],
+   "Peugeot": [
+    "Peugeot"
+   ],
+   "Polestar": [
+    "Polestar"
+   ],
+   "Porsche": [
+    "Porsche"
+   ],
+   "Renault": [
+    "Renault"
+   ],
+   "Saab": [
+    "Saab"
+   ],
+   "Seat": [
+    "Seat"
+   ],
+   "Skoda": [
+    "Skoda"
+   ],
+   "Smart": [
+    "Smart"
+   ],
+   "Subaru": [
+    "Subaru"
+   ],
+   "Suzuki": [
+    "Suzuki"
+   ],
+   "Tesla": [
+    "Tesla"
+   ],
+   "Toyota": [
+    "Toyota"
+   ],
+   "Volkswagen": [
+    "Volkswagen"
+   ],
+   "Volvo": [
+    "Volvo"
+   ]
+  }
+ },
+ "farbe": {
+  "vorlagen": [
+   "a photo of a {} car.",
+   "a {} car parked on the street.",
+   "a {} vehicle."
+  ],
+  "labels": {
+   "schwarz": [
+    "black"
+   ],
+   "weiß": [
+    "white"
+   ],
+   "silber": [
+    "silver"
+   ],
+   "grau": [
+    "grey",
+    "gray"
+   ],
+   "blau": [
+    "blue",
+    "dark blue"
+   ],
+   "rot": [
+    "red"
+   ],
+   "grün": [
+    "green"
+   ],
+   "gelb": [
+    "yellow"
+   ],
+   "orange": [
+    "orange"
+   ],
+   "braun": [
+    "brown"
+   ],
+   "beige": [
+    "beige"
+   ],
+   "gold": [
+    "gold"
+   ],
+   "violett": [
+    "purple"
+   ]
+  }
+ }
+}

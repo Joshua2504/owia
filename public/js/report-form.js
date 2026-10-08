@@ -1445,6 +1445,39 @@
     return true
   }
 
+  // Marke/Farbe aus den Fotos (gleicher Analyse-Endpunkt): nur in leere Felder,
+  // die der Nutzer in dieser Sitzung nicht angefasst hat. Der Server hat sie
+  // meist schon vorbefüllt; hier geht es um ein offenes Formular, dessen
+  // Autosave sonst den leeren Stand zurückschreiben würde.
+  const fahrzeugTouched = {}
+
+  function initFahrzeugTouchTracking(form) {
+    ;['fahrzeug_marke', 'fahrzeug_farbe'].forEach((name) => {
+      const el = form.elements[name]
+      if (!el || typeof el.addEventListener !== 'function') return
+      const mark = (e) => {
+        if (e.isTrusted) fahrzeugTouched[name] = true
+      }
+      el.addEventListener('input', mark)
+      el.addEventListener('change', mark)
+    })
+  }
+
+  function applyFahrzeugSuggestion(form, suggestions) {
+    ;['fahrzeug_marke', 'fahrzeug_farbe'].forEach((name) => {
+      const el = form.elements[name]
+      const val = suggestions && suggestions[name]
+      if (!el || !val || fahrzeugTouched[name] || String(el.value || '').trim()) return
+      el.value = val
+      el.dispatchEvent(new Event('input'))
+      el.dispatchEvent(new Event('change'))
+      el.classList.remove('alpr-filled')
+      void el.offsetWidth
+      el.classList.add('alpr-filled')
+      el.title = 'Aus den Fotos erkannt – bitte prüfen.'
+    })
+  }
+
   async function pollAnalysisOnce(form) {
     try {
       const res = await fetch('/anzeige/' + reportId + '/analysis', {
@@ -1456,6 +1489,7 @@
       // Mehrheit über alle Fotos, ein Zwischenstand könnte ein anderes Auto sein.
       if (data && data.suggestions && data.status !== 'pending') {
         applyPlateSuggestion(form, data.suggestions)
+        applyFahrzeugSuggestion(form, data.suggestions)
       }
       // Einzelergebnisse an den Foto-Karten aktualisieren ("Kennzeichen übernehmen").
       if (data && Array.isArray(data.images)) {
@@ -1964,6 +1998,7 @@
     initPhotoGeo()
     initKennzeichenFormat(form)
     initPlateTouchTracking(form)
+    initFahrzeugTouchTracking(form)
     initCity()
     // Beim Laden einmal pollen: Ergebnisse können seit dem letzten Besuch fertig
     // sein, oder ein gerade hochgeladenes Bild wird noch analysiert.

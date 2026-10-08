@@ -39,6 +39,21 @@ export type BildAnalyse = {
   h: number
   plates: { text: string; confidence: number; bbox: number[] }[]
   faces: { score: number; bbox: number[] }[]
+  /** Marke/Farbe des Autos am besten Kennzeichen (bzw. des ganzen Fotos):
+   *  Top-5-Wahrscheinlichkeiten je Gruppe, Label → p. Fehlt bei älteren
+   *  Analysen und wenn der Dienst die Klassifikation nicht liefern konnte. */
+  fahrzeug?: { marke: Record<string, number>; farbe: Record<string, number> }
+}
+
+/** Wahrscheinlichkeiten aus der Dienst-Antwort übernehmen (nur endliche Zahlen). */
+function probs(x: unknown): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (x && typeof x === 'object') {
+    for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v)) out[String(k).slice(0, 40)] = v
+    }
+  }
+  return out
 }
 
 /** Erreichbarkeit des Dienstes für /health (nur wenn ALPR überhaupt genutzt wird). */
@@ -91,6 +106,7 @@ export async function recognizePlate(
       height?: number
       plates?: { text?: string; confidence?: number; bbox?: number[] }[]
       faces?: { score?: number; bbox?: number[] }[]
+      fahrzeug?: { marke?: unknown; farbe?: unknown } | null
       best?: {
         text?: string | null
         confidence?: number | null
@@ -109,6 +125,7 @@ export async function recognizePlate(
             bbox: p.bbox!.slice(0, 4).map(Number),
           })),
           faces: (data.faces || []).filter((f) => Array.isArray(f.bbox)).map((f) => ({ score: Number(f.score) || 0, bbox: f.bbox!.slice(0, 4).map(Number) })),
+          ...(data.fahrzeug ? { fahrzeug: { marke: probs(data.fahrzeug.marke), farbe: probs(data.fahrzeug.farbe) } } : {}),
         }
       : null
     const best = data.best
