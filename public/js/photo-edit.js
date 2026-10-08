@@ -740,7 +740,7 @@
       b.setAttribute('data-strip-index', String(i))
       b.title = 'Foto ' + (i + 1) + (t.getAttribute('data-geprueft') === '1' ? ' – geprüft' : ' – ungeprüft')
       var img = el('img')
-      img.src = t.getAttribute('src')
+      img.src = frisch(t.getAttribute('src'), t.getAttribute('data-photo-edit'))
       img.alt = ''
       b.appendChild(img)
       b.appendChild(el('span', 'thumb-check', t.getAttribute('data-geprueft') === '1' ? '✓' : '?'))
@@ -1991,6 +1991,14 @@
   // (flushSave). s.rev zählt Änderungen, damit eine während des Uploads
   // gemachte Änderung nicht als gespeichert gilt.
   var AUTOSAVE_MS = 800
+  // Gespeicherte Fassungen: PUT-URL → Zeitstempel. Die Kacheln der Liste
+  // tragen bis zum Neuladen noch die alte Bild-URL (Browser-Cache) – so zeigen
+  // Fotowechsel und Streifen sofort die geschwärzte Fassung.
+  var fassung = {}
+  function frisch(url, put) {
+    if (!url || !fassung[put]) return url
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'f=' + fassung[put]
+  }
   function autoSave() {
     var s = state
     if (!s) return
@@ -2033,6 +2041,7 @@
         }).then(function (r) {
           if (!r.ok || r.redirected) throw new Error('Foto konnte nicht gespeichert werden.')
           s.gespeichert = true
+          fassung[s.put] = Date.now()
           if (s.rev === rev) s.dirty = false
           if (s.dritteOkNachSpeichern) return dritteOk(s).catch(function () {}).then(function () { return true })
           return true
@@ -2048,7 +2057,7 @@
       })
       .then(function () {
         s.saving = false
-        if (state === s) { updateUi(); loadStatus(s) }
+        if (state === s) { updateUi(); loadStatus(s); if (fassung[s.put]) renderStrip() }
       }, function (err) {
         s.saving = false
         s.saveErr = true
@@ -2487,7 +2496,7 @@
       thumbs: all,
       plate: plateEl ? plateEl.value : null,
       detected: t.getAttribute('data-detected-plate') || null,
-      src: t.getAttribute('data-full-src'),
+      src: frisch(t.getAttribute('data-full-src'), t.getAttribute('data-photo-edit')),
       put: t.getAttribute('data-photo-edit'),
       az: row && row.getAttribute('data-az'),
       ok: t.getAttribute('data-geprueft') === '1',
