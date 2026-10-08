@@ -36,8 +36,14 @@ app = FastAPI(title="OWiA ALPR (YOLOv9 + fast-plate-ocr, ONNX)")
 
 def _session_options() -> ort.SessionOptions:
     opts = ort.SessionOptions()
-    opts.intra_op_num_threads = 2  # CPU wird mit dem Tileserver geteilt
+    # Nur 2 Kerne für die Foto-Verarbeitung (Container ist per cpuset auf CPU
+    # 2–3 gepinnt, s. docker-compose.yml) – keine Thread-Überbelegung.
+    opts.intra_op_num_threads = 2
+    opts.inter_op_num_threads = 1
     return opts
+
+
+cv2.setNumThreads(2)
 
 
 # Modelle einmalig beim Start laden (beim Build vorgecached, kein Download).

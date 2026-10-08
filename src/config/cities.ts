@@ -9,7 +9,10 @@
 //
 // Städte OHNE pdfForm werden als rohe E-Mail versendet (Sachverhalt im Text,
 // Beweisfotos + Tatort-Karte als Anhang) – für Ämter ohne eigenes Formular.
-// Städte MIT pdfForm bekommen das amtliche Formular als PDF-Anhang (Frankfurt).
+// Städte MIT pdfForm bekommen das amtliche Formular als PDF-Anhang.
+// Städte MIT portal (Frankfurt, Wiesbaden, Mainz) laufen ausschließlich über
+// das Online-Formular der Stadt – dort entsteht weder PDF noch Mail
+// (hasPdfForm() ist dann false, auch wenn pdfForm noch eingetragen ist).
 //
 // Eine weitere Stadt freischalten: hier einen Eintrag ergänzen und den Ortsnamen
 // exakt wie in districts.csv schreiben (damit PLZ-Erkennung und Empfänger-Adresse
@@ -67,6 +70,9 @@ export const CITIES: Record<string, City> = {
     id: 'frankfurt',
     name: 'Frankfurt am Main',
     ordnungsamt: 'Ordnungsamt der Stadt Frankfurt am Main',
+    // Das amtliche PDF-Formular (resources/formular.pdf) nimmt die Stadt seit
+    // 10/2026 nicht mehr per Mail an; der Eintrag bleibt nur für den Fall, dass
+    // der Mailweg zurückkommt. Solange `portal` gesetzt ist, wird kein PDF erzeugt.
     pdfForm: 'formular.pdf',
     portal: 'ekom21-ffm',
     geo: {
@@ -199,7 +205,9 @@ export function unlockedCities(): City[] {
   return Object.values(CITIES)
 }
 
-/** Hat die Stadt ein amtliches PDF-Formular? Wenn nein -> Versand als rohe E-Mail. */
+/** Wird für die Stadt ein amtliches PDF-Formular erzeugt? Nein bei Städten ohne
+ *  Formular (Versand als rohe E-Mail) und bei Portal-Städten (Versand über das
+ *  Online-Formular, ein PDF würde dort nur verwirren). */
 export function hasPdfForm(city: City): boolean {
-  return !!city.pdfForm
+  return !!city.pdfForm && !city.portal
 }

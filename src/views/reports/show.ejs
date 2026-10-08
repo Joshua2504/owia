@@ -15,8 +15,10 @@ const isEntwurf = report.status === 'entwurf'
 const images = locals.images || []
 const complete = locals.complete
 // Städte mit amtlichem Formular -> PDF; ohne Formular (z.B. Bad Soden-Salmünster)
-// -> rohe E-Mail mit Fotos/Karte im Anhang (kein PDF).
-const hasForm = !!(locals.city && locals.city.pdfForm)
+// -> rohe E-Mail mit Fotos/Karte im Anhang (kein PDF). Portal-Städte (Frankfurt,
+// Wiesbaden, Mainz) -> Online-Formular der Stadt, ebenfalls kein PDF.
+const isPortal = !!(locals.city && locals.city.portal)
+const hasForm = !!(locals.city && locals.city.pdfForm) && !isPortal
 const versandLabel = {
   gedruckt: 'selbst gedruckt / per Post',
   selbst_email: 'selbst per E-Mail',
@@ -243,7 +245,7 @@ const versandLabel = {
         </div>
       </div>
     <% } else { %>
-      <% if (report.pdf_filename) { %>
+      <% if (hasForm && report.pdf_filename) { %>
         <div class="d-flex gap-2 flex-wrap mb-4">
           <a href="/anzeige/<%= report.aktenzeichen %>/pdf" class="btn btn-outline-primary">⬇ PDF herunterladen</a>
         </div>
@@ -251,7 +253,13 @@ const versandLabel = {
     <% } %>
 
     <!-- Vorschau ganz unten: PDF (Formular-Städte) bzw. E-Mail-Hinweis (rohe E-Mail). -->
-    <% if (report.pdf_filename) { %>
+    <% if (isPortal) { %>
+      <div class="alert alert-info">
+        Diese Anzeige wird über das Online-Formular des <strong><%= city.ordnungsamt %></strong>
+        übermittelt – ein PDF entsteht dabei nicht. Die Angaben und Beweisfotos werden
+        direkt in das Portal der Stadt eingetragen.
+      </div>
+    <% } else if (hasForm && report.pdf_filename) { %>
       <h4 class="mb-3">PDF-Vorschau</h4>
       <iframe src="/anzeige/<%= report.aktenzeichen %>/pdf?inline=1"
               class="w-100 border rounded" style="height: 600px;"

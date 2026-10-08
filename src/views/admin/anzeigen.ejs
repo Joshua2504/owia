@@ -100,9 +100,14 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
           <% } %>
         </div>
         <div class="col-lg-7">
+          <% if (r.pdf_filename) { %>
           <!-- Das PDF enthält alle Angaben, Kartenseite und Beweisfotos. -->
           <iframe src="/admin/anzeigen/<%= r.id %>/pdf" class="w-100 border rounded"
                   style="height:420px" title="PDF <%= r.aktenzeichen %>" loading="lazy"></iframe>
+          <% } else { %>
+          <!-- Portal-Städte: kein PDF, die Anzeige wird auf /versand ins Online-Formular übertragen. -->
+          <div class="alert alert-secondary small mb-0">Kein PDF – diese Anzeige wird über das Online-Formular der Stadt versendet (<a href="/versand?az=<%= r.aktenzeichen %>">/versand</a>).</div>
+          <% } %>
         </div>
       </div>
     </div>
@@ -207,7 +212,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
                 <td class="small text-muted"><%= r.tatort %></td>
                 <td class="small text-muted"><%= r.user_email %></td>
                 <td class="text-end">
-                  <a class="btn btn-sm btn-outline-secondary" href="/admin/anzeigen/<%= r.id %>/pdf" target="_blank">PDF</a>
+                  <% if (r.pdf_filename) { %><a class="btn btn-sm btn-outline-secondary" href="/admin/anzeigen/<%= r.id %>/pdf" target="_blank">PDF</a><% } %>
                 </td>
               </tr>
             <% } %>

@@ -160,6 +160,11 @@ services:
     build: ./docker/alpr
     profiles: [production, alpr]
     mem_limit: 2g
+    # Foto-Verarbeitung darf nur 2 der 4 Kerne nutzen: fest auf CPU 2–3 gepinnt
+    # (cpuset) und zusätzlich auf 2 Kerne gedeckelt. App, DB, Caddy und
+    # Tileserver behalten so immer die Kerne 0–1.
+    cpuset: "2-3"
+    cpus: 2
     restart: unless-stopped
     logging: *default-logging
     healthcheck:

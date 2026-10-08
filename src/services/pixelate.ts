@@ -26,9 +26,9 @@ const PIXEL_MAX_GESCHWAERZT = 160
 // Ausbluten beim Box-Downsampling.
 const BOX_RAND = 0.3
 
-type Raw = { data: Uint8Array | Buffer; width: number; height: number }
+export type Raw = { data: Uint8Array | Buffer; width: number; height: number }
 
-function decode(buffer: Buffer, mimetype: string): Raw {
+export function decode(buffer: Buffer, mimetype: string): Raw {
   if (mimetype === 'image/png') {
     const png = PNG.sync.read(buffer)
     return { data: png.data, width: png.width, height: png.height }
@@ -82,7 +82,7 @@ function downsample(src: Raw, outW: number, outH: number): Buffer {
  * neu kodierten JPEGs haben kein EXIF mehr). Spiegelungen (2,4,5,7) werden
  * auf die reine Drehung reduziert – für Vorschaubilder unerheblich.
  */
-function applyOrientation(src: Raw, orientation: number): Raw {
+export function applyOrientation(src: Raw, orientation: number): Raw {
   if (!orientation || orientation < 3 || orientation > 8) return src
   const { data, width: w, height: h } = src
   const rot90 = orientation >= 5

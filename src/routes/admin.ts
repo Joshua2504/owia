@@ -111,7 +111,7 @@ registerJob('mail.newsletter', async ({ email, subject, text, unsubscribeUrl }) 
 export default async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/anzeigen', { preHandler: requireAdmin }, async (request, reply) => {
     const [pending] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.id, r.aktenzeichen, r.versand_status, r.kennzeichen, r.kennzeichen_land, r.tattag, r.tattag_bis,
+      `SELECT r.id, r.aktenzeichen, r.versand_status, r.city, r.pdf_filename, r.kennzeichen, r.kennzeichen_land, r.tattag, r.tattag_bis,
               r.tatzeit_von, r.tatzeit_bis, r.tatort, r.verstoss_art, r.beschreibung,
               r.behinderung, r.behinderung_text, r.fahrzeug_verlassen,
               DATE_FORMAT(r.eingereicht_at, '%d.%m.%Y %H:%i') AS eingereicht_fmt,
@@ -123,7 +123,7 @@ export default async function adminRoutes(app: FastifyInstance) {
         ORDER BY r.eingereicht_at, r.id`
     )
     const [recent] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.tatort, u.email AS user_email
+      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.tatort, r.pdf_filename, u.email AS user_email
          FROM reports r
          JOIN users u ON u.id = r.user_id
         WHERE r.status = 'versendet' AND r.versand_art = 'system_email'

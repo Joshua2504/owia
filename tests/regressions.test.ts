@@ -785,3 +785,36 @@ test('Öffentliches Kartenbild: mit Kennzeichen-Analyse geschwärzt in 160 px, s
     assert.deepEqual([grob.width, grob.height], [32, 24])
   }
 })
+
+test('Portal-Städte: kein PDF-Formular (Frankfurt seit 10/2026 nur ekom21-Portal)', async () => {
+  const { getCity, hasPdfForm } = await import('../src/config/cities')
+  assert.equal(hasPdfForm(getCity('frankfurt')), false, 'Frankfurt läuft übers Portal – kein PDF mehr')
+  assert.equal(hasPdfForm(getCity('wiesbaden')), false)
+  assert.equal(hasPdfForm(getCity('mainz')), false)
+  assert.equal(hasPdfForm({ pdfForm: 'formular.pdf' } as any), true, 'Formular-Stadt ohne Portal bekommt weiter ein PDF')
+})
+
+test('Automatisches Schwärzen: Gesichter immer, fremde Kennzeichen nur neben dem erkannten eigenen', async () => {
+  const { schwaerzPlan, schwaerzeBoxen } = await import('../src/services/dritteSchwaerzen')
+  const jpeg = (await import('jpeg-js')).default
+  const fremd = { text: 'F XY 999', confidence: 0.9, bbox: [50, 50, 100, 75] }
+  const gesicht = { score: 0.95, bbox: [150, 20, 170, 45] }
+  const mit = { w: 200, h: 150, plates: [{ text: 'F AB 123', confidence: 0.9, bbox: [10, 100, 60, 120] }, fremd], faces: [gesicht] }
+  const plan = schwaerzPlan(mit, 'F-AB 123')
+  assert.deepEqual(plan.boxen.map((b) => b.art), ['kennzeichen', 'gesicht'])
+  assert.equal(plan.offen.length, 0)
+  // Eigenes Kennzeichen nicht erkannt: die „fremde" Lesung könnte das angezeigte
+  // Fahrzeug sein – Kennzeichen bleibt offen, Gesicht wird trotzdem geschwärzt.
+  const ohne = schwaerzPlan({ ...mit, plates: [fremd] }, 'F-AB 123')
+  assert.deepEqual(ohne.boxen.map((b) => b.art), ['gesicht'])
+  assert.deepEqual(ohne.offen.map((b) => b.art), ['kennzeichen'])
+  // Boxen landen (mit Rand, aufs Vollbild skaliert) schwarz im Bild, der Rest bleibt.
+  const original = Buffer.from(jpeg.encode({ data: Buffer.alloc(400 * 300 * 4, 255), width: 400, height: 300 }, 90).data)
+  const out = jpeg.decode(schwaerzeBoxen(original, 'image/jpeg', 1, mit as any, plan.boxen))
+  assert.deepEqual([out.width, out.height], [400, 300])
+  assert.ok(out.data[(125 * 400 + 150) * 4] < 30, 'fremdes Kennzeichen schwarz')
+  assert.ok(out.data[(65 * 400 + 320) * 4] < 30, 'Gesicht schwarz')
+  assert.ok(out.data[(220 * 400 + 70) * 4] > 225, 'eigenes Kennzeichen bleibt lesbar')
+  assert.ok(out.data[(10 * 400 + 10) * 4] > 225, 'Rest unverändert')
+  assert.throws(() => schwaerzeBoxen(original, 'image/jpeg', 1, { ...mit, w: 150, h: 200 } as any, plan.boxen), /Bildausrichtung/)
+})
