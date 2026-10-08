@@ -183,5 +183,464 @@
     "purple"
    ]
   }
+ },
+ "modell": {
+  "vorlagen": [
+   "a photo of a {} car.",
+   "the back of a {}.",
+   "the front of a {}.",
+   "a {} parked on the street."
+  ],
+  "marken": {
+   "Volkswagen": [
+    "Golf",
+    "Polo",
+    "Passat",
+    "Tiguan",
+    "Touran",
+    "T-Roc",
+    "T-Cross",
+    "Taigo",
+    "Up",
+    "Caddy",
+    "Transporter",
+    "Multivan",
+    "Sharan",
+    "Touareg",
+    "Arteon",
+    "ID.3",
+    "ID.4",
+    "ID. Buzz",
+    "Crafter",
+    "Amarok",
+    "Beetle",
+    "Scirocco"
+   ],
+   "Mercedes-Benz": [
+    [
+     "A-Klasse",
+     "A-Class"
+    ],
+    [
+     "B-Klasse",
+     "B-Class"
+    ],
+    [
+     "C-Klasse",
+     "C-Class"
+    ],
+    [
+     "E-Klasse",
+     "E-Class"
+    ],
+    [
+     "S-Klasse",
+     "S-Class"
+    ],
+    "CLA",
+    "GLA",
+    "GLB",
+    "GLC",
+    "GLE",
+    "GLS",
+    [
+     "G-Klasse",
+     "G-Class"
+    ],
+    "Vito",
+    [
+     "V-Klasse",
+     "V-Class"
+    ],
+    "Sprinter",
+    "Citan",
+    "EQA",
+    "EQC",
+    [
+     "ML",
+     "M-Class"
+    ]
+   ],
+   "BMW": [
+    [
+     "1er",
+     "1 Series"
+    ],
+    [
+     "2er",
+     "2 Series"
+    ],
+    [
+     "3er",
+     "3 Series"
+    ],
+    [
+     "4er",
+     "4 Series"
+    ],
+    [
+     "5er",
+     "5 Series"
+    ],
+    [
+     "7er",
+     "7 Series"
+    ],
+    "X1",
+    "X2",
+    "X3",
+    "X4",
+    "X5",
+    "X6",
+    "i3",
+    "i4",
+    "iX",
+    "Z4"
+   ],
+   "Audi": [
+    "A1",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "A7",
+    "A8",
+    "Q2",
+    "Q3",
+    "Q4 e-tron",
+    "Q5",
+    "Q7",
+    "Q8",
+    "TT",
+    "e-tron"
+   ],
+   "Opel": [
+    "Corsa",
+    "Astra",
+    "Insignia",
+    "Mokka",
+    "Crossland",
+    "Grandland",
+    "Zafira",
+    "Meriva",
+    "Adam",
+    "Karl",
+    "Agila",
+    "Vectra",
+    "Combo",
+    "Vivaro",
+    "Movano"
+   ],
+   "Ford": [
+    "Fiesta",
+    "Focus",
+    "Mondeo",
+    "Kuga",
+    "Puma",
+    "EcoSport",
+    "C-Max",
+    "S-Max",
+    "Galaxy",
+    "Ka",
+    "Transit",
+    "Transit Custom",
+    "Tourneo Connect",
+    "Mustang Mach-E",
+    "Ranger"
+   ],
+   "Skoda": [
+    "Octavia",
+    "Fabia",
+    "Superb",
+    "Kodiaq",
+    "Karoq",
+    "Kamiq",
+    "Scala",
+    "Citigo",
+    "Yeti",
+    "Rapid",
+    "Roomster",
+    "Enyaq"
+   ],
+   "Renault": [
+    "Clio",
+    "Megane",
+    "Captur",
+    "Twingo",
+    "Kangoo",
+    "Scenic",
+    "Kadjar",
+    "Zoe",
+    "Arkana",
+    "Austral",
+    "Laguna",
+    "Trafic",
+    "Master"
+   ],
+   "Seat": [
+    "Ibiza",
+    "Leon",
+    "Arona",
+    "Ateca",
+    "Tarraco",
+    "Alhambra",
+    "Mii",
+    "Altea"
+   ],
+   "Cupra": [
+    "Born",
+    "Formentor",
+    "Leon",
+    "Ateca"
+   ],
+   "Toyota": [
+    "Yaris",
+    "Yaris Cross",
+    "Corolla",
+    "Auris",
+    "Aygo",
+    "Aygo X",
+    "C-HR",
+    "RAV4",
+    "Prius",
+    "Proace",
+    "Hilux",
+    "Land Cruiser"
+   ],
+   "Hyundai": [
+    "i10",
+    "i20",
+    "i30",
+    "Tucson",
+    "Kona",
+    "Santa Fe",
+    "Ioniq",
+    "Ioniq 5",
+    "ix35",
+    "Bayon"
+   ],
+   "Kia": [
+    "Picanto",
+    "Rio",
+    "Ceed",
+    "XCeed",
+    "Sportage",
+    "Niro",
+    "Stonic",
+    "Sorento",
+    "Soul",
+    "EV6"
+   ],
+   "Fiat": [
+    "500",
+    "500X",
+    "500L",
+    "Panda",
+    "Punto",
+    "Tipo",
+    "Doblo",
+    "Qubo",
+    "Fiorino",
+    "Scudo",
+    "Ducato"
+   ],
+   "Dacia": [
+    "Sandero",
+    "Duster",
+    "Logan",
+    "Jogger",
+    "Spring",
+    "Lodgy",
+    "Dokker"
+   ],
+   "Peugeot": [
+    "108",
+    "208",
+    "2008",
+    "308",
+    "3008",
+    "508",
+    "5008",
+    "207",
+    "Partner",
+    "Rifter",
+    "Expert",
+    "Boxer"
+   ],
+   "Citroën": [
+    "C1",
+    "C3",
+    "C3 Aircross",
+    "C4",
+    "C4 Picasso",
+    "C5 Aircross",
+    "Berlingo",
+    "Jumpy",
+    "Jumper",
+    "Ami"
+   ],
+   "Nissan": [
+    "Micra",
+    "Note",
+    "Juke",
+    "Qashqai",
+    "X-Trail",
+    "Leaf",
+    "Navara",
+    "Primastar"
+   ],
+   "Mazda": [
+    "2",
+    "3",
+    "6",
+    "CX-3",
+    "CX-30",
+    "CX-5",
+    "CX-60",
+    "MX-5"
+   ],
+   "Volvo": [
+    "XC40",
+    "XC60",
+    "XC90",
+    "V40",
+    "V60",
+    "V90",
+    "S60",
+    "S90",
+    "EX30"
+   ],
+   "Tesla": [
+    "Model 3",
+    "Model Y",
+    "Model S",
+    "Model X"
+   ],
+   "Smart": [
+    "ForTwo",
+    "ForFour",
+    "#1"
+   ],
+   "Suzuki": [
+    "Swift",
+    "Vitara",
+    "Ignis",
+    "SX4 S-Cross",
+    "Jimny",
+    "Splash",
+    "Baleno"
+   ],
+   "Mitsubishi": [
+    "Space Star",
+    "Colt",
+    "ASX",
+    "Outlander",
+    "Eclipse Cross",
+    "L200"
+   ],
+   "Honda": [
+    "Jazz",
+    "Civic",
+    "CR-V",
+    "HR-V"
+   ],
+   "Porsche": [
+    "911",
+    "Cayenne",
+    "Macan",
+    "Panamera",
+    "Taycan",
+    "Boxster",
+    "Cayman"
+   ],
+   "Mini": [
+    "Cooper",
+    "Countryman",
+    "Clubman"
+   ],
+   "Jeep": [
+    "Renegade",
+    "Compass",
+    "Wrangler",
+    "Grand Cherokee",
+    "Avenger"
+   ],
+   "Land Rover": [
+    "Range Rover",
+    "Range Rover Evoque",
+    "Range Rover Sport",
+    "Discovery",
+    "Discovery Sport",
+    "Defender",
+    "Freelander"
+   ],
+   "Lexus": [
+    "NX",
+    "RX",
+    "UX",
+    "CT",
+    "IS"
+   ],
+   "Alfa Romeo": [
+    "Giulietta",
+    "Giulia",
+    "Stelvio",
+    "MiTo",
+    "Tonale",
+    "159"
+   ],
+   "Jaguar": [
+    "XE",
+    "XF",
+    "F-Pace",
+    "E-Pace",
+    "I-Pace",
+    "F-Type"
+   ],
+   "MG": [
+    "ZS",
+    "MG4",
+    "HS"
+   ],
+   "Polestar": [
+    "2",
+    "3"
+   ],
+   "BYD": [
+    "Atto 3",
+    "Dolphin",
+    "Seal"
+   ],
+   "Subaru": [
+    "Forester",
+    "Outback",
+    "Impreza",
+    "XV"
+   ],
+   "Chevrolet": [
+    "Spark",
+    "Aveo",
+    "Cruze",
+    "Captiva",
+    "Matiz"
+   ],
+   "Iveco": [
+    "Daily",
+    "Eurocargo",
+    "Stralis"
+   ],
+   "MAN": [
+    "TGE",
+    "TGL",
+    "TGM",
+    "TGS",
+    "TGX"
+   ],
+   "DAF": [
+    "LF",
+    "CF",
+    "XF"
+   ]
+  }
  }
 }

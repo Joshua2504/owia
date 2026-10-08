@@ -26,7 +26,14 @@ def embed(text: str) -> np.ndarray:
 res = {}
 for group, spec in json.load(open(prompts, encoding="utf-8")).items():
     names, vecs = [], []
-    for label, words in spec["labels"].items():
+    labels = spec.get("labels") or {}
+    # Modelle: je Marke eine Liste aus Label oder [Label, Schreibweise im Prompt];
+    # gespeichert als "Marke|Label", gesucht wird „Volkswagen Golf".
+    for marke, modelle in (spec.get("marken") or {}).items():
+        for m in modelle:
+            label, wort = (m, m) if isinstance(m, str) else m
+            labels[f"{marke}|{label}"] = [f"{marke.replace('ë', 'e')} {wort}"]
+    for label, words in labels.items():
         # Prompt-Ensemble: Mittelwert über alle Vorlagen × Schreibweisen.
         m = np.mean([embed(t.format(w)) for w in words for t in spec["vorlagen"]], axis=0)
         names.append(label)

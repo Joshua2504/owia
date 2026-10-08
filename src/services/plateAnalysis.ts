@@ -216,11 +216,30 @@ export const FAHRZEUG_MIN_P = 0.8
 
 export type FahrzeugVorschlag = { wert: string; p: number }
 
+/** Ab dieser gemittelten Wahrscheinlichkeit (innerhalb der Marke) wird ein
+ *  Modell als anklickbarer Vorschlag angeboten – nie vorbefüllt. Ungemessen
+ *  (10/2026 gab es nur ~20 Anzeigen mit eingetragenem Modell); mit wachsendem
+ *  Bestand an Hand gegen reports.fahrzeug_modell nachmessen. */
+export const MODELL_VORSCHLAG_P = 0.4
+
+/** Marken-Schlüssel zum Vergleich von Freitext („VW", „Mercedes") mit den
+ *  Labels des Dienstes („Volkswagen", „Mercedes-Benz"). */
+function markeKey(m: string): string {
+  const k = m.toLowerCase().replace(/ë/g, 'e').replace(/[^a-z0-9]/g, '')
+  if (k === 'vw') return 'volkswagen'
+  if (k.startsWith('mercedes') || k === 'benz') return 'mercedesbenz'
+  return k
+}
+
 /** Marke/Farbe einer Anzeige: Wahrscheinlichkeiten aller analysierten Fotos
- *  gemittelt (wie die Messung), Vorschlag nur ab FAHRZEUG_MIN_P. */
-export async function bestFahrzeugForReport(reportId: number): Promise<{
+ *  gemittelt (wie die Messung), Vorschlag nur ab FAHRZEUG_MIN_P. Dazu ein
+ *  Modell-Vorschlag innerhalb der eingetragenen Marke (`marke`; leer ⇒ die
+ *  wahrscheinlichste erkannte), gemittelt über die Fotos, die diese Marke
+ *  unter ihren Top-Marken haben. */
+export async function bestFahrzeugForReport(reportId: number, marke?: string | null): Promise<{
   marke: FahrzeugVorschlag | null
   farbe: FahrzeugVorschlag | null
+  modell: FahrzeugVorschlag | null
   pending: boolean
 }> {
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -228,29 +247,40 @@ export async function bestFahrzeugForReport(reportId: number): Promise<{
     [reportId]
   )
   const pending = rows.some((r) => r.analysis_status === 'pending')
-  const sums = { marke: new Map<string, number>(), farbe: new Map<string, number>() }
-  let n = 0
+  type Fz = { marke?: Record<string, number>; farbe?: Record<string, number>; modell?: Record<string, Record<string, number>> }
+  const fzs: Fz[] = []
   for (const r of rows) {
-    let fz: { marke?: Record<string, number>; farbe?: Record<string, number> } | undefined
     try {
-      fz = r.analyse_json ? JSON.parse(String(r.analyse_json)).fahrzeug : undefined
+      const fz = r.analyse_json ? (JSON.parse(String(r.analyse_json)).fahrzeug as Fz | undefined) : undefined
+      if (fz) fzs.push(fz)
     } catch {
-      continue
-    }
-    if (!fz) continue
-    n++
-    for (const g of ['marke', 'farbe'] as const) {
-      for (const [label, p] of Object.entries(fz[g] || {})) {
-        if (typeof p === 'number') sums[g].set(label, (sums[g].get(label) || 0) + p)
-      }
+      /* defekte Analyse überspringen */
     }
   }
-  const pick = (m: Map<string, number>): FahrzeugVorschlag | null => {
+  const mittel = (dicts: (Record<string, number> | undefined)[]): Map<string, number> => {
+    const sums = new Map<string, number>()
+    for (const d of dicts) for (const [k, p] of Object.entries(d || {})) if (typeof p === 'number') sums.set(k, (sums.get(k) || 0) + p / dicts.length)
+    return sums
+  }
+  const top = (m: Map<string, number>): FahrzeugVorschlag | null => {
     let best: FahrzeugVorschlag | null = null
-    for (const [wert, sum] of m) if (!best || sum / n > best.p) best = { wert, p: sum / n }
-    return best && best.p >= FAHRZEUG_MIN_P ? best : null
+    for (const [wert, p] of m) if (!best || p > best.p) best = { wert, p }
+    return best
   }
-  return { marke: n ? pick(sums.marke) : null, farbe: n ? pick(sums.farbe) : null, pending }
+  const ab = (v: FahrzeugVorschlag | null, min: number) => (v && v.p >= min ? v : null)
+  if (!fzs.length) return { marke: null, farbe: null, modell: null, pending }
+
+  const markeTop = top(mittel(fzs.map((f) => f.marke)))
+  const key = markeKey(String(marke || '').trim() || markeTop?.wert || '')
+  const modellDicts = fzs
+    .map((f) => Object.entries(f.modell || {}).find(([m]) => markeKey(m) === key)?.[1])
+    .filter((d): d is Record<string, number> => !!d)
+  return {
+    marke: ab(markeTop, FAHRZEUG_MIN_P),
+    farbe: ab(top(mittel(fzs.map((f) => f.farbe))), FAHRZEUG_MIN_P),
+    modell: key && modellDicts.length ? ab(top(mittel(modellDicts)), MODELL_VORSCHLAG_P) : null,
+    pending,
+  }
 }
 
 /** Leere Marke/Farbe eines Entwurfs aus den Fotos vorbefüllen – wie beim

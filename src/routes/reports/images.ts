@@ -407,7 +407,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     // Regel wie die serverseitige Vorbefüllung); unsichere Lesungen werden dem
     // Nutzer gar nicht erst vorgeschlagen.
     const best = await bestPlateForReport(report.id)
-    const fz = await bestFahrzeugForReport(report.id)
+    const fz = await bestFahrzeugForReport(report.id, report.fahrzeug_marke)
     return reply.send({
       status: pending ? 'pending' : 'done',
       suggestions: {
@@ -415,6 +415,8 @@ export default async function imageRoutes(app: FastifyInstance) {
         confidence: best?.confidence ?? null,
         fahrzeug_marke: fz.marke?.wert ?? null,
         fahrzeug_farbe: fz.farbe?.wert ?? null,
+        // Nur als anklickbarer Vorschlag (report-form.js), nie vorbefüllt.
+        fahrzeug_modell: fz.modell?.wert ?? null,
       },
       // Einzelergebnisse pro Foto: speisen die "Kennzeichen übernehmen"-Buttons
       // auf den Bild-Karten (auch Lesungen unter der Prefill-Schwelle).

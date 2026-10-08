@@ -42,7 +42,12 @@ export type BildAnalyse = {
   /** Marke/Farbe des Autos am besten Kennzeichen (bzw. des ganzen Fotos):
    *  Top-5-Wahrscheinlichkeiten je Gruppe, Label → p. Fehlt bei älteren
    *  Analysen und wenn der Dienst die Klassifikation nicht liefern konnte. */
-  fahrzeug?: { marke: Record<string, number>; farbe: Record<string, number> }
+  fahrzeug?: {
+    marke: Record<string, number>
+    farbe: Record<string, number>
+    /** Top-3-Modelle innerhalb der wahrscheinlichsten Marken: Marke → Modell → p. */
+    modell?: Record<string, Record<string, number>>
+  }
 }
 
 /** Wahrscheinlichkeiten aus der Dienst-Antwort übernehmen (nur endliche Zahlen). */
@@ -106,7 +111,7 @@ export async function recognizePlate(
       height?: number
       plates?: { text?: string; confidence?: number; bbox?: number[] }[]
       faces?: { score?: number; bbox?: number[] }[]
-      fahrzeug?: { marke?: unknown; farbe?: unknown } | null
+      fahrzeug?: { marke?: unknown; farbe?: unknown; modell?: unknown } | null
       best?: {
         text?: string | null
         confidence?: number | null
@@ -125,7 +130,18 @@ export async function recognizePlate(
             bbox: p.bbox!.slice(0, 4).map(Number),
           })),
           faces: (data.faces || []).filter((f) => Array.isArray(f.bbox)).map((f) => ({ score: Number(f.score) || 0, bbox: f.bbox!.slice(0, 4).map(Number) })),
-          ...(data.fahrzeug ? { fahrzeug: { marke: probs(data.fahrzeug.marke), farbe: probs(data.fahrzeug.farbe) } } : {}),
+          ...(data.fahrzeug
+            ? {
+                fahrzeug: {
+                  marke: probs(data.fahrzeug.marke),
+                  farbe: probs(data.fahrzeug.farbe),
+                  modell: Object.fromEntries(
+                    Object.entries(data.fahrzeug.modell && typeof data.fahrzeug.modell === 'object' ? data.fahrzeug.modell : {})
+                      .map(([m, v]) => [String(m).slice(0, 40), probs(v)])
+                  ),
+                },
+              }
+            : {}),
         }
       : null
     const best = data.best

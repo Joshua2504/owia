@@ -374,6 +374,9 @@
       if (!menuEl.hidden && !e.target.closest('.photo-edit-move-menu, [data-act=move-menu]')) menuEl.hidden = true
     })
     dlg.querySelector('[data-act=photo-times]').addEventListener('click', applyPhotoTimes)
+    ;['tattag', 'tatzeit_von', 'tatzeit_bis'].forEach(function (k) {
+      dlg.querySelector('[data-detail=' + k + ']').addEventListener('input', syncPhotoTimes)
+    })
     dlg.querySelector('[data-act=submit]').addEventListener('click', function () { submitReport(false) })
     var sendBtn = dlg.querySelector('[data-act=send]')
     if (sendBtn) sendBtn.addEventListener('click', function () { submitReport(true) })
@@ -1032,12 +1035,21 @@
     bt.hidden = !f.behinderung
     // Zeitspanne der Fotos (EXIF, serverseitig als Strings) für „Uhrzeit aus Fotos".
     var t = s.report.photoTimes
-    box.querySelector('[data-photo-times]').hidden = !t
+    syncPhotoTimes()
     // Kurz (eine Zeile): Datum nur, wenn es vom eingetragenen Tattag abweicht.
     if (t) {
       box.querySelector('[data-photo-span]').textContent = '(' +
         (t.vonTag === t.bisTag && t.vonTag === f.tattag ? t.von + (t.bis !== t.von ? ' – ' + t.bis : '') + ' Uhr' : photoSpan(t)) + ')'
     }
+  }
+  // Link nur zeigen, wenn die eingetragene Tatzeit von den Fotos abweicht.
+  function syncPhotoTimes() {
+    var t = state && state.report && state.report.photoTimes
+    var row = dlg.querySelector('[data-photo-times]')
+    if (!t) { row.hidden = true; return }
+    var v = function (k) { return dlg.querySelector('[data-detail=' + k + ']').value }
+    row.hidden = v('tattag') === t.vonTag && v('tatzeit_von') === t.von &&
+      v('tatzeit_bis') === (zeitraum(t) ? t.bis : '')
   }
   function fmtDay(iso) {
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '')
@@ -1069,6 +1081,7 @@
     box.querySelector('[data-detail=tattag]').value = body.tattag
     box.querySelector('[data-detail=tatzeit_von]').value = body.tatzeit_von
     box.querySelector('[data-detail=tatzeit_bis]').value = body.tatzeit_bis
+    syncPhotoTimes()
     saveDetail(body)
   }
   function saveDetail(body) {
