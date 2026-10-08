@@ -3,17 +3,28 @@ import fs from 'fs/promises'
 import jpeg from 'jpeg-js'
 import { PNG } from 'pngjs'
 import exifr from 'exifr'
+import type { BildAnalyse } from './alpr'
 
 // Serverseitige Verpixelung für die anonyme Übersichtskarte.
 //
 // Wichtig fürs Datenschutzkonzept: Das Originalbild verlässt den Server NIE.
-// Wir rechnen es auf wenige Pixel herunter und kodieren ein winziges JPEG neu.
-// Im Browser wird es per `image-rendering: pixelated` blockig hochskaliert –
-// erkennbar bleibt grob die Szene, nicht aber Kennzeichen oder Gesichter.
+// Wir rechnen es herunter und kodieren ein kleines JPEG neu. Zwei Stufen:
+// - Liegt eine Bildanalyse (report_images.analyse_json) mit mindestens einem
+//   erkannten Kennzeichen vor, werden alle Kennzeichen- und Gesichtsboxen
+//   (mit Rand) geschwärzt und das Bild nur moderat auf PIXEL_MAX_GESCHWAERZT
+//   verkleinert – passend zur Anzeigegröße im Karten-Popup (160 px).
+// - Sonst (keine Analyse, Erkennung fehlgeschlagen, kein Kennzeichen gefunden)
+//   bleibt es bei der groben Verpixelung auf PIXEL_MAX: Wir können dann nicht
+//   ausschließen, dass ein übersehenes Kennzeichen lesbar wäre.
 
-// Längste Kante des heruntergerechneten Bildes. Klein genug, dass Details wie
-// Kennzeichen unkenntlich sind, groß genug, dass man Auto/Umfeld grob erahnt.
+// Längste Kante ohne Schwärzung. Klein genug, dass selbst Kennzeichen-
+// Nahaufnahmen unkenntlich sind; man erahnt nur grob Auto/Umfeld.
 const PIXEL_MAX = 32
+// Längste Kante mit Schwärzung der erkannten Kennzeichen/Gesichter.
+const PIXEL_MAX_GESCHWAERZT = 160
+// Rand um jede Box (Anteil der Boxgröße) gegen ungenaue Boxen und das
+// Ausbluten beim Box-Downsampling.
+const BOX_RAND = 0.3
 
 type Raw = { data: Uint8Array | Buffer; width: number; height: number }
 
@@ -112,17 +123,56 @@ export async function readOrientation(buffer: Buffer): Promise<number> {
   }
 }
 
+/** Boxen, die vor der moderaten Verkleinerung geschwärzt werden: alle
+ *  Kennzeichen (auch das angezeigte) und alle Gesichter, unabhängig von der
+ *  Erkennungssicherheit. null = Analyse taugt nicht für die Schwärzungsstufe. */
+function schwaerzBoxen(analyse: BildAnalyse | null | undefined): number[][] | null {
+  if (!analyse || !analyse.w || !analyse.h || !Array.isArray(analyse.plates) || !analyse.plates.length) return null
+  const boxen = [...analyse.plates.map((p) => p.bbox), ...(analyse.faces || []).map((f) => f.bbox)]
+  return boxen.every((b) => Array.isArray(b) && b.length >= 4 && b.every(Number.isFinite)) ? boxen : null
+}
+
+/** Boxen (Koordinaten im analysierten Bild w×h) mit Rand schwarz füllen. */
+function schwaerzen(img: Raw, boxen: number[][], analyse: BildAnalyse): void {
+  const sx = img.width / analyse.w
+  const sy = img.height / analyse.h
+  for (const [x1, y1, x2, y2] of boxen) {
+    const rx = Math.abs(x2 - x1) * BOX_RAND
+    const ry = Math.abs(y2 - y1) * BOX_RAND
+    const ax = Math.max(0, Math.floor((Math.min(x1, x2) - rx) * sx) - 1)
+    const ay = Math.max(0, Math.floor((Math.min(y1, y2) - ry) * sy) - 1)
+    const bx = Math.min(img.width, Math.ceil((Math.max(x1, x2) + rx) * sx) + 1)
+    const by = Math.min(img.height, Math.ceil((Math.max(y1, y2) + ry) * sy) + 1)
+    for (let y = ay; y < by; y++) {
+      for (let x = ax; x < bx; x++) {
+        const i = (y * img.width + x) * 4
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = 0
+      }
+    }
+  }
+}
+
 /**
- * Liefert ein stark verpixeltes JPEG (winzige Auflösung) des Eingabebildes.
+ * Liefert die öffentliche Fassung eines Fotos: mit brauchbarer Analyse
+ * geschwärzt und auf 160 px verkleinert, sonst stark verpixelt (32 px).
  * Wirft, wenn das Bild nicht dekodiert werden kann.
  */
-export function pixelate(buffer: Buffer, mimetype: string, orientation = 1): Buffer {
+export function pixelate(
+  buffer: Buffer,
+  mimetype: string,
+  orientation = 1,
+  analyse?: BildAnalyse | null
+): Buffer {
   const src = decode(buffer, mimetype)
-  const scale = Math.min(1, PIXEL_MAX / Math.max(src.width, src.height))
+  const boxen = schwaerzBoxen(analyse)
+  const max = boxen ? PIXEL_MAX_GESCHWAERZT : PIXEL_MAX
+  const scale = Math.min(1, max / Math.max(src.width, src.height))
   const outW = Math.max(1, Math.round(src.width * scale))
   const outH = Math.max(1, Math.round(src.height * scale))
+  // Die Boxen gelten fürs EXIF-gedrehte Bild – also erst drehen, dann schwärzen.
   const oriented = applyOrientation({ data: downsample(src, outW, outH), width: outW, height: outH }, orientation)
-  const encoded = jpeg.encode({ data: oriented.data, width: oriented.width, height: oriented.height }, 70)
+  if (boxen && analyse) schwaerzen(oriented, boxen, analyse)
+  const encoded = jpeg.encode({ data: oriented.data, width: oriented.width, height: oriented.height }, boxen ? 75 : 70)
   return Buffer.from(encoded.data)
 }
 
@@ -245,13 +295,15 @@ export async function writeMailVariantCache(
 }
 
 /**
- * Verpixeltes Bild (öffentliche Karte) mit Datei-Cache: einmal berechnet,
- * danach direkt von Platte. Wirft, wenn das Bild nicht dekodierbar ist.
+ * Öffentliches Bild (Karte) mit Datei-Cache: einmal berechnet, danach direkt
+ * von Platte. Wirft, wenn das Bild nicht dekodierbar ist. Ändert sich die
+ * Analyse, muss die Cache-Datei weg (removeDerivedFiles bei Fotoersatz).
  */
 export async function cachedPixelate(
   dir: string,
   filename: string,
-  mimetype: string
+  mimetype: string,
+  analyse?: BildAnalyse | null
 ): Promise<Buffer> {
   const cachePath = path.join(dir, `${filename}.pixel.jpg`)
   try {
@@ -260,7 +312,7 @@ export async function cachedPixelate(
     /* noch nicht gecacht */
   }
   const original = await fs.readFile(path.join(dir, filename))
-  const out = pixelate(original, mimetype || 'image/jpeg', await readOrientation(original))
+  const out = pixelate(original, mimetype || 'image/jpeg', await readOrientation(original), analyse)
   fs.writeFile(cachePath, out).catch(() => {})
   return out
 }

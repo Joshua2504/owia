@@ -763,3 +763,19 @@ test('Wiesbaden- und Mainz-Portal: Zuordnung, Prüfungen, Payload', () => {
   assert.equal(portalFuer('hanau'), null)
   assert.equal(getCityByName('Mainz-Kastel')!.id, 'wiesbaden')
 })
+
+test('Öffentliches Kartenbild: mit Kennzeichen-Analyse geschwärzt in 160 px, sonst grob verpixelt', async () => {
+  const { pixelate } = await import('../src/services/pixelate')
+  const jpeg = (await import('jpeg-js')).default
+  const original = Buffer.from(jpeg.encode({ data: Buffer.alloc(1600 * 1200 * 4, 255), width: 1600, height: 1200 }, 90).data)
+  const analyse = { w: 800, h: 600, plates: [{ text: 'F AB 123', confidence: 0.9, bbox: [300, 400, 500, 450] }], faces: [] }
+  const geschwaerzt = jpeg.decode(pixelate(original, 'image/jpeg', 1, analyse))
+  assert.deepEqual([geschwaerzt.width, geschwaerzt.height], [160, 120])
+  assert.ok(geschwaerzt.data[(85 * 160 + 80) * 4] < 30, 'Kennzeichenbox muss schwarz sein')
+  assert.ok(geschwaerzt.data[(10 * 160 + 10) * 4] > 225, 'Rest des Bildes bleibt erhalten')
+  // Ohne Analyse oder ohne erkanntes Kennzeichen: keine Schwärzung möglich → 32 px.
+  for (const a of [null, { ...analyse, plates: [] }]) {
+    const grob = jpeg.decode(pixelate(original, 'image/jpeg', 1, a))
+    assert.deepEqual([grob.width, grob.height], [32, 24])
+  }
+})

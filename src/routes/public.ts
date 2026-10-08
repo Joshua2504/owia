@@ -6,6 +6,7 @@ import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { viewData, setFlash } from '../middleware/auth'
 import { cachedPixelate } from '../services/pixelate'
+import { parseAnalyse } from '../services/dritte'
 import { getCity, unlockedCities, DEFAULT_CITY_ID } from '../config/cities'
 import { isValidEmail, normalizeEmail } from './auth'
 import { MailService } from '../services/mail'
@@ -240,13 +241,14 @@ export default async function publicRoutes(app: FastifyInstance) {
     return reply.send({ reports })
   })
 
-  // Stark verpixeltes erstes Foto einer versendeter Anzeige. Das Original
-  // verlässt den Server nie – pixelate() rechnet es serverseitig herunter.
+  // Öffentliche Fassung des ersten Fotos einer versendeten Anzeige: erkannte
+  // Kennzeichen/Gesichter geschwärzt, sonst stark verpixelt (pixelate.ts).
+  // Das Original verlässt den Server nie.
   app.get('/api/public/bild/:imageId/pixel.jpg', async (request, reply) => {
     const { imageId } = request.params as { imageId: string }
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.user_id, r.id AS report_id, ri.filename, ri.mimetype
+      `SELECT r.user_id, r.id AS report_id, ri.filename, ri.mimetype, ri.analyse_json
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
         WHERE ri.id = ? AND r.status='versendet'
@@ -258,7 +260,7 @@ export default async function publicRoutes(app: FastifyInstance) {
 
     const imageDir = path.join(UPLOAD_DIR, String(img.user_id), String(img.report_id))
     try {
-      const pixelated = await cachedPixelate(imageDir, img.filename, img.mimetype)
+      const pixelated = await cachedPixelate(imageDir, img.filename, img.mimetype, parseAnalyse(img.analyse_json))
       return reply
         .header('Content-Type', 'image/jpeg')
         .header('Cache-Control', 'public, max-age=3600')

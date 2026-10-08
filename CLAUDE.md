@@ -115,8 +115,9 @@ in `public/vendor/` — kein CDN, die CSP erzwingt das.
   Namenskonvention neben dem Original (`.thumb.jpg`, `.pixel.jpg`, `.plate.jpg`)
   unter `data/uploads/<userId>/<reportId>/`.
 - Datenschutz ist Designbedingung: keine externen Requests, Originalfotos
-  verlassen den Host nie, öffentliche Endpoints liefern nur stark pixelierte
-  Bilder und Aggregate.
+  verlassen den Host nie, öffentliche Endpoints liefern nur anonymisierte
+  Bilder (erkannte Kennzeichen/Gesichter geschwärzt + 160 px, ohne Analyse
+  32 px verpixelt; `services/pixelate.ts`) und Aggregate.
 
 ## Geprüfter Projektstand
 

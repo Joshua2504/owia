@@ -2,7 +2,7 @@
 //
 // Lädt die Marker-Daten von /api/public/reports und die Kacheln same-origin von
 // /tiles/.... Pro Marker ein Popup mit Verstoßart, Tattag und – falls vorhanden –
-// einem stark verpixelten Foto (/api/public/reports/:id/pixel.jpg, serverseitig
+// einem anonymisierten Foto (/api/public/bild/:id/pixel.jpg, serverseitig
 // anonymisiert). Es werden keine personenbezogenen Daten angezeigt.
 (function () {
   if (window.L && L.Icon && L.Icon.Default) {
@@ -106,11 +106,12 @@
     const date = formatDate(r.tattag)
     if (date) parts.push('<div class="text-muted small">' + date + '</div>')
     if (r.imageUrl) {
-      // Blockig hochskaliert – das Bild ist serverseitig bereits winzig/verpixelt.
+      // Serverseitig anonymisiert: Kennzeichen/Gesichter geschwärzt (160 px) oder,
+      // ohne Bildanalyse, winzig verpixelt (32 px) und hier blockig hochskaliert.
       parts.push(
         '<img src="' +
           encodeURI(r.imageUrl) +
-          '" alt="Verpixeltes Beweisfoto" ' +
+          '" alt="Anonymisiertes Beweisfoto" ' +
           'style="width:160px;height:auto;margin-top:6px;border-radius:4px;image-rendering:pixelated">'
       )
     }
