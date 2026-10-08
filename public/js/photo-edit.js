@@ -79,6 +79,10 @@
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="kz-keins" title="Auf diesem Foto ist das Kennzeichen des Fahrzeugs nicht zu sehen" hidden>Kein Kennzeichen sichtbar</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="crop-reset" title="Zuschnitt aufheben" hidden>⤢ Ganzes Foto</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
+      '<div class="btn-group btn-group-sm" role="group" aria-label="Helligkeit">' +
+      '<button type="button" class="btn btn-outline-light" data-act="heller" title="Foto aufhellen (dunkle Bereiche stärker)">☀ Heller</button>' +
+      '<button type="button" class="btn btn-outline-light" data-act="dunkler" title="Foto abdunkeln">◐ Dunkler</button>' +
+      '</div>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
       '<button type="button" class="btn btn-sm btn-outline-warning" data-act="original" title="Gespeicherte Bearbeitungen verwerfen (auch automatische Schwärzungen) und das unbearbeitete Original laden" hidden>⟲ Original</button>' +
       '</div></div>' +
@@ -232,6 +236,8 @@
     })
     window.addEventListener('resize', function () { if (dlg.open && state && state.base) renderMarks() })
     dlg.querySelector('[data-act=rotate]').addEventListener('click', rotate)
+    dlg.querySelector('[data-act=heller]').addEventListener('click', function () { helligkeit(0.75) })
+    dlg.querySelector('[data-act=dunkler]').addEventListener('click', function () { helligkeit(1 / 0.75) })
     dlg.querySelector('[data-act=undo]').addEventListener('click', undo)
     dlg.querySelector('[data-act=original]').addEventListener('click', function () { restoreOriginal() })
     dlg.querySelector('[data-act=cancel]').addEventListener('click', cancel)
@@ -2146,6 +2152,32 @@
     c.height = Math.max(1, Math.min(canvas.height - y, Math.round(r.h)))
     c.getContext('2d').drawImage(canvas, x, y, c.width, c.height, 0, 0, c.width, c.height)
     return c
+  }
+
+  // Helligkeit per Gamma-Kurve ins Grundbild einbacken (Schwärzungen liegen
+  // darüber und bleiben). Gamma statt linearer Aufhellung: Nachtfotos werden
+  // in den Schatten lesbar, ohne dass helle Stellen ausbrennen.
+  function helligkeit(gamma) {
+    if (!state || !state.base || state.busy) return
+    snapshot()
+    var c = document.createElement('canvas')
+    c.width = state.base.width
+    c.height = state.base.height
+    var cx = c.getContext('2d')
+    cx.drawImage(state.base, 0, 0)
+    var d = cx.getImageData(0, 0, c.width, c.height)
+    var lut = new Uint8ClampedArray(256)
+    for (var i = 0; i < 256; i++) lut[i] = Math.round(255 * Math.pow(i / 255, gamma))
+    var px = d.data
+    for (var j = 0; j < px.length; j += 4) {
+      px[j] = lut[px[j]]
+      px[j + 1] = lut[px[j + 1]]
+      px[j + 2] = lut[px[j + 2]]
+    }
+    cx.putImageData(d, 0, 0)
+    state.base = c
+    redraw()
+    updateUi()
   }
 
   function rotate() {
