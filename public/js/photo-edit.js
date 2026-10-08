@@ -455,6 +455,28 @@
         opts.filter(function (o) { return o.toLowerCase().indexOf(v) !== -1 })[0]
       if (hit) e.target.value = hit
     }, true)
+    // Umgekehrte Verstoß-Liste (fitMenu): Pfeil hoch/runter passend zur Anzeige.
+    dlg.addEventListener('keydown', function (e) {
+      if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || e._getauscht || !e.target.matches('[data-verstoss-input]')) return
+      var menu = e.target.parentNode.querySelector('.list-group')
+      if (!menu || !menu.dataset.umgekehrt || menu.style.display === 'none') return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      var k = new KeyboardEvent('keydown', { key: e.key === 'ArrowUp' ? 'ArrowDown' : 'ArrowUp', bubbles: true, cancelable: true })
+      k._getauscht = true
+      e.target.dispatchEvent(k)
+    }, true)
+    // Enter in einem Angaben-Feld (am Foto oder in der Seitenleiste): Auswahl
+    // übernehmen (die Feld-Handler laufen zuerst) und ins nächste Feld springen;
+    // nach dem letzten auf „Bestätigen".
+    dlg.addEventListener('keydown', function (e) {
+      var t = e.target
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON') return
+      if (!/^(INPUT|SELECT)$/.test(t.tagName) || t.type === 'checkbox' || t.type === 'radio') return
+      if (!t.closest('.pe-kz-box, .photo-edit-fields')) return
+      // Tatort: erst die Adresse aus dem Vorschlag übernehmen lassen.
+      setTimeout(function () { naechstesFeld(t) }, t === tatortInput() ? 200 : 0)
+    }, true)
     // Enter bestätigt – zügiges Durchklicken ohne Maus.
     dlg.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter' || e.target.closest('button') || !state) return
@@ -474,7 +496,7 @@
       }
       if (e.target === plateInput() || e.target === markeInput() || e.target === kzInEl) {
         e.preventDefault()
-        savePlate().then(function () { dlg.querySelector('[data-act=save]').focus() }, function () {})
+        savePlate().catch(function () {})
         return
       }
       if (!state.base || state.busy) return
@@ -542,6 +564,18 @@
     })
   }
 
+  function naechstesFeld(t) {
+    var box = t.closest('.pe-kz-box') || t.closest('.photo-edit-fields')
+    if (!box || !dlg.open) return
+    var felder = [].filter.call(box.querySelectorAll('input, select'), function (x) {
+      return x.type !== 'hidden' && x.type !== 'checkbox' && x.type !== 'radio' && x.type !== 'file' &&
+        !x.disabled && x.offsetParent !== null && !x.closest('[hidden]')
+    })
+    var i = felder.indexOf(t)
+    var n = i === -1 ? null : felder[i + 1]
+    if (n) { n.focus(); if (n.select && n.tagName === 'INPUT') n.select() }
+    else dlg.querySelector('[data-act=save]').focus()
+  }
   function plateInput() {
     return dlg.querySelector('#photo-edit-plate-input')
   }
@@ -578,14 +612,20 @@
     // Unter das Feld, wenn genug Platz ist, sonst darüber.
     var below = window.innerHeight - r.bottom - 16
     var above = r.top - 16
+    // Öffnet die Liste nach oben, steht sie umgekehrt: der erste Treffer
+    // direkt über dem Feld (Pfeiltasten tauschen, s. Keydown-Handler).
     if (below >= 240 || below >= above) {
       menu.style.top = r.bottom + 'px'
       menu.style.bottom = 'auto'
       menu.style.maxHeight = Math.max(160, below) + 'px'
+      menu.style.flexDirection = ''
+      delete menu.dataset.umgekehrt
     } else {
       menu.style.top = 'auto'
       menu.style.bottom = window.innerHeight - r.top + 'px'
       menu.style.maxHeight = above + 'px'
+      menu.style.flexDirection = 'column-reverse'
+      menu.dataset.umgekehrt = '1'
     }
   }
 
@@ -1464,6 +1504,9 @@
       var unten = window.innerHeight - r.bottom
       if (unten > 220 || unten > r.top) { menu.style.top = r.bottom + 'px'; menu.style.bottom = 'auto'; menu.style.maxHeight = Math.max(120, unten - 16) + 'px' }
       else { menu.style.top = 'auto'; menu.style.bottom = (window.innerHeight - r.top) + 'px'; menu.style.maxHeight = (r.top - 16) + 'px' }
+      var oben = menu.style.top === 'auto'
+      menu.style.flexDirection = oben ? 'column-reverse' : ''
+      menu.dataset.umgekehrt = oben ? '1' : ''
       menu.hidden = !treffer.length
     }
     function markiere(i) {
@@ -1484,8 +1527,9 @@
     input.addEventListener('input', render)
     input.addEventListener('blur', function () { menu.hidden = true; input.value = sel.value })
     input.addEventListener('keydown', function (e) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); markiere(aktiv + 1) }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); markiere(aktiv - 1) }
+      var dir = menu.dataset.umgekehrt ? -1 : 1
+      if (e.key === 'ArrowDown') { e.preventDefault(); markiere(aktiv + dir) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); markiere(aktiv - dir) }
       else if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); input.blur() }
       else if (e.key === 'Enter' || e.key === 'Tab') {
         if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation() }

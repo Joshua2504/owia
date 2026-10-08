@@ -297,9 +297,11 @@
         active = Math.max(active - 1, 0)
         highlight()
       } else if (e.key === 'Enter') {
-        if (active >= 0 && buttons[active]) {
+        // Ohne Pfeil-Auswahl gilt der erste Treffer.
+        const b = buttons[active >= 0 ? active : 0]
+        if (b) {
           e.preventDefault()
-          choose(buttons[active].textContent)
+          choose(b.textContent)
         }
       } else if (e.key === 'Escape') {
         close()

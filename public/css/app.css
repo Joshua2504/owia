@@ -1242,3 +1242,6 @@ body:has(.review-actions) .back-to-top { bottom: 5rem; }
 /* „+ Fotos" am Ende des Kachel-Streifens (photo-edit.js addPhotos). */
 .photo-edit-add { display: flex; align-items: center; justify-content: center; min-height: 64px; border: 2px dashed rgba(255,255,255,.4); background: transparent; color: #ddd; font-weight: 600; cursor: pointer; }
 .photo-edit-add:hover { border-color: #0dcaf0; color: #fff; }
+/* Nach oben geöffnete Auswahllisten (photo-edit.js fitMenu/landCombo):
+   umgekehrt, der erste Treffer steht direkt über dem Feld. */
+.list-group[data-umgekehrt="1"]:not([style*="display: none"]):not([hidden]) { display: flex !important; flex-direction: column-reverse; }

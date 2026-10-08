@@ -131,9 +131,11 @@
         active = Math.max(active - 1, 0)
         render()
       } else if (e.key === 'Enter') {
-        if (active >= 0 && items[active]) {
+        // Ohne Pfeil-Auswahl gilt der erste Vorschlag.
+        const it = items[active >= 0 ? active : 0]
+        if (it) {
           e.preventDefault()
-          choose(items[active])
+          choose(it)
         }
       } else if (e.key === 'Escape') {
         close()
