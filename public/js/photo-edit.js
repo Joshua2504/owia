@@ -97,7 +97,7 @@
       // Kennzeichen, Typ, Marke nebeneinander – die Leiste soll ohne Scrollen passen.
       '<div class="pe-row pe-row-kfz">' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
-      '<div class="input-group flex-nowrap"><select id="pe-land" class="form-select photo-edit-details" style="flex:0 0 3.6rem;width:3.6rem;padding-left:.45rem;padding-right:1.3rem;background-position:right .3rem center" data-detail="kennzeichen_land" aria-label="Länderkennzeichen" title="Land des Kennzeichens" hidden><option value="D">D</option></select>' +
+      '<div class="input-group flex-nowrap"><select id="pe-land" data-native class="form-select photo-edit-details" style="flex:0 0 3.6rem;width:3.6rem;padding-left:.45rem;padding-right:1.3rem;background-position:right .3rem center" data-detail="kennzeichen_land" aria-label="Länderkennzeichen" title="Land des Kennzeichens" hidden><option value="D">D</option></select>' +
       '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>' +
       '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
       '<div class="pe-field photo-edit-details" hidden><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
@@ -263,8 +263,8 @@
       if (!b || !state || state.busy || !state.thumbs) return
       var t = state.thumbs[Number(b.getAttribute('data-strip-index'))]
       if (!t || t === state.thumb) return
-      if (state.dirty && !confirm('Änderungen am Foto verwerfen?')) return
-      savePlate().then(function () { openThumb(t) }, function () {})
+      var s0 = state
+      flushSave(s0).then(savePlate).then(function () { if (state === s0) openThumb(t) }, function (err) { alert((err && err.message) || 'Speichern fehlgeschlagen.') })
     })
     // Reihenfolge per Drag & Drop (Desktop); auf dem Handy die Pfeile. Die
     // Kacheln weichen schon beim Ziehen aus (DOM live umsortiert, mit kurzer
@@ -748,14 +748,15 @@
     dlg.querySelector('[data-act=undo]').disabled = !state.history.length
     var saveBtn = dlg.querySelector('[data-act=save]')
     saveBtn.disabled = !state.base || !!state.busy
-    if (!state.busy) saveBtn.textContent = state.dirty ? '✓ Speichern & bestätigen' : '✓ Bestätigen'
+    if (!state.busy) saveBtn.textContent = '✓ Bestätigen'
     dlg.querySelector('[data-act=delete]').disabled = !!state.busy
     var mvb = dlg.querySelector('[data-act=move-menu]')
     mvb.hidden = state.plate == null
     mvb.disabled = !!state.busy
     var st = dlg.querySelector('.photo-edit-status')
     st.textContent = 'Foto ' + state.pos + '/' + state.total + ' · ' + (state.ok ? '✓ geprüft' : 'ungeprüft') +
-      (state.open ? ' · noch ' + state.open + ' offen' : '')
+      (state.open ? ' · noch ' + state.open + ' offen' : '') +
+      (state.saveErr ? ' · ⚠ nicht gespeichert' : state.saving ? ' · speichert …' : unsaved(state) ? ' · ● Änderungen offen' : state.gespeichert ? ' · gespeichert' : '')
     st.classList.toggle('is-ok', state.ok)
     st.classList.toggle('is-open', !state.ok)
     var hint = dlg.querySelector('.photo-edit-hint')
@@ -1057,7 +1058,7 @@
   function vorschlagBoxen(s) {
     var info = currentImage(s)
     if (!s || !s.base || !info || !info.dritte || !info.dritte.length || !info.groesse) return []
-    if (s.geometrie) return 'Das Foto wurde gedreht oder zugeschnitten – bitte erst „Rückgängig" oder von Hand schwärzen.'
+    if (s.geometrie || (s.crop && s.gespeichert)) return 'Das Foto wurde gedreht oder zugeschnitten – bitte erst „Rückgängig" oder von Hand schwärzen.'
     var sx = canvas.width / info.groesse.w
     var sy = canvas.height / info.groesse.h
     if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.05) return 'Die Bildausrichtung passt nicht zur Analyse – bitte von Hand schwärzen.'
@@ -1118,7 +1119,7 @@
   }
   function readyToSubmit() {
     var s = state
-    return !!(s && s.report && s.report.canSubmit && s.ok && !s.open && !s.dirty)
+    return !!(s && s.report && s.report.canSubmit && s.ok && !s.open)
   }
   function updateRun() {
     var box = dlg.querySelector('.photo-edit-side')
@@ -1172,7 +1173,12 @@
   function submitReport(sofort) {
     var s = state
     if (!s || s.busy || !s.report || !s.report.canSubmit) return
-    if (s.dirty && !confirm('Ungespeicherte Änderungen am Foto verwerfen und einreichen?')) return
+    if (unsaved(s) || s.saving) {
+      // Erst speichern, dann einreichen – nie ungespeichert verwerfen.
+      return flushSave(s).then(function () { if (state === s) submitReport(sofort) }, function (err) {
+        alert((err && err.message) || 'Foto konnte nicht gespeichert werden – bitte erneut versuchen.')
+      })
+    }
     if (sofort && !confirm('Anzeige ohne weitere Prüfung direkt ans Ordnungsamt versenden?')) return
     var done = function () { if (state === s) runDone('submitted') }
     if (!sofort && window.submitPreview) {
@@ -1285,6 +1291,7 @@
     kzLandEl = document.createElement('select')
     kzLandEl.className = 'form-select pe-kz-land'
     kzLandEl.setAttribute('aria-label', 'Länderkennzeichen')
+    kzLandEl.setAttribute('data-native', '') // kein Suchfeld (searchable-select.js)
     kzLandEl.addEventListener('change', function () {
       var src = landSel()
       src.value = kzLandEl.value
@@ -1332,6 +1339,8 @@
     if (b) {
       s.kz = { x: b[0] * canvas.width, y: b[1] * canvas.height, w: (b[2] - b[0]) * canvas.width, h: (b[3] - b[1]) * canvas.height }
       s.kzGeaendert = !k.box
+      // Unveränderter Erkennungs-Vorschlag: erst beim Bestätigen speichern.
+      s.kzVorschlag = !k.box
     } else if (k.keins) {
       s.kzKeins = true
     } else if (s.tool === 'black') {
@@ -1345,8 +1354,9 @@
     state.kz = box
     state.kzKeins = !!keins
     state.kzGeaendert = true
+    state.kzVorschlag = false
     redraw()
-    updateUi()
+    autoSave()
   }
   // Box relativ zum Zuschnitt (der beim Speichern angewandt wird), 0..1.
   function kzAnteile(s) {
@@ -1547,6 +1557,82 @@
   function snapshot(nurKz) {
     state.history.push({ base: state.base, redactions: state.redactions.slice(), crop: state.crop, geometrie: state.geometrie, kz: state.kz, kzKeins: state.kzKeins, nurKz: !!nurKz })
     if (!nurKz) state.dirty = true
+    autoSave()
+  }
+
+  // ---- Auto-Speichern ------------------------------------------------------
+  // Jede Änderung am Foto (Schwärzen, Zuschnitt, Drehen, Kennzeichen-Box) wird
+  // kurz danach gespeichert – kein „Speichern" nötig. Vor Fotowechsel,
+  // Schließen, Bestätigen und Einreichen wird ausstehendes sofort geschrieben
+  // (flushSave). s.rev zählt Änderungen, damit eine während des Uploads
+  // gemachte Änderung nicht als gespeichert gilt.
+  var AUTOSAVE_MS = 800
+  function autoSave() {
+    var s = state
+    if (!s) return
+    s.rev = (s.rev || 0) + 1
+    s.saveErr = false
+    clearTimeout(s.saveTimer)
+    s.saveTimer = setTimeout(function () { flushSave(s).catch(function () {}) }, AUTOSAVE_MS)
+    updateUi()
+  }
+  function unsaved(s) {
+    return !!(s && (s.dirty || (kzPflicht(s) && s.kzGeaendert && !s.kzVorschlag && (s.kz || s.kzKeins))))
+  }
+  function flushSave(s) {
+    clearTimeout(s.saveTimer)
+    s.saveTimer = null
+    s.saveChain = (s.saveChain || Promise.resolve()).catch(function () {}).then(function () { return persist(s) })
+    return s.saveChain
+  }
+  function persist(s) {
+    if (!unsaved(s)) return Promise.resolve()
+    // Canvas gehört nur dem aktuellen Foto; beim Ziehen später erneut.
+    if (state !== s || !s.base) return Promise.resolve()
+    if (s.drawing) {
+      s.saveTimer = setTimeout(function () { flushSave(s).catch(function () {}) }, AUTOSAVE_MS)
+      return Promise.resolve()
+    }
+    var rev = s.rev
+    var kzKeins = s.kzKeins
+    var kzBox = s.kz ? kzAnteile(s) : null
+    var bild = s.dirty ? flatten() : null
+    if (bild) redraw()
+    s.saving = true
+    updateUi()
+    var upload = !bild
+      ? Promise.resolve(false)
+      : new Promise(function (resolve) { bild.toBlob(resolve, 'image/jpeg', 0.9) }).then(function (blob) {
+          var fd = new FormData()
+          fd.append('bilder', blob, 'bearbeitet.jpg')
+          return fetch(s.put, { method: 'PUT', body: fd })
+        }).then(function (r) {
+          if (!r.ok || r.redirected) throw new Error('Foto konnte nicht gespeichert werden.')
+          s.gespeichert = true
+          if (s.rev === rev) s.dirty = false
+          if (s.dritteOkNachSpeichern) return dritteOk(s).catch(function () {}).then(function () { return true })
+          return true
+        })
+    return upload
+      .then(function (hochgeladen) {
+        // Der PUT setzt die Box serverseitig zurück – dann immer neu senden.
+        if (!kzPflicht(s) || !(hochgeladen || s.kzGeaendert) || (!kzKeins && !kzBox)) return
+        var kzRev = s.rev
+        return kzSpeichern(s, kzKeins ? { keins: true } : { box: kzBox }).then(function () {
+          if (s.rev !== kzRev) s.kzGeaendert = true
+        })
+      })
+      .then(function () {
+        s.saving = false
+        if (state === s) { updateUi(); loadStatus(s) }
+      }, function (err) {
+        s.saving = false
+        s.saveErr = true
+        if (state === s) updateUi()
+        var e = new Error((err && err.message) || 'Foto konnte nicht gespeichert werden.')
+        e.persist = true
+        throw e
+      })
   }
   function undo() {
     var s = state.history.pop()
@@ -1558,9 +1644,9 @@
     state.kz = s.kz
     state.kzKeins = s.kzKeins
     if (s.nurKz) state.kzGeaendert = true
-    state.dirty = state.history.some(function (h) { return !h.nurKz })
+    else state.dirty = true
     redraw()
-    updateUi()
+    autoSave()
   }
 
   // Markierungen einbacken und den Zuschnitt anwenden – fürs Drehen und
@@ -1779,7 +1865,9 @@
   function moveTo(dest) {
     var s = state
     if (!s || s.busy) return
-    if (s.dirty && !confirm('Ungespeicherte Änderungen am Foto verwerfen?')) return
+    if (unsaved(s) || s.saving) {
+      return flushSave(s).then(function () { if (state === s) moveTo(dest) }, function (err) { alert((err && err.message) || 'Speichern fehlgeschlagen.') })
+    }
     var ids = pickedIds()
     dlg.querySelector('.photo-edit-move-menu').hidden = true
     s.busy = true
@@ -1856,11 +1944,14 @@
   }
 
   function cancel() {
-    if (state && state.dirty && !confirm('Änderungen am Foto verwerfen?')) return
-    // Ein getipptes Kennzeichen nicht verlieren, nur weil das Foto nicht
-    // bestätigt wurde.
-    savePlate().catch(function () {})
-    close()
+    var s = state
+    if (!s) return close()
+    // Ausstehende Änderungen und ein getipptes Kennzeichen erst speichern.
+    flushSave(s).then(function () { return savePlate() }).then(function () {
+      if (state === s) close()
+    }, function (err) {
+      if (confirm(((err && err.message) || 'Speichern fehlgeschlagen.') + ' Trotzdem schließen? Die Änderungen gehen verloren.')) close()
+    })
   }
 
   // Zeile der Anzeigen-Liste bzw. Karte des Prüf-Modus (review.js).
@@ -1910,37 +2001,18 @@
       hint.classList.add('pe-flash')
       return
     }
-    // Vor flatten(): bezieht sich auf den Zuschnitt, den der Upload anwendet.
-    var kzNeu = kzPflicht(s) && (s.dirty || s.kzGeaendert)
-    if (kzNeu && !s.kzKeins && !kzAnteile(s)) {
+    if (kzPflicht(s) && s.kz && !s.kzKeins && !kzAnteile(s)) {
       alert('Die Kennzeichen-Markierung liegt außerhalb des Zuschnitts – bitte neu markieren.')
       setTool('plate')
       return
     }
-    var kzBody = kzNeu ? (s.kzKeins ? { keins: true } : { box: kzAnteile(s) }) : null
     var btn = dlg.querySelector('[data-act=save]')
     s.busy = true
-    btn.textContent = s.dirty ? 'Speichert …' : 'Bestätigt …'
+    btn.textContent = 'Bestätigt …'
     updateUi()
-    // Ohne Vorschau/Rahmen, mit Zuschnitt.
-    var bild = s.dirty ? flatten() : null
-    redraw()
-    var upload = !s.dirty
-      ? Promise.resolve()
-      : new Promise(function (resolve) { bild.toBlob(resolve, 'image/jpeg', 0.9) }).then(function (blob) {
-          var fd = new FormData()
-          fd.append('bilder', blob, 'bearbeitet.jpg')
-          return fetch(s.put, { method: 'PUT', body: fd })
-        }).then(function (r) {
-          if (!r.ok || r.redirected) throw new Error()
-          s.dirty = false
-          // Freigegebene Vorschläge: erst jetzt, der PUT hat dritte_ok zurückgesetzt.
-          if (s.dritteOkNachSpeichern) return dritteOk(s).catch(function () {})
-        })
-    upload.catch(function () {}) // Fehler meldet die Kette unten
+    s.kzVorschlag = false
     savePlate()
-      .then(function () { return upload })
-      .then(function () { return kzBody ? kzSpeichern(s, kzBody) : null })
+      .then(function () { return flushSave(s) })
       .then(function () { return fetch(s.put + '/geprueft', { method: 'POST' }) })
       .then(function (r) {
         if (!r.ok || r.redirected) throw new Error()
@@ -1948,7 +2020,9 @@
       })
       .catch(function (err) {
         // savePlate() hat seinen Fehler schon gemeldet.
-        if (!err || !err.message) alert('Speichern fehlgeschlagen – bitte erneut versuchen.')
+        // savePlate() hat seinen Fehler schon gemeldet.
+        if (err && err.persist) alert(err.message + ' Bitte erneut versuchen.')
+        else if (!err || !err.message) alert('Speichern fehlgeschlagen – bitte erneut versuchen.')
       })
       .finally(function () {
         s.busy = false
