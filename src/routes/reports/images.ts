@@ -4,6 +4,7 @@
 import { FastifyInstance, FastifyRequest } from 'fastify'
 import mysql from 'mysql2/promise'
 import path from 'path'
+import crypto from 'crypto'
 import fs from 'fs/promises'
 import { pool } from '../../db/connection'
 import { requireAuth } from '../../middleware/auth'
@@ -350,6 +351,46 @@ export default async function imageRoutes(app: FastifyInstance) {
 
   // Bildreihenfolge speichern (Nutzer sortiert per ◀ ▶). Das erste Bild dient u.a. als
   // Karten-Marker. order = Bild-IDs in der neuen Reihenfolge.
+  // Foto duplizieren (Foto-Dialog, z. B. einziges Foto: Kopie als
+  // Nahaufnahme zuschneiden). Kopiert Datei, Original und Vorschaubild; die
+  // Kopie steht ungeprüft am Ende, alle übrigen Spalten (Analyse, Erkennung,
+  // EXIF, Kennzeichen-Box …) wie beim Vorbild.
+  app.post('/anzeige/:az/images/:imageId/duplizieren', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send({ error: 'not found' })
+    if (report.status !== 'entwurf' || report.versand_status !== null) return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
+    const [cnt] = await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS c, COALESCE(MAX(sort_order), 0) AS m FROM report_images WHERE report_id = ?', [report.id])
+    if (Number(cnt[0].c) >= MAX_IMAGES) return reply.status(409).send({ error: `Höchstens ${MAX_IMAGES} Fotos je Anzeige.` })
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM report_images WHERE id = ? AND report_id = ?', [Number(imageId), report.id])
+    const img = rows[0]
+    if (!img) return reply.status(404).send({ error: 'not found' })
+
+    const dir = reportDir(userId, report.id)
+    const neuName = (f: string) => `bild-${crypto.randomBytes(6).toString('hex')}${path.extname(f)}`
+    const filename = neuName(img.filename)
+    await fs.copyFile(path.join(dir, img.filename), path.join(dir, filename))
+    let original = filename
+    if (img.original_filename && img.original_filename !== img.filename) {
+      original = neuName(img.original_filename)
+      await fs.copyFile(path.join(dir, img.original_filename), path.join(dir, original)).catch(() => { original = filename })
+    }
+    for (const ext of ['.thumb.jpg', '.mail.jpg']) {
+      await fs.copyFile(path.join(dir, img.filename + ext), path.join(dir, filename + ext)).catch(() => {})
+    }
+    await fs.copyFile(path.join(dir, plateCropName(img.filename)), path.join(dir, plateCropName(filename))).catch(() => {})
+
+    const werte: Record<string, unknown> = { ...img, filename, original_filename: original, sort_order: Number(cnt[0].m) + 1, geprueft_at: null }
+    delete werte.id
+    const spalten = Object.keys(werte)
+    const [res] = await pool.execute<mysql.ResultSetHeader>(
+      `INSERT INTO report_images (${spalten.map((c) => `\`${c}\``).join(', ')}) VALUES (${spalten.map(() => '?').join(', ')})`,
+      spalten.map((c) => (werte[c] === undefined ? null : werte[c])) as any[]
+    )
+    return reply.send({ image: { id: res.insertId, put: `/anzeige/${az}/images/${res.insertId}` } })
+  })
+
   app.post('/anzeige/:az/images/reorder', { preHandler: requireAuth }, async (request, reply) => {
     const { az } = request.params as { az: string }
     const userId = request.session.userId as number

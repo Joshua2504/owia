@@ -252,6 +252,7 @@
     var strip = dlg.querySelector('.photo-edit-strip')
     strip.addEventListener('click', function (e) {
       if (e.target.closest('[data-act=add-photos]')) return addPhotos()
+      if (e.target.closest('[data-act=dup-photo]')) return dupPhoto()
       var pick = e.target.closest('.photo-edit-pick')
       if (pick) {
         if (!state) return
@@ -788,8 +789,43 @@
       add.setAttribute('data-act', 'add-photos')
       add.title = 'Weitere Fotos zu dieser Anzeige hinzufügen'
       strip.appendChild(add)
+      var dup = el('button', 'photo-edit-tile photo-edit-add', '⧉ Duplizieren')
+      dup.type = 'button'
+      dup.setAttribute('data-act', 'dup-photo')
+      dup.title = 'Aktuelles Foto kopieren – z. B. um die Kopie als Nahaufnahme zuzuschneiden'
+      strip.appendChild(dup)
     }
     renderRolle(state)
+  }
+
+  // Aktuelles Foto duplizieren (POST …/duplizieren) und die Kopie öffnen.
+  function dupPhoto() {
+    var s = state
+    if (!s || !s.az || s.busy) return
+    s.busy = true
+    msg('Foto wird kopiert …')
+    updateUi()
+    flushSave(s).then(function () {
+      return fetch(s.put + '/duplizieren', { method: 'POST', headers: { Accept: 'application/json' } })
+    }).then(function (r) {
+      return r.json().catch(function () { return {} }).then(function (d) {
+        if (!r.ok || r.redirected) throw new Error(d.error || 'Kopieren fehlgeschlagen.')
+        return d
+      })
+    }).then(function (d) {
+      return Promise.resolve(window.reportTableRefresh ? window.reportTableRefresh(s.az) : null).then(function () {
+        var row = rowOf(s.az)
+        var all = row ? [].slice.call(row.querySelectorAll('[data-photo-edit]')) : []
+        var ziel = all.filter(function (t) { return t.getAttribute('data-photo-edit') === d.image.put })[0]
+        s.busy = false
+        if (ziel && state === s) openThumb(ziel)
+      })
+    }).catch(function (err) {
+      alert((err && err.message) || 'Kopieren fehlgeschlagen.')
+    }).then(function () {
+      s.busy = false
+      if (state === s) { msg(''); updateUi() }
+    })
   }
 
   // Weitere Fotos hochladen (POST /anzeige/:az/images, wie im früheren Editor);
@@ -1180,7 +1216,7 @@
     var thumbs = (s && s.thumbs) || []
     var info = currentImage(s)
     row.hidden = !info || !portal
-    dlg.querySelectorAll('.photo-edit-tile').forEach(function (tile) {
+    dlg.querySelectorAll('.photo-edit-tile[data-strip-index]').forEach(function (tile) {
       var i = Number(tile.getAttribute('data-strip-index'))
       var t = thumbs[i]
       var im = imgs && t && imgs.filter(function (x) { return x.put === t.getAttribute('data-photo-edit') })[0]

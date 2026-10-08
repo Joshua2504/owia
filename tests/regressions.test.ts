@@ -1086,3 +1086,34 @@ test('submitDraft: Hinderungsgründe sperren, vollständiger Entwurf wird einger
   out = await submitDraft(row, userId)
   assert.equal((out as any).status, 409)
 })
+
+test('Foto duplizieren kopiert Datei und Zeile, Kopie steht ungeprüft am Ende', async () => {
+  const fsp = await import('node:fs/promises')
+  const { reportDir } = await import('../src/services/drafts')
+  const id = await report()
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
+  const dir = reportDir(userId, id)
+  await fsp.mkdir(dir, { recursive: true })
+  await fsp.writeFile(path.join(dir, 'bild-dup.jpg'), 'JPEGDATA')
+  const [ins] = await pool.execute<mysql.ResultSetHeader>(
+    `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype, sort_order, geprueft_at, detected_plate, kennzeichen_box)
+     VALUES (?, 'bild-dup.jpg', 'image/jpeg', 'bild-dup.jpg', 'image/jpeg', 3, NOW(), 'F-AB 1', '[0.1,0.1,0.2,0.2]')`, [id])
+  const app = Fastify()
+  app.addHook('preHandler', async request => {
+    request.session = { userId, userEmail: 'dup@example.invalid' } as typeof request.session
+  })
+  await app.register(reportsRoutes)
+  try {
+    const res = await app.inject({ method: 'POST', url: `/anzeige/${az}/images/${ins.insertId}/duplizieren` })
+    assert.equal(res.statusCode, 200, res.body)
+    const neu = (await query('SELECT * FROM report_images WHERE id=?', [res.json().image.id]))[0]
+    assert.notEqual(neu.filename, 'bild-dup.jpg')
+    assert.equal(neu.original_filename, neu.filename)
+    assert.equal(neu.sort_order, 4)
+    assert.equal(neu.geprueft_at, null)
+    assert.equal(neu.detected_plate, 'F-AB 1')
+    assert.equal(neu.kennzeichen_box, '[0.1,0.1,0.2,0.2]')
+    assert.equal(await fsp.readFile(path.join(dir, neu.filename), 'utf8'), 'JPEGDATA')
+  } finally { await app.close() }
+})
