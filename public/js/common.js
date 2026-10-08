@@ -63,7 +63,7 @@
   // Fehlschlag (z.B. während eines App-Neustarts) wird der Cache geleert,
   // damit der nächste Versuch erneut lädt.
   // Ergebnis: { alle, haeufig, gesperrt, standardStadt, fahrzeugTypen, marken,
-  // farben } – alle/haeufig/gesperrt ist das Format, das verstoss-select.js erwartet.
+  // farben, laender } – alle/haeufig/gesperrt ist das Format, das verstoss-select.js erwartet.
   var catalog = null
   function loadCatalog() {
     if (!catalog) {
@@ -77,6 +77,7 @@
             fahrzeugTypen: d.fahrzeugTypen,
             marken: d.marken,
             farben: d.farben,
+            laender: d.laender,
           }
         })
         .catch(function () { catalog = null; throw new Error('Verstoß-Katalog nicht ladbar.') })

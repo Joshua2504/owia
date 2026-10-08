@@ -353,6 +353,7 @@
       var f = e.target.getAttribute && e.target.getAttribute('data-detail')
       if (!f) return
       var v = e.target.type === 'checkbox' ? (e.target.checked ? '1' : '0') : e.target.value.trim()
+      if (f === 'kennzeichen_land' && kzLandEl && e.target !== kzLandEl) kzLandEl.value = v
       if (f === 'behinderung') {
         dlg.querySelector('[data-detail=behinderung_text]').hidden = v !== '1'
         if (v === '1') setTimeout(function () { dlg.querySelector('[data-detail=behinderung_text]').focus() }, 0)
@@ -381,7 +382,10 @@
       if (state && state.report) typ.value = state.report.fields.fahrzeug_typ || 'PKW'
       var land = dlg.querySelector('#pe-land')
       var laender = c.laender || { D: 'Deutschland' }
-      land.innerHTML = Object.keys(laender).map(function (k) { return '<option value="' + k + '" title="' + laender[k] + '">' + k + '</option>' }).join('')
+      // D zuerst, dann nach Ländername (wie geliefert); data-name für die
+      // ausgeklappte Ansicht „PL – Polen" (landLang).
+      land.innerHTML = Object.keys(laender).map(function (k) { return '<option value="' + k + '" title="' + laender[k] + '" data-name="' + laender[k] + '">' + k + '</option>' }).join('')
+      landLang(land)
       if (state && state.report) land.value = state.report.fields.kennzeichen_land || 'D'
       dlg.querySelector('#pe-marken').innerHTML = (c.marken || []).map(function (m) { return '<option value="' + m + '">' }).join('')
       dlg.querySelector('#pe-farben').innerHTML = (c.farben || []).map(function (m) { return '<option value="' + m + '">' }).join('')
@@ -1277,9 +1281,30 @@
     return dlg.querySelector('#pe-land')
   }
   // Land-Auswahl am Foto spiegelt #pe-land (Optionen + Wert).
+  // Land-Auswahl: zugeklappt nur das Kürzel (schmales Feld), aufgeklappt
+  // „PL – Polen" – sonst findet man das Land in der Liste nicht.
+  function landLang(sel) {
+    if (sel._landLang) return
+    sel._landLang = true
+    var lang = function () {
+      ;[].forEach.call(sel.options, function (o) { if (o.dataset.name) o.textContent = o.value + ' – ' + o.dataset.name })
+    }
+    var kurz = function () {
+      ;[].forEach.call(sel.options, function (o) { o.textContent = o.value })
+    }
+    sel.addEventListener('mousedown', lang)
+    sel.addEventListener('focus', lang)
+    sel.addEventListener('keydown', lang)
+    sel.addEventListener('change', kurz)
+    sel.addEventListener('blur', kurz)
+  }
   function kzLandSync() {
     var src = landSel()
-    if (kzLandEl.options.length !== src.options.length) kzLandEl.innerHTML = src.innerHTML
+    if (kzLandEl.options.length !== src.options.length) {
+      kzLandEl.innerHTML = src.innerHTML
+      ;[].forEach.call(kzLandEl.options, function (o) { o.textContent = o.value })
+      landLang(kzLandEl)
+    }
     if (document.activeElement !== kzLandEl) kzLandEl.value = src.value
     kzLandEl.hidden = src.hidden
   }
