@@ -14,6 +14,7 @@ import { createDraft, reportDir, UPLOAD_DIR } from '../../services/drafts'
 import { alprEnabled } from '../../services/alpr'
 import { queuePlateAnalysis, queueAnalyseOnly, plateCropName, bestPlateForReport, prefillReportPlate } from '../../services/plateAnalysis'
 import { photoSha256, findExistingPhoto } from '../../services/photoDedup'
+import { parseKennzeichenBox } from '../../services/dritte'
 import { MAX_IMAGES, loadReportByAktenzeichen, enqueuePdf } from './shared'
 
 /** Abgeleitete Dateien (Vorschaubild, Versandfassung) im Worker-Thread
@@ -235,7 +236,9 @@ export default async function imageRoutes(app: FastifyInstance) {
     // ist das Kennzeichen typischerweise gerade unkenntlich gemacht.
     // Die Datenschutz-Analyse (fremde Kennzeichen, Gesichter) gilt dagegen immer
     // nur für die alte Fassung: verwerfen und für die neue neu erstellen.
-    await pool.execute('UPDATE report_images SET analyse_json=NULL, dritte_ok=0 WHERE id=?', [imageId])
+    // Die markierte Kennzeichen-Box gilt nur für die alte Fassung (Zuschnitt/
+    // Drehen) – photo-edit.js setzt sie nach dem PUT neu.
+    await pool.execute('UPDATE report_images SET analyse_json=NULL, dritte_ok=0, kennzeichen_box=NULL, kennzeichen_keins=0 WHERE id=?', [imageId])
     if (old.detected_plate === null) {
       await pool.execute(
         `UPDATE report_images
@@ -251,12 +254,45 @@ export default async function imageRoutes(app: FastifyInstance) {
     return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` } })
   })
 
+  // Kennzeichen des angezeigten Fahrzeugs auf dem Foto markieren (Prüf-Dialog):
+  // { box: [x1,y1,x2,y2] } als Anteile 0..1 der gespeicherten Fassung oder
+  // { keins: true }. Die Übersichtskarte schwärzt die Box (services/pixelate.ts).
+  app.patch('/anzeige/:az/images/:imageId/kennzeichen', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const userId = request.session.userId as number
+    const body = (request.body ?? {}) as { box?: unknown; keins?: unknown }
+    const keins = body.keins === true
+    const box = keins ? null : parseKennzeichenBox(Array.isArray(body.box) ? body.box.map((v) => Math.round(Number(v) * 1e4) / 1e4) : null)
+    if (!keins && !box) return reply.status(400).send({ error: 'Bitte das Kennzeichen auf dem Foto markieren.' })
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.filename, r.id AS report_id FROM report_images ri JOIN reports r ON r.id = ri.report_id
+        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
+      [Number(imageId), az, userId]
+    )
+    if (!rows[0]) return reply.status(404).send({ error: 'not found' })
+    await pool.execute('UPDATE report_images SET kennzeichen_box=?, kennzeichen_keins=? WHERE id=?', [
+      box ? JSON.stringify(box) : null, keins ? 1 : 0, Number(imageId),
+    ])
+    // Kartenfassung neu rechnen lassen.
+    await fs.rm(path.join(reportDir(userId, rows[0].report_id), `${rows[0].filename}.pixel.jpg`), { force: true }).catch(() => {})
+    return reply.send({ ok: true })
+  })
+
   // Foto als geprüft bestätigen (Prüf-Dialog in photo-edit.js): Der Nutzer hat
-  // es angesehen und bei Bedarf geschwärzt. Einreichen geht erst, wenn alle
-  // Fotos einer Anzeige bestätigt sind (countUncheckedImages).
+  // es angesehen, bei Bedarf geschwärzt und das Kennzeichen markiert (oder
+  // „keins sichtbar" bestätigt). Einreichen geht erst, wenn alle Fotos einer
+  // Anzeige bestätigt sind (countUncheckedImages).
   app.post('/anzeige/:az/images/:imageId/geprueft', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
+    const [marks] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.kennzeichen_box, ri.kennzeichen_keins FROM report_images ri JOIN reports r ON r.id = ri.report_id
+        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
+      [Number(imageId), az, userId]
+    )
+    if (marks[0] && !marks[0].kennzeichen_keins && !parseKennzeichenBox(marks[0].kennzeichen_box)) {
+      return reply.status(400).send({ error: 'Bitte zuerst das Kennzeichen auf dem Foto markieren.' })
+    }
     const [res] = await pool.execute<mysql.ResultSetHeader>(
       `UPDATE report_images ri
          JOIN reports r ON r.id = ri.report_id

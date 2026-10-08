@@ -85,3 +85,46 @@ export function fundeText(funde: DritteFund[]): string {
     g ? (g === 1 ? 'ein Gesicht' : `${g} Gesichter`) : '',
   ].filter(Boolean).join(' und ')
 }
+
+/** Markierte Box des angezeigten Kennzeichens (report_images.kennzeichen_box,
+ *  Anteile 0..1 der gespeicherten Fassung). null = keine/ungültig. */
+export function parseKennzeichenBox(v: unknown): number[] | null {
+  if (!v) return null
+  try {
+    const b = typeof v === 'string' ? JSON.parse(v) : v
+    if (!Array.isArray(b) || b.length !== 4 || !b.every((x) => typeof x === 'number' && x >= 0 && x <= 1)) return null
+    return b[2] > b[0] && b[3] > b[1] ? b : null
+  } catch {
+    return null
+  }
+}
+
+/** Vorbelegung fürs Markieren: Box des angezeigten Kennzeichens (bzw. der
+ *  Erkennung dieses Fotos) aus der Analyse, als Anteile 0..1. */
+export function erkannteKennzeichenBox(analyseJson: unknown, ...kennzeichen: (string | null | undefined)[]): number[] | null {
+  const a = parseAnalyse(analyseJson)
+  if (!a) return null
+  for (const k of kennzeichen) {
+    const p = a.plates.find((x) => istAngezeigtesKennzeichen(x.text, k))
+    if (p) {
+      const [x1, y1, x2, y2] = p.bbox
+      const c = (v: number) => Math.max(0, Math.min(1, v))
+      return [c(x1 / a.w), c(y1 / a.h), c(x2 / a.w), c(y2 / a.h)]
+    }
+  }
+  return null
+}
+
+/** Analyse für die öffentliche Kartenfassung: die erkannten Boxen plus die vom
+ *  Nutzer markierte Kennzeichen-Box. `markiert` = der Nutzer hat das Foto auf
+ *  das Kennzeichen hin geprüft (Box gesetzt oder „keins sichtbar") – dann
+ *  genügt die Schwärzungsstufe auch ohne erkanntes Kennzeichen. */
+export type KartenAnalyse = BildAnalyse & { markiert?: boolean }
+export function kartenAnalyse(analyseJson: unknown, boxJson: unknown, keins: unknown): KartenAnalyse | null {
+  const a = parseAnalyse(analyseJson)
+  if (!a) return null
+  const box = parseKennzeichenBox(boxJson)
+  if (!box) return keins ? { ...a, markiert: true } : a
+  const bbox = [box[0] * a.w, box[1] * a.h, box[2] * a.w, box[3] * a.h]
+  return { ...a, plates: [...a.plates, { text: '', confidence: 1, bbox }], markiert: true }
+}

@@ -76,7 +76,9 @@
       '<div class="btn-group btn-group-sm" role="group" aria-label="Ziehen auf dem Foto …">' +
       '<button type="button" class="btn btn-outline-light" data-tool="black" title="Ziehen auf dem Foto schwärzt">⬛ Schwärzen</button>' +
       '<button type="button" class="btn btn-outline-light" data-tool="pixel" title="Ziehen auf dem Foto verpixelt">▩ Verpixeln</button>' +
+      '<button type="button" class="btn btn-outline-info" data-tool="plate" title="Rechteck über das Kennzeichen des angezeigten Fahrzeugs ziehen – die Übersichtskarte schwärzt es">🚗 Kennzeichen</button>' +
       '</div>' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="kz-keins" title="Auf diesem Foto ist das Kennzeichen des Fahrzeugs nicht zu sehen" hidden>Kein Kennzeichen sichtbar</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="crop-reset" title="Zuschnitt aufheben" hidden>⤢ Ganzes Foto</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
@@ -201,7 +203,10 @@
       if (!b || !state || state.busy) return
       var i = Number(b.getAttribute('data-i'))
       var art = b.getAttribute('data-mark')
-      if (art === 'entfernen') {
+      if (art === 'kz-entfernen') {
+        kzSetzen(null, false)
+        setTool('plate')
+      } else if (art === 'entfernen') {
         snapshot()
         state.redactions.splice(i, 1)
       } else if (art === 'schwaerzen') {
@@ -215,7 +220,12 @@
       }
       redraw()
       updateUi()
-      if (art !== 'entfernen') dritteErledigt()
+      if (art !== 'entfernen' && art !== 'kz-entfernen') dritteErledigt()
+    })
+    dlg.querySelector('[data-act=kz-keins]').addEventListener('click', function () {
+      if (!state || state.busy) return
+      kzSetzen(null, !state.kzKeins)
+      if (!state.kzKeins) setTool('plate')
     })
     window.addEventListener('resize', function () { if (dlg.open && state && state.base) renderMarks() })
     dlg.querySelector('[data-act=rotate]').addEventListener('click', rotate)
@@ -689,9 +699,19 @@
       (state.open ? ' · noch ' + state.open + ' offen' : '')
     st.classList.toggle('is-ok', state.ok)
     st.classList.toggle('is-open', !state.ok)
-    dlg.querySelector('.photo-edit-hint').textContent =
-      (state.tool === 'pixel' ? 'Ziehen auf dem Foto verpixelt' : 'Ziehen auf dem Foto schwärzt') +
-      ' · Ränder und Ecken ziehen schneidet zu.'
+    var hint = dlg.querySelector('.photo-edit-hint')
+    var fehlt = state.base && kzFehlt(state)
+    hint.textContent = fehlt
+      ? 'Bitte das Kennzeichen des Fahrzeugs markieren: Rechteck darüber ziehen – oder „Kein Kennzeichen sichtbar".'
+      : (state.tool === 'plate' ? 'Rechteck über das Kennzeichen ziehen' : state.tool === 'pixel' ? 'Ziehen auf dem Foto verpixelt' : 'Ziehen auf dem Foto schwärzt') +
+        ' · Ränder und Ecken ziehen schneidet zu.'
+    hint.classList.toggle('text-warning', !!fehlt)
+    hint.classList.toggle('fw-semibold', !!fehlt)
+    var keinsBtn = dlg.querySelector('[data-act=kz-keins]')
+    keinsBtn.hidden = !kzPflicht(state) || !!state.kz
+    keinsBtn.classList.toggle('active', !!state.kzKeins)
+    keinsBtn.textContent = state.kzKeins ? '✓ Kein Kennzeichen sichtbar' : 'Kein Kennzeichen sichtbar'
+    dlg.querySelector('[data-tool=plate]').hidden = !kzPflicht(state)
     canvas.classList.toggle('editing', !!state.base)
     dlg.querySelector('[data-act=crop-reset]').hidden = !state.crop
     var pbox = dlg.querySelector('.photo-edit-plate')
@@ -910,6 +930,7 @@
         fillDetails(s)
         renderVerstossExtras(s)
         renderRolle(s)
+        kzInit(s)
         syncMap(s)
         updateRun()
       })
@@ -1169,8 +1190,66 @@
   }
 
   function setTool(tool) {
-    state.tool = tool === 'pixel' ? 'pixel' : 'black'
+    state.tool = tool === 'pixel' || tool === 'plate' ? tool : 'black'
     updateUi()
+  }
+
+  // ---- Kennzeichen des angezeigten Fahrzeugs markieren ---------------------
+  // Pflicht für jedes Foto einer Anzeige: Box über dem Kennzeichen (vorbelegt
+  // aus der Erkennung) oder „Kein Kennzeichen sichtbar". Die Übersichtskarte
+  // schwärzt die Box (services/pixelate.ts) – auch wenn die Erkennung das
+  // Schild übersehen hat. state.kz in Canvas-Pixeln, gespeichert als Anteile
+  // 0..1 der gespeicherten Fassung (PATCH …/kennzeichen).
+  function kzPflicht(s) {
+    return !!(s && s.plate != null && s.az)
+  }
+  function kzFehlt(s) {
+    return kzPflicht(s) && !s.kz && !s.kzKeins
+  }
+  // Einmal je Foto, sobald Bild und Status da sind: gespeicherte Markierung,
+  // sonst der Vorschlag der Erkennung.
+  function kzInit(s) {
+    if (!s || s.kzBereit || !s.base || !kzPflicht(s)) return
+    var info = currentImage(s)
+    if (!info || !info.kennzeichen) return
+    s.kzBereit = true
+    var k = info.kennzeichen
+    var b = k.box || (!s.geometrie && k.vorschlag)
+    if (b) {
+      s.kz = { x: b[0] * canvas.width, y: b[1] * canvas.height, w: (b[2] - b[0]) * canvas.width, h: (b[3] - b[1]) * canvas.height }
+      s.kzGeaendert = !k.box
+    } else if (k.keins) {
+      s.kzKeins = true
+    } else if (s.tool === 'black') {
+      s.tool = 'plate'
+    }
+    redraw()
+    updateUi()
+  }
+  function kzSetzen(box, keins) {
+    snapshot(true)
+    state.kz = box
+    state.kzKeins = !!keins
+    state.kzGeaendert = true
+    redraw()
+    updateUi()
+  }
+  // Box relativ zum Zuschnitt (der beim Speichern angewandt wird), 0..1.
+  function kzAnteile(s) {
+    var c = cropRect()
+    var k = s.kz
+    var cl = function (v) { return Math.round(Math.max(0, Math.min(1, v)) * 1e4) / 1e4 }
+    var b = [cl((k.x - c.x) / c.w), cl((k.y - c.y) / c.h), cl((k.x + k.w - c.x) / c.w), cl((k.y + k.h - c.y) / c.h)]
+    return b[2] > b[0] && b[3] > b[1] ? b : null
+  }
+  function kzSpeichern(s, body) {
+    return fetch(s.put + '/kennzeichen', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Kennzeichen-Markierung konnte nicht gespeichert werden.') })
+    }).then(function () { s.kzGeaendert = false })
   }
 
   function pixelate(r) {
@@ -1279,6 +1358,7 @@
         ])
       })
     }
+    if (state.kz) add({ x: state.kz.x, y: state.kz.y, w: state.kz.w, h: state.kz.h, i: 0 }, [['kz-entfernen', '✕', 'is-del', 'Kennzeichen-Markierung entfernen']])
     state.redactions.forEach(function (r, i) {
       add({ x: r.x, y: r.y, w: r.w, h: r.h, i: i }, [['entfernen', '✕', 'is-del', r.type === 'pixel' ? 'Verpixelung entfernen' : 'Schwärzung entfernen']])
     })
@@ -1313,6 +1393,22 @@
       ctx.strokeStyle = '#ffc107'
       ctx.strokeRect(b.x, b.y, b.w, b.h)
     })
+    if (state.kz) {
+      var k = state.kz
+      ctx.setLineDash([])
+      ctx.strokeStyle = '#0dcaf0'
+      ctx.lineWidth = lw * 1.5
+      ctx.strokeRect(k.x, k.y, k.w, k.h)
+      var fs = Math.max(12, canvas.width / 70)
+      ctx.font = 'bold ' + fs + 'px system-ui, sans-serif'
+      var txt = 'Kennzeichen'
+      var tw = ctx.measureText(txt).width + fs * 0.6
+      var ty = k.y - fs * 1.4 >= 0 ? k.y - fs * 1.4 : k.y + k.h
+      ctx.fillStyle = '#0dcaf0'
+      ctx.fillRect(k.x, ty, tw, fs * 1.4)
+      ctx.fillStyle = '#000'
+      ctx.fillText(txt, k.x + fs * 0.3, ty + fs * 1.05)
+    }
     ctx.restore()
     drawCrop()
     renderMarks()
@@ -1320,9 +1416,11 @@
 
   // Schnappschuss vor jeder Änderung (Rotieren/Zuschneiden erzeugen neue
   // Canvas-Objekte, die Referenz genügt) – Rückgängig ohne Rückfragen.
-  function snapshot() {
-    state.history.push({ base: state.base, redactions: state.redactions.slice(), crop: state.crop, geometrie: state.geometrie })
-    state.dirty = true
+  // nurKz: nur die Kennzeichen-Markierung ändert sich – das Foto selbst
+  // bleibt unverändert und muss nicht neu hochgeladen werden.
+  function snapshot(nurKz) {
+    state.history.push({ base: state.base, redactions: state.redactions.slice(), crop: state.crop, geometrie: state.geometrie, kz: state.kz, kzKeins: state.kzKeins, nurKz: !!nurKz })
+    if (!nurKz) state.dirty = true
   }
   function undo() {
     var s = state.history.pop()
@@ -1331,7 +1429,10 @@
     state.redactions = s.redactions
     state.crop = s.crop
     state.geometrie = s.geometrie
-    state.dirty = state.history.length > 0
+    state.kz = s.kz
+    state.kzKeins = s.kzKeins
+    if (s.nurKz) state.kzGeaendert = true
+    state.dirty = state.history.some(function (h) { return !h.nurKz })
     redraw()
     updateUi()
   }
@@ -1353,6 +1454,7 @@
   function rotate() {
     snapshot()
     state.geometrie = true
+    var kzAlt = state.kz ? kzAnteile(state) : null
     var old = flatten()
     var c = document.createElement('canvas')
     c.width = old.height
@@ -1364,6 +1466,11 @@
     state.base = c
     state.redactions = []
     state.crop = null
+    // Markierung mitdrehen (90° im Uhrzeigersinn): (x, y) → (1 − y, x).
+    if (state.kz) {
+      state.kz = kzAlt ? { x: (1 - kzAlt[3]) * c.width, y: kzAlt[0] * c.height, w: (kzAlt[3] - kzAlt[1]) * c.width, h: (kzAlt[2] - kzAlt[0]) * c.height } : null
+      state.kzGeaendert = true
+    }
     redraw()
     updateUi()
   }
@@ -1428,7 +1535,7 @@
       }
       redraw()
       ctx.save()
-      ctx.fillStyle = state.tool === 'pixel' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.6)'
+      ctx.fillStyle = state.tool === 'plate' ? 'rgba(13,202,240,0.25)' : state.tool === 'pixel' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.6)'
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 1 / bildRect().k
       ctx.fillRect(drag.start.x, drag.start.y, p.x - drag.start.x, p.y - drag.start.y)
@@ -1448,6 +1555,12 @@
           x: x, y: y,
           w: clamp(Math.max(d.start.x, p.x), 0, canvas.width) - x,
           h: clamp(Math.max(d.start.y, p.y), 0, canvas.height) - y,
+        }
+        if (r.w >= MIN_BOX && r.h >= MIN_BOX && state.tool === 'plate') {
+          kzSetzen(r, false)
+          // Ein Kennzeichen je Foto – danach wieder schwärzen.
+          setTool('black')
+          return
         }
         if (r.w >= MIN_BOX && r.h >= MIN_BOX) {
           snapshot()
@@ -1662,6 +1775,22 @@
   function save() {
     if (!state || !state.base || state.busy) return
     var s = state
+    if (kzFehlt(s)) {
+      setTool('plate')
+      var hint = dlg.querySelector('.photo-edit-hint')
+      hint.classList.remove('pe-flash')
+      void hint.offsetWidth
+      hint.classList.add('pe-flash')
+      return
+    }
+    // Vor flatten(): bezieht sich auf den Zuschnitt, den der Upload anwendet.
+    var kzNeu = kzPflicht(s) && (s.dirty || s.kzGeaendert)
+    if (kzNeu && !s.kzKeins && !kzAnteile(s)) {
+      alert('Die Kennzeichen-Markierung liegt außerhalb des Zuschnitts – bitte neu markieren.')
+      setTool('plate')
+      return
+    }
+    var kzBody = kzNeu ? (s.kzKeins ? { keins: true } : { box: kzAnteile(s) }) : null
     var btn = dlg.querySelector('[data-act=save]')
     s.busy = true
     btn.textContent = s.dirty ? 'Speichert …' : 'Bestätigt …'
@@ -1684,6 +1813,7 @@
     upload.catch(function () {}) // Fehler meldet die Kette unten
     savePlate()
       .then(function () { return upload })
+      .then(function () { return kzBody ? kzSpeichern(s, kzBody) : null })
       .then(function () { return fetch(s.put + '/geprueft', { method: 'POST' }) })
       .then(function (r) {
         if (!r.ok || r.redirected) throw new Error()
@@ -1775,6 +1905,7 @@
       picked: state && state.az === opts.az && state.picked ? state.picked : {},
       put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool === 'pixel' ? 'pixel' : 'black', dirty: false,
       crop: null, freigegeben: {}, dritteOkNachSpeichern: false, drawing: false,
+      kz: null, kzKeins: false, kzGeaendert: false, kzBereit: false,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
     }
     renderStrip()
@@ -1800,6 +1931,7 @@
       msg('')
       redraw()
       updateUi()
+      kzInit(state)
       dlg.querySelector('[data-act=save]').focus()
     }
     img.onerror = function () { if (state === s) msg('Foto konnte nicht geladen werden.') }

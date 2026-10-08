@@ -4,6 +4,7 @@ import jpeg from 'jpeg-js'
 import { PNG } from 'pngjs'
 import exifr from 'exifr'
 import type { BildAnalyse } from './alpr'
+import type { KartenAnalyse } from './dritte'
 
 // Serverseitige Verpixelung für die anonyme Übersichtskarte.
 //
@@ -12,7 +13,9 @@ import type { BildAnalyse } from './alpr'
 // - Liegt eine Bildanalyse (report_images.analyse_json) mit mindestens einem
 //   erkannten Kennzeichen vor, werden alle Kennzeichen- und Gesichtsboxen
 //   (mit Rand) geschwärzt und das Bild nur moderat auf PIXEL_MAX_GESCHWAERZT
-//   verkleinert – passend zur Anzeigegröße im Karten-Popup (160 px).
+//   verkleinert – passend zur Anzeigegröße im Karten-Popup (160 px). Die im
+//   Prüf-Dialog markierte Kennzeichen-Box zählt mit (dritte.ts kartenAnalyse);
+//   hat der Nutzer markiert oder „kein Kennzeichen" bestätigt, genügt das.
 // - Sonst (keine Analyse, Erkennung fehlgeschlagen, kein Kennzeichen gefunden)
 //   bleibt es bei der groben Verpixelung auf PIXEL_MAX: Wir können dann nicht
 //   ausschließen, dass ein übersehenes Kennzeichen lesbar wäre.
@@ -159,8 +162,9 @@ export async function readOrientation(buffer: Buffer): Promise<number> {
 /** Boxen, die vor der moderaten Verkleinerung geschwärzt werden: alle
  *  Kennzeichen (auch das angezeigte) und alle Gesichter, unabhängig von der
  *  Erkennungssicherheit. null = Analyse taugt nicht für die Schwärzungsstufe. */
-function schwaerzBoxen(analyse: BildAnalyse | null | undefined): number[][] | null {
-  if (!analyse || !analyse.w || !analyse.h || !Array.isArray(analyse.plates) || !analyse.plates.length) return null
+function schwaerzBoxen(analyse: KartenAnalyse | null | undefined): number[][] | null {
+  if (!analyse || !analyse.w || !analyse.h || !Array.isArray(analyse.plates)) return null
+  if (!analyse.plates.length && !analyse.markiert) return null
   const boxen = [...analyse.plates.map((p) => p.bbox), ...(analyse.faces || []).map((f) => f.bbox)]
   return boxen.every((b) => Array.isArray(b) && b.length >= 4 && b.every(Number.isFinite)) ? boxen : null
 }
@@ -194,7 +198,7 @@ export function pixelate(
   buffer: Buffer,
   mimetype: string,
   orientation = 1,
-  analyse?: BildAnalyse | null
+  analyse?: KartenAnalyse | null
 ): Buffer {
   const src = decode(buffer, mimetype)
   const boxen = schwaerzBoxen(analyse)
@@ -336,7 +340,7 @@ export async function cachedPixelate(
   dir: string,
   filename: string,
   mimetype: string,
-  analyse?: BildAnalyse | null
+  analyse?: KartenAnalyse | null
 ): Promise<Buffer> {
   const cachePath = path.join(dir, `${filename}.pixel.jpg`)
   try {

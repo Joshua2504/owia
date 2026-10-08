@@ -8,7 +8,7 @@ import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap } from '../services/portalFfm'
-import { dritteFunde, parseAnalyse } from '../services/dritte'
+import { dritteFunde, parseAnalyse, parseKennzeichenBox, erkannteKennzeichenBox } from '../services/dritte'
 import { submitProblems, mostUsedVerstoesse, VERSTOSS_SPERREN } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
 
@@ -112,7 +112,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
     }
     const problems = await submitProblems(report, userId)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, filename, detected_plate, analyse_json, dritte_ok, geprueft_at, gps_lat,
+      `SELECT id, filename, detected_plate, analyse_json, dritte_ok, geprueft_at, gps_lat, kennzeichen_box, kennzeichen_keins,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i') AS captured
          FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
@@ -176,6 +176,13 @@ export default async function reviewRoutes(app: FastifyInstance) {
           dritteOk: !!i.dritte_ok,
           groesse: (() => { const a = parseAnalyse(i.analyse_json); return a ? { w: a.w, h: a.h } : null })(),
           ok: i.geprueft_at !== null,
+          // Kennzeichen-Markierung (Anteile 0..1): gespeichert, sonst Vorschlag
+          // aus der Erkennung; keins = „kein Kennzeichen sichtbar" bestätigt.
+          kennzeichen: {
+            box: parseKennzeichenBox(i.kennzeichen_box),
+            keins: !!i.kennzeichen_keins,
+            vorschlag: erkannteKennzeichenBox(i.analyse_json, report.kennzeichen, i.detected_plate),
+          },
           detected: i.detected_plate || null,
           zeit: i.captured ? String(i.captured).slice(11, 16) : null,
           thumb: `/anzeige/${az}/image/${i.id}/thumb.jpg?v=${v}`,
