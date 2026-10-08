@@ -37,6 +37,18 @@ export type DraftFields = {
   intakeBatchId?: number | null
 }
 
+/** Höchstzahl neu angelegter Anzeigen je Nutzer und Kalendertag (Papierkorb zählt mit). */
+export const MAX_DRAFTS_PER_DAY = 200
+
+/** Wird von createDraft() geworfen, wenn das Tageslimit erreicht ist.
+ *  statusCode 409 → der globale Fehlerhandler zeigt die Meldung an. */
+export class DraftLimitError extends Error {
+  statusCode = 409
+  constructor() {
+    super(`Tageslimit erreicht: maximal ${MAX_DRAFTS_PER_DAY} Anzeigen pro Tag. Bitte morgen weitermachen.`)
+  }
+}
+
 /** Neuen Entwurf anlegen; Aktenzeichen wird bei (extrem seltener) Kollision neu gewürfelt.
  *  Ohne tattag/tatzeitVon wird der aktuelle Zeitpunkt vorbelegt (häufigster Fall: Vorfall jetzt). */
 export async function createDraft(
@@ -48,6 +60,12 @@ export async function createDraft(
   // bei der richtigen Stadt; der Nutzer kann im Formular weiterhin umstellen.
   const det = detectCityByLabel(fields.tatort)
   const initialCity = det.status === 'unlocked' ? det.city.id : DEFAULT_CITY_ID
+
+  const [cnt] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT COUNT(*) AS c FROM reports WHERE user_id = ? AND created_at >= CURDATE()',
+    [userId]
+  )
+  if (Number(cnt[0].c) >= MAX_DRAFTS_PER_DAY) throw new DraftLimitError()
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidate = generateAktenzeichen()

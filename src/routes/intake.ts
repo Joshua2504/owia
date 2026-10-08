@@ -14,7 +14,7 @@ import { processIntakeRaw, processIntakeThumbnail, withIntakeUploadLock, loadThu
 import crypto from 'node:crypto'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
 import { findDuplicateGroups } from '../services/duplicates'
-import { createDraft, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
+import { createDraft, DraftLimitError, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
 import { queueTatortFill } from '../services/tatortFill'
@@ -217,7 +217,8 @@ async function groupIntakeBatch(payload: { batchId: number; userId: number }, lo
     } catch (err) {
       // Fehler mittendrin: bereits erzeugte Entwürfe bleiben bestehen, die
       // restlichen Fotos bleiben unzugeordnet und lassen sich manuell verteilen.
-      log.error({ err }, 'Intake-Gruppierung fehlgeschlagen')
+      if (err instanceof DraftLimitError) log.info({ userId }, 'Intake-Gruppierung: Tageslimit erreicht')
+      else log.error({ err }, 'Intake-Gruppierung fehlgeschlagen')
       await pool.execute("UPDATE intake_batches SET status = 'done', grouped_at = NOW() WHERE id = ?", [batch.id])
     }
 
