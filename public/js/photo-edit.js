@@ -99,10 +99,11 @@
       // Kennzeichen, Typ, Marke nebeneinander – die Leiste soll ohne Scrollen passen.
       '<div class="pe-row pe-row-kfz">' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
+      '<button type="button" class="btn btn-sm btn-outline-warning mb-1" style="display:block" data-act="plate-suggest" hidden></button>' +
       '<div class="input-group flex-nowrap"><select id="pe-land" data-native class="form-select photo-edit-details" style="flex:0 0 3.6rem;width:3.6rem;padding-left:.45rem;padding-right:1.3rem;background-position:right .3rem center" data-detail="kennzeichen_land" aria-label="Länderkennzeichen" title="Land des Kennzeichens" hidden><option value="D">D</option></select>' +
       '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>' +
       '<label class="form-check small mt-1 mb-0 pe-kz-ok-row" hidden><input type="checkbox" class="form-check-input pe-kz-ok"> <span class="form-check-label">geprüft</span></label>' +
-      '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
+      '</div>' +
       '<div class="pe-field photo-edit-details" hidden><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
       '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. Volkswagen" list="pe-marken"></div>' +
@@ -135,6 +136,20 @@
       '<div class="small mt-1" data-langparker hidden>⏱ Länger als 1 Stunde: ' +
       '<button type="button" class="btn btn-link btn-sm p-0 align-baseline text-start" data-act="langparker"></button></div>' +
       '</div>' +
+      // Tatzeit vor dem Tatort.
+      '<div class="photo-edit-details" hidden>' +
+      '<div class="pe-field"><label class="form-label" for="pe-tattag">Tatzeit</label>' +
+      '<div class="pe-time">' +
+      '<input type="date" id="pe-tattag" class="form-control" data-detail="tattag">' +
+      '<input type="time" class="form-control" data-detail="tatzeit_von" aria-label="Uhrzeit von" title="Uhrzeit von">' +
+      '<span>–</span>' +
+      '<input type="time" class="form-control" data-detail="tatzeit_bis" aria-label="Uhrzeit bis" title="Uhrzeit bis (optional)">' +
+      '</div>' +
+      '<div class="small text-muted mt-1" data-photo-times hidden>' +
+      '<button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times" title="Tattag und Uhrzeit aus den Aufnahmezeiten der Fotos übernehmen">🕒 Zeit aus Fotos übernehmen</button>' +
+      ' <span data-photo-span></span></div>' +
+      '</div>' +
+      '</div>' +
       '<div class="pe-field photo-edit-tatort"><label class="form-label" for="photo-edit-tatort-input">Tatort</label>' +
       '<div class="d-flex gap-1">' +
       '<input type="text" id="photo-edit-tatort-input" class="form-control" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
@@ -154,17 +169,6 @@
       // Restliche Angaben (Werte aus GET /pruefen/:az/daten, gespeichert je
       // Feld über PATCH /anzeige/:az/felder).
       '<div class="photo-edit-details" hidden>' +
-      '<div class="pe-field"><label class="form-label" for="pe-tattag">Tatzeit</label>' +
-      '<div class="pe-time">' +
-      '<input type="date" id="pe-tattag" class="form-control" data-detail="tattag">' +
-      '<input type="time" class="form-control" data-detail="tatzeit_von" aria-label="Uhrzeit von" title="Uhrzeit von">' +
-      '<span>–</span>' +
-      '<input type="time" class="form-control" data-detail="tatzeit_bis" aria-label="Uhrzeit bis" title="Uhrzeit bis (optional)">' +
-      '</div>' +
-      '<div class="small text-muted mt-1" data-photo-times hidden>' +
-      '<button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times" title="Tattag und Uhrzeit aus den Aufnahmezeiten der Fotos übernehmen">🕒 Zeit aus Fotos übernehmen</button>' +
-      ' <span data-photo-span></span></div>' +
-      '</div>' +
       '<label class="form-check" data-verlassen-row><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> <span class="form-check-label">Fahrzeug war verlassen</span></label>' +
       '<div class="pe-field"><div class="d-flex align-items-center gap-2"><span class="form-label mb-0">Wurde jemand behindert?</span>' +
       '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">' +
