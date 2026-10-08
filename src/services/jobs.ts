@@ -31,6 +31,14 @@ let log: FastifyBaseLogger | null = null
 let running = 0
 let ticking = false
 
+/** Vom Handler geworfen, wenn er nur warten muss (z. B. Portal-Dienst voll
+ *  belegt): kein Fehlversuch, der Job läuft nach `seconds` erneut. */
+export class JobRetryLater extends Error {
+  constructor(message: string, public seconds: number) {
+    super(message)
+  }
+}
+
 export function registerJob(type: string, handler: JobHandler): void {
   handlers.set(type, handler)
 }
@@ -119,6 +127,14 @@ async function runJob(job: mysql.RowDataPacket): Promise<void> {
     ])
     await pool.execute("UPDATE jobs SET status = 'done', finished_at = NOW(), error = NULL WHERE id = ?", [job.id])
   } catch (err) {
+    if (err instanceof JobRetryLater) {
+      await pool.execute(
+        `UPDATE jobs SET status = 'queued', attempts = ?, error = ?, started_at = NULL,
+                run_after = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ?`,
+        [Number(job.attempts), err.message.slice(0, 2000), Math.max(1, Math.round(err.seconds)), job.id]
+      ).catch(() => undefined)
+      return
+    }
     const attempt = Number(job.attempts) + 1
     const final = !handler || attempt >= Number(job.max_attempts)
     log?.error({ err, jobId: job.id, type: job.type, attempt }, 'Hintergrund-Job fehlgeschlagen')

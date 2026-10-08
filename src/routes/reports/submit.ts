@@ -17,6 +17,7 @@ import { imageVersion } from '../../services/images'
 import { PDF_DIR } from '../../services/drafts'
 import { isAdminEmail } from '../../config/admin'
 import { enqueueJob } from '../../services/jobs'
+import { enqueuePortalStart } from '../../services/portalDispatch'
 import { loadReportByAktenzeichen, isProfileComplete, regeneratePdf, enqueuePdf, countUncheckedImages, uncheckedMessage } from './shared'
 
 export default async function submitRoutes(app: FastifyInstance) {
@@ -205,8 +206,10 @@ export async function submitDraft(
   // Admins dürfen eigene Anzeigen direkt freigeben und versenden (sofort) –
   // dann entfällt die Prüf-Benachrichtigung. PDF + Versand laufen als Job
   // (routes/admin.ts, 'report.dispatch'); Portal-Städte versendet die
-  // Warteschlange bzw. die Live-Seite /versand (services/portalQueue.ts).
+  // Live-Seite /versand (Lauf startet sofort, services/portalDispatch.ts).
   if (opts.sofort && getCity(report.city).portal) {
+    // Lauf startet sofort im Hintergrund; ein Hinderungsgrund zeigt /versand an der Anzeige.
+    await enqueuePortalStart(Number(report.id))
     return { ok: true, portal: `/versand?az=${encodeURIComponent(az)}` }
   }
   if (opts.sofort) {

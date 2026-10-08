@@ -11,7 +11,7 @@ import { fahrzeugBeschreibung } from '../config/fahrzeug'
 import { portalFuer, erstMorgen } from '../services/portale'
 import {
   startPortalRun, submitPortalRun, cancelPortalRun, resolveUncertain, currentRunId, runStatus,
-  lastKnownStatus, proxy, portalHealthy, PortalError,
+  lastKnownStatus, proxy, portalHealthy, PortalError, wartendeStarts,
 } from '../services/portalDispatch'
 import { letzterSelbsttest, enqueueSelbsttest } from '../services/portalSelbsttest'
 
@@ -38,6 +38,7 @@ async function loadQueue() {
       WHERE r.status = 'versendet' AND r.versand_art = 'portal'
       ORDER BY r.id DESC LIMIT 15`
   )
+  const wartet = await wartendeStarts()
   return {
     offen: offen.map((r) => ({
       id: Number(r.id),
@@ -56,6 +57,8 @@ async function loadQueue() {
       userEmail: r.user_email,
       eingereicht: r.eingereicht_fmt,
       versandStatus: r.versand_status as string | null,
+      // Nach der Freigabe eingereiht, Lauf startet automatisch (wartet ggf. auf einen freien Platz).
+      autoStart: wartet.has(Number(r.id)),
       unklar: r.versand_status === 'versand' && /"error"/.test(r.versand_ergebnis || ''),
       unklarGrund: (() => { try { return JSON.parse(r.versand_ergebnis || '{}').portal?.error || null } catch { return null } })(),
     })),

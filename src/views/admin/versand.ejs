@@ -46,7 +46,7 @@
         <% } %>
         <% queue.offen.forEach(function (r) { %>
           <li class="list-group-item versand-item" data-id="<%= r.id %>" data-az="<%= r.az %>" data-sendbar="<%= r.imPortal && !r.abMorgen ? '1' : '' %>"
-              data-unklar="<%= r.unklar ? '1' : '' %>" data-busy="<%= r.versandStatus && !r.unklar ? '1' : '' %>">
+              data-unklar="<%= r.unklar ? '1' : '' %>" data-busy="<%= (r.versandStatus || (r.autoStart && !r.abMorgen)) && !r.unklar ? '1' : '' %>">
             <div class="d-flex justify-content-between gap-2">
               <a href="/anzeige/<%= r.az %>" class="fw-semibold" target="_blank" rel="noopener"><%= r.az %></a>
               <span class="d-flex gap-1 align-items-center">
@@ -68,9 +68,10 @@
                   <a class="btn btn-sm btn-outline-secondary ms-auto" href="/anzeige/<%= r.az %>">Ansehen</a>
                 <% } else if (r.abMorgen) { %>
                   <span class="badge text-bg-secondary" title="Das Portal nimmt nur Taten vor dem heutigen Tag an.">Tat von heute – ab morgen versendbar</span>
+                  <% if (r.autoStart) { %><span class="badge text-bg-info">startet automatisch nach Mitternacht</span><% } %>
                 <% } else { %>
                   <% if (r.varianteFehlt) { %><span class="badge text-bg-warning" title="Die Konkretisierung (z. B. Kreuzung/Einmündung) fehlt – sie wird live abgefragt.">Variante fehlt</span><% } %>
-                  <% if (r.versandStatus) { %><span class="badge text-bg-info">läuft</span><% } %>
+                  <% if (r.versandStatus) { %><span class="badge text-bg-info">läuft</span><% } else if (r.autoStart) { %><span class="badge text-bg-info" title="Nach der Freigabe eingereiht – startet automatisch, sobald ein Platz frei ist.">startet automatisch</span><% } %>
                   <button type="button" class="btn btn-sm btn-primary ms-auto" data-act="start">▶ Senden</button>
                 <% } %>
               <% } %>

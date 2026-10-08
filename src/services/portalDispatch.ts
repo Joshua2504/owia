@@ -32,10 +32,15 @@ import { isProfileComplete, drittProblem } from '../routes/reports'
 import { isVerjaehrt } from './verjaehrung'
 import { kennzeichenFlaeche } from './dritte'
 import { prewarmPublicImages } from './publicImages'
+import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
 export class PortalError extends Error {}
+/** Portal-Dienst hat gerade keinen freien Platz (höchstens 2 Läufe). */
+export class PortalBusyError extends PortalError {}
+/** Tat von heute, das Portal nimmt sie erst ab morgen an. */
+export class PortalAbMorgenError extends PortalError {}
 
 export interface PortalRunStatus {
   id: string
@@ -81,7 +86,7 @@ export function usesPortal(report: Record<string, any>): boolean {
   return !!getCity(report.city).portal
 }
 
-function portalInfo(report: mysql.RowDataPacket): { runId?: string; error?: string; submittedAt?: string } | null {
+function portalInfo(report: mysql.RowDataPacket): { runId?: string; error?: string; submittedAt?: string; auto?: boolean } | null {
   try {
     const j = JSON.parse(report.versand_ergebnis || 'null')
     return j && j.portal ? j.portal : null
@@ -101,10 +106,9 @@ export async function currentRunId(reportId: number): Promise<string | null> {
   return r ? portalInfo(r)?.runId ?? null : null
 }
 
-/** Formular-Lauf starten. Wirft PortalError mit deutscher Meldung. */
-export async function startPortalRun(reportId: number, opts: { auto?: boolean } = {}): Promise<string> {
-  const report = await loadReport(reportId)
-  if (!report) throw new PortalError('Anzeige nicht gefunden.')
+/** Schnelle Vorab-Prüfungen (nur DB) vor einem Lauf. Wirft PortalError bzw.
+ *  PortalAbMorgenError. */
+async function checkStartbar(report: mysql.RowDataPacket): Promise<void> {
   if (report.status !== 'eingereicht') throw new PortalError('Die Anzeige ist nicht (mehr) zum Versand eingereicht.')
   const adapter = portalFuer(report.city)
   if (!adapter) throw new PortalError('Für diese Stadt gibt es keinen Portal-Versand.')
@@ -114,7 +118,15 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
   const [profil] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
   const fehlt = adapter.problem(report, profil[0] ?? null)
   if (fehlt) throw new PortalError(fehlt)
-  if (erstMorgen(adapter, report)) throw new PortalError('Das Portal nimmt nur Taten vor dem heutigen Tag an – bitte ab morgen senden.')
+  if (erstMorgen(adapter, report)) throw new PortalAbMorgenError('Das Portal nimmt nur Taten vor dem heutigen Tag an – bitte ab morgen senden.')
+}
+
+/** Formular-Lauf starten. Wirft PortalError mit deutscher Meldung. */
+export async function startPortalRun(reportId: number, opts: { auto?: boolean } = {}): Promise<string> {
+  const report = await loadReport(reportId)
+  if (!report) throw new PortalError('Anzeige nicht gefunden.')
+  await checkStartbar(report)
+  const adapter = portalFuer(report.city)!
 
   const [claim] = await pool.execute<mysql.ResultSetHeader>(
     `UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=?
@@ -163,10 +175,11 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
       timeoutMs: 60000,
     })
     const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string }
+    if (res.status === 429) throw new PortalBusyError(body.error || 'Es laufen bereits zu viele Portal-Vorgänge.')
     if (!res.ok || !body.id) throw new PortalError(body.error || `Portal-Dienst antwortet nicht (HTTP ${res.status}).`)
     clientRunId = null
     await pool.execute('UPDATE reports SET versand_ergebnis=? WHERE id=?', [
-      JSON.stringify({ portal: { runId: body.id, startedAt: new Date().toISOString() } }),
+      JSON.stringify({ portal: { runId: body.id, startedAt: new Date().toISOString(), ...(opts.auto ? { auto: true } : {}) } }),
       reportId,
     ])
     if (opts.auto) autoSubmit.add(reportId)
@@ -180,7 +193,8 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
     )
     // Evtl. doch gestarteten Lauf (Antwort verloren) im Dienst abbrechen.
     if (clientRunId) void proxy(clientRunId, '/cancel', { method: 'POST' }).catch(() => null)
-    if (err instanceof PortalDatenFehler || err instanceof PortalError) throw new PortalError(err.message)
+    if (err instanceof PortalError) throw err
+    if (err instanceof PortalDatenFehler) throw new PortalError(err.message)
     log?.error({ err, reportId }, 'Portal-Lauf konnte nicht gestartet werden')
     throw new PortalError(
       err instanceof Error && /fetch failed|abort/i.test(err.message)
@@ -389,6 +403,8 @@ function watch(reportId: number, runId: string): void {
     } finally {
       watching.delete(reportId)
       autoSubmit.delete(reportId)
+      // Ein Platz im Portal-Dienst ist frei: wartende Starts nach Freigabe sofort versuchen.
+      void pool.execute("UPDATE jobs SET run_after=NOW() WHERE type='portal.start' AND status='queued'").catch(() => undefined)
     }
   })()
 }
@@ -401,7 +417,10 @@ export async function resumeWatchers(logger: FastifyBaseLogger): Promise<void> {
   )
   for (const r of rows) {
     const info = portalInfo(r)
-    if (info?.runId && !info.error) watch(Number(r.id), info.runId)
+    if (info?.runId && !info.error) {
+      if (info.auto && r.versand_status === 'vorbereitung') autoSubmit.add(Number(r.id))
+      watch(Number(r.id), info.runId)
+    }
     else if (!info?.runId && r.versand_status === 'vorbereitung') await releaseClaim(Number(r.id)) // Start abgebrochen
   }
 }
@@ -418,4 +437,54 @@ export async function resolveUncertain(reportId: number, outcome: 'gesendet' | '
     id: '', state: 'done', message: '', step: null, submitted: true, frameNo: 0, log: [], summary: 'Von Hand als versendet bestätigt.',
     result: { vorgangsId: (vorgangsId || '').trim().slice(0, 64) || null, text: '', hasReceipt: false }, error: null, artifacts: [],
   })
+}
+
+// Freigabe einer Portal-Anzeige (Admin: /admin/anzeigen „Freigeben", eigene
+// Anzeige „Einreichen & versenden") startet den Lauf direkt im Hintergrund –
+// ohne Klick auf /versand. Abgeschickt wird ohne Rückfrage nur, wenn der Lauf
+// ohne Eingriff durchkommt; sonst wartet er auf /versand auf „Jetzt absenden".
+// Ist der Portal-Dienst voll belegt, wartet der Job auf einen freien Platz;
+// Taten von heute (Frankfurt) starten kurz nach Mitternacht.
+
+function sekundenBisMorgen(): number {
+  const [h, m, s] = new Date().toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour12: false }).split(':').map(Number)
+  return 24 * 3600 - (h * 3600 + m * 60 + s) + 5 * 60
+}
+
+registerJob('portal.start', async ({ reportId }) => {
+  const report = await loadReport(Number(reportId))
+  // Inzwischen abgelehnt, von Hand auf /versand gestartet oder erledigt.
+  if (!report || report.status !== 'eingereicht' || report.versand_status) return
+  try {
+    await startPortalRun(Number(reportId), { auto: true })
+  } catch (err) {
+    if (err instanceof PortalBusyError) throw new JobRetryLater(err.message, 60)
+    if (err instanceof PortalAbMorgenError) throw new JobRetryLater(err.message, sekundenBisMorgen())
+    throw err
+  }
+})
+
+/** Nach der Freigabe: Portal-Lauf einreihen. Gibt einen Hinderungsgrund zurück
+ *  (dann wird nichts gestartet) oder null; „ab morgen" wird eingereiht. */
+export async function enqueuePortalStart(reportId: number): Promise<{ problem: string | null; abMorgen: boolean }> {
+  const report = await loadReport(reportId)
+  if (!report) return { problem: 'Anzeige nicht gefunden.', abMorgen: false }
+  let abMorgen = false
+  try {
+    await checkStartbar(report)
+  } catch (err) {
+    if (err instanceof PortalAbMorgenError) abMorgen = true
+    else if (err instanceof PortalError) return { problem: err.message, abMorgen: false }
+    else throw err
+  }
+  await enqueueJob('portal.start', { reportId }, { key: `portal.start:${reportId}`, maxAttempts: 3 })
+  return { problem: null, abMorgen }
+}
+
+/** Anzeigen, deren automatischer Start noch aussteht (für /versand). */
+export async function wartendeStarts(): Promise<Set<number>> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    "SELECT payload FROM jobs WHERE type='portal.start' AND status IN ('queued','running')"
+  )
+  return new Set(rows.map((r) => Number(JSON.parse(r.payload)?.reportId)))
 }

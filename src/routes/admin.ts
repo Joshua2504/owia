@@ -16,7 +16,7 @@ import { regeneratePdf, isProfileComplete } from './reports'
 import { deleteUser, UserDeleteError } from '../services/userDelete'
 import { isAdminEmail } from '../config/admin'
 import { enqueueJob, registerJob, recentJobs } from '../services/jobs'
-import { usesPortal } from '../services/portalDispatch'
+import { usesPortal, enqueuePortalStart } from '../services/portalDispatch'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
@@ -269,8 +269,19 @@ export default async function adminRoutes(app: FastifyInstance) {
     const loaded = await loadReportWithUser(id)
     if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
-    // Portal-Städte: Versand live auf /versand (mit Browser-Ansicht).
-    if (usesPortal(loaded.report)) return reply.redirect(`/versand?az=${encodeURIComponent(loaded.report.aktenzeichen)}`)
+    // Portal-Städte: Lauf startet sofort im Hintergrund, /versand zeigt ihn live.
+    if (usesPortal(loaded.report)) {
+      const az = loaded.report.aktenzeichen
+      const { problem, abMorgen } = await enqueuePortalStart(Number(loaded.report.id))
+      if (problem) {
+        setFlash(reply, 'error', `Anzeige ${az}: ${problem}`)
+        return reply.redirect('/admin/anzeigen')
+      }
+      setFlash(reply, 'success', abMorgen
+        ? `Anzeige ${az}: Tat von heute – der Portal-Versand startet automatisch nach Mitternacht.`
+        : `Anzeige ${az}: Portal-Versand gestartet.`)
+      return reply.redirect(`/versand?az=${encodeURIComponent(az)}`)
+    }
 
     await enqueueJob('report.dispatch', { reportId: loaded.report.id, aktenzeichen: loaded.report.aktenzeichen },
       { key: `report.dispatch:${loaded.report.id}`, maxAttempts: 1 })
