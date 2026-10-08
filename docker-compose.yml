@@ -110,7 +110,10 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
-  # OSM-Raster-Tileserver (nur Hessen, da aktuell nur Frankfurt unterstützt wird).
+  # OSM-Raster-Tileserver. Prod-Daten seit 10/2026: Hessen + Mainzer Stadtgebiet
+  # (Mainz liegt in RLP), importiert mit scripts/tiles-hessen-mainz.sh. Der
+  # Auto-Import unten lädt nur Hessen – bei einem leeren Volume danach das
+  # Skript laufen lassen, sonst fehlt die Mainzer Karte.
   # Rendert Karten-Kacheln, die die App same-origin über /tiles/{z}/{x}/{y}.png
   # ausliefert (Proxy in src/routes/tiles.ts) – daher kein Port nach außen.
   #
