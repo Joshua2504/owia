@@ -134,7 +134,7 @@ const versandLabel = {
           <% } %>
           <% for (const rep of replies) { %>
             <% const out = rep.direction === 'out' %>
-            <div class="mb-3 p-2 rounded <%= out ? 'bg-light border-start border-4 border-secondary' : 'border-start border-4 border-primary' %>">
+            <div class="mb-3 p-2 rounded <%= out ? 'bg-body-tertiary border-start border-4 border-secondary' : 'border-start border-4 border-primary' %>">
               <div class="small text-muted mb-1">
                 <strong><%= out ? 'Du / OWiA-Anzeiger' : (rep.from_address || 'Ordnungsamt') %></strong>
                 <% if (rep.received_at) { %>· <%= new Date(rep.received_at).toLocaleString('de-DE') %><% } %>
