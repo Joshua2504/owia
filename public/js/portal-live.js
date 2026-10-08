@@ -123,9 +123,13 @@
         .catch(function (err) { self.showMsg(err.message, 'danger') })
     })
     this.btnCancel.addEventListener('click', function () {
-      if (!self.current || !confirm('Vorgang ' + self.current.az + ' abbrechen? Es wird nichts abgesendet.')) return
-      post('/versand/' + self.current.id + '/abbrechen').then(function () { self.poll() })
-        .catch(function (err) { self.showMsg(err.message, 'danger') })
+      if (!self.current) return
+      var cur = self.current
+      OWIA.ask('Vorgang ' + cur.az + ' abbrechen? Es wird nichts abgesendet.', { danger: true, ok: 'Vorgang abbrechen', cancel: 'Weiterlaufen lassen' }).then(function (ok) {
+        if (!ok) return
+        post('/versand/' + cur.id + '/abbrechen').then(function () { self.poll() })
+          .catch(function (err) { self.showMsg(err.message, 'danger') })
+      })
     })
   }
 
@@ -283,7 +287,7 @@
     var s = slotOf(id)
     if (s && s.busy()) return s
     s = s || freeSlot()
-    if (!s) { alert('Es läuft bereits eine Anzeige – bitte warten, bis sie fertig ist.'); return null }
+    if (!s) { OWIA.alert('Es läuft bereits eine Anzeige – bitte warten, bis sie fertig ist.'); return null }
     s.start(id)
     return s
   }
@@ -307,7 +311,7 @@
     post('/versand/selbsttest').then(function () {
       testBtn.textContent = 'Selbsttest läuft (ca. 30 s) …'
       setTimeout(function () { location.reload() }, 45000)
-    }).catch(function (err) { alert(err.message); testBtn.disabled = false })
+    }).catch(function (err) { OWIA.alert(err.message); testBtn.disabled = false })
   })
 
   root.querySelector('[data-act=alle]').addEventListener('click', function () {
@@ -331,12 +335,15 @@
     var act = b.getAttribute('data-act')
     if (act === 'start') startItem(id)
     else if (act === 'klaeren-ja') {
-      var vid = prompt('Vorgangs-ID (falls bekannt, z. B. aus der Zusammenfassung):', '')
-      if (vid === null) return
-      post('/versand/' + id + '/klaeren', { ergebnis: 'gesendet', vorgangsId: vid }).then(function () { location.reload() }).catch(function (err) { alert(err.message) })
+      OWIA.prompt('Vorgangs-ID (falls bekannt, z. B. aus der Zusammenfassung):', '', { title: 'Beim Portal angekommen', ok: 'Speichern' }).then(function (vid) {
+        if (vid === null) return
+        post('/versand/' + id + '/klaeren', { ergebnis: 'gesendet', vorgangsId: vid }).then(function () { location.reload() }).catch(function (err) { OWIA.alert(err.message) })
+      })
     } else if (act === 'klaeren-nein') {
-      if (!confirm('Ist die Anzeige sicher NICHT beim Portal angekommen? Sie kann dann erneut gesendet werden.')) return
-      post('/versand/' + id + '/klaeren', { ergebnis: 'nicht-gesendet' }).then(function () { location.reload() }).catch(function (err) { alert(err.message) })
+      OWIA.ask('Ist die Anzeige sicher NICHT beim Portal angekommen? Sie kann dann erneut gesendet werden.', { danger: true, ok: 'Nicht angekommen' }).then(function (ok) {
+        if (!ok) return
+        post('/versand/' + id + '/klaeren', { ergebnis: 'nicht-gesendet' }).then(function () { location.reload() }).catch(function (err) { OWIA.alert(err.message) })
+      })
     }
   })
 

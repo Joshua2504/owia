@@ -155,7 +155,7 @@
       dragged = null
       // Teil einer Mehrfachauswahl (photo-picks.js): alle ausgewählten mitnehmen.
       if (window.photoPicks && window.photoPicks.handles(moved.imageId)) return window.photoPicks.moveTo({ targetAz: az })
-      moveDragged(moved, { targetAz: az }).catch(function (error) { alert(error.message) })
+      moveDragged(moved, { targetAz: az }).catch(function (error) { OWIA.alert(error.message) })
     })
   }
 
@@ -189,7 +189,7 @@
       var moved = dragged
       dragged = null
       if (window.photoPicks && window.photoPicks.handles(moved.imageId)) return window.photoPicks.moveTo({ newDraft: true })
-      moveDragged(moved, { newDraft: true }).catch(function (error) { alert(error.message) })
+      moveDragged(moved, { newDraft: true }).catch(function (error) { OWIA.alert(error.message) })
     })
   }
 

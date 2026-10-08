@@ -119,9 +119,11 @@
     if (closing) return
     closing = true
     flush().then(function (res) {
-      if (res.busy && !confirm('Fotos werden noch hochgeladen bzw. gespeichert. Trotzdem schließen?')) {
-        closing = false
-        return
+      if (res.busy && !res.bestaetigt) {
+        return OWIA.ask('Fotos werden noch hochgeladen bzw. gespeichert. Trotzdem schließen?', { ok: 'Trotzdem schließen' }).then(function (ok) {
+          closing = false
+          if (ok) finish()
+        })
       }
       finish()
     })

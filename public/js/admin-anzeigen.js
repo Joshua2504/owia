@@ -17,7 +17,12 @@
   // Rückfrage mit Anzahl – deshalb hier statt über data-confirm (layout.js).
   form.addEventListener('submit', function (e) {
     var n = checks().filter(function (c) { return c.checked }).length
-    if (!n || !confirm(n + ' Antwort(en) endgültig verwerfen? Text und Anhänge werden gelöscht.')) e.preventDefault()
+    if (form.dataset.confirmed) { delete form.dataset.confirmed; return }
+    e.preventDefault()
+    if (!n) return
+    OWIA.ask(n + ' Antwort(en) endgültig verwerfen? Text und Anhänge werden gelöscht.', { danger: true, ok: 'Verwerfen' }).then(function (ok) {
+      if (ok) { form.dataset.confirmed = '1'; form.requestSubmit() }
+    })
   })
   document.addEventListener('change', function (e) { if (e.target.classList.contains('reply-check')) update() })
   document.getElementById('reply-all').addEventListener('change', function (e) {

@@ -269,9 +269,11 @@
   // Buttons in der Batch-Liste ("Bisherige Importe").
   document.querySelectorAll('.intake-discard').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      if (!confirm('Diesen Import samt hochgeladener Fotos verwerfen?')) return
-      fetch('/import/' + btn.getAttribute('data-batch') + '/discard', { method: 'POST' })
-        .then(function () { location.reload() })
+      OWIA.ask('Diesen Import samt hochgeladener Fotos verwerfen?', { danger: true, ok: 'Verwerfen' }).then(function (ok) {
+        if (!ok) return
+        fetch('/import/' + btn.getAttribute('data-batch') + '/discard', { method: 'POST' })
+          .then(function () { location.reload() })
+      })
     })
   })
   document.querySelectorAll('.intake-finish-open').forEach(function (btn) {

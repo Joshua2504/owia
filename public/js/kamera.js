@@ -669,10 +669,12 @@
           location.href = '/anzeigen'
           return
         }
-        if (!window.confirm(plural(n, 'Foto', 'Fotos') + ' verwerfen?')) return
-        discard(cur)
-        cur = newDraft()
-        return render()
+        return OWIA.ask(plural(n, 'Foto', 'Fotos') + ' verwerfen?', { danger: true, ok: 'Verwerfen' }).then(function (ok) {
+          if (!ok) return
+          discard(cur)
+          cur = newDraft()
+          render()
+        })
       }
       case 'next':
         return showScreen('shoot')
@@ -680,10 +682,13 @@
         if (btn.classList.contains('disabled')) e.preventDefault()
         return
       case 'discard':
-        if (!shown || !window.confirm('Diesen Entwurf mit ' + plural(live(shown).length, 'Foto', 'Fotos') + ' verwerfen? Er landet im Papierkorb.')) return
-        discard(shown)
-        shown = null
-        return showScreen('shoot')
+        if (!shown) return
+        return OWIA.ask('Diesen Entwurf mit ' + plural(live(shown).length, 'Foto', 'Fotos') + ' verwerfen? Er landet im Papierkorb.', { danger: true, ok: 'Verwerfen' }).then(function (ok) {
+          if (!ok || !shown) return
+          discard(shown)
+          shown = null
+          showScreen('shoot')
+        })
       case 'retry':
         return retryFailed()
       case 'keep':

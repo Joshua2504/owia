@@ -237,10 +237,10 @@
     window.addEventListener('resize', function () { if (dlg.open && state && state.base) renderMarks() })
     dlg.querySelector('[data-act=rotate]').addEventListener('click', rotate)
     dlg.querySelector('[data-act=undo]').addEventListener('click', undo)
-    dlg.querySelector('[data-act=original]').addEventListener('click', restoreOriginal)
+    dlg.querySelector('[data-act=original]').addEventListener('click', function () { restoreOriginal() })
     dlg.querySelector('[data-act=cancel]').addEventListener('click', cancel)
     dlg.querySelector('[data-act=save]').addEventListener('click', save)
-    dlg.querySelector('[data-act=delete]').addEventListener('click', remove)
+    dlg.querySelector('[data-act=delete]').addEventListener('click', function () { remove() })
     dlg.querySelector('[data-act=plate-suggest]').addEventListener('click', function () {
       plateInput().value = state.detected
       savePlate().then(updateUi, function () {})
@@ -275,7 +275,7 @@
       var t = state.thumbs[Number(b.getAttribute('data-strip-index'))]
       if (!t || t === state.thumb) return
       var s0 = state
-      flushSave(s0).then(savePlate).then(function () { if (state === s0) openThumb(t) }, function (err) { alert((err && err.message) || 'Speichern fehlgeschlagen.') })
+      flushSave(s0).then(savePlate).then(function () { if (state === s0) openThumb(t) }, function (err) { OWIA.alert((err && err.message) || 'Speichern fehlgeschlagen.') })
     })
     // Reihenfolge per Drag & Drop (Desktop); auf dem Handy die Pfeile. Die
     // Kacheln weichen schon beim Ziehen aus (DOM live umsortiert, mit kurzer
@@ -375,7 +375,7 @@
       saveDetail(body)
     }
     dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
-    dlg.querySelector('[data-act=trash-report]').addEventListener('click', trashReport)
+    dlg.querySelector('[data-act=trash-report]').addEventListener('click', function () { trashReport() })
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     dlg.querySelector('[data-variante]').addEventListener('change', function (e) {
       saveDetail({ verstoss_variante: e.target.value })
@@ -696,7 +696,7 @@
         loadStatus(s)
       })
       .catch(function (err) {
-        alert(err.message || 'Kennzeichen konnte nicht gespeichert werden.')
+        OWIA.alert(err.message || 'Kennzeichen konnte nicht gespeichert werden.')
         throw err
       })
   }
@@ -823,7 +823,7 @@
         if (ziel && state === s) openThumb(ziel)
       })
     }).catch(function (err) {
-      alert((err && err.message) || 'Kopieren fehlgeschlagen.')
+      OWIA.alert((err && err.message) || 'Kopieren fehlgeschlagen.')
     }).then(function () {
       s.busy = false
       if (state === s) { msg(''); updateUi() }
@@ -858,7 +858,7 @@
         }).then(function (r) {
           return r.json().catch(function () { return {} }).then(function (d) {
             if (!r.ok || r.redirected) throw new Error(d.error || 'Hochladen fehlgeschlagen.')
-            if (d.errors && d.errors.length) alert(d.errors.join('\n'))
+            if (d.errors && d.errors.length) OWIA.alert(d.errors.join('\n'))
             return d
           })
         }).then(function (d) {
@@ -872,7 +872,7 @@
             if (ziel && state === s2) openThumb(ziel)
           })
         }).catch(function (err) {
-          alert(err.message || 'Hochladen fehlgeschlagen.')
+          OWIA.alert(err.message || 'Hochladen fehlgeschlagen.')
         }).then(function () {
           s2.busy = false
           if (state === s2) { msg(''); updateUi() }
@@ -915,7 +915,7 @@
         renderStrip()
         updateUi()
       })
-      .catch(function () { alert('Reihenfolge konnte nicht gespeichert werden.') })
+      .catch(function () { OWIA.alert('Reihenfolge konnte nicht gespeichert werden.') })
   }
 
   function msg(text) {
@@ -1058,7 +1058,7 @@
     })
       .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
       .then(function () { loadStatus(s) })
-      .catch(function (err) { alert(err.message) })
+      .catch(function (err) { OWIA.alert(err.message) })
   }
   // Zeile/Karte nach Detail-Änderungen auffrischen (beim Schließen/Weitergehen).
   function flushHost(az) {
@@ -1289,7 +1289,7 @@
     var offen = boxen.some(function (b, i) { return !abgedeckt(b) && !s.freigegeben[i] })
     if (offen || !Object.keys(s.freigegeben).length) return
     if (s.dirty) s.dritteOkNachSpeichern = true
-    else dritteOk(s).catch(function (err) { alert(err.message) })
+    else dritteOk(s).catch(function (err) { OWIA.alert(err.message) })
   }
   function dritteOk(s) {
     return fetch(s.put + '/dritte', {
@@ -1377,7 +1377,7 @@
     if (unsaved(s) || s.saving) {
       // Erst speichern, dann einreichen – nie ungespeichert verwerfen.
       return flushSave(s).then(function () { if (state === s) submitReport(sofort, bestaetigt) }, function (err) {
-        alert((err && err.message) || 'Foto konnte nicht gespeichert werden – bitte erneut versuchen.')
+        OWIA.alert((err && err.message) || 'Foto konnte nicht gespeichert werden – bitte erneut versuchen.')
       })
     }
     if (sofort && !bestaetigt) {
@@ -1405,17 +1405,20 @@
         done()
       })
       .catch(function (err) {
-        if (err && err.message) alert(err.message)
+        if (err && err.message) OWIA.alert(err.message)
         s.busy = false
         loadStatus(s)
       })
       .finally(function () { if (state === s) updateUi() })
   }
 
-  function trashReport() {
+  function trashReport(bestaetigt) {
     var s = state
     if (!s || s.busy) return
-    if (!window.photoEditorRun && !confirm('Anzeige ' + s.az + ' in den Papierkorb verschieben? (30 Tage wiederherstellbar)')) return
+    if (!window.photoEditorRun && !bestaetigt) {
+      return OWIA.ask('Anzeige ' + s.az + ' in den Papierkorb verschieben? (30 Tage wiederherstellbar)', { danger: true, ok: 'In den Papierkorb' })
+        .then(function (ok) { if (ok && state === s) trashReport(true) })
+    }
     s.busy = true
     fetch('/anzeige/' + encodeURIComponent(s.az) + '/discard', { method: 'POST', headers: { Accept: 'application/json' } })
       .then(function (r) {
@@ -1425,7 +1428,7 @@
       })
       .catch(function () {
         s.busy = false
-        alert('Anzeige konnte nicht verworfen werden.')
+        OWIA.alert('Anzeige konnte nicht verworfen werden.')
       })
   }
 
@@ -1458,7 +1461,7 @@
           if (f && validCoord(f.tatort_lat) && validCoord(f.tatort_lon)) placeMarker(f.tatort_lat, f.tatort_lon, true)
         }, 700)
       })
-      .catch(function (err) { alert(err.message) })
+      .catch(function (err) { OWIA.alert(err.message) })
       .finally(function () { b.disabled = false })
   }
 
@@ -2084,10 +2087,13 @@
     b.hidden = state.plate == null || !(state.gespeichert || (info && info.bearbeitet))
     b.disabled = !!state.busy
   }
-  function restoreOriginal() {
+  function restoreOriginal(bestaetigt) {
     var s = state
     if (!s || s.busy) return
-    if (!confirm('Alle gespeicherten Bearbeitungen dieses Fotos verwerfen – Schwärzungen (auch automatische), Zuschnitt, Drehen – und das unbearbeitete Original wiederherstellen?\n\nDanach bitte neu schwärzen und das Foto erneut bestätigen.')) return
+    if (!bestaetigt) {
+      return OWIA.ask('Alle gespeicherten Bearbeitungen dieses Fotos verwerfen – Schwärzungen (auch automatische), Zuschnitt, Drehen – und das unbearbeitete Original wiederherstellen?\n\nDanach bitte neu schwärzen und das Foto erneut bestätigen.', { danger: true, ok: 'Original wiederherstellen' })
+        .then(function (ok) { if (ok && state === s) restoreOriginal(true) })
+    }
     // Ausstehendes Auto-Speichern verwerfen – es würde die alte Fassung zurückschreiben.
     clearTimeout(s.saveTimer)
     s.saveTimer = null
@@ -2114,7 +2120,7 @@
       }, function (err) {
         s.busy = false
         if (state === s) { msg(''); updateUi() }
-        alert(err.message)
+        OWIA.alert(err.message)
       })
   }
 
@@ -2350,7 +2356,7 @@
     var s = state
     if (!s || s.busy) return
     if (unsaved(s) || s.saving) {
-      return flushSave(s).then(function () { if (state === s) moveTo(dest) }, function (err) { alert((err && err.message) || 'Speichern fehlgeschlagen.') })
+      return flushSave(s).then(function () { if (state === s) moveTo(dest) }, function (err) { OWIA.alert((err && err.message) || 'Speichern fehlgeschlagen.') })
     }
     var ids = pickedIds()
     dlg.querySelector('.photo-edit-move-menu').hidden = true
@@ -2382,8 +2388,8 @@
           var all = host ? Array.prototype.slice.call(host.querySelectorAll('[data-photo-edit]')) : []
           if (!all.length) {
             // Keine Fotos mehr übrig: leere Anzeige gleich verwerfen?
-            if (confirm('Diese Anzeige hat keine Fotos mehr. In den Papierkorb verschieben?')) return trashReport()
-            return runDone('skipped')
+            return OWIA.ask('Diese Anzeige hat keine Fotos mehr. In den Papierkorb verschieben?', { danger: true, ok: 'In den Papierkorb', cancel: 'Behalten' })
+              .then(function (ok) { if (state !== s) return; if (ok) trashReport(true); else runDone('skipped') })
           }
           if (!movedCurrent) {
             var mine = all.filter(function (x) { return x.getAttribute('data-photo-edit') === s.put })[0]
@@ -2405,7 +2411,7 @@
       .catch(function (err) {
         s.busy = false
         if (state === s) updateUi()
-        alert(err.message)
+        OWIA.alert(err.message)
       })
   }
 
@@ -2434,7 +2440,8 @@
     flushSave(s).then(function () { return savePlate() }).then(function () {
       if (state === s) close()
     }, function (err) {
-      if (confirm(((err && err.message) || 'Speichern fehlgeschlagen.') + ' Trotzdem schließen? Die Änderungen gehen verloren.')) close()
+      OWIA.ask(((err && err.message) || 'Speichern fehlgeschlagen.') + ' Trotzdem schließen? Die Änderungen gehen verloren.', { danger: true, ok: 'Trotzdem schließen' })
+        .then(function (ok) { if (ok) close() })
     })
   }
 
@@ -2486,7 +2493,7 @@
       return
     }
     if (kzPflicht(s) && s.kz && !s.kzKeins && !kzAnteile(s)) {
-      alert('Die Kennzeichen-Markierung liegt außerhalb des Zuschnitts – bitte neu markieren.')
+      OWIA.alert('Die Kennzeichen-Markierung liegt außerhalb des Zuschnitts – bitte neu markieren.')
       setTool('plate')
       return
     }
@@ -2505,8 +2512,8 @@
       .catch(function (err) {
         // savePlate() hat seinen Fehler schon gemeldet.
         // savePlate() hat seinen Fehler schon gemeldet.
-        if (err && err.persist) alert(err.message + ' Bitte erneut versuchen.')
-        else if (!err || !err.message) alert('Speichern fehlgeschlagen – bitte erneut versuchen.')
+        if (err && err.persist) OWIA.alert(err.message + ' Bitte erneut versuchen.')
+        else if (!err || !err.message) OWIA.alert('Speichern fehlgeschlagen – bitte erneut versuchen.')
       })
       .finally(function () {
         s.busy = false
@@ -2514,8 +2521,13 @@
       })
   }
 
-  function remove() {
-    if (!state || state.busy || !confirm('Dieses Foto endgültig aus dem Entwurf löschen?')) return
+  function remove(bestaetigt) {
+    if (!state || state.busy) return
+    if (!bestaetigt) {
+      var s0 = state
+      return OWIA.ask('Dieses Foto endgültig aus dem Entwurf löschen?', { danger: true, ok: 'Löschen' })
+        .then(function (ok) { if (ok && state === s0) remove(true) })
+    }
     var s = state
     s.busy = true
     updateUi()
@@ -2524,7 +2536,7 @@
         if (!r.ok || r.redirected) throw new Error()
         return next(s.az)
       })
-      .catch(function () { alert('Foto konnte nicht gelöscht werden.') })
+      .catch(function () { OWIA.alert('Foto konnte nicht gelöscht werden.') })
       .finally(function () {
         s.busy = false
         if (state === s) updateUi()

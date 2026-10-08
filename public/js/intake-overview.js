@@ -16,16 +16,16 @@
     })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
       .then(function (res) {
-        if (!res.ok) { alert(res.d.error || 'Zuordnung fehlgeschlagen.'); return }
+        if (!res.ok) { OWIA.alert(res.d.error || 'Zuordnung fehlgeschlagen.'); return }
         location.reload()
       })
-      .catch(function () { alert('Zuordnung fehlgeschlagen.') })
+      .catch(function () { OWIA.alert('Zuordnung fehlgeschlagen.') })
   }
   root.querySelectorAll('[data-assign-btn]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var id = btn.getAttribute('data-assign-btn')
       var sel = root.querySelector('[data-assign-select="' + id + '"]')
-      if (!sel || !sel.value) { alert('Bitte zuerst einen Entwurf wählen.'); return }
+      if (!sel || !sel.value) { OWIA.alert('Bitte zuerst einen Entwurf wählen.'); return }
       assign(id, { az: sel.value })
     })
   })

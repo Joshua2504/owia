@@ -1393,3 +1393,5 @@ body.is-bare { overflow: hidden; overscroll-behavior: none; background: #000; }
 .owia-confirm-actions .btn { flex: 1; }
 @keyframes owia-confirm-in { from { opacity: 0; transform: translateY(.5rem) scale(.97); } }
 @media (prefers-reduced-motion: reduce) { .owia-confirm[open] { animation: none; } }
+.owia-confirm-text { white-space: pre-line; }
+.owia-confirm-icon.is-danger { background: var(--bs-danger-bg-subtle); color: var(--bs-danger-text-emphasis); font-weight: 700; }

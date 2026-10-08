@@ -82,12 +82,23 @@
   document.addEventListener('submit', function (e) {
     var form = e.target
     if (!form || !form.matches || !form.matches('form[data-confirm]')) return
-    if (!confirm(form.dataset.confirm)) e.preventDefault()
+    if (form.dataset.confirmed) { delete form.dataset.confirmed; return }
+    e.preventDefault()
+    var submitter = e.submitter
+    OWIA.ask(form.dataset.confirm, { danger: /lösch|verwerf|entwert|Konto schließen/i.test(form.dataset.confirm) }).then(function (ok) {
+      if (!ok) return
+      form.dataset.confirmed = '1'
+      form.requestSubmit(submitter && submitter.form === form ? submitter : undefined)
+    })
   })
   document.addEventListener('click', function (e) {
     var el = e.target && e.target.closest && e.target.closest('button[data-confirm], a[data-confirm]')
     if (!el) return
-    if (!confirm(el.dataset.confirm)) e.preventDefault()
+    if (el.dataset.confirmed) { delete el.dataset.confirmed; return }
+    e.preventDefault()
+    OWIA.ask(el.dataset.confirm, { danger: /lösch|verwerf|entwert|Konto schließen/i.test(el.dataset.confirm) }).then(function (ok) {
+      if (ok) { el.dataset.confirmed = '1'; el.click() }
+    })
   })
   // Sticky-Header: Höhe als --owia-nav-h, damit andere sticky-Elemente
   // darunter ankleben. "Nach oben"-Button erscheint nach etwas Scrollen.

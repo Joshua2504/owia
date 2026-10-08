@@ -267,7 +267,7 @@
       .then(function () { return window.reportTableRefresh(row.dataset.az) })
       .catch(function (err) {
         btn.disabled = false
-        alert(err.message)
+        OWIA.alert(err.message)
       })
   })
 
@@ -285,7 +285,7 @@
         btn.disabled = false
         btn.textContent = '📍 aus Fotos übernehmen'
         btn.title = err.message
-        alert(err.message)
+        OWIA.alert(err.message)
       })
   })
 

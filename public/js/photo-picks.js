@@ -75,7 +75,7 @@
       }
       location.reload()
     } catch (err) {
-      alert(err.message + ' Bereits verschobene Fotos bleiben verschoben; die Liste wird neu geladen.')
+      OWIA.alert(err.message + ' Bereits verschobene Fotos bleiben verschoben; die Liste wird neu geladen.')
       location.reload()
     }
   }
@@ -99,14 +99,14 @@
   bar.querySelector('[data-delete]').addEventListener('click', async function () {
     var list = picks()
     if (!list.length) return
-    if (!confirm((list.length === 1 ? 'Das ausgewählte Foto' : 'Die ' + list.length + ' ausgewählten Fotos') + ' endgültig löschen?')) return
+    if (!(await OWIA.ask((list.length === 1 ? 'Das ausgewählte Foto' : 'Die ' + list.length + ' ausgewählten Fotos') + ' endgültig löschen?', { danger: true, ok: 'Löschen' }))) return
     bar.querySelectorAll('button, select').forEach(function (b) { b.disabled = true })
     var failed = 0
     for (var cb of list) {
       var res = await fetch('/anzeige/' + encodeURIComponent(cb.getAttribute('data-pick-az')) + '/images/' + cb.getAttribute('data-pick-id'), { method: 'DELETE' }).catch(function () { return null })
       if (!res || !res.ok) failed++
     }
-    if (failed) alert(failed + ' Foto(s) konnten nicht gelöscht werden.')
+    if (failed) OWIA.alert(failed + ' Foto(s) konnten nicht gelöscht werden.')
     location.reload()
   })
   bar.querySelector('[data-new]').addEventListener('click', function () { moveTo({ newDraft: true }) })

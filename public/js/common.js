@@ -85,34 +85,56 @@
     return catalog
   }
 
-  // Bestätigungsdialog statt window.confirm(): natives <dialog> im Top-Layer
+  // Dialoge statt window.confirm/alert/prompt: natives <dialog> im Top-Layer
   // (liegt damit auch über Bootstrap-Modals und dem Foto-Dialog), im
-  // Seiten-Design, Esc/Klick daneben = Abbrechen. Liefert Promise<boolean>.
-  // opts: title, text, ok (Knopftext), cancel, danger (roter OK-Knopf).
-  function confirmDialog(opts) {
-    opts = opts || {}
+  // Seiten-Design, Esc/Klick daneben = Abbrechen. Text darf \n enthalten.
+  // opts: title, text, ok (Knopftext), cancel (false = kein Abbrechen-Knopf),
+  // danger (roter OK-Knopf), icon, input (true = Textfeld, value = Vorgabe).
+  // Liefert Promise: bei input den Text bzw. null, sonst true/false.
+  function dialog(opts) {
     return new Promise(function (resolve) {
       var d = document.createElement('dialog')
       d.className = 'owia-confirm'
+      var icon = opts.icon || (opts.danger ? '!' : opts.cancel === false ? 'i' : '?')
       d.innerHTML =
         '<form method="dialog">' +
-        '<div class="owia-confirm-icon" aria-hidden="true">' + escapeHtml(opts.icon || '✉') + '</div>' +
-        '<h2 class="owia-confirm-title">' + escapeHtml(opts.title || 'Bist du sicher?') + '</h2>' +
+        '<div class="owia-confirm-icon' + (opts.danger ? ' is-danger' : '') + '" aria-hidden="true">' + escapeHtml(icon) + '</div>' +
+        (opts.title ? '<h2 class="owia-confirm-title">' + escapeHtml(opts.title) + '</h2>' : '') +
         (opts.text ? '<p class="owia-confirm-text">' + escapeHtml(opts.text) + '</p>' : '') +
+        (opts.input ? '<input class="form-control mb-3" data-input>' : '') +
         '<div class="owia-confirm-actions">' +
-        '<button type="submit" value="cancel" class="btn btn-outline-secondary">' + escapeHtml(opts.cancel || 'Abbrechen') + '</button>' +
+        (opts.cancel === false ? '' : '<button type="submit" value="cancel" class="btn btn-outline-secondary">' + escapeHtml(opts.cancel || 'Abbrechen') + '</button>') +
         '<button type="submit" value="ok" class="btn ' + (opts.danger ? 'btn-danger' : 'btn-primary') + '" data-ok>' + escapeHtml(opts.ok || 'OK') + '</button>' +
         '</div></form>'
+      var input = d.querySelector('[data-input]')
+      if (input) input.value = opts.value || ''
       d.addEventListener('click', function (e) { if (e.target === d) d.close('cancel') })
       d.addEventListener('close', function () {
         var ok = d.returnValue === 'ok'
         d.remove()
-        resolve(ok)
+        resolve(input ? (ok ? input.value : null) : ok)
       })
       document.body.appendChild(d)
       d.showModal()
-      d.querySelector('[data-ok]').focus()
+      ;(input || d.querySelector('[data-ok]')).focus()
     })
+  }
+  // Ja/Nein-Rückfrage: ask('Text?', { danger: true, ok: 'Löschen' }).then(ok => …)
+  function ask(text, opts) {
+    var o = { text: text }
+    for (var k in opts || {}) o[k] = opts[k]
+    return dialog(o)
+  }
+  function confirmDialog(opts) { return dialog(opts || {}) }
+  function alertDialog(text, opts) {
+    var o = { text: String(text == null ? '' : text), cancel: false }
+    for (var k in opts || {}) o[k] = opts[k]
+    return dialog(o)
+  }
+  function promptDialog(text, value, opts) {
+    var o = { text: text, input: true, value: value }
+    for (var k in opts || {}) o[k] = opts[k]
+    return dialog(o)
   }
 
   // Gemeinsame Rückfrage vor dem Admin-Sofortversand (report-submit.js,
@@ -133,6 +155,9 @@
     normalizePlate: normalizePlate,
     fetchJson: fetchJson,
     confirmDialog: confirmDialog,
+    ask: ask,
+    alert: alertDialog,
+    prompt: promptDialog,
     confirmSofort: confirmSofort,
   }
 })()

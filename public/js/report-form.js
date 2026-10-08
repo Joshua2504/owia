@@ -981,7 +981,7 @@
 
   // Bild aus dem Entwurf entfernen (Karte + serverseitig gespeicherte Fassung).
   async function removeItem(item) {
-    if (!confirm('Foto aus dem Entwurf entfernen?')) return
+    if (!(await OWIA.ask('Foto aus dem Entwurf entfernen?', { danger: true, ok: 'Entfernen' }))) return
     dropItem(item)
     if (item.serverImageId) {
       fetch('/anzeige/' + reportId + '/images/' + item.serverImageId, { method: 'DELETE' })
@@ -1024,7 +1024,7 @@
     const sel = selectedItems()
     if (!sel.length) return
     const what = sel.length === 1 ? 'das ausgewählte Foto' : 'die ' + sel.length + ' ausgewählten Fotos'
-    if (!confirm(dest.newDraft ? 'Für ' + what + ' eine neue Anzeige anlegen?' : what.charAt(0).toUpperCase() + what.slice(1) + ' nach „' + label + '" verschieben?')) return
+    if (!await OWIA.ask(dest.newDraft ? 'Für ' + what + ' eine neue Anzeige anlegen?' : what.charAt(0).toUpperCase() + what.slice(1) + ' nach „' + label + '" verschieben?')) return
     const buttons = document.querySelectorAll('#photo-select-bar button, #photo-select-bar select')
     buttons.forEach((b) => (b.disabled = true))
     try {
@@ -1755,7 +1755,7 @@
         e.preventDefault()
         const btn = document.querySelector('#btn-save')
         const status = document.querySelector('#save-status')
-        if (busyUploads() && !confirm('Fotos werden noch hochgeladen. Trotzdem schließen?')) return
+        if (busyUploads() && !(await OWIA.ask('Fotos werden noch hochgeladen. Trotzdem schließen?'))) return
         if (btn) btn.disabled = true
         if (status) status.textContent = 'Speichert …'
         try {
@@ -1792,7 +1792,7 @@
           window.parent.postMessage({ type: 'owia:close' }, location.origin)
         } catch (_) {
           discard.disabled = false
-          alert('Löschen fehlgeschlagen.')
+          OWIA.alert('Löschen fehlgeschlagen.')
         }
       })
     }
@@ -1907,7 +1907,7 @@
         body,
       })
     btn.addEventListener('click', async () => {
-      if (busyUploads() && !confirm('Fotos werden noch hochgeladen. Trotzdem jetzt einreichen?')) return
+      if (busyUploads() && !(await OWIA.ask('Fotos werden noch hochgeladen. Trotzdem jetzt einreichen?'))) return
       errBox.hidden = true
       btn.disabled = true
       const label = btn.textContent
