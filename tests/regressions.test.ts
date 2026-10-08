@@ -561,9 +561,22 @@ test('Sticker: Kontingent, Verknüpfen, Lösen und Code-Normalisierung', async (
   assert.equal(codes.length, 48)
   assert.equal(new Set(codes).size, 48)
   assert.ok(codes.every(c => normalizeCode(c) === c))
-  // Solange Codes offen sind, gibt es keine neuen Bögen.
-  assert.ok('error' in await createBatch(owner, layout, 1))
+  // Höchstens 20 Bögen mit offenen Codes gleichzeitig (über alle Batches):
+  // 2 offen → 18 gehen noch, 19 nicht. Fall-Sticker je Verstoß parallel.
+  assert.ok('error' in await createBatch(owner, layout, 19))
   assert.ok('error' in await createBatch(owner, layout, 21))
+  const gehweg = parseLayout({ vorlage: '70x37', tbnr: '112454', aufdruck: 'Auf dem Gehweg 🚗 geparkt.' }) as StickerLayout
+  assert.equal(gehweg.tbnr, '112454')
+  assert.equal(gehweg.aufdruck, 'Auf dem Gehweg geparkt.') // Emoji kann die PDF-Schrift nicht
+  assert.equal((parseLayout({ vorlage: '105x57', tbnr: '112454' }) as StickerLayout).aufdruck, 'Sie parkten verbotswidrig auf dem Gehweg.')
+  assert.match(String(parseLayout({ vorlage: '105x57', tbnr: '999999' })), /Katalog/)
+  assert.match(String(parseLayout({ vorlage: 'eigen', tbnr: '112454', cols: 4, rows: 12, labelW: 48.5, labelH: 25.4, marginLeft: 8, marginTop: 10 })), /60 × 33/)
+  const fallBatch = await createBatch(owner, gehweg, 18)
+  assert.ok('batchId' in fallBatch)
+  assert.ok('error' in await createBatch(owner, layout, 1))
+  const fallPdf = await PDFDocument.load(await renderBatchPdf((await batchCodes(fallBatch.batchId)).slice(0, 24), gehweg, 'https://owia.example'))
+  assert.equal(fallPdf.getPageCount(), 1)
+  assert.equal(await voidOpenCodes(owner, fallBatch.batchId), 18 * 24)
 
   const id = await report(owner)
   assert.equal(await linkCode(owner, codes[0], id), 'ok')

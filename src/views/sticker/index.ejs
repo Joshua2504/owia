@@ -1,7 +1,8 @@
 <%
 // Sticker-Verwaltung (routes/sticker.ts): Bögen erzeugen + drucken, Reste
-// entwerten, verknüpfte Sticker im Blick. Neue Bögen nur ohne offene Codes.
-const gesperrt = offen > 0
+// entwerten, verknüpfte Sticker im Blick. Höchstens maxSeiten Bögen mit
+// offenen Codes gleichzeitig (über alle Batches).
+const gesperrt = freieSeiten < 1
 %>
 <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-3">
   <h2 class="mb-0">🏷 Sticker</h2>
@@ -30,10 +31,15 @@ const gesperrt = offen > 0
   <div class="card-body">
     <% if (gesperrt) { %>
       <div class="alert alert-info small mb-3">
-        Du hast noch <strong><%= offen %> offene Sticker</strong>. Neue Bögen gibt es,
-        sobald alle verknüpft oder entwertet sind (verdruckte oder verlorene Sticker
-        unten beim jeweiligen Batch entwerten).
+        Du hast schon <strong><%= offeneBoegen %> Bögen mit offenen Stickern</strong>
+        (<%= offen %> Sticker). Neue Bögen gibt es, sobald Sticker verknüpft oder Reste
+        entwertet sind (verdruckte oder verlorene Sticker unten beim jeweiligen Batch entwerten).
       </div>
+    <% } else if (offeneBoegen > 0) { %>
+      <p class="small text-muted">
+        <%= offeneBoegen %> von <%= maxSeiten %> Bögen haben noch offene Sticker –
+        du kannst noch <%= freieSeiten %> <%= freieSeiten === 1 ? 'Bogen' : 'Bögen' %> erzeugen.
+      </p>
     <% } %>
     <form method="post" action="/sticker/erzeugen" id="sticker-form">
       <div class="row g-3">
@@ -48,9 +54,40 @@ const gesperrt = offen > 0
         </div>
         <div class="col-md-4">
           <label class="form-label" for="seiten">Anzahl Bögen</label>
-          <input type="number" class="form-control" name="seiten" id="seiten" min="1" max="<%= maxSeiten %>"
-                 value="<%= maxSeiten %>" required>
-          <div class="form-text">höchstens <%= maxSeiten %></div>
+          <input type="number" class="form-control" name="seiten" id="seiten" min="1" max="<%= Math.max(1, freieSeiten) %>"
+                 value="<%= Math.max(1, Math.min(freieSeiten, 5)) %>" required>
+          <div class="form-text">höchstens <%= freieSeiten %></div>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-0">
+        <div class="col-md-8">
+          <label class="form-label" for="tbnr">Verstoß</label>
+          <select class="form-select" name="tbnr" id="tbnr">
+            <option value="">Ohne Verstoß – neutraler Text für alle Fälle</option>
+            <%
+              // Ein gewählter häufiger Verstoß wird nur oben markiert, nicht doppelt.
+              const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+              const imHaeufig = haeufig.some((h) => h.tbnr === layout.tbnr)
+              const opt = (v, sel) => `<option value="${v.tbnr}" data-text="${esc(v.text)}"${sel ? ' selected' : ''}>${esc(v.text)} (${v.betrag})</option>`
+            %>
+            <optgroup label="Häufig">
+              <% for (const v of haeufig) { %><%- opt(v, layout.tbnr === v.tbnr) %><% } %>
+            </optgroup>
+            <optgroup label="Alle Tatbestände">
+              <% for (const v of verstoesse) { %><%- opt(v, !imHaeufig && layout.tbnr === v.tbnr) %><% } %>
+            </optgroup>
+          </select>
+          <div class="form-text">
+            Mit Verstoß stehen Tatbestand und Regelsatz laut Bußgeldkatalog auf dem
+            Sticker, darunter Linien für Ort und Zeit zum Ausfüllen per Hand.
+            Für jeden Verstoß einen eigenen Batch erzeugen.
+          </div>
+        </div>
+        <div class="col-md-4 <%= layout.tbnr ? '' : 'd-none' %>" id="aufdruck-feld">
+          <label class="form-label" for="aufdruck">Aufdruck</label>
+          <textarea class="form-control" name="aufdruck" id="aufdruck" rows="3" maxlength="<%= aufdruckMax %>"><%= layout.tbnr ? layout.aufdruck : '' %></textarea>
+          <div class="form-text">Text aus dem Katalog, kürzbar. Betrag und Nummer werden automatisch ergänzt.</div>
         </div>
       </div>
 
@@ -112,6 +149,7 @@ const gesperrt = offen > 0
           <div>
             <strong><%= b.seiten %> <%= b.seiten === 1 ? 'Bogen' : 'Bögen' %></strong>
             <span class="text-muted small">· <%= b.vorlageName %> · erstellt <%= b.erstellt %></span>
+            <div class="small"><%= b.fall ? `Verstoß: ${b.fall}` : 'Neutral, ohne Verstoß' %></div>
           </div>
           <div class="small">
             <span class="badge bg-success"><%= Number(b.verknuepft || 0) %> verknüpft</span>
@@ -183,5 +221,16 @@ const gesperrt = offen > 0
     var sel = document.getElementById('vorlage')
     var felder = document.getElementById('eigen-felder')
     sel.addEventListener('change', function () { felder.classList.toggle('d-none', sel.value !== 'eigen') })
+  })()
+  // Verstoß gewählt: Aufdruck-Feld zeigen und mit dem Katalogtext vorbelegen.
+  ;(function () {
+    var sel = document.getElementById('tbnr')
+    var feld = document.getElementById('aufdruck-feld')
+    var text = document.getElementById('aufdruck')
+    sel.addEventListener('change', function () {
+      var opt = sel.options[sel.selectedIndex]
+      feld.classList.toggle('d-none', !sel.value)
+      text.value = sel.value ? opt.getAttribute('data-text') : ''
+    })
   })()
 </script>

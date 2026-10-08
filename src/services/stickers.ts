@@ -16,9 +16,11 @@ import mysql from 'mysql2/promise'
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib'
 import { pool } from '../db/connection'
 import { qrcodegen } from '../vendor/qrcodegen'
+import { regelsatzEuro, verstossText } from '../config/verstoss'
 
-/** Höchstzahl Bögen pro Batch. Ein neuer Batch ist erst möglich, wenn kein
- *  Code mehr offen ist (siehe createBatch). */
+/** Höchstzahl Bögen mit offenen Codes – über alle Batches eines Nutzers
+ *  zusammen (siehe createBatch). So lassen sich Bögen für mehrere Verstöße
+ *  parallel drucken, ohne dass unbegrenzt Codes herumliegen. */
 export const STICKER_MAX_SEITEN = 20
 /** So lange kann der Besitzer eine Verknüpfung wieder lösen (Verklicker). */
 export const STICKER_LOESEN_MINUTEN = 30
@@ -77,9 +79,14 @@ export interface StickerLayout {
   dy: number
   /** Etikettenränder mitdrucken (Normalpapier zum Ausschneiden / Testdruck). */
   rahmen: boolean
+  /** Fall-Sticker: Tatbestand (TBNR) + Aufdrucktext. Dann stehen Verstoß und
+   *  Regelsatz auf dem Sticker, dazu Schreiblinien für Ort und Zeit. Fehlt
+   *  bei neutralen Bögen (und bei allen Batches von vor dieser Option). */
+  tbnr?: string | null
+  aufdruck?: string | null
 }
 
-type Vorlage = Omit<StickerLayout, 'vorlage' | 'dx' | 'dy' | 'rahmen'> & { id: string; name: string }
+type Vorlage = Omit<StickerLayout, 'vorlage' | 'dx' | 'dy' | 'rahmen' | 'tbnr' | 'aufdruck'> & { id: string; name: string }
 
 const A4_W = 210
 const A4_H = 297
@@ -131,12 +138,24 @@ export function parseLayout(input: Record<string, unknown>): StickerLayout | str
     dx: Math.max(-15, Math.min(15, num('dx', 0))),
     dy: Math.max(-15, Math.min(15, num('dy', 0))),
     rahmen: input.rahmen === true || input.rahmen === '1' || input.rahmen === 'on',
+    tbnr: null,
+    aufdruck: null,
+  }
+  const tbnr = String(input.tbnr ?? '').trim()
+  if (tbnr) {
+    const katalog = verstossText(tbnr)
+    if (!katalog) return 'Diesen Tatbestand gibt es im Katalog nicht.'
+    layout.tbnr = tbnr
+    layout.aufdruck = winAnsi(String(input.aufdruck ?? '')).slice(0, AUFDRUCK_MAX) || winAnsi(katalog)
   }
   if (layout.cols < 1 || layout.cols > 6 || layout.rows < 1 || layout.rows > 15) {
     return 'Bitte 1–6 Spalten und 1–15 Zeilen angeben.'
   }
   if (layout.labelW < 40 || layout.labelH < 25) {
     return 'Etiketten müssen mindestens 40 × 25 mm groß sein, sonst wird der QR-Code zu klein.'
+  }
+  if (layout.tbnr && (layout.labelW < 60 || layout.labelH < 33)) {
+    return 'Sticker mit Verstoß brauchen Etiketten ab 60 × 33 mm – sonst bleibt kein Platz zum Ausfüllen von Ort und Zeit.'
   }
   if (layout.marginTop < 0 || layout.marginLeft < 0 || layout.gapX < 0 || layout.gapY < 0) {
     return 'Ränder und Abstände dürfen nicht negativ sein.'
@@ -153,18 +172,48 @@ export function perPage(layout: StickerLayout): number {
   return layout.cols * layout.rows
 }
 
+export const AUFDRUCK_MAX = 140
+
+/** Nur Zeichen, die die PDF-Standardschriften (WinAnsi) setzen können –
+ *  sonst wirft pdf-lib beim Rendern. */
+function winAnsi(s: string): string {
+  return s.replace(/[^\x20-\x7E\xA0-\xFF€„“”‚‘’–—…]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** „55 €" bzw. „17,50 €". */
+export function formatEuro(euro: number): string {
+  // Geschütztes Leerzeichen: Betrag und € nie auf zwei Zeilen.
+  return `${Number.isInteger(euro) ? euro : euro.toFixed(2).replace('.', ',')}\u00a0€`
+}
+
+/** Verwarnungsgeld geht bis 55 €, darüber ist es ein Bußgeld (§ 56 OWiG). */
+export function geldArt(euro: number): string {
+  return euro <= 55 ? 'Verwarnungsgeld' : 'Bußgeld'
+}
+
 // ---------------------------------------------------------------------------
 // Datenbank
 // ---------------------------------------------------------------------------
 
-/** Offene Codes = weder verknüpft noch entwertet. Solange es welche gibt,
- *  lassen sich keine neuen Bögen erzeugen. */
+/** Offene Codes = weder verknüpft noch entwertet. */
 export async function openCodeCount(userId: number, conn: mysql.Pool | mysql.PoolConnection = pool): Promise<number> {
   const [rows] = await conn.execute<mysql.RowDataPacket[]>(
     'SELECT COUNT(*) AS c FROM sticker_codes WHERE user_id = ? AND linked_at IS NULL AND voided_at IS NULL',
     [userId]
   )
   return Number(rows[0]?.c || 0)
+}
+
+/** Bögen aus Batches, in denen noch mindestens ein Code offen ist – zählt
+ *  gegen STICKER_MAX_SEITEN. */
+export async function openSheetCount(userId: number, conn: mysql.Pool | mysql.PoolConnection = pool): Promise<number> {
+  const [rows] = await conn.execute<mysql.RowDataPacket[]>(
+    `SELECT COALESCE(SUM(b.seiten), 0) AS s FROM sticker_batches b
+      WHERE b.user_id = ? AND EXISTS (SELECT 1 FROM sticker_codes c WHERE c.batch_id = b.id
+                                         AND c.linked_at IS NULL AND c.voided_at IS NULL)`,
+    [userId]
+  )
+  return Number(rows[0]?.s || 0)
 }
 
 export type CreateBatchResult = { batchId: number } | { error: string }
@@ -179,10 +228,15 @@ export async function createBatch(userId: number, layout: StickerLayout, seiten:
     // Nutzerzeile sperren: zwei parallele Anfragen dürfen das Kontingent
     // nicht beide als frei sehen.
     await conn.execute('SELECT id FROM users WHERE id = ? FOR UPDATE', [userId])
-    const open = await openCodeCount(userId, conn)
-    if (open > 0) {
+    const offeneBoegen = await openSheetCount(userId, conn)
+    if (offeneBoegen + seiten > STICKER_MAX_SEITEN) {
       await conn.rollback()
-      return { error: `Du hast noch ${open} offene Sticker. Neue Bögen gibt es, wenn alle verknüpft oder entwertet sind.` }
+      const frei = Math.max(0, STICKER_MAX_SEITEN - offeneBoegen)
+      return {
+        error: frei
+          ? `Du kannst gerade nur noch ${frei} ${frei === 1 ? 'Bogen' : 'Bögen'} erzeugen – ${offeneBoegen} Bögen haben noch offene Sticker.`
+          : `Du hast schon ${offeneBoegen} Bögen mit offenen Stickern. Neue gibt es, wenn Sticker verknüpft oder Reste entwertet sind.`,
+      }
     }
     const [res] = await conn.execute<mysql.ResultSetHeader>(
       'INSERT INTO sticker_batches (user_id, seiten, layout) VALUES (?, ?, ?)',
@@ -310,12 +364,15 @@ export async function voidOpenCodes(userId: number, batchId: number): Promise<nu
 
 const MM = 72 / 25.4
 
-// Texte: sachlich, Deutsch groß, Englisch klein darunter. Neutral formuliert,
-// weil der Sticker meist schon klebt, bevor die Anzeige abgeschickt ist – und
-// ohne Betrag, weil beim Druck noch kein Verstoß feststeht.
+// Texte: sachlich, Deutsch groß, Englisch klein darunter. Neutrale Bögen:
+// ohne Betrag, weil beim Druck noch kein Verstoß feststeht. Bögen für einen
+// bestimmten Verstoß (Fall-Sticker) nennen Tatbestand und Regelsatz, siehe
+// fallAbsaetze – immer als Regelsatz laut Katalog, nicht als verhängte Strafe.
 // {PFEIL} zeigt auf den QR-Code rechts daneben. Nur WinAnsi-Zeichen (Standard-
 // fonts von pdf-lib), daher wird der Pfeil gezeichnet statt als „→" gesetzt.
-const ABSAETZE: { de: string; en: string; fett?: boolean }[] = [
+type Absatz = { de: string; en: string; fett?: boolean }
+
+const ABSAETZE: Absatz[] = [
   {
     de: 'Privatanzeige: Dieses Fahrzeug wurde wegen einer Ordnungswidrigkeit im ruhenden Verkehr dokumentiert.',
     en: 'Private report: This vehicle has been documented for a parking violation.',
@@ -330,6 +387,38 @@ const ABSAETZE: { de: string; en: string; fett?: boolean }[] = [
     en: 'Status and information here.',
   },
 ]
+
+/** Fall-Sticker (Verstoß vorgedruckt): kein Pfeil-Satz mit langem Erklärtext,
+ *  dafür Tatbestand + Regelsatz; Ort und Zeit schreibt man vor Ort darunter. */
+interface Fall {
+  aufdruck: string
+  tbnr: string
+  euro: number | null
+}
+
+function fallAbsaetze(fall: Fall): Absatz[] {
+  const out: Absatz[] = [
+    { de: `Privatanzeige: ${fall.aufdruck}`, en: 'Private report of a parking violation.', fett: true },
+  ]
+  if (fall.euro !== null) {
+    out.push({
+      de: `${geldArt(fall.euro)} laut Bußgeldkatalog: ${formatEuro(fall.euro)}`,
+      en: `Standard fine: ${formatEuro(fall.euro)} · Tatbestand-Nr. ${fall.tbnr}`,
+      fett: true,
+    })
+  }
+  out.push({ de: 'Stand der Anzeige hier {PFEIL}', en: 'Status here.' })
+  return out
+}
+
+function fallAus(layout: StickerLayout): Fall | null {
+  if (!layout.tbnr) return null
+  return {
+    tbnr: layout.tbnr,
+    aufdruck: layout.aufdruck || winAnsi(verstossText(layout.tbnr) || ''),
+    euro: regelsatzEuro(layout.tbnr),
+  }
+}
 
 interface Fonts {
   regular: PDFFont
@@ -377,12 +466,12 @@ function wrap(tokens: Token[], font: PDFFont, size: number, maxW: number): Token
 }
 
 /** Größte Schrift, bei der alle Absätze in die Textbox passen. */
-function layoutText(fonts: Fonts, maxW: number, maxH: number): Line[] {
+function layoutText(absaetze: Absatz[], fonts: Fonts, maxW: number, maxH: number): Line[] {
   for (let de = 12; de >= 4; de -= 0.25) {
     const en = de * 0.74
     const lines: Line[] = []
     let ok = true
-    ABSAETZE.forEach((a, i) => {
+    absaetze.forEach((a, i) => {
       if (!ok) return
       const deFont = a.fett ? fonts.bold : fonts.regular
       const deLines = wrap(tokenize(a.de), deFont, de, maxW)
@@ -449,7 +538,7 @@ function drawCutMarks(page: PDFPage, x: number, y: number, w: number, h: number)
 
 function drawSticker(
   page: PDFPage, fonts: Fonts, code: string, url: string,
-  x: number, y: number, w: number, h: number, rahmen: boolean, muster: boolean
+  x: number, y: number, w: number, h: number, rahmen: boolean, muster: boolean, fall: Fall | null
 ) {
   if (rahmen) {
     page.drawRectangle({ x, y, width: w, height: h, borderColor: rgb(0.7, 0.7, 0.7), borderWidth: 0.4 })
@@ -458,20 +547,57 @@ function drawSticker(
   }
   const pad = Math.min(w, h) * 0.08
   const codeSize = Math.max(6, Math.min(9, h * 0.06))
-  const qrSize = Math.min(h - 2 * pad - codeSize * 1.4, w * 0.42)
-  const qrX = x + w - pad - qrSize
-  const qrY = y + pad + codeSize * 1.4
-  drawQr(page, url, qrX, qrY, qrSize)
   const label = muster ? 'MUSTER' : formatCode(code)
-  const lw = fonts.mono.widthOfTextAtSize(label, codeSize)
-  page.drawText(label, { x: qrX + (qrSize - lw) / 2, y: y + pad, size: codeSize, font: fonts.mono, color: rgb(0.2, 0.2, 0.2) })
 
-  const textX = x + pad
-  const textW = qrX - textX - pad * 0.8
-  const textH = h - 2 * pad
-  const lines = layoutText(fonts, textW, textH)
+  if (!fall) {
+    const qrSize = Math.min(h - 2 * pad - codeSize * 1.4, w * 0.42)
+    const qrX = x + w - pad - qrSize
+    drawQr(page, url, qrX, y + pad + codeSize * 1.4, qrSize)
+    const lw = fonts.mono.widthOfTextAtSize(label, codeSize)
+    page.drawText(label, { x: qrX + (qrSize - lw) / 2, y: y + pad, size: codeSize, font: fonts.mono, color: rgb(0.2, 0.2, 0.2) })
+    drawLines(page, layoutText(ABSAETZE, fonts, qrX - x - pad * 1.8, h - 2 * pad), x + pad, y + h - pad, h - 2 * pad)
+    return
+  }
+
+  // Fall-Sticker: unten über die volle Breite zwei Schreiblinien (Wo/Wann),
+  // darüber links der Text, rechts ein kleinerer QR-Code. Version 2 mit
+  // 29 Modulen inkl. Ruhezone: ab ~16 mm (0,55 mm/Modul) noch sicher lesbar.
+  const schreibH = Math.max(11 * MM, Math.min(16 * MM, h * 0.3))
+  const obenH = h - 2 * pad - schreibH
+  const qrSize = Math.max(16 * MM, Math.min(obenH - codeSize * 1.3, w * 0.28, 24 * MM))
+  const qrX = x + w - pad - qrSize
+  const qrY = y + h - pad - qrSize
+  drawQr(page, url, qrX, qrY, qrSize)
+  const lw = fonts.mono.widthOfTextAtSize(label, codeSize)
+  page.drawText(label, { x: qrX + (qrSize - lw) / 2, y: qrY - codeSize * 1.05, size: codeSize, font: fonts.mono, color: rgb(0.2, 0.2, 0.2) })
+  drawLines(page, layoutText(fallAbsaetze(fall), fonts, qrX - x - pad * 1.8, obenH), x + pad, y + h - pad, obenH)
+
+  // Schreiblinien: Beschriftung klein links, Linie bis zum rechten Rand.
+  const labelSize = Math.max(5.5, Math.min(7.5, schreibH * 0.2))
+  const zeilen: [string, string][] = [['Wo', 'Where'], ['Wann', 'When']]
+  const linieGrau = rgb(0.45, 0.45, 0.45)
+  const zeileH = schreibH / zeilen.length
+  const beschriftungW = Math.max(...zeilen.map(([de, en]) =>
+    fonts.bold.widthOfTextAtSize(de, labelSize) + fonts.italic.widthOfTextAtSize(` / ${en}:`, labelSize * 0.85)))
+  zeilen.forEach(([de, en], i) => {
+    const base = y + pad + (zeilen.length - 1 - i) * zeileH + zeileH * 0.18
+    page.drawText(de, { x: x + pad, y: base, size: labelSize, font: fonts.bold, color: rgb(0, 0, 0) })
+    page.drawText(` / ${en}:`, {
+      x: x + pad + fonts.bold.widthOfTextAtSize(de, labelSize), y: base,
+      size: labelSize * 0.85, font: fonts.italic, color: rgb(0.38, 0.38, 0.38),
+    })
+    page.drawLine({
+      start: { x: x + pad + beschriftungW + labelSize * 0.4, y: base - 0.6 },
+      end: { x: x + w - pad, y: base - 0.6 },
+      thickness: 0.5, color: linieGrau,
+    })
+  })
+}
+
+/** Zeilen in eine Box (links oben ab x/top, Höhe boxH) vertikal zentriert setzen. */
+function drawLines(page: PDFPage, lines: Line[], textX: number, top: number, boxH: number) {
   const total = lines.reduce((s, l) => s + l.gapBefore + l.size * 1.17, 0)
-  let cursor = y + h - pad - (textH - total) / 2 // vertikal zentriert
+  let cursor = top - (boxH - total) / 2 // vertikal zentriert
   for (const line of lines) {
     cursor -= line.gapBefore + line.size * 1.17
     const baseline = cursor + line.size * 0.25
@@ -525,11 +651,12 @@ function labelBox(layout: StickerLayout, index: number) {
 export async function renderBatchPdf(codes: string[], layout: StickerLayout, baseUrl: string): Promise<Uint8Array> {
   const { doc, fonts } = await newDoc()
   const n = perPage(layout)
+  const fall = fallAus(layout)
   for (let p = 0; p * n < codes.length; p++) {
     const page = doc.addPage([A4_W * MM, A4_H * MM])
     codes.slice(p * n, (p + 1) * n).forEach((code, i) => {
       const b = labelBox(layout, i)
-      drawSticker(page, fonts, code, stickerUrl(baseUrl, code), b.x, b.y, b.w, b.h, layout.rahmen, false)
+      drawSticker(page, fonts, code, stickerUrl(baseUrl, code), b.x, b.y, b.w, b.h, layout.rahmen, false, fall)
     })
   }
   return doc.save()
@@ -540,9 +667,10 @@ export async function renderBatchPdf(codes: string[], layout: StickerLayout, bas
 export async function renderCalibrationPdf(layout: StickerLayout, baseUrl: string): Promise<Uint8Array> {
   const { doc, fonts } = await newDoc()
   const page = doc.addPage([A4_W * MM, A4_H * MM])
+  const fall = fallAus(layout)
   for (let i = 0; i < perPage(layout); i++) {
     const b = labelBox(layout, i)
-    drawSticker(page, fonts, MUSTER_CODE, stickerUrl(baseUrl, MUSTER_CODE), b.x, b.y, b.w, b.h, true, true)
+    drawSticker(page, fonts, MUSTER_CODE, stickerUrl(baseUrl, MUSTER_CODE), b.x, b.y, b.w, b.h, true, true, fall)
   }
   return doc.save()
 }

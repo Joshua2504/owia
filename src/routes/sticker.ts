@@ -6,9 +6,20 @@ import { getCity } from '../config/cities'
 import {
   STICKER_DEFAULT_VORLAGE, STICKER_LOESEN_MINUTEN, STICKER_MAX_SEITEN, STICKER_VORLAGEN,
   LINK_MELDUNG, StickerLayout, batchCodes, createBatch, formatCode, linkCode, loadBatch,
-  normalizeCode, openCodeCount, parseLayout, perPage, renderBatchPdf, renderCalibrationPdf,
-  unlinkCode, voidOpenCodes,
+  normalizeCode, openCodeCount, openSheetCount, parseLayout, perPage, renderBatchPdf, renderCalibrationPdf,
+  unlinkCode, voidOpenCodes, AUFDRUCK_MAX, formatEuro, geldArt,
 } from '../services/stickers'
+import { VERSTOESSE, VERSTOSS_HAEUFIG, regelsatzEuro, tbnrAusLabel } from '../config/verstoss'
+
+/** Auswahl für Fall-Sticker: alle Tatbestände mit Regelsatz, häufige oben. */
+type StickerVerstoss = { tbnr: string; text: string; euro: number; betrag: string }
+const STICKER_VERSTOESSE: StickerVerstoss[] = VERSTOESSE.flatMap((v) => {
+  const euro = regelsatzEuro(v.tbnr)
+  return euro === null ? [] : [{ tbnr: v.tbnr, text: v.text, euro, betrag: formatEuro(euro) }]
+})
+const STICKER_HAEUFIG: StickerVerstoss[] = VERSTOSS_HAEUFIG
+  .map((l) => STICKER_VERSTOESSE.find((v) => v.tbnr === tbnrAusLabel(l)))
+  .filter((v): v is StickerVerstoss => !!v)
 
 // QR-Sticker (Konzept: services/stickers.ts).
 //   /sticker            Bögen erzeugen, herunterladen, Reste entwerten (eingeloggt)
@@ -79,17 +90,28 @@ export default async function stickerRoutes(app: FastifyInstance) {
     const vorlagenName = (l: StickerLayout) =>
       STICKER_VORLAGEN.find((v) => v.id === l.vorlage)?.name ||
       `Eigenes Format · ${l.cols * l.rows} pro Bogen · ${l.labelW} × ${l.labelH} mm`
+    const fallText = (l: StickerLayout) => {
+      if (!l.tbnr) return null
+      const euro = regelsatzEuro(l.tbnr)
+      return `${l.aufdruck}${euro === null ? '' : ` · ${geldArt(euro)} ${formatEuro(euro)}`}`
+    }
+    const offeneBoegen = await openSheetCount(userId)
     return reply.view('/sticker/index.ejs', viewData(request, {
       title: 'Sticker',
       batches: batches.map((b) => {
         const layout = JSON.parse(b.layout) as StickerLayout
-        return { ...b, layout, vorlageName: vorlagenName(layout), offen: Number(b.offen || 0) }
+        return { ...b, layout, vorlageName: vorlagenName(layout), fall: fallText(layout), offen: Number(b.offen || 0) }
       }),
       linked: linked.map((l) => ({ ...l, codeFmt: formatCode(l.code), loesbar: Number(l.loesbar) === 1 })),
       offen: await openCodeCount(userId),
       layout: await lastLayout(userId),
       vorlagen: STICKER_VORLAGEN,
       maxSeiten: STICKER_MAX_SEITEN,
+      freieSeiten: Math.max(0, STICKER_MAX_SEITEN - offeneBoegen),
+      offeneBoegen,
+      verstoesse: STICKER_VERSTOESSE,
+      haeufig: STICKER_HAEUFIG,
+      aufdruckMax: AUFDRUCK_MAX,
       loesenMinuten: STICKER_LOESEN_MINUTEN,
     }))
   })
