@@ -138,7 +138,12 @@
       ' autocomplete="off" spellcheck="false" placeholder="Adresse eingeben …">' +
       '<button type="button" class="btn btn-outline-secondary" data-act="tatort-photo" title="Tatort aus den GPS-Daten der Fotos">📍</button>' +
       '</div>' +
-      '<div class="photo-edit-map rounded border mt-1" title="Marker zur genauen Stelle ziehen – die Adresse wird übernommen."></div>' +
+      '<div class="photo-edit-map rounded border mt-1" title="Marker zur genauen Stelle ziehen – danach Adresse übernehmen oder behalten."></div>' +
+      // Nach dem Verschieben des Markers: neue Adresse übernehmen oder nur die Position.
+      '<div class="alert alert-info py-1 px-2 small mt-1 mb-0" data-adr-vorschlag hidden>' +
+      '<div>Neue Adresse an dieser Stelle: <strong data-adr-text></strong></div>' +
+      '<div class="d-flex gap-2 mt-1"><button type="button" class="btn btn-sm btn-primary" data-act="adr-ok">Übernehmen</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary" data-act="adr-nein">Adresse behalten</button></div></div>' +
       '</div>' +
       // Restliche Angaben (Werte aus GET /pruefen/:az/daten, gespeichert je
       // Feld über PATCH /anzeige/:az/felder).
@@ -322,6 +327,7 @@
       if (window.addressAutocomplete) window.addressAutocomplete.init(tatortInput())
     })
     tatortInput().addEventListener('address:chosen', function (e) {
+      if (state) adrVorschlag(state, null)
       var d = e.detail || {}
       chosenCoords = Number.isFinite(d.lat) && Number.isFinite(d.lon) ? { tatort_lat: d.lat, tatort_lon: d.lon } : null
       if (chosenCoords) placeMarker(d.lat, d.lon, true)
@@ -367,6 +373,17 @@
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     dlg.querySelector('[data-variante]').addEventListener('change', function (e) {
       saveDetail({ verstoss_variante: e.target.value })
+    })
+    dlg.querySelector('[data-act=adr-ok]').addEventListener('click', function () {
+      var v = state && state.adrVorschlag
+      if (!v) return
+      tatortInput().value = v.label
+      chosenCoords = v.coords
+      adrVorschlag(state, null)
+      savePlate().catch(function () {})
+    })
+    dlg.querySelector('[data-act=adr-nein]').addEventListener('click', function () {
+      if (state) adrVorschlag(state, null)
     })
     dlg.querySelector('[data-act=langparker]').addEventListener('click', function (e) {
       var label = e.currentTarget.dataset.label
@@ -419,6 +436,18 @@
       e.preventDefault()
       cancel()
     })
+    // Felder mit Vorschlagsliste (Marke, Farbe – <datalist>): Enter übernimmt
+    // den ersten Vorschlag, wie ihn der Browser zeigt (enthält den Text).
+    // capture: vor den Enter-Handlern, die den Wert dann speichern.
+    dlg.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || !e.target.list || !e.target.value.trim()) return
+      var v = e.target.value.trim().toLowerCase()
+      var opts = [].map.call(e.target.list.options, function (o) { return o.value })
+      if (opts.some(function (o) { return o.toLowerCase() === v })) return
+      var hit = opts.filter(function (o) { return o.toLowerCase().indexOf(v) === 0 })[0] ||
+        opts.filter(function (o) { return o.toLowerCase().indexOf(v) !== -1 })[0]
+      if (hit) e.target.value = hit
+    }, true)
     // Enter bestätigt – zügiges Durchklicken ohne Maus.
     dlg.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter' || e.target.closest('button') || !state) return
@@ -978,16 +1007,27 @@
   function markerMoved() {
     var s = state
     var p = marker.getLatLng()
+    var coords = { tatort_lat: Number(p.lat.toFixed(6)), tatort_lon: Number(p.lng.toFixed(6)) }
     fetch('/api/geo/reverse?lat=' + p.lat + '&lon=' + p.lng, { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null })
       .catch(function () { return null })
       .then(function (data) {
         if (state !== s) return
         var label = data && data.result && data.result.label
-        if (label) tatortInput().value = label
-        chosenCoords = { tatort_lat: Number(p.lat.toFixed(6)), tatort_lon: Number(p.lng.toFixed(6)) }
+        // Position immer speichern (mit unveränderter Adresse); eine andere
+        // Adresse nur nach Bestätigung (adrVorschlag).
+        chosenCoords = coords
         savePlate().catch(function () {})
+        var cur = tatortInput().value.replace(/\s+/g, ' ').trim()
+        if (label && label !== cur) adrVorschlag(s, label, coords)
+        else adrVorschlag(s, null)
       })
+  }
+  function adrVorschlag(s, label, coords) {
+    var box = dlg.querySelector('[data-adr-vorschlag]')
+    s.adrVorschlag = label ? { label: label, coords: coords } : null
+    box.hidden = !label
+    if (label) box.querySelector('[data-adr-text]').textContent = label
   }
 
   function loadStatus(s) {
@@ -2213,6 +2253,8 @@
     tatortInput().value = tatort || ''
     tatortInput().closest('.photo-edit-tatort').hidden = tatort == null
     chosenCoords = null
+    if (!state || state.az !== opts.az) dlg.querySelector('[data-adr-vorschlag]').hidden = true
+    var adrAlt = state && state.az === opts.az ? state.adrVorschlag : null
     // Bericht-Status nur behalten, wenn es dieselbe Anzeige bleibt (kein Flackern).
     var keepReport = state && state.az === opts.az ? state.report : null
     // Neue Anzeige: Seitenleiste (und auf dem Handy der ganze Dialog) oben
@@ -2232,6 +2274,7 @@
       put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool === 'pixel' ? 'pixel' : 'black', dirty: false,
       crop: null, freigegeben: {}, dritteOkNachSpeichern: false, drawing: false,
       kz: null, kzKeins: false, kzGeaendert: false, kzBereit: false,
+      adrVorschlag: adrAlt,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
     }
     resetZoom()
