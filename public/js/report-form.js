@@ -1484,6 +1484,33 @@
     })
   }
 
+  // Modell: nur ein anklickbarer Vorschlag unter dem leeren Feld (ungemessen,
+  // daher nie automatisch eingetragen).
+  let modellVorschlag = null
+
+  function renderModellVorschlag(form) {
+    const btn = document.querySelector('#modell-vorschlag')
+    const el = form.elements['fahrzeug_modell']
+    if (!btn || !el) return
+    btn.hidden = !modellVorschlag || !!String(el.value || '').trim()
+    btn.textContent = modellVorschlag ? 'Vorschlag: ' + modellVorschlag + '?' : ''
+  }
+
+  function initModellVorschlag(form) {
+    const btn = document.querySelector('#modell-vorschlag')
+    const el = form.elements['fahrzeug_modell']
+    if (!btn || !el) return
+    btn.addEventListener('click', () => {
+      if (!modellVorschlag) return
+      el.value = modellVorschlag
+      // change löst den Autosave aus (wie eine Eingabe des Nutzers)
+      el.dispatchEvent(new Event('input'))
+      el.dispatchEvent(new Event('change'))
+      renderModellVorschlag(form)
+    })
+    el.addEventListener('input', () => renderModellVorschlag(form))
+  }
+
   async function pollAnalysisOnce(form) {
     try {
       const res = await fetch('/anzeige/' + reportId + '/analysis', {
@@ -1496,6 +1523,8 @@
       if (data && data.suggestions && data.status !== 'pending') {
         applyPlateSuggestion(form, data.suggestions)
         applyFahrzeugSuggestion(form, data.suggestions)
+        modellVorschlag = data.suggestions.fahrzeug_modell || null
+        renderModellVorschlag(form)
       }
       // Einzelergebnisse an den Foto-Karten aktualisieren ("Kennzeichen übernehmen").
       if (data && Array.isArray(data.images)) {
@@ -2005,6 +2034,7 @@
     initKennzeichenFormat(form)
     initPlateTouchTracking(form)
     initFahrzeugTouchTracking(form)
+    initModellVorschlag(form)
     initCity()
     // Beim Laden einmal pollen: Ergebnisse können seit dem letzten Besuch fertig
     // sein, oder ein gerade hochgeladenes Bild wird noch analysiert.

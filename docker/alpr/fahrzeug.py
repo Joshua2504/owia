@@ -11,8 +11,8 @@
 # Hand eingetragenen Werten (10/2026): Marke 90 % Treffer je Anzeige, Farbe
 # 80 % (87 %, wenn silber/grau als gleich gelten). Die App befüllt nur ab
 # p >= 0,8 vor (Marke dann 98 %, Farbe 96 % richtig). Das Modell (innerhalb
-# der Marke) ist mangels Vergleichsdaten ungemessen und wird nur als
-# anklickbarer Vorschlag angeboten, nie vorbefüllt.
+# der Marke, Listen in fahrzeug_prompts.json) traf an erst 24 Anzeigen 68 %
+# und wird nur als anklickbarer Vorschlag angeboten (MODELL_VORSCHLAG_P).
 import cv2
 import numpy as np
 import onnxruntime as ort

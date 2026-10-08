@@ -1,8 +1,9 @@
-// Marke/Farbe (analyse_json.fahrzeug, docker/alpr/fahrzeug.py) für Fotos offener
-// Entwürfe nachholen, deren Marke oder Farbe noch leer ist, und die Felder danach
-// wie beim Upload vorbefüllen (prefillReportFahrzeug: nur leere Felder, nur ab
-// FAHRZEUG_MIN_P). Die übrige Analyse (Kennzeichen, Gesichter) wird dabei mit
-// denselben Modellen neu gerechnet; detected_plate bleibt unangetastet.
+// Marke/Farbe/Modell (analyse_json.fahrzeug, docker/alpr/fahrzeug.py) für Fotos
+// offener Entwürfe nachholen, bei denen eins davon noch leer ist, und Marke/Farbe
+// danach wie beim Upload vorbefüllen (prefillReportFahrzeug: nur leere Felder,
+// nur ab FAHRZEUG_MIN_P; das Modell bleibt reiner Vorschlag). Die übrige Analyse
+// (Kennzeichen, Gesichter) wird dabei mit denselben Modellen neu gerechnet;
+// detected_plate bleibt unangetastet.
 // Aufruf: npx tsx src/scripts/fahrzeug-nachholen.ts
 import path from 'path'
 import mysql from 'mysql2/promise'
@@ -16,8 +17,8 @@ async function main(): Promise<void> {
     `SELECT ri.id, ri.filename, ri.mimetype, r.id AS report_id, r.user_id
        FROM report_images ri JOIN reports r ON r.id = ri.report_id
       WHERE r.status = 'entwurf'
-        AND (r.fahrzeug_marke IS NULL OR r.fahrzeug_marke = '' OR r.fahrzeug_farbe IS NULL OR r.fahrzeug_farbe = '')
-        AND (ri.analyse_json IS NULL OR ri.analyse_json NOT LIKE '%"fahrzeug"%')
+        AND (COALESCE(r.fahrzeug_marke, '') = '' OR COALESCE(r.fahrzeug_farbe, '') = '' OR COALESCE(r.fahrzeug_modell, '') = '')
+        AND (ri.analyse_json IS NULL OR ri.analyse_json NOT LIKE '%"modell"%')
       ORDER BY r.id, ri.sort_order, ri.id`
   )
   const reports = new Map<number, number>()

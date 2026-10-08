@@ -149,6 +149,9 @@ const embedQ = embed ? '&embed=1' : ''
             <label class="form-label" for="fahrzeug-modell">Modell</label>
             <input type="text" name="fahrzeug_modell" id="fahrzeug-modell" class="form-control"
                    value="<%= r.fahrzeug_modell || '' %>" maxlength="60" placeholder="z. B. Golf" autocomplete="off">
+            <%# Modell-Vorschlag aus den Fotos (report-form.js), nur zum Anklicken %>
+            <button type="button" class="btn btn-link btn-sm p-0 small" id="modell-vorschlag"
+                    title="Aus den Fotos erkannt – zum Übernehmen klicken" hidden></button>
           </div>
           <div class="col-6 col-md-3">
             <label class="form-label" for="fahrzeug-farbe">Farbe</label>

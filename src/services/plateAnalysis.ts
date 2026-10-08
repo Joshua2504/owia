@@ -217,10 +217,12 @@ export const FAHRZEUG_MIN_P = 0.8
 export type FahrzeugVorschlag = { wert: string; p: number }
 
 /** Ab dieser gemittelten Wahrscheinlichkeit (innerhalb der Marke) wird ein
- *  Modell als anklickbarer Vorschlag angeboten – nie vorbefüllt. Ungemessen
- *  (10/2026 gab es nur ~20 Anzeigen mit eingetragenem Modell); mit wachsendem
- *  Bestand an Hand gegen reports.fahrzeug_modell nachmessen. */
-export const MODELL_VORSCHLAG_P = 0.4
+ *  Modell als anklickbarer Vorschlag angeboten – nie vorbefüllt. Erste Messung
+ *  10/2026 an nur 24 Prod-Anzeigen mit eingetragenem Modell: 68 % Treffer,
+ *  ab 0,5 bei 19 Anzeigen ein Vorschlag, davon 15 richtig (häufigster Fehler
+ *  Golf ↔ Touran). Mit wachsendem Bestand gegen reports.fahrzeug_modell
+ *  nachmessen, bevor daraus eine Vorbefüllung wird. */
+export const MODELL_VORSCHLAG_P = 0.5
 
 /** Marken-Schlüssel zum Vergleich von Freitext („VW", „Mercedes") mit den
  *  Labels des Dienstes („Volkswagen", „Mercedes-Benz"). */

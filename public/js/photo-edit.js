@@ -116,7 +116,9 @@
       // übrigen Details, daher ebenfalls .photo-edit-details).
       '<div class="photo-edit-details" hidden>' +
       '<div class="pe-row">' +
-      '<div class="pe-field"><label class="form-label" for="pe-modell">Modell</label><input type="text" id="pe-modell" class="form-control" data-detail="fahrzeug_modell" maxlength="60" autocomplete="off"></div>' +
+      '<div class="pe-field"><label class="form-label" for="pe-modell">Modell</label><input type="text" id="pe-modell" class="form-control" data-detail="fahrzeug_modell" maxlength="60" autocomplete="off">' +
+      // Modell-Vorschlag aus den Fotos (nur anklicken, nie vorbefüllt – ungemessen).
+      '<button type="button" class="btn btn-link btn-sm p-0 small" data-act="modell-vorschlag" title="Aus den Fotos erkannt – zum Übernehmen klicken" hidden></button></div>' +
       '<div class="pe-field"><label class="form-label" for="pe-farbe">Farbe</label><input type="text" id="pe-farbe" class="form-control" data-detail="fahrzeug_farbe" maxlength="40" autocomplete="off" list="pe-farben"></div>' +
       '</div>' +
       '<datalist id="pe-marken"></datalist><datalist id="pe-farben"></datalist>' +
@@ -374,6 +376,14 @@
       if (!menuEl.hidden && !e.target.closest('.photo-edit-move-menu, [data-act=move-menu]')) menuEl.hidden = true
     })
     dlg.querySelector('[data-act=photo-times]').addEventListener('click', applyPhotoTimes)
+    dlg.querySelector('[data-act=modell-vorschlag]').addEventListener('click', function () {
+      var v = state && state.report && state.report.modellVorschlag
+      if (!v) return
+      dlg.querySelector('[data-detail=fahrzeug_modell]').value = v
+      renderModellVorschlag(state)
+      saveDetail({ fahrzeug_modell: v })
+    })
+    dlg.querySelector('[data-detail=fahrzeug_modell]').addEventListener('input', function () { renderModellVorschlag(state) })
     ;['tattag', 'tatzeit_von', 'tatzeit_bis'].forEach(function (k) {
       dlg.querySelector('[data-detail=' + k + ']').addEventListener('input', syncPhotoTimes)
     })
@@ -1042,6 +1052,14 @@
         (t.vonTag === t.bisTag && t.vonTag === f.tattag ? t.von + (t.bis !== t.von ? ' – ' + t.bis : '') + ' Uhr' : photoSpan(t)) + ')'
     }
   }
+  // Modell-Vorschlag nur bei leerem Feld anbieten.
+  function renderModellVorschlag(s) {
+    var btn = dlg.querySelector('[data-act=modell-vorschlag]')
+    var v = s && s.report && s.report.modellVorschlag
+    var leer = !dlg.querySelector('[data-detail=fahrzeug_modell]').value.trim()
+    btn.hidden = !v || !leer
+    btn.textContent = v ? 'Vorschlag: ' + v + '?' : ''
+  }
   // Link nur zeigen, wenn die eingetragene Tatzeit von den Fotos abweicht.
   function syncPhotoTimes() {
     var t = state && state.report && state.report.photoTimes
@@ -1229,6 +1247,7 @@
         // Verstoß-Auswahl: Sperrliste der Stadt dieser Anzeige (Frankfurt-Portal).
         verstossHidden().parentNode.dataset.city = (d.fields && d.fields.city) || ''
         fillDetails(s)
+        renderModellVorschlag(s)
         renderVerstossExtras(s)
         renderRolle(s)
         kzInit(s)

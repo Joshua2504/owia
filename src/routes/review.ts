@@ -10,6 +10,7 @@ import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap, f
 import { dritteFunde, parseAnalyse, parseKennzeichenBox, erkannteKennzeichenBox } from '../services/dritte'
 import { submitProblems, kennzeichenBestaetigt } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
+import { bestFahrzeugForReport } from '../services/plateAnalysis'
 
 // JSON-Endpunkte des Foto-Prüfdialogs (public/js/photo-edit.js). Der frühere
 // Prüf-Modus /pruefen (eine Karte pro Entwurf) ist entfernt – alte Links und
@@ -103,9 +104,12 @@ export default async function reviewRoutes(app: FastifyInstance) {
     const photoTimes = times.length
       ? { vonTag: times[0].slice(0, 10), von: times[0].slice(11), bisTag: times[times.length - 1].slice(0, 10), bis: times[times.length - 1].slice(11) }
       : null
+    // Modell nur als Vorschlag (photo-edit.js), innerhalb der eingetragenen Marke.
+    const fz = await bestFahrzeugForReport(report.id, report.fahrzeug_marke).catch(() => null)
     return reply.send({
       az,
       bereit: !!report.bereit_at,
+      modellVorschlag: fz?.modell?.wert ?? null,
       canSubmit: problems.length === 0,
       problems,
       fields: {
