@@ -379,8 +379,8 @@ const ABSAETZE: Absatz[] = [
     fett: true,
   },
   {
-    de: 'Fotos, Ort und Uhrzeit gehen an das Ordnungsamt.',
-    en: 'Photos, location and time are sent to the local authority.',
+    de: 'Wenn das Ordnungsamt dem nachgeht, wird ein Verwarnungs- oder Bußgeld fällig.',
+    en: 'If the authorities follow up, you will have to pay a fine.',
   },
   {
     de: 'Die Anzeige gegen Sie hier ansehen {PFEIL}',
@@ -389,7 +389,7 @@ const ABSAETZE: Absatz[] = [
 ]
 
 /** Fall-Sticker (Verstoß vorgedruckt): kein Pfeil-Satz mit langem Erklärtext,
- *  dafür Tatbestand + Regelsatz; Ort und Zeit schreibt man vor Ort darunter. */
+ *  dafür Tatbestand + Regelsatz. */
 interface Fall {
   aufdruck: string
   tbnr: string
@@ -402,8 +402,8 @@ function fallAbsaetze(fall: Fall): Absatz[] {
   ]
   if (fall.euro !== null) {
     out.push({
-      de: `${geldArt(fall.euro)} laut Bußgeldkatalog: ${formatEuro(fall.euro)}`,
-      en: `Standard fine: ${formatEuro(fall.euro)} · Tatbestand-Nr. ${fall.tbnr}`,
+      de: `Wenn das Ordnungsamt dem nachgeht, kostet Sie das ${formatEuro(fall.euro)}.`,
+      en: `If the authorities follow up, this will cost you ${formatEuro(fall.euro)} (fine catalogue no. ${fall.tbnr}).`,
       fett: true,
     })
   }
@@ -547,51 +547,23 @@ function drawSticker(
   }
   const pad = Math.min(w, h) * 0.08
   const codeSize = Math.max(6, Math.min(9, h * 0.06))
-  const label = muster ? 'MUSTER' : formatCode(code)
+  // Unter dem QR-Code die Adresse zum Abtippen, z. B. „owia.net/S/7KQ2-XM9P"
+  // (/S/ nimmt auch Kleinbuchstaben und Bindestrich, siehe normalizeCode).
+  const host = url.replace(/^HTTPS?:\/\//i, '').split('/')[0].toLowerCase()
+  const label = `${host}/S/${muster ? 'MUSTER' : formatCode(code)}`
 
-  if (!fall) {
-    const qrSize = Math.min(h - 2 * pad - codeSize * 1.4, w * 0.42)
-    const qrX = x + w - pad - qrSize
-    drawQr(page, url, qrX, y + pad + codeSize * 1.4, qrSize)
-    const lw = fonts.mono.widthOfTextAtSize(label, codeSize)
-    page.drawText(label, { x: qrX + (qrSize - lw) / 2, y: y + pad, size: codeSize, font: fonts.mono, color: rgb(0.2, 0.2, 0.2) })
-    drawLines(page, layoutText(ABSAETZE, fonts, qrX - x - pad * 1.8, h - 2 * pad), x + pad, y + h - pad, h - 2 * pad)
-    return
-  }
-
-  // Fall-Sticker: unten über die volle Breite zwei Schreiblinien (Wo/Wann),
-  // darüber links der Text, rechts ein kleinerer QR-Code. Version 2 mit
-  // 29 Modulen inkl. Ruhezone: ab ~16 mm (0,55 mm/Modul) noch sicher lesbar.
-  const schreibH = Math.max(11 * MM, Math.min(16 * MM, h * 0.3))
-  const obenH = h - 2 * pad - schreibH
-  const qrSize = Math.max(16 * MM, Math.min(obenH - codeSize * 1.3, w * 0.28, 24 * MM))
+  // Text links, QR-Code rechts – auch bei Fall-Stickern. Keine Felder zum
+  // Ausfüllen: alles Nötige steht vorgedruckt bzw. hinter dem QR-Code.
+  const qrSize = Math.min(h - 2 * pad - codeSize * 1.4, w * 0.42)
   const qrX = x + w - pad - qrSize
-  const qrY = y + h - pad - qrSize
-  drawQr(page, url, qrX, qrY, qrSize)
-  const lw = fonts.mono.widthOfTextAtSize(label, codeSize)
-  page.drawText(label, { x: qrX + (qrSize - lw) / 2, y: qrY - codeSize * 1.05, size: codeSize, font: fonts.mono, color: rgb(0.2, 0.2, 0.2) })
-  drawLines(page, layoutText(fallAbsaetze(fall), fonts, qrX - x - pad * 1.8, obenH), x + pad, y + h - pad, obenH)
-
-  // Schreiblinien: Beschriftung klein links, Linie bis zum rechten Rand.
-  const labelSize = Math.max(5.5, Math.min(7.5, schreibH * 0.2))
-  const zeilen: [string, string][] = [['Wo', 'Where'], ['Wann', 'When']]
-  const linieGrau = rgb(0.45, 0.45, 0.45)
-  const zeileH = schreibH / zeilen.length
-  const beschriftungW = Math.max(...zeilen.map(([de, en]) =>
-    fonts.bold.widthOfTextAtSize(de, labelSize) + fonts.italic.widthOfTextAtSize(` / ${en}:`, labelSize * 0.85)))
-  zeilen.forEach(([de, en], i) => {
-    const base = y + pad + (zeilen.length - 1 - i) * zeileH + zeileH * 0.18
-    page.drawText(de, { x: x + pad, y: base, size: labelSize, font: fonts.bold, color: rgb(0, 0, 0) })
-    page.drawText(` / ${en}:`, {
-      x: x + pad + fonts.bold.widthOfTextAtSize(de, labelSize), y: base,
-      size: labelSize * 0.85, font: fonts.italic, color: rgb(0.38, 0.38, 0.38),
-    })
-    page.drawLine({
-      start: { x: x + pad + beschriftungW + labelSize * 0.4, y: base - 0.6 },
-      end: { x: x + w - pad, y: base - 0.6 },
-      thickness: 0.5, color: linieGrau,
-    })
-  })
+  drawQr(page, url, qrX, y + pad + codeSize * 1.4, qrSize)
+  // Adresse darf links und rechts etwas über den QR-Code hinausragen.
+  const labelMaxW = qrSize + pad * 1.4
+  const labelSize = Math.min(codeSize, codeSize * labelMaxW / fonts.mono.widthOfTextAtSize(label, codeSize))
+  const lw = fonts.mono.widthOfTextAtSize(label, labelSize)
+  page.drawText(label, { x: qrX + (qrSize - lw) / 2, y: y + pad, size: labelSize, font: fonts.mono, color: rgb(0.2, 0.2, 0.2) })
+  const absaetze = fall ? fallAbsaetze(fall) : ABSAETZE
+  drawLines(page, layoutText(absaetze, fonts, qrX - x - pad * 1.8, h - 2 * pad), x + pad, y + h - pad, h - 2 * pad)
 }
 
 /** Zeilen in eine Box (links oben ab x/top, Höhe boxH) vertikal zentriert setzen. */
