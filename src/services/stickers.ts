@@ -317,8 +317,8 @@ const MM = 72 / 25.4
 // fonts von pdf-lib), daher wird der Pfeil gezeichnet statt als „→" gesetzt.
 const ABSAETZE: { de: string; en: string; fett?: boolean }[] = [
   {
-    de: 'Dieses Fahrzeug wurde wegen einer Ordnungswidrigkeit im ruhenden Verkehr dokumentiert.',
-    en: 'This vehicle has been documented for a parking violation.',
+    de: 'Privatanzeige: Dieses Fahrzeug wurde wegen einer Ordnungswidrigkeit im ruhenden Verkehr dokumentiert.',
+    en: 'Private report: This vehicle has been documented for a parking violation.',
     fett: true,
   },
   {
@@ -431,12 +431,30 @@ function drawQr(page: PDFPage, text: string, x: number, y: number, size: number)
   }
 }
 
+/** Kleine Schnittmarken an den vier Ecken, nach außen als Verlängerung der
+ *  Etikettenkanten. Sie liegen damit entweder im Zwischenraum oder (bei
+ *  Bögen ohne Abstand) genau auf der Schnittlinie des Nachbarn – nie mitten
+ *  auf einem Etikett. */
+function drawCutMarks(page: PDFPage, x: number, y: number, w: number, h: number) {
+  const len = 2 * MM
+  const off = 0.4 * MM // kleine Lücke zur Ecke, damit nichts aufs Etikett ragt
+  const color = rgb(0.55, 0.55, 0.55)
+  for (const [cx, sx] of [[x, -1], [x + w, 1]]) {
+    for (const [cy, sy] of [[y, -1], [y + h, 1]]) {
+      page.drawLine({ start: { x: cx + sx * off, y: cy }, end: { x: cx + sx * (off + len), y: cy }, thickness: 0.3, color })
+      page.drawLine({ start: { x: cx, y: cy + sy * off }, end: { x: cx, y: cy + sy * (off + len) }, thickness: 0.3, color })
+    }
+  }
+}
+
 function drawSticker(
   page: PDFPage, fonts: Fonts, code: string, url: string,
   x: number, y: number, w: number, h: number, rahmen: boolean, muster: boolean
 ) {
   if (rahmen) {
     page.drawRectangle({ x, y, width: w, height: h, borderColor: rgb(0.7, 0.7, 0.7), borderWidth: 0.4 })
+  } else {
+    drawCutMarks(page, x, y, w, h)
   }
   const pad = Math.min(w, h) * 0.08
   const codeSize = Math.max(6, Math.min(9, h * 0.06))
