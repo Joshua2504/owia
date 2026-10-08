@@ -97,6 +97,16 @@
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
       '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. Volkswagen" list="pe-marken"></div>' +
       '</div>' +
+      // Fahrzeug direkt unter Kennzeichen/Marke (gleicher Speicherweg wie die
+      // übrigen Details, daher ebenfalls .photo-edit-details).
+      '<div class="photo-edit-details" hidden>' +
+      '<div class="pe-row pe-row-3">' +
+      '<div class="pe-field"><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
+      '<div class="pe-field"><label class="form-label" for="pe-modell">Modell</label><input type="text" id="pe-modell" class="form-control" data-detail="fahrzeug_modell" maxlength="60" autocomplete="off"></div>' +
+      '<div class="pe-field"><label class="form-label" for="pe-farbe">Farbe</label><input type="text" id="pe-farbe" class="form-control" data-detail="fahrzeug_farbe" maxlength="40" autocomplete="off" list="pe-farben"></div>' +
+      '</div>' +
+      '<datalist id="pe-marken"></datalist><datalist id="pe-farben"></datalist>' +
+      '</div>' +
       // Frankfurter Portal: Foto als Übersichts- oder Fahrzeugfoto hochladen
       // (PATCH /anzeige/:az/images/:id/rolle; „Auto" = nach erkanntem Kennzeichen).
       // Datenschutz: erkannte fremde Kennzeichen/Gesichter (services/dritte.ts).
@@ -134,12 +144,6 @@
       // Restliche Angaben (Werte aus GET /pruefen/:az/daten, gespeichert je
       // Feld über PATCH /anzeige/:az/felder).
       '<div class="photo-edit-details" hidden>' +
-      '<div class="pe-row pe-row-3">' +
-      '<div class="pe-field"><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
-      '<div class="pe-field"><label class="form-label" for="pe-modell">Modell</label><input type="text" id="pe-modell" class="form-control" data-detail="fahrzeug_modell" maxlength="60" autocomplete="off"></div>' +
-      '<div class="pe-field"><label class="form-label" for="pe-farbe">Farbe</label><input type="text" id="pe-farbe" class="form-control" data-detail="fahrzeug_farbe" maxlength="40" autocomplete="off" list="pe-farben"></div>' +
-      '</div>' +
-      '<datalist id="pe-marken"></datalist><datalist id="pe-farben"></datalist>' +
       '<div class="pe-field"><label class="form-label" for="pe-tattag">Tatzeit</label>' +
       '<div class="pe-time">' +
       '<input type="date" id="pe-tattag" class="form-control" data-detail="tattag">' +
@@ -285,7 +289,8 @@
     dlg.querySelector('[data-act=submit]').addEventListener('click', function () { submitReport(false) })
     var sendBtn = dlg.querySelector('[data-act=send]')
     if (sendBtn) sendBtn.addEventListener('click', function () { submitReport(true) })
-    dlg.querySelector('.photo-edit-details').addEventListener('change', function (e) {
+    dlg.querySelectorAll('.photo-edit-details').forEach(function (el) { el.addEventListener('change', onDetailChange) })
+    function onDetailChange(e) {
       var f = e.target.getAttribute && e.target.getAttribute('data-detail')
       if (!f) return
       var v = e.target.type === 'checkbox' ? (e.target.checked ? '1' : '0') : e.target.value.trim()
@@ -296,7 +301,7 @@
       var body = {}
       body[f] = v
       saveDetail(body)
-    })
+    }
     dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
     dlg.querySelector('[data-act=trash-report]').addEventListener('click', trashReport)
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
@@ -668,8 +673,8 @@
   var detailsAz = null
   var detailsChanged = {}
   function fillDetails(s) {
-    var box = dlg.querySelector('.photo-edit-details')
-    box.hidden = !s.report
+    var box = dlg
+    dlg.querySelectorAll('.photo-edit-details').forEach(function (el) { el.hidden = !s.report })
     if (!s.report || detailsAz === s.az) return
     detailsAz = s.az
     var f = s.report.fields
@@ -716,7 +721,7 @@
       tattag_bis: t.bisTag !== t.vonTag ? t.bisTag : '',
       tatzeit_bis: t.bis !== t.von || t.bisTag !== t.vonTag ? t.bis : '',
     }
-    var box = dlg.querySelector('.photo-edit-details')
+    var box = dlg
     box.querySelector('[data-detail=tattag]').value = body.tattag
     box.querySelector('[data-detail=tatzeit_von]').value = body.tatzeit_von
     box.querySelector('[data-detail=tatzeit_bis]').value = body.tatzeit_bis
