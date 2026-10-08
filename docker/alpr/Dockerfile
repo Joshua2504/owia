@@ -10,6 +10,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Gesichtserkennung (YuNet, MIT, ~230 KB) für die Datenschutz-Prüfung.
+ADD https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx /app/models/face_detection_yunet_2023mar.onnx
+
 # Warmup lädt Detektor- und OCR-Modell beim Build ins Image (kein Download
 # zur Laufzeit).
 COPY districts.py plate.py segment.py app.py warmup.py ./

@@ -169,12 +169,12 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
   dort wird als „noch nicht freigeschaltet" abgewiesen.
 - Städte **mit** `portal` (Frankfurt) werden über das Online-Formular der Stadt
   versendet: der Container `portal` (`docker/portal/`, Playwright) füllt es aus,
-  der Admin sieht unter `/versand` live zu, greift bei Bedarf per Klick ins
-  Live-Bild ein und sendet ab. Abbildung Katalog → Portal-Auswahlbaum:
+  der Admin sieht unter `/versand` live zu (zwei Läufe parallel), greift bei
+  Bedarf per Klick ins Live-Bild ein und sendet ab; nächtlicher Selbsttest. Abbildung Katalog → Portal-Auswahlbaum:
   `src/services/portalFfm.ts`; Ablauf/Zustände: `src/services/portalDispatch.ts`.
-- Städte **mit** `pdfForm` bekommen das amtliche Formular als PDF-Anhang
-  (Frankfurt nur noch für Tatbestände, die das Portal nicht kennt), Städte
-  **ohne** eine strukturierte E-Mail mit Beweisfotos + Tatort-Karte.
+- Städte **ohne** `portal` und **mit** `pdfForm` bekommen das amtliche Formular
+  als PDF-Anhang, Städte **ohne** beides eine strukturierte E-Mail mit
+  Beweisfotos + Tatort-Karte.
 
 ### Neue Stadt freischalten
 

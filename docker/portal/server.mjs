@@ -58,6 +58,7 @@ function createRun(payload, files, dir) {
     result: null,
     error: null,
     submitted: false,
+    pauses: 0, // Eingriffe des Nutzers – „ohne Rückfrage absenden" nur bei 0
     createdAt: Date.now(),
     updatedAt: Date.now(),
     finishedAt: null,
@@ -92,6 +93,7 @@ function createRun(payload, files, dir) {
     check: () => { if (run.cancelled) throw new Cancelled('Abgebrochen.') },
     pause: async (message) => {
       run.engine.check()
+      run.pauses++
       run.setState('needs_input', message)
       run.logMsg(`Wartet auf Eingabe: ${message}`)
       run.waiter = deferred()
@@ -196,6 +198,7 @@ function publicRun(run) {
     message: run.message,
     step: run.step,
     submitted: run.submitted,
+    pauses: run.pauses,
     frameNo: run.frameNo,
     log: run.log.slice(-80),
     summary: run.summary,

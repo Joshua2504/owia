@@ -9,4 +9,5 @@ import app
 dummy = np.full((480, 640, 3), 128, dtype=np.uint8)
 app.detector.predict(dummy)
 app.read_plate(dummy, [100, 200, 400, 270])
+app.detect_faces(dummy)
 print("Modelle gecached und lauffähig.")

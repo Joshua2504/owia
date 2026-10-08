@@ -1131,3 +1131,6 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 
 /* Foto-Dialog: Rolle im Frankfurter Portal (Ü = Übersicht, F = Fahrzeug) */
 .photo-edit-tile-rolle { position: absolute; left: 26px; top: 5px; padding: 0 4px; border-radius: 3px; font-size: 0.68rem; font-weight: 600; line-height: 1.35; background: rgba(13, 110, 253, 0.85); color: #fff; pointer-events: none; }
+
+/* Foto-Dialog: Datenschutz-Warnung (fremde Kennzeichen/Gesichter) */
+.photo-edit-tile.has-dritte { border-color: #ffc107; }

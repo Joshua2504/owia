@@ -8,12 +8,12 @@ import { pool } from '../db/connection'
 import { requireAdmin, viewData } from '../middleware/auth'
 import { getCity, unlockedCities } from '../config/cities'
 import { fahrzeugBeschreibung } from '../config/fahrzeug'
-import { imPortal, verstossVarianten } from '../services/portalFfm'
-import { enqueueJob } from '../services/jobs'
+import { imPortal, verstossVarianten, erstAbMorgen } from '../services/portalFfm'
 import {
   startPortalRun, submitPortalRun, cancelPortalRun, resolveUncertain, currentRunId, runStatus,
   lastKnownStatus, proxy, portalHealthy, PortalError,
 } from '../services/portalDispatch'
+import { letzterSelbsttest, enqueueSelbsttest } from '../services/portalSelbsttest'
 
 const portalCities = () => unlockedCities().filter((c) => c.portal).map((c) => c.id)
 
@@ -48,6 +48,7 @@ async function loadQueue() {
       verstoss: r.verstoss_art,
       variante: r.verstoss_variante,
       imPortal: imPortal(r.verstoss_art),
+      abMorgen: erstAbMorgen(r),
       varianteFehlt: verstossVarianten(r.verstoss_art).length > 0 && !r.verstoss_variante,
       bilder: Number(r.image_count),
       userEmail: r.user_email,
@@ -67,12 +68,19 @@ export default async function portalRoutes(app: FastifyInstance) {
       title: 'Live-Versand',
       queue,
       portalOk: await portalHealthy(),
+      selbsttest: await letzterSelbsttest(),
       selectedAz: String((request.query as { az?: string }).az || ''),
       ordnungsamt: getCity('frankfurt').ordnungsamt,
     }))
   })
 
   app.get('/versand/liste', { preHandler: requireAdmin }, async () => loadQueue())
+
+  // Selbsttest von Hand (sonst nachts, services/portalSelbsttest.ts).
+  app.post('/versand/selbsttest', { preHandler: requireAdmin }, async () => {
+    await enqueueSelbsttest()
+    return { ok: true }
+  })
 
   const reportIdOf = (request: { params: unknown }) => Number((request.params as { id: string }).id)
   const fail = (reply: any, err: unknown) => {
@@ -160,15 +168,5 @@ export default async function portalRoutes(app: FastifyInstance) {
     } catch (err) {
       return fail(reply, err)
     }
-  })
-
-  // Ausweg für Tatbestände, die das Portal nicht kennt: klassisch per Mail (PDF).
-  app.post('/versand/:id/per-mail', { preHandler: requireAdmin }, async (request, reply) => {
-    const id = reportIdOf(request)
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT aktenzeichen, status, versand_status FROM reports WHERE id=?', [id])
-    const r = rows[0]
-    if (!r || r.status !== 'eingereicht' || r.versand_status) return reply.status(409).send({ error: 'Die Anzeige ist nicht versandbereit.' })
-    await enqueueJob('report.dispatch', { reportId: id, aktenzeichen: r.aktenzeichen, viaMail: true }, { key: `report.dispatch:${id}`, maxAttempts: 1 })
-    return { ok: true }
   })
 }

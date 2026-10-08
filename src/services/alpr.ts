@@ -31,8 +31,18 @@ export type PlateResult = {
   cropJpeg: Buffer | null
 }
 
+/** Vollständige Bildanalyse für die Datenschutz-Prüfung (services/dritte.ts),
+ *  gespeichert als report_images.analyse_json. Boxen in Bildpixeln [x1,y1,x2,y2]
+ *  des analysierten Fotos (EXIF-Ausrichtung angewendet, wie im Browser). */
+export type BildAnalyse = {
+  w: number
+  h: number
+  plates: { text: string; confidence: number; bbox: number[] }[]
+  faces: { score: number; bbox: number[] }[]
+}
+
 /** Erfolgreiche Analyse; best=null heißt "kein Kennzeichen im Bild gefunden". */
-export type RecognizeResult = { best: PlateResult | null }
+export type RecognizeResult = { best: PlateResult | null; analyse: BildAnalyse | null }
 
 /** Erkennt das wahrscheinlichste Kennzeichen auf dem Bild.
  *  null = Dienst nicht erreichbar/Fehler (Aufrufer markiert 'failed'). */
@@ -66,6 +76,10 @@ export async function recognizePlate(
 
     if (!res.ok) return null
     const data = (await res.json()) as {
+      width?: number
+      height?: number
+      plates?: { text?: string; confidence?: number; bbox?: number[] }[]
+      faces?: { score?: number; bbox?: number[] }[]
       best?: {
         text?: string | null
         confidence?: number | null
@@ -73,8 +87,21 @@ export async function recognizePlate(
         crop?: string | null
       } | null
     }
+    // Ältere ALPR-Images liefern keine Bildgröße/Gesichter – dann keine Analyse.
+    const analyse: BildAnalyse | null = data.width && data.height
+      ? {
+          w: data.width,
+          h: data.height,
+          plates: (data.plates || []).filter((p) => p.text && Array.isArray(p.bbox)).map((p) => ({
+            text: String(p.text).toUpperCase().trim().slice(0, 20),
+            confidence: typeof p.confidence === 'number' ? p.confidence : 0,
+            bbox: p.bbox!.slice(0, 4).map(Number),
+          })),
+          faces: (data.faces || []).filter((f) => Array.isArray(f.bbox)).map((f) => ({ score: Number(f.score) || 0, bbox: f.bbox!.slice(0, 4).map(Number) })),
+        }
+      : null
     const best = data.best
-    if (!best?.text) return { best: null }
+    if (!best?.text) return { best: null, analyse }
     let cropJpeg: Buffer | null = null
     if (best.crop) {
       try {
@@ -90,6 +117,7 @@ export async function recognizePlate(
         normalized: best.normalized === true,
         cropJpeg,
       },
+      analyse,
     }
   } catch {
     // Dienst nicht erreichbar / Timeout – Aufrufer markiert das Bild als 'failed'.

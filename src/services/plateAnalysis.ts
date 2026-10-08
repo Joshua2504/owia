@@ -45,6 +45,26 @@ export function queuePlateAnalysis(
     })
 }
 
+/** Nur die Datenschutz-Analyse (analyse_json) eines ersetzten Fotos erneuern –
+ *  das erkannte Kennzeichen bleibt (nach dem Schwärzen ist es oft unleserlich,
+ *  siehe PUT /anzeige/:az/images/:imageId). */
+export function queueAnalyseOnly(userId: number, reportId: number, imageId: number, filename: string, mimetype: string): void {
+  if (!alprEnabled()) return
+  queue = queue
+    .then(async () => {
+      const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT report_id, filename FROM report_images WHERE id=?', [imageId])
+      if (!rows.length) return
+      const file = path.join(reportDir(userId, Number(rows[0].report_id)), String(rows[0].filename))
+      const result = await recognizePlate(file, mimetype)
+      if (result?.analyse) {
+        await pool.execute('UPDATE report_images SET analyse_json=? WHERE id=? AND filename=?', [JSON.stringify(result.analyse), imageId, rows[0].filename])
+      }
+    })
+    .catch(() => {
+      /* Einzelfehler dürfen die Kette nicht abreißen lassen. */
+    })
+}
+
 /** Beim App-Start liegengebliebene 'pending'-Jobs als 'failed' markieren
  *  (Neustart mitten in der Analyse) – sonst zeigt das Formular dort dauerhaft
  *  die Ladeanimation. Neue Uploads reihen sich ohnehin frisch ein. */
@@ -101,9 +121,9 @@ async function runAnalysis(
     const best = result.best
     await pool.execute(
       `UPDATE report_images
-         SET detected_plate=?, plate_confidence=?, analysis_status='done', analyzed_at=NOW()
+         SET detected_plate=?, plate_confidence=?, analyse_json=?, analysis_status='done', analyzed_at=NOW()
        WHERE id=?`,
-      [best?.plate ?? null, best?.confidence ?? null, imageId]
+      [best?.plate ?? null, best?.confidence ?? null, result.analyse ? JSON.stringify(result.analyse) : null, imageId]
     )
 
     // Kennzeichen-Ausschnitt als eigene Datei neben dem Foto ablegen (Beleg,

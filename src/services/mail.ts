@@ -10,6 +10,7 @@ import { renderTatortMap } from './staticmap'
 import { recipientEmailForReport } from './districts'
 import type { PreparedReportMail } from './reportDispatch'
 import { assertProductionMailConfig } from '../config/mail'
+import { adminEmails } from '../config/admin'
 import { strasseMitNummer } from '../config/person'
 import { fahrzeugBeschreibung } from '../config/fahrzeug'
 
@@ -331,6 +332,20 @@ export const MailService = {
         'Viele Grüße',
         'OWiA-Anzeiger',
       ].join('\n'),
+    })
+  },
+
+  /** Betriebshinweis an alle Admins (ADMIN_EMAILS), z.B. fehlgeschlagener
+   *  Portal-Selbsttest. Ohne Admins passiert nichts. */
+  async sendAdminHinweis(subject: string, text: string): Promise<void> {
+    const to = adminEmails()
+    if (!to.length) return
+    const transport = createTransport()
+    await transport.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      to: to.join(', '),
+      subject,
+      text,
     })
   },
 

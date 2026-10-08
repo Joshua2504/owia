@@ -51,6 +51,30 @@ recognizer = LicensePlateRecognizer(
 # Inferenz serialisieren: eine Anfrage darf die CPU nutzen, weitere warten.
 inference_lock = threading.Lock()
 
+# Gesichter (Datenschutz-Prüfung vor dem Versand: Beweisfotos dürfen keine
+# erkennbaren Personen zeigen). YuNet aus OpenCV-Zoo, beim Build ins Image geladen.
+FACE_MODEL = "/app/models/face_detection_yunet_2023mar.onnx"
+face_detector = cv2.FaceDetectorYN.create(FACE_MODEL, "", (320, 320), 0.8, 0.3, 5000)
+FACE_MIN_PX = 24  # kleinere Gesichter sind auf Beweisfotos nicht identifizierbar
+
+
+def detect_faces(img: np.ndarray) -> list:
+    h, w = img.shape[:2]
+    scale = min(1.0, 1280 / max(h, w))
+    small = cv2.resize(img, (int(w * scale), int(h * scale))) if scale < 1 else img
+    face_detector.setInputSize((small.shape[1], small.shape[0]))
+    _, faces = face_detector.detect(small)
+    out = []
+    if faces is None:
+        return out
+    for f in faces:
+        x, y, fw, fh, score = float(f[0]), float(f[1]), float(f[2]), float(f[3]), float(f[-1])
+        if fw / scale < FACE_MIN_PX:
+            continue
+        box = [int(x / scale), int(y / scale), int((x + fw) / scale), int((y + fh) / scale)]
+        out.append({"bbox": [max(0, box[0]), max(0, box[1]), min(w, box[2]), min(h, box[3])], "score": round(score, 3)})
+    return out
+
 
 def clip_box(img: np.ndarray, xyxy, pad_x: float = 0.0, pad_y: float = 0.0) -> list:
     h, w = img.shape[:2]
@@ -101,11 +125,12 @@ async def recognize(file: UploadFile = File(...)):
     data = await file.read()
     img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
-        return {"plates": [], "best": None}
+        return {"plates": [], "best": None, "faces": [], "width": 0, "height": 0}
     h, w = img.shape[:2]
 
     plates = []
     with inference_lock:
+        faces = detect_faces(img)
         for det in detector.predict(img):
             b = det.bounding_box
             xyxy = [b.x1, b.y1, b.x2, b.y2]
@@ -143,4 +168,4 @@ async def recognize(file: UploadFile = File(...)):
     plates.sort(key=rank, reverse=True)
     for p in plates:
         del p["width"]
-    return {"plates": plates, "best": plates[0] if plates else None}
+    return {"plates": plates, "best": plates[0] if plates else None, "faces": faces, "width": w, "height": h}

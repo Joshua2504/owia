@@ -55,8 +55,10 @@ Admin-Freigabe einer Anzeige.
 ## Portal-Versand (Frankfurt, ekom21)
 
 Frankfurt nimmt Anzeigen seit 10/2026 nur noch über das Online-Formular
-`portal-civ.ekom21.de` an (Mail mit PDF nur für Tatbestände, die das Portal
-nicht anbietet). Ablauf unter `/versand` (nur Admins):
+`portal-civ.ekom21.de` an. Tatbestände, die das Portal nicht anbietet, sind
+bewusst nicht versendbar (kein Ausweichen auf Mail). Das Portal nimmt nur Taten
+**vor dem heutigen Tag** an – Anzeigen von heute erst ab morgen.
+Ablauf unter `/versand` (nur Admins, zwei Läufe parallel):
 
 1. „▶ Senden" sperrt die Anzeige (`versand_status='vorbereitung'`,
    `versand_ergebnis` = `{"portal":{"runId":…}}`) und startet im Container
@@ -70,6 +72,19 @@ nicht anbietet). Ablauf unter `/versand` (nur Admins):
    `portal_vorgang_id`, ausgehender Eintrag in `report_replies` mit
    Zusammenfassung (PDF) und Screenshots als Anhängen.
 4. Abbrechen vor dem Absenden löst die Sperre, die Anzeige bleibt eingereicht.
+5. „Ohne Rückfrage absenden" sendet nur Läufe ab, die ganz ohne Eingriff
+   (Pause) durchkamen; alle anderen warten auf den Klick.
+
+**Datenschutz:** Fotos mit erkannten fremden Kennzeichen oder Gesichtern
+(`report_images.analyse_json`, ALPR-Container inkl. YuNet-Gesichtserkennung,
+`services/dritte.ts`) blockieren Einreichen und Versand, bis sie geschwärzt
+(Foto-Dialog „Erkannte schwärzen") oder als unbedenklich bestätigt sind.
+Analyse für Bestand nachholen: `npx tsx src/scripts/analyse-nachholen.ts`.
+
+**Selbsttest:** jede Nacht gegen 3 Uhr ein Trockenlauf mit Testdaten bis zur
+Zusammenfassung (nie absenden), täglich eine andere Rubrik
+(`services/portalSelbsttest.ts`, Job `portal.selbsttest`). Fehlschlag ⇒ Mail an
+`ADMIN_EMAILS`; Ergebnis und Knopf „Selbsttest starten" oben auf `/versand`.
 
 Fotos gehen getrennt als Übersichts- und Fahrzeugfoto hoch (je 1–5). Automatisch
 gilt ein Foto mit erkanntem Kennzeichen als Fahrzeugfoto; im Foto-Dialog lässt

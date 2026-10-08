@@ -275,19 +275,66 @@ function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Tatort für das Portalfeld „Straße und Hausnummer, eventuell Konkretisierung":
- *  Adresse ohne PLZ/Ort (das Portal gilt nur für Frankfurt), dazu die
- *  Beschreibung als Konkretisierung. */
-function tatortText(r: mysql.RowDataPacket): string {
+/** Tatort für das Portalfeld „Straße und Hausnummer, eventuell Konkretisierung".
+ *  Ein eigenes Feld für ergänzende Angaben zeigt das öffentliche Formular nicht
+ *  (V.Z.Zustimmung.ErgAngaben bleibt unsichtbar, Stand 10/2026) – Zusätze wie
+ *  „Fahrzeug war verlassen", ein Tatzeitraum über Mitternacht und die
+ *  Beschreibung stehen deshalb in Klammern hinter der Adresse. PLZ/Ort fallen
+ *  weg (das Portal gilt nur für Frankfurt). */
+export function tatortText(r: Record<string, any>, zusaetze: string[] = []): string {
   const ort = String(r.tatort || '').replace(/,\s*\d{5}\s+[^,]+$/, '').trim()
-  const extra = [r.fahrzeug_verlassen === 1 ? 'Fahrzeug war verlassen.' : '', String(r.beschreibung || '').trim()].filter(Boolean).join(' ')
-  return extra ? `${ort} - ${extra}` : ort
+  const extra = [
+    r.fahrzeug_verlassen === 1 ? 'Fahrzeug war verlassen' : '',
+    ...zusaetze,
+    String(r.beschreibung || '').replace(/\s+/g, ' ').trim().replace(/[.;]+$/, ''),
+  ].filter(Boolean)
+  const text = extra.length ? `${ort} (${extra.join('; ')})` : ort
+  return text.length > 400 ? `${text.slice(0, 397)}...` : text
+}
+
+/** Tatzeit fürs Portal: es will Beginn UND Ende eines Tages. Fehlt das Ende,
+ *  zählt das letzte Foto desselben Tages (sonst Beginn = Ende). Über Mitternacht:
+ *  Ende 23:59, das tatsächliche Ende als Zusatz in der Konkretisierung. */
+export function portalTatzeit(r: Record<string, any>, letztesFoto?: string | null): { von: string; bis: string; zusatz: string | null } {
+  const von = hhmm(r.tatzeit_von)
+  let bis = hhmm(r.tatzeit_bis)
+  const tag = isoOf(r.tattag)
+  const bisTag = isoOf(r.tattag_bis)
+  if (bisTag && bisTag !== tag) {
+    return { von, bis: '23:59', zusatz: `Tatzeitraum bis ${ddmmyyyy(bisTag)}${bis ? ` ${bis} Uhr` : ''}` }
+  }
+  if (!bis && letztesFoto && letztesFoto.slice(0, 10) === tag && letztesFoto.slice(11, 16) > von) bis = letztesFoto.slice(11, 16)
+  if (!bis) bis = von
+  if (bis < von) return { von, bis: '23:59', zusatz: `Tatzeitraum bis zum Folgetag ${bis} Uhr` }
+  return { von, bis, zusatz: null }
+}
+
+function isoOf(d: unknown): string {
+  if (!d) return ''
+  return d instanceof Date ? isoDate(d) : String(d).slice(0, 10)
 }
 
 export class PortalDatenFehler extends Error {}
 
+/** Das Portal nimmt nur Tattage VOR heute an („Datum muss kleiner als <heute>
+ *  sein"). Anzeigen vom selben Tag sind erst ab morgen versendbar. */
+export function erstAbMorgen(r: Record<string, any>, heute = berlinHeute()): boolean {
+  const tag = r.tattag instanceof Date ? isoDate(r.tattag) : String(r.tattag || '').slice(0, 10)
+  return !!tag && tag >= heute
+}
+
+/** Heutiges Datum in Berlin als YYYY-MM-DD (unabhängig von der Server-Zeitzone). */
+export function berlinHeute(): string {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' }).format(new Date())
+}
+
 /** Was dem Portal-Versand fehlt (Prüfliste vor dem Einreichen); `null` = passt. */
 export function portalProblem(r: Record<string, any>): string | null {
+  // Tatbestände ohne Portal-Eintrag sind bewusst nicht versendbar (Nutzer-
+  // entscheidung 10/2026 – kein Ausweichen auf Mail mit PDF).
+  if (r.verstoss_art && !imPortal(r.verstoss_art)) {
+    return 'Diesen Tatbestand bietet das Portal der Stadt nicht an – bitte einen passenden Verstoß wählen.'
+  }
   const vs = verstossVarianten(r.verstoss_art)
   if (vs.length && !vs.some((x) => x.value === r.verstoss_variante)) {
     return `Bitte beim Verstoß genauer angeben: ${vs.map((x) => x.value).join(' oder ')}.`
@@ -298,17 +345,21 @@ export function portalProblem(r: Record<string, any>): string | null {
   return null
 }
 
-export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacket): PortalPayload {
+/** `letztesFoto`: späteste Aufnahmezeit der Fotos ('YYYY-MM-DD HH:MM'), für
+ *  die Tatzeit „bis", wenn keine eingetragen ist. */
+export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacket, letztesFoto?: string | null): PortalPayload {
   const tb = portalTatbestand(r.verstoss_art, r.verstoss_variante)
   const land = KENNZEICHEN_LAENDER[String(r.kennzeichen_land || 'D').toUpperCase()]
   if (!land) throw new PortalDatenFehler(`Das Länderkennzeichen „${r.kennzeichen_land}" kennt das Portal nicht.`)
   if (!u.hausnummer) throw new PortalDatenFehler('Im Profil fehlt die Hausnummer.')
-  // Ende vor Beginn = über Mitternacht. Das Portal will laut Hinweis nur die
-  // Uhrzeiten eines Tages – dann bis Tagesende.
-  const von = hhmm(r.tatzeit_von)
-  let bis = hhmm(r.tatzeit_bis) || von
-  if (bis < von || (r.tattag_bis && String(r.tattag_bis) !== String(r.tattag))) bis = '23:59'
+  const zeit = portalTatzeit(r, letztesFoto)
+  // „Wurden Sie behindert?" fragt das Formular, die Zusammenfassung der Stadt
+  // führt es als „Gab es Behinderung?" – gemeint ist jede Behinderung. Daher
+  // Ja, sobald jemand behindert wurde (Häkchen oder Tatbestand „… und behinderten
+  // dadurch Andere"); wer und wie, steht im Pflichttext.
   const behindert = r.behinderung === 1 || /behinderten|behindert wurden/.test(String(r.verstoss_art || ''))
+  const behinderungText = String(r.behinderung_text || '').trim() ||
+    (behindert ? 'Andere Verkehrsteilnehmer wurden behindert (siehe Beweisfotos).' : '')
   return {
     person: {
       anrede: portalAnrede(u.anrede),
@@ -325,7 +376,7 @@ export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacke
     behinderung: {
       ja: behindert,
       rettung: !!tb?.rettung,
-      text: String(r.behinderung_text || '').trim(),
+      text: behinderungText,
     },
     fahrzeug: {
       typ: fahrzeugTyp(r.fahrzeug_typ),
@@ -335,7 +386,7 @@ export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacke
       modell: String(r.fahrzeug_modell || '').trim(),
       farbe: String(r.fahrzeug_farbe || '').trim(),
     },
-    tat: { ort: tatortText(r), tattag: ddmmyyyy(r.tattag), von, bis },
+    tat: { ort: tatortText(r, zeit.zusatz ? [zeit.zusatz] : []), tattag: ddmmyyyy(r.tattag), von: zeit.von, bis: zeit.bis },
     email: u.email || '',
   }
 }
@@ -361,7 +412,13 @@ export function photoRoles<T extends Record<string, any>>(imgs: T[]): { uebersic
     }
   }
   if (!uebersicht.length && fahrzeug.length > 1) {
-    const x = fahrzeug.find((i) => !manuell(i))
+    // Alle Fotos zeigen das Kennzeichen: das mit dem kleinsten Schild im Bild
+    // (plate_flaeche, services/dritte.ts) ist am ehesten die Übersicht.
+    const autos = fahrzeug.filter((i) => !manuell(i))
+    const mitFlaeche = autos.filter((i) => typeof i.plate_flaeche === 'number')
+    const x = mitFlaeche.length
+      ? mitFlaeche.reduce((a, b) => (b.plate_flaeche < a.plate_flaeche ? b : a))
+      : autos[0]
     if (x) {
       uebersicht = [x]
       fahrzeug = fahrzeug.filter((i) => i !== x)

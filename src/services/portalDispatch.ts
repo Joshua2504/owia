@@ -24,11 +24,12 @@ import { pool } from '../db/connection'
 import { reportDir } from './drafts'
 import { ensureMailVariant } from '../routes/reports'
 import { cachedMailVariant } from './pixelate'
-import { buildPortalPayload, photoRoles, PortalDatenFehler } from './portalFfm'
+import { buildPortalPayload, photoRoles, PortalDatenFehler, portalProblem, erstAbMorgen } from './portalFfm'
 import { repliesDir } from './mailInbox'
 import { getCity } from '../config/cities'
-import { isProfileComplete } from '../routes/reports'
+import { isProfileComplete, drittProblem } from '../routes/reports'
 import { isVerjaehrt } from './verjaehrung'
+import { kennzeichenFlaeche } from './dritte'
 
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
@@ -40,6 +41,7 @@ export interface PortalRunStatus {
   message: string
   step: { n: number; title: string } | null
   submitted: boolean
+  pauses?: number
   frameNo: number
   log: { t: string; msg: string }[]
   summary: string | null
@@ -105,6 +107,9 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
   if (!usesPortal(report)) throw new PortalError('Für diese Stadt gibt es keinen Portal-Versand.')
   if (!(await isProfileComplete(report.user_id))) throw new PortalError('Das Nutzerprofil ist unvollständig.')
   if (isVerjaehrt(report)) throw new PortalError('Die Tat ist verjährt.')
+  const fehlt = portalProblem(report)
+  if (fehlt) throw new PortalError(fehlt)
+  if (erstAbMorgen(report)) throw new PortalError('Das Portal nimmt nur Taten vor dem heutigen Tag an – bitte ab morgen senden.')
 
   const [claim] = await pool.execute<mysql.ResultSetHeader>(
     `UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=?
@@ -115,12 +120,19 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
 
   try {
     const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
-    const payload = buildPortalPayload(report, users[0])
+    const [zeiten] = await pool.execute<mysql.RowDataPacket[]>(
+      "SELECT DATE_FORMAT(MAX(captured_at), '%Y-%m-%d %H:%i') AS bis FROM report_images WHERE report_id=?",
+      [reportId]
+    )
+    const payload = buildPortalPayload(report, users[0], zeiten[0]?.bis ?? null)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, mimetype, detected_plate, portal_rolle FROM report_images WHERE report_id=? ORDER BY sort_order, id',
+      'SELECT id, filename, mimetype, detected_plate, portal_rolle, analyse_json FROM report_images WHERE report_id=? ORDER BY sort_order, id',
       [reportId]
     )
     if (!imgs.length) throw new PortalError('Die Anzeige hat keine Fotos.')
+    for (const i of imgs) i.plate_flaeche = kennzeichenFlaeche(i.analyse_json, report.kennzeichen)
+    const dritte = await drittProblem(report)
+    if (dritte) throw new PortalError(dritte)
     const roles = photoRoles(imgs)
     const dir = reportDir(report.user_id, reportId)
     const files: { role: string; name: string; data: string }[] = []
@@ -333,9 +345,13 @@ function watch(reportId: number, runId: string): void {
           return
         }
         lastStatus.set(reportId, { ...st, reportId })
+        // „Ohne Rückfrage absenden" nur, wenn der Lauf ohne einen einzigen
+        // Eingriff durchkam – sonst wartet er wie gewohnt auf den Klick.
         if (st.state === 'ready' && autoSubmit.has(reportId) && report.versand_status === 'vorbereitung') {
           autoSubmit.delete(reportId)
-          await submitPortalRun(reportId).catch((err) => log?.error({ err, reportId }, 'Automatisches Absenden fehlgeschlagen'))
+          if ((st.pauses ?? 0) === 0) {
+            await submitPortalRun(reportId).catch((err) => log?.error({ err, reportId }, 'Automatisches Absenden fehlgeschlagen'))
+          }
         }
         if (st.state === 'done') {
           await finishRun(reportId, runId, st)

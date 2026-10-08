@@ -10,7 +10,7 @@ import ejs from 'ejs'
 import { verjaehrung } from '../src/services/verjaehrung'
 import { aggregiere } from '../src/services/statistik'
 import { regelsatzEuro } from '../src/config/verstoss'
-import { portalTatbestand, verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoles, portalProblem, buildPortalPayload } from '../src/services/portalFfm'
+import { portalTatbestand, verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoles, portalProblem, buildPortalPayload, portalTatzeit, tatortText } from '../src/services/portalFfm'
 import { portalMarke, fahrzeugBeschreibung } from '../src/config/fahrzeug'
 import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
@@ -84,8 +84,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0040_foto_rolle.sql')
-  assert.equal(rows.length, 40)
+  assert.equal(rows.at(-1)?.filename, '0041_foto_analyse.sql')
+  assert.equal(rows.length, 41)
 })
 
 test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
@@ -722,6 +722,10 @@ test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
   assert.equal(p.person.anrede, 'Frau')
   assert.equal(p.fahrzeug.marke, 'Volkswagen')
   assert.equal(p.fahrzeug.typ, 'PKW')
-  assert.deepEqual(p.tat, { ort: 'Römerberg 1 - Vor dem Café', tattag: '07.10.2026', von: '22:30', bis: '23:59' })
+  assert.deepEqual(p.tat, { ort: 'Römerberg 1 (Tatzeitraum bis 08.10.2026 01:00 Uhr; Vor dem Café)', tattag: '07.10.2026', von: '22:30', bis: '23:59' })
   assert.equal(p.gruppe, 'Radweg/Radfahrstreifen')
+  // Ende fehlt: letztes Foto desselben Tages; sonst Beginn = Ende.
+  assert.deepEqual(portalTatzeit({ tattag: '2026-09-11', tatzeit_von: '02:13:33' }, '2026-09-11 02:19'), { von: '02:13', bis: '02:19', zusatz: null })
+  assert.deepEqual(portalTatzeit({ tattag: '2026-09-11', tatzeit_von: '02:13:33' }, null), { von: '02:13', bis: '02:13', zusatz: null })
+  assert.equal(tatortText({ tatort: 'Franz-Simon-Straße 29, 65934 Frankfurt am Main', fahrzeug_verlassen: 1 }), 'Franz-Simon-Straße 29 (Fahrzeug war verlassen)')
 })

@@ -16,6 +16,7 @@ import { queueTatortFill } from '../services/tatortFill'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, DEFAULT_FAHRZEUG_TYP, fahrzeugBeschreibung } from '../config/fahrzeug'
 import { ALLE_VARIANTEN, formularHilfen, portalProblem } from '../services/portalFfm'
+import { dritteFunde, fundeText } from '../services/dritte'
 import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage, imageVersion } from '../services/images'
 import { cachedMailVariant } from '../services/pixelate'
 import { processReportImage, processReportImageDerivatives, loadThumbnail } from '../services/intakeImageProcessing'
@@ -23,6 +24,7 @@ import { createDraft, deleteDraft, trashDrafts, restoreDrafts, purgeTrash, PAPIE
 import { alprEnabled } from '../services/alpr'
 import {
   queuePlateAnalysis,
+  queueAnalyseOnly,
   plateCropName,
   bestPlateForReport,
   prefillReportPlate,
@@ -798,6 +800,22 @@ export default async function reportsRoutes(app: FastifyInstance) {
 
   // Bestehendes Bild durch eine neue (z.B. geschwärzte) Fassung ersetzen.
   // Die Bild-ID bleibt erhalten, das Bilder-Limit wird nicht berührt.
+  // Warnung „Daten Dritter" für ein Foto als unbedenklich bestätigen (oder
+  // zurücknehmen). Nach dem Ersetzen des Fotos gilt sie wieder (PUT setzt zurück).
+  app.patch('/anzeige/:az/images/:imageId/dritte', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const userId = request.session.userId as number
+    const ok = (request.body as { ok?: unknown } | undefined)?.ok === true ? 1 : 0
+    const [res] = await pool.execute<mysql.ResultSetHeader>(
+      `UPDATE report_images ri JOIN reports r ON r.id = ri.report_id
+          SET ri.dritte_ok = ?
+        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf' AND r.versand_status IS NULL`,
+      [ok, Number(imageId), az, userId]
+    )
+    if (!res.affectedRows) return reply.status(409).send({ error: 'Nur Fotos von Entwürfen lassen sich bestätigen.' })
+    return reply.send({ ok: true })
+  })
+
   // Rolle eines Fotos für das Frankfurter Portal (Übersicht/Fahrzeug; leer =
   // automatisch, services/portalFfm.ts photoRoles). Nur Entwürfe.
   app.patch('/anzeige/:az/images/:imageId/rolle', { preHandler: requireAuth }, async (request, reply) => {
@@ -880,6 +898,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // Neu analysieren nur, wenn dieses Bild noch keine erfolgreiche Erkennung
     // hatte: PUT feuert bei jedem Schwärzungs-Save, und in der ersetzten Fassung
     // ist das Kennzeichen typischerweise gerade unkenntlich gemacht.
+    // Die Datenschutz-Analyse (fremde Kennzeichen, Gesichter) gilt dagegen immer
+    // nur für die alte Fassung: verwerfen und für die neue neu erstellen.
+    await pool.execute('UPDATE report_images SET analyse_json=NULL, dritte_ok=0 WHERE id=?', [imageId])
     if (old.detected_plate === null) {
       await pool.execute(
         `UPDATE report_images
@@ -888,6 +909,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
         [imageId]
       )
       queuePlateAnalysis(userId, old.report_id, Number(imageId), filename, prepared.mimetype)
+    } else {
+      queueAnalyseOnly(userId, old.report_id, Number(imageId), filename, prepared.mimetype)
     }
 
     return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` } })
@@ -1647,6 +1670,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // Jedes Foto muss einzeln angesehen und bestätigt sein (ggf. geschwärzt).
     const unchecked = await countUncheckedImages(report.id)
     if (unchecked) return fail(uncheckedMessage(unchecked), '/anzeigen')
+    const dritte = await drittProblem(report)
+    if (dritte) return fail(dritte, '/anzeigen')
 
     // Ohne vollständiges Profil (Name + Anschrift) keine Einreichung – das
     // Ordnungsamt bearbeitet anonyme Anzeigen nicht.
@@ -1767,7 +1792,25 @@ export async function submitProblems(
     const p = portalProblem(report)
     if (p) problems.push({ kind: 'variante', message: p })
   }
+  const dritte = await drittProblem(report)
+  if (dritte) problems.push({ kind: 'dritte', message: dritte })
   return problems
+}
+
+/** Datenschutz: Fotos mit fremden Kennzeichen oder Gesichtern, die weder
+ *  geschwärzt noch als unbedenklich bestätigt sind (services/dritte.ts). */
+export async function drittProblem(report: mysql.RowDataPacket): Promise<string | null> {
+  const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT analyse_json, dritte_ok FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+    [report.id]
+  )
+  const teile: string[] = []
+  imgs.forEach((img, i) => {
+    if (img.dritte_ok) return
+    const funde = dritteFunde(img.analyse_json, report.kennzeichen)
+    if (funde.length) teile.push(`Foto ${i + 1}: ${fundeText(funde)}`)
+  })
+  return teile.length ? `Daten Dritter erkennbar – ${teile.join('; ')}. Bitte schwärzen oder im Foto als unbedenklich bestätigen.` : null
 }
 
 /** Anzahl noch nicht bestätigter Fotos einer Anzeige (Foto-Prüfung). */

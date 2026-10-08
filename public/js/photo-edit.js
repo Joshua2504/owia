@@ -99,6 +99,13 @@
       '</div>' +
       // Frankfurter Portal: Foto als Übersichts- oder Fahrzeugfoto hochladen
       // (PATCH /anzeige/:az/images/:id/rolle; „Auto" = nach erkanntem Kennzeichen).
+      // Datenschutz: erkannte fremde Kennzeichen/Gesichter (services/dritte.ts).
+      '<div class="pe-field" data-dritte-row hidden>' +
+      '<div class="alert alert-warning py-1 px-2 small mb-1" data-dritte-text></div>' +
+      '<div class="d-flex gap-1">' +
+      '<button type="button" class="btn btn-sm btn-dark" data-act="dritte-schwaerzen" title="Schwarze Balken über die erkannten Stellen legen – danach Bestätigen speichert">⬛ Erkannte schwärzen</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary" data-act="dritte-ok" title="Fehlalarm oder nicht identifizierbar">Unbedenklich</button>' +
+      '</div></div>' +
       '<div class="pe-field" data-rolle-row hidden><span class="form-label">Dieses Foto im Portal</span>' +
       '<div class="btn-group btn-group-sm w-100" role="group" aria-label="Rolle dieses Fotos im Portal">' +
       '<button type="button" class="btn btn-outline-primary" data-rolle="uebersicht" title="Zeigt den Verstoß samt Beschilderung">Übersicht</button>' +
@@ -293,6 +300,19 @@
     dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
     dlg.querySelector('[data-act=trash-report]').addEventListener('click', trashReport)
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
+    dlg.querySelector('[data-act=dritte-schwaerzen]').addEventListener('click', dritteSchwaerzen)
+    dlg.querySelector('[data-act=dritte-ok]').addEventListener('click', function () {
+      var s = state
+      if (!s || !s.put) return
+      fetch(s.put + '/dritte', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ ok: true }),
+      })
+        .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
+        .then(function () { loadStatus(s) })
+        .catch(function (err) { alert(err.message) })
+    })
     dlg.querySelector('[data-rolle-row]').addEventListener('click', function (e) {
       var b = e.target.closest('[data-rolle]')
       var s = state
@@ -857,26 +877,75 @@
   // Rolle des aktuellen Fotos + Kennzeichnung Ü/F an allen Kacheln.
   var ROLLEN = { uebersicht: 'Übersichtsfoto', fahrzeug: 'Fahrzeugfoto', beide: 'Übersichts- und Fahrzeugfoto (einziges Foto)', keine: 'nicht dabei (mehr als 5 Fotos dieser Art)' }
   var KURZ = { uebersicht: 'Ü', fahrzeug: 'F', beide: 'Ü+F', keine: '–' }
+  function currentImage(s) {
+    var imgs = (s && s.report && s.report.images) || []
+    return imgs.filter(function (i) { return i.put === s.put })[0] || null
+  }
   function renderRolle(s) {
     var row = dlg.querySelector('[data-rolle-row]')
-    var imgs = (s && s.report && s.report.portal && s.report.images) || null
-    var info = imgs && imgs.filter(function (i) { return i.put === s.put })[0]
-    row.hidden = !info
+    var portal = !!(s && s.report && s.report.portal)
+    var imgs = (s && s.report && s.report.images) || null
+    var info = currentImage(s)
+    row.hidden = !info || !portal
     dlg.querySelectorAll('.photo-edit-tile').forEach(function (tile) {
       var t = (s && s.thumbs || [])[Number(tile.getAttribute('data-strip-index'))]
       var im = imgs && t && imgs.filter(function (i) { return i.put === t.getAttribute('data-photo-edit') })[0]
       var badge = tile.querySelector('.photo-edit-tile-rolle')
-      if (!im) { if (badge) badge.remove(); return }
+      tile.classList.toggle('has-dritte', !!(im && im.dritte && im.dritte.length))
+      if (!im || !portal) { if (badge) badge.remove(); return }
       if (!badge) { badge = document.createElement('span'); badge.className = 'photo-edit-tile-rolle'; tile.appendChild(badge) }
-      badge.textContent = KURZ[im.rolle] || ''
-      badge.title = ROLLEN[im.rolle] + (im.rolleManuell ? '' : ' (automatisch)')
+      badge.textContent = (im.dritte && im.dritte.length ? '⚠ ' : '') + (KURZ[im.rolle] || '')
+      badge.title = ROLLEN[im.rolle] + (im.rolleManuell ? '' : ' (automatisch)') + (im.dritte && im.dritte.length ? ' – Daten Dritter erkannt' : '')
     })
-    if (!info) return
+    renderDritte(s, info)
+    if (!info || !portal) return
     row.querySelectorAll('[data-rolle]').forEach(function (b) {
       var r = b.getAttribute('data-rolle')
       b.classList.toggle('active', info.rolleManuell ? r === (info.rolle === 'beide' ? '' : info.rolle) : r === '')
     })
     row.querySelector('[data-rolle-info]').textContent = 'Geht hoch als ' + ROLLEN[info.rolle] + (info.rolleManuell ? '.' : ' (automatisch).')
+  }
+  // Datenschutz-Hinweis zum aktuellen Foto.
+  function renderDritte(s, info) {
+    var row = dlg.querySelector('[data-dritte-row]')
+    var funde = (info && info.dritte) || []
+    row.hidden = !funde.length
+    if (!funde.length) return
+    var k = funde.filter(function (f) { return f.art === 'kennzeichen' })
+    var g = funde.length - k.length
+    row.querySelector('[data-dritte-text]').textContent = '⚠ Daten Dritter erkannt: ' + [
+      k.length ? (k.length === 1 ? 'weiteres Kennzeichen ' : k.length + ' weitere Kennzeichen ') + k.map(function (f) { return f.text }).join(', ') : '',
+      g ? (g === 1 ? 'ein Gesicht' : g + ' Gesichter') : '',
+    ].filter(Boolean).join(' und ') + '. Ohne Schwärzen kein Versand.'
+  }
+  // Erkannte Stellen schwärzen: Boxen aus der Analyse (Bildpixel der
+  // gespeicherten Fassung) aufs Canvas umrechnen, etwas Rand zugeben.
+  function dritteSchwaerzen() {
+    var s = state
+    var info = currentImage(s)
+    if (!s || !s.base || !info || !info.dritte || !info.dritte.length || !info.groesse) return
+    if (s.geometrie) {
+      alert('Das Foto wurde gedreht oder zugeschnitten – bitte erst „Rückgängig" oder von Hand schwärzen.')
+      return
+    }
+    var sx = canvas.width / info.groesse.w
+    var sy = canvas.height / info.groesse.h
+    if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.05) {
+      alert('Die Bildausrichtung passt nicht zur Analyse – bitte von Hand schwärzen.')
+      return
+    }
+    snapshot()
+    info.dritte.forEach(function (f) {
+      var b = f.bbox
+      var pw = (b[2] - b[0]) * 0.12
+      var ph = (b[3] - b[1]) * 0.15
+      var x = Math.max(0, (b[0] - pw) * sx)
+      var y = Math.max(0, (b[1] - ph) * sy)
+      s.redactions.push({ x: x, y: y, w: Math.min(canvas.width - x, (b[2] - b[0] + 2 * pw) * sx), h: Math.min(canvas.height - y, (b[3] - b[1] + 2 * ph) * sy), type: 'black' })
+    })
+    redraw()
+    updateUi()
+    msg('Erkannte Stellen geschwärzt – prüfen und mit „Bestätigen" speichern.')
   }
   function renderVerstossExtras(s) {
     var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') }
@@ -1090,6 +1159,7 @@
 
   function rotate() {
     snapshot()
+    state.geometrie = true
     var old = flatten()
     var c = document.createElement('canvas')
     c.width = old.height
@@ -1112,6 +1182,7 @@
     var h = Math.min(old.height - y, Math.round(r.h))
     if (w < 1 || h < 1) return
     snapshot()
+    state.geometrie = true
     var c = document.createElement('canvas')
     c.width = w
     c.height = h

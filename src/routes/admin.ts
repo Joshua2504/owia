@@ -43,15 +43,13 @@ async function loadReportWithUser(
 export async function approveAndDispatch(
   id: string,
   aktenzeichen: string,
-  log: FastifyBaseLogger,
-  opts: { viaMail?: boolean } = {}
+  log: FastifyBaseLogger
 ): Promise<{ ok: boolean; message: string }> {
   try {
     const result = await dispatchReport(Number(id), async (messageId) => {
       const fresh = await loadReportWithUser(id)
-      // Portal-Städte (Frankfurt) laufen über /versand (routes/portal.ts); per
-      // Mail nur ausdrücklich (Tatbestand gibt es im Portal nicht).
-      if (fresh && usesPortal(fresh.report) && !opts.viaMail) {
+      // Portal-Städte (Frankfurt) laufen ausschließlich über /versand (routes/portal.ts).
+      if (fresh && usesPortal(fresh.report)) {
         throw new ReportPreparationError('Diese Anzeige wird über das Online-Portal der Stadt versendet – bitte unter „Versand".')
       }
       if (!fresh || !(await isProfileComplete(fresh.report.user_id))) {
@@ -89,8 +87,8 @@ export async function approveAndDispatch(
 // erzeugt; Fehler landen in jobs.error und werden bis zu 3× wiederholt.
 // Der Versand selbst nur einmal – dispatchReport sperrt über versand_status, ein
 // unklares Ergebnis muss ein Mensch prüfen (docs/VERSANDBETRIEB.md).
-registerJob('report.dispatch', async ({ reportId, aktenzeichen, viaMail }, log) => {
-  const outcome = await approveAndDispatch(String(reportId), aktenzeichen, log, { viaMail: !!viaMail })
+registerJob('report.dispatch', async ({ reportId, aktenzeichen }, log) => {
+  const outcome = await approveAndDispatch(String(reportId), aktenzeichen, log)
   if (!outcome.ok) throw new Error(outcome.message)
 })
 
