@@ -4,10 +4,11 @@ import { pool } from '../db/connection'
 // Portal-Versand drosseln: höchstens ein Portal-Start ('portal.start', ekom21-
 // Formulare) je VERSAND_ABSTAND, damit die Portale nicht in kurzer Zeit viele
 // Anzeigen auf einmal bekommen. Der Mail-Versand ist nicht getaktet.
-// Manuelle Starts auf /versand zählen mit, werden aber nicht aufgehalten.
+// Manuelle Starts auf /versand zählen mit, werden aber nicht aufgehalten –
+// außer beim „nacheinander senden" (takt: true, routes/portal.ts).
 // Tabelle: migrations/0044_versand_takt.sql.
 
-export const VERSAND_ABSTAND_SEK = Number(process.env.VERSAND_ABSTAND_SEK || 600)
+export const VERSAND_ABSTAND_SEK = Number(process.env.VERSAND_ABSTAND_SEK || 300)
 
 /** Versandplatz belegen. null = belegt; sonst die Wartezeit in Sekunden bis
  *  zum nächsten freien Platz. */

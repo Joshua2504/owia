@@ -252,6 +252,16 @@ async function readBody(req, limit = 120 * 1024 * 1024) {
   return raw ? JSON.parse(raw) : {}
 }
 
+async function portalErreichbar(url) {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000), redirect: 'follow' })
+    await r.arrayBuffer().catch(() => null)
+    return r.status < 500
+  } catch {
+    return false
+  }
+}
+
 function send(res, status, body, type = 'application/json') {
   const data = type === 'application/json' ? JSON.stringify(body) : body
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' })
@@ -277,6 +287,13 @@ async function handle(req, res) {
     // vorhandenen Lauf statt einen zweiten Chromium-Tab zu öffnen.
     if (typeof body.id === 'string' && /^[0-9a-f-]{36}$/.test(body.id) && runs.has(body.id)) {
       return send(res, 200, publicRun(runs.get(body.id)))
+    }
+    // Antwortet das Portal der Stadt gerade nicht (ekom21 hing am 08.10.2026
+    // minutenlang), gar nicht erst starten – sonst hängt der Lauf womöglich
+    // nach „Absenden" und das Ergebnis bleibt unklar.
+    const startUrl = PROFILE[body.payload.portal || 'ekom21-ffm']?.startUrl
+    if (startUrl && !(await portalErreichbar(startUrl))) {
+      return send(res, 503, { error: 'Das Online-Portal der Stadt antwortet gerade nicht – neuer Versuch in einer Minute.' })
     }
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-'))
     const files = { uebersicht: [], fahrzeug: [] }

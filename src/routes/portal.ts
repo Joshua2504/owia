@@ -12,10 +12,10 @@ import { fahrzeugBeschreibung } from '../config/fahrzeug'
 import { portalFuer, erstMorgen } from '../services/portale'
 import {
   startPortalRun, submitPortalRun, cancelPortalRun, resolveUncertain, currentRunId, runStatus,
-  lastKnownStatus, proxy, portalHealthy, PortalError, wartendeStarts,
+  lastKnownStatus, proxy, portalHealthy, PortalError, PortalUnerreichbarError, wartendeStarts,
 } from '../services/portalDispatch'
 import { letzterSelbsttest, enqueueSelbsttest } from '../services/portalSelbsttest'
-import { versandMerken } from '../services/versandTakt'
+import { versandMerken, versandPlatzBelegen, versandPlatzFreigeben } from '../services/versandTakt'
 
 const adapterOf = (r: mysql.RowDataPacket) => portalFuer(r.city)!
 const portalCities = () => unlockedCities().filter((c) => c.portal).map((c) => c.id)
@@ -129,11 +129,26 @@ export default async function portalRoutes(app: FastifyInstance) {
 
   app.post('/versand/:id/start', { preHandler: requireAdmin }, async (request, reply) => {
     try {
-      const auto = (request.body as { auto?: unknown } | undefined)?.auto === true
+      const b = (request.body || {}) as { auto?: unknown; takt?: unknown }
+      const auto = b.auto === true
+      // „Nacheinander senden": im Versand-Takt bleiben (services/versandTakt.ts),
+      // ein einzelner Klick startet sofort und zählt nur mit.
+      if (b.takt === true) {
+        const warten = await versandPlatzBelegen()
+        if (warten !== null) return reply.status(429).send({ error: 'Versand-Takt', warten })
+        try {
+          return { runId: await startPortalRun(reportIdOf(request), { auto }) }
+        } catch (err) {
+          await versandPlatzFreigeben()
+          throw err
+        }
+      }
       const runId = await startPortalRun(reportIdOf(request), { auto })
       await versandMerken()
       return { runId }
     } catch (err) {
+      // Portal der Stadt (oder Dienst) nicht erreichbar: später erneut versuchen.
+      if (err instanceof PortalUnerreichbarError) return reply.status(503).send({ error: err.message, warten: 60 })
       return fail(reply, err)
     }
   })

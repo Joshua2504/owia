@@ -32,7 +32,11 @@
       body: JSON.stringify(body || {}),
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (d) {
-        if (!r.ok) throw new Error(d.error || 'Fehler (HTTP ' + r.status + ')')
+        if (!r.ok) {
+          var e = new Error(d.error || 'Fehler (HTTP ' + r.status + ')')
+          e.warten = d.warten
+          throw e
+        }
         return d
       })
     })
@@ -133,7 +137,7 @@
     })
   }
 
-  Slot.prototype.busy = function () { return !!this.current && ACTIVE.indexOf(this.state) >= 0 }
+  Slot.prototype.busy = function () { return !!this.current && (ACTIVE.indexOf(this.state) >= 0 || this.state === 'waiting') }
 
   Slot.prototype.showMsg = function (text, kind) {
     this.msgEl.hidden = !text
@@ -163,19 +167,42 @@
     this.poll()
   }
 
-  Slot.prototype.start = function (id) {
+  // takt: aus „nacheinander senden" – der Server hält den Versand-Takt ein und
+  // nennt die Wartezeit (auch, wenn das Portal der Stadt nicht antwortet).
+  Slot.prototype.start = function (id, takt) {
     var self = this
     this.show(id)
     this.state = 'starting'
     this.showMsg('Portal wird gestartet …', 'info')
-    post('/versand/' + id + '/start', { auto: optAuto.checked })
+    post('/versand/' + id + '/start', { auto: optAuto.checked, takt: !!takt })
       .then(function () { self.poll() })
       .catch(function (err) {
+        if (takt && err.warten && optNext.checked) return self.wait(id, err.warten, err.message)
         self.state = 'failed'
         self.showMsg(err.message, 'danger')
         finished[id] = true
         if (optNext.checked) setTimeout(function () { startNext(self) }, 1500)
       })
+  }
+
+  Slot.prototype.wait = function (id, sek, grund) {
+    var self = this
+    var bis = Date.now() + sek * 1000
+    var az = this.current ? this.current.az : id
+    this.state = 'waiting'
+    this.stateEl.textContent = 'wartet'
+    this.stateEl.className = 'badge text-bg-secondary'
+    var tick = function () {
+      if (!optNext.checked || self.state !== 'waiting') { clearInterval(timer); if (self.state === 'waiting') { self.state = null; self.showMsg('Nacheinander-Senden angehalten.', 'secondary') } return }
+      var rest = Math.max(0, Math.round((bis - Date.now()) / 1000))
+      if (!rest) { clearInterval(timer); self.start(id, true); return }
+      var mmss = Math.floor(rest / 60) + ':' + String(rest % 60).padStart(2, '0')
+      self.showMsg(grund === 'Versand-Takt'
+        ? '⏸ Versand-Takt: ' + az + ' startet in ' + mmss + ' min.'
+        : '⏸ ' + grund + ' (' + az + ' in ' + mmss + ' min)', 'secondary')
+    }
+    var timer = setInterval(tick, 1000)
+    tick()
   }
 
   Slot.prototype.poll = function () {
@@ -193,7 +220,7 @@
     var rep = d.report || {}
     var st = run ? run.state : rep.status === 'versendet' ? 'done' : null
     // Ein frischer Start meldet kurz noch keinen Lauf – dann nicht zurücksetzen.
-    if (!st && this.state === 'starting') return
+    if (!st && (this.state === 'starting' || this.state === 'waiting')) return
     var lab = LABELS[st] || ['bereit', 'secondary']
     this.stateEl.textContent = lab[0]
     this.stateEl.className = 'badge text-bg-' + lab[1]
@@ -302,7 +329,7 @@
   function startNext(slot) {
     if (slot.busy()) return
     var li = nextItem()
-    if (li) slot.start(li.getAttribute('data-id'))
+    if (li) slot.start(li.getAttribute('data-id'), true)
   }
 
   var testBtn = document.querySelector('[data-act=selbsttest]')

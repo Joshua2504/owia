@@ -95,12 +95,12 @@ test('Migrationen sind vollständig und wiederholbar', async () => {
   assert.equal(rows.length, 44)
 })
 
-test('Versand-Takt: höchstens ein Versand je 10 Minuten, Freigabe gibt den Platz zurück', async () => {
+test('Versand-Takt: höchstens ein Versand je 5 Minuten, Freigabe gibt den Platz zurück', async () => {
   await pool.execute("UPDATE versand_takt SET letzter='2000-01-01', vorher='2000-01-01' WHERE id=1")
   const [a, b] = await Promise.all([versandPlatzBelegen(), versandPlatzBelegen()])
   assert.deepEqual([a, b].filter((x) => x === null).length, 1)
   const warten = a ?? b
-  assert.ok(warten! > 590 && warten! <= 600)
+  assert.ok(warten! > 290 && warten! <= 300)
   await versandPlatzFreigeben()
   assert.equal(await versandPlatzBelegen(), null)
   await pool.execute("UPDATE versand_takt SET letzter='2000-01-01', vorher='2000-01-01' WHERE id=1")

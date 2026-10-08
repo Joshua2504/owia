@@ -487,7 +487,7 @@ registerJob('portal.start', async ({ reportId, auto, neustart }) => {
   const report = await loadReport(Number(reportId))
   // Inzwischen abgelehnt, von Hand auf /versand gestartet oder erledigt.
   if (!report || report.status !== 'eingereicht' || report.versand_status) return
-  // Höchstens eine Anzeige je 10 Minuten (services/versandTakt.ts).
+  // Höchstens eine Anzeige je 5 Minuten (services/versandTakt.ts).
   const warten = neustart ? null : await versandPlatzBelegen()
   if (warten !== null) throw new JobRetryLater('Versand-Takt: nächster Versand frühestens in ' + Math.ceil(warten / 60) + ' min', warten)
   try {
