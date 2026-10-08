@@ -116,7 +116,8 @@ export default async function reviewRoutes(app: FastifyInstance) {
     const report = rows[0]
     if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
     // Schon eingereicht (anderer Tab/Gerät) oder im Versand: Karte überspringen.
-    if (report.status !== 'entwurf' || report.versand_status !== null) {
+    // Verjährt: nicht mehr einreichbar, also auch nicht prüfbar.
+    if (report.status !== 'entwurf' || report.versand_status !== null || isVerjaehrt(report)) {
       return reply.send({ az, gone: true, status: report.status })
     }
     const problems = await submitProblems(report, userId)

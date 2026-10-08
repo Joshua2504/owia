@@ -73,12 +73,14 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       <% } %>
     </div>
     <%# Foto-Prüfung: Einreichen erst, wenn jedes Foto bestätigt ist (photo-edit.js). %>
-    <% const _unchecked = _isDraft ? _imgs.filter((i) => !i.ok).length : 0 %>
+    <%# Verjährte Entwürfe lassen sich nicht mehr einreichen – also auch nicht prüfen. %>
+    <% const _verjaehrt = _isDraft && verjaehrung(r).verjaehrt %>
+    <% const _unchecked = _isDraft && !_verjaehrt ? _imgs.filter((i) => !i.ok).length : 0 %>
     <% if (_unchecked) { %>
       <button type="button" class="btn btn-link p-0 small photos-unchecked" data-review-photos>
         🔍 <%= _unchecked %> von <%= _imgs.length %> Foto<%= _imgs.length === 1 ? '' : 's' %> prüfen
       </button>
-    <% } else if (_isDraft && _imgs.length) { %>
+    <% } else if (_isDraft && !_verjaehrt && _imgs.length) { %>
       <div class="small text-success photos-checked">✓ Fotos geprüft</div>
     <% } %>
   </td>
@@ -261,7 +263,7 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
         <%# Prüfen: öffnet den Prüf-Dialog (photo-edit.js) auf dem ersten ungeprüften
             Foto – Fotos schwärzen, Angaben kontrollieren, dort einreichen. Ohne
             Fotos fällt der Klick auf die Einreichen-Vorschau (report-submit.js) zurück. %>
-        <button type="button" class="btn btn-sm btn-success" data-review-photos title="Fotos prüfen, Angaben kontrollieren und einreichen">Prüfen</button>
+        <% if (!_verjaehrt) { %><button type="button" class="btn btn-sm btn-success" data-review-photos title="Fotos prüfen, Angaben kontrollieren und einreichen">Prüfen</button><% } %>
         <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary" data-edit-modal title="Bearbeiten (Prüf-Dialog)">✏️</a>
         <%# Löschen verschiebt in den Papierkorb (wiederherstellbar). %>
         <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0">
