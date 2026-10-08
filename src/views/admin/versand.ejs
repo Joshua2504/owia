@@ -5,7 +5,7 @@
 %>
 <div class="d-flex flex-wrap align-items-baseline gap-2 mb-3">
   <h2 class="h4 mb-0">Live-Versand</h2>
-  <span class="text-muted small"><%= ordnungsamt %> · Online-Portal (ekom21)</span>
+  <span class="text-muted small">Online-Formulare der Städte: <%= staedte %></span>
   <span class="ms-auto d-flex align-items-center gap-2 small">
     <% if (selbsttest) { %>
       <span class="badge <%= selbsttest.laeuft ? 'text-bg-info' : selbsttest.ok ? 'text-bg-success' : 'text-bg-danger' %>"
@@ -49,7 +49,10 @@
               data-unklar="<%= r.unklar ? '1' : '' %>" data-busy="<%= r.versandStatus && !r.unklar ? '1' : '' %>">
             <div class="d-flex justify-content-between gap-2">
               <a href="/anzeige/<%= r.az %>" class="fw-semibold" target="_blank" rel="noopener"><%= r.az %></a>
-              <span class="plate-chip"><%= r.kennzeichen || '—' %></span>
+              <span class="d-flex gap-1 align-items-center">
+                <span class="badge text-bg-light border"><%= r.stadt %></span>
+                <span class="plate-chip"><%= r.kennzeichen || '—' %></span>
+              </span>
             </div>
             <div class="small text-muted"><%= r.tatzeit %> · <%= r.bilder %> Foto<%= r.bilder === 1 ? '' : 's' %><%= r.fahrzeug ? ' · ' + r.fahrzeug : '' %></div>
             <div class="small text-truncate" title="<%= r.tatort %>"><%= r.tatort %></div>

@@ -8,13 +8,14 @@ import { pool } from '../db/connection'
 import { requireAdmin, viewData } from '../middleware/auth'
 import { getCity, unlockedCities } from '../config/cities'
 import { fahrzeugBeschreibung } from '../config/fahrzeug'
-import { imPortal, verstossVarianten, erstAbMorgen } from '../services/portalFfm'
+import { portalFuer, erstMorgen } from '../services/portale'
 import {
   startPortalRun, submitPortalRun, cancelPortalRun, resolveUncertain, currentRunId, runStatus,
   lastKnownStatus, proxy, portalHealthy, PortalError,
 } from '../services/portalDispatch'
 import { letzterSelbsttest, enqueueSelbsttest } from '../services/portalSelbsttest'
 
+const adapterOf = (r: mysql.RowDataPacket) => portalFuer(r.city)!
 const portalCities = () => unlockedCities().filter((c) => c.portal).map((c) => c.id)
 
 async function loadQueue() {
@@ -47,9 +48,10 @@ async function loadQueue() {
       tatzeit: `${r.tattag_fmt || ''} ${r.von_fmt || ''}${r.bis_fmt ? `–${r.bis_fmt}` : ''}`,
       verstoss: r.verstoss_art,
       variante: r.verstoss_variante,
-      imPortal: imPortal(r.verstoss_art),
-      abMorgen: erstAbMorgen(r),
-      varianteFehlt: verstossVarianten(r.verstoss_art).length > 0 && !r.verstoss_variante,
+      imPortal: adapterOf(r).versendbar(r.verstoss_art),
+      abMorgen: erstMorgen(adapterOf(r), r),
+      varianteFehlt: adapterOf(r).varianteFehlt(r),
+      stadt: getCity(r.city).name,
       bilder: Number(r.image_count),
       userEmail: r.user_email,
       eingereicht: r.eingereicht_fmt,
@@ -70,7 +72,7 @@ export default async function portalRoutes(app: FastifyInstance) {
       portalOk: await portalHealthy(),
       selbsttest: await letzterSelbsttest(),
       selectedAz: String((request.query as { az?: string }).az || ''),
-      ordnungsamt: getCity('frankfurt').ordnungsamt,
+      staedte: unlockedCities().filter((c) => c.portal).map((c) => c.name).join(', '),
     }))
   })
 

@@ -1,9 +1,9 @@
-// Nächtlicher Selbsttest des Portal-Versands: ändert ekom21 das Formular, soll
-// das nicht erst beim nächsten echten Versand auffallen. Der Test füllt das
+// Nächtlicher Selbsttest des Portal-Versands: ändert eine Stadt ihr Formular,
+// soll das nicht erst beim nächsten echten Versand auffallen. Der Test füllt das
 // echte Portal mit erfundenen Daten und künstlichen Bildern bis zur
 // Zusammenfassung aus und bricht dann ab – abgesendet wird NIE. Jede Nacht ein
-// anderer Tatbestand (eine Rubrik je Tag), damit über die Woche alle Zweige
-// des Auswahlbaums laufen. Fehlschlag ⇒ Job 'failed' + Mail an die Admins.
+// anderer Fall (Stadt × Tatbestand), damit über zwei Wochen alle Portale und
+// Zweige laufen. Fehlschlag ⇒ Job 'failed' + Mail an die Admins.
 // Ergebnis steht auf /versand (letzter Job dieses Typs).
 
 import jpeg from 'jpeg-js'
@@ -11,14 +11,27 @@ import mysql from 'mysql2/promise'
 import type { FastifyBaseLogger } from 'fastify'
 import { pool } from '../db/connection'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
-import { buildPortalPayload, verstossVarianten } from './portalFfm'
+import { verstossVarianten } from './portalFfm'
+import { portalFuer } from './portale'
 import { MailService } from './mail'
 import { enqueueJob, registerJob } from './jobs'
 
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
-/** Je Rubrik ein typischer Tatbestand (TBNR). */
-const TEST_TBNR = ['141174', '112454', '141312', '112042', '141245', '112216', '112464', '112262']
+/** Testfälle: Frankfurt je Rubrik ein typischer Tatbestand, dazu Wiesbaden
+ *  (Rubrik + „Sonstiges") und Mainz (Rubrik + Kreuzung). */
+const FAELLE: { stadt: string; tbnr: string }[] = [
+  ...['141174', '112454', '141312', '112042', '141245', '112216', '112464', '112262'].map((tbnr) => ({ stadt: 'frankfurt', tbnr })),
+  { stadt: 'wiesbaden', tbnr: '141312' },
+  { stadt: 'wiesbaden', tbnr: '112456' },
+  { stadt: 'mainz', tbnr: '112454' },
+  { stadt: 'mainz', tbnr: '112262' },
+]
+const TATORT: Record<string, string> = {
+  frankfurt: 'Römerberg 1, 60311 Frankfurt am Main',
+  wiesbaden: 'Wilhelmstraße 10, 65183 Wiesbaden',
+  mainz: 'Große Bleiche 12, 55116 Mainz',
+}
 
 function testbild(rgb: [number, number, number]): string {
   const w = 800
@@ -42,7 +55,9 @@ async function portal(p: string, init: RequestInit = {}): Promise<any> {
 }
 
 export async function runSelbsttest(index = Math.floor(Date.now() / 86400000)): Promise<{ tatbestand: string; dauerSek: number }> {
-  const tbnr = TEST_TBNR[index % TEST_TBNR.length]
+  const { stadt, tbnr } = FAELLE[index % FAELLE.length]
+  const adapter = portalFuer(stadt)
+  if (!adapter) throw new Error(`Kein Portal für ${stadt}.`)
   const label = VERSTOSS_ARTEN.find((l) => l.startsWith(`${tbnr} – `))
   if (!label) throw new Error(`Test-Tatbestand ${tbnr} fehlt im Katalog.`)
   // Das Portal nimmt nur Tattage vor heute an.
@@ -58,14 +73,17 @@ export async function runSelbsttest(index = Math.floor(Date.now() / 86400000)): 
     tattag: gestern,
     tatzeit_von: '10:00:00',
     tatzeit_bis: '10:20:00',
-    tatort: 'Römerberg 1, 60311 Frankfurt am Main',
+    tatort: TATORT[stadt],
+    city: stadt,
     behinderung: 0,
   } as unknown as mysql.RowDataPacket
   const user = {
     anrede: 'herr', vorname: 'Max', nachname: 'Mustermann', strasse: 'Römerberg', hausnummer: '1',
-    plz: '60311', ort: 'Frankfurt am Main', telefon: '', email: '',
+    // Wiesbaden verlangt eine E-Mail, Mainz eine Telefonnummer – Test-Werte,
+    // abgesendet wird nie.
+    plz: '60311', ort: 'Frankfurt am Main', telefon: '069 0000000', email: 'selbsttest@example.org',
   } as unknown as mysql.RowDataPacket
-  const payload = buildPortalPayload(report, user)
+  const payload = adapter.payload(report, user)
   const files = [
     { role: 'uebersicht', name: 'selbsttest-uebersicht.jpg', data: testbild([180, 60, 60]) },
     { role: 'fahrzeug', name: 'selbsttest-fahrzeug.jpg', data: testbild([60, 60, 180]) },
@@ -78,7 +96,7 @@ export async function runSelbsttest(index = Math.floor(Date.now() / 86400000)): 
       const st = await portal(`/runs/${run.id}`)
       if (st.state === 'ready') {
         if (st.pauses) throw new Error(`Zusammenfassung erreicht, aber mit ${st.pauses} Pause(n) – Ablauf geändert?`)
-        return { tatbestand: label, dauerSek: Math.round((Date.now() - start) / 1000) }
+        return { tatbestand: `${stadt}: ${label}`, dauerSek: Math.round((Date.now() - start) / 1000) }
       }
       if (st.state === 'needs_input' || st.state === 'failed' || st.state === 'cancelled') {
         const letzte = (st.log || []).slice(-6).map((l: { msg: string }) => l.msg).join('\n')

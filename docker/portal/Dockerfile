@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils \
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
-COPY server.mjs ekom21.mjs ./
+COPY server.mjs lib.mjs ekom21.mjs mainz.mjs ./
 
 USER pwuser
 EXPOSE 8080

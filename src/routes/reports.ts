@@ -15,7 +15,8 @@ import { reverseGeocode } from '../services/geocode'
 import { queueTatortFill } from '../services/tatortFill'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, DEFAULT_FAHRZEUG_TYP, fahrzeugBeschreibung } from '../config/fahrzeug'
-import { ALLE_VARIANTEN, formularHilfen, portalProblem } from '../services/portalFfm'
+import { ALLE_VARIANTEN, formularHilfen } from '../services/portalFfm'
+import { portalFuer } from '../services/portale'
 import { dritteFunde, fundeText } from '../services/dritte'
 import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage, imageVersion } from '../services/images'
 import { cachedMailVariant } from '../services/pixelate'
@@ -1684,7 +1685,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
     const gate = resolveSendCity(report.tatort, report.city)
     if (!gate.ok) return fail(gate.message, `/anzeige/${az}/bearbeiten`)
     // Portal-Städte (Frankfurt): Angaben, die das Online-Formular zwingend braucht.
-    const portalFehlt = getCity(gate.cityId).portal ? portalProblem(report) : null
+    const portalFehlt = await portalProblemFuer(report, gate.cityId, userId)
     if (portalFehlt) return fail(portalFehlt, `/anzeige/${az}/bearbeiten`)
     // Zuständige Stadt festschreiben (Tatort ist maßgeblich) – vor der PDF-/E-Mail-
     // Erzeugung, damit Formularwahl und Empfänger konsistent sind.
@@ -1788,13 +1789,25 @@ export async function submitProblems(
       report.city = gate.cityId
     }
   }
-  if (report.verstoss_art && getCity(report.city).portal) {
-    const p = portalProblem(report)
+  if (report.verstoss_art) {
+    const p = await portalProblemFuer(report, report.city, userId)
     if (p) problems.push({ kind: 'variante', message: p })
   }
   const dritte = await drittProblem(report)
   if (dritte) problems.push({ kind: 'dritte', message: dritte })
   return problems
+}
+
+/** Was das Online-Portal der Stadt (falls vorhanden) noch braucht – Tatbestand,
+ *  Variante, Fristen, Profilangaben (services/portale.ts). */
+async function portalProblemFuer(report: mysql.RowDataPacket, cityId: string, userId: number): Promise<string | null> {
+  const adapter = portalFuer(cityId)
+  if (!adapter) return null
+  if (report.verstoss_art && !adapter.versendbar(report.verstoss_art)) {
+    return 'Diesen Tatbestand bietet das Portal der Stadt nicht an – bitte einen passenden Verstoß wählen.'
+  }
+  const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id = ?', [userId])
+  return adapter.problem(report, users[0] ?? null)
 }
 
 /** Datenschutz: Fotos mit fremden Kennzeichen oder Gesichtern, die weder

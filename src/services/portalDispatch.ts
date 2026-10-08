@@ -24,7 +24,8 @@ import { pool } from '../db/connection'
 import { reportDir } from './drafts'
 import { ensureMailVariant } from '../routes/reports'
 import { cachedMailVariant } from './pixelate'
-import { buildPortalPayload, photoRoles, PortalDatenFehler, portalProblem, erstAbMorgen } from './portalFfm'
+import { PortalDatenFehler } from './portalFfm'
+import { portalFuer, erstMorgen } from './portale'
 import { repliesDir } from './mailInbox'
 import { getCity } from '../config/cities'
 import { isProfileComplete, drittProblem } from '../routes/reports'
@@ -104,12 +105,15 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
   const report = await loadReport(reportId)
   if (!report) throw new PortalError('Anzeige nicht gefunden.')
   if (report.status !== 'eingereicht') throw new PortalError('Die Anzeige ist nicht (mehr) zum Versand eingereicht.')
-  if (!usesPortal(report)) throw new PortalError('Für diese Stadt gibt es keinen Portal-Versand.')
+  const adapter = portalFuer(report.city)
+  if (!adapter) throw new PortalError('Für diese Stadt gibt es keinen Portal-Versand.')
   if (!(await isProfileComplete(report.user_id))) throw new PortalError('Das Nutzerprofil ist unvollständig.')
   if (isVerjaehrt(report)) throw new PortalError('Die Tat ist verjährt.')
-  const fehlt = portalProblem(report)
+  if (!adapter.versendbar(report.verstoss_art)) throw new PortalError('Diesen Tatbestand bietet das Portal der Stadt nicht an.')
+  const [profil] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
+  const fehlt = adapter.problem(report, profil[0] ?? null)
   if (fehlt) throw new PortalError(fehlt)
-  if (erstAbMorgen(report)) throw new PortalError('Das Portal nimmt nur Taten vor dem heutigen Tag an – bitte ab morgen senden.')
+  if (erstMorgen(adapter, report)) throw new PortalError('Das Portal nimmt nur Taten vor dem heutigen Tag an – bitte ab morgen senden.')
 
   const [claim] = await pool.execute<mysql.ResultSetHeader>(
     `UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=?
@@ -124,7 +128,7 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
       "SELECT DATE_FORMAT(MAX(captured_at), '%Y-%m-%d %H:%i') AS bis FROM report_images WHERE report_id=?",
       [reportId]
     )
-    const payload = buildPortalPayload(report, users[0], zeiten[0]?.bis ?? null)
+    const payload = adapter.payload(report, users[0], zeiten[0]?.bis ?? null)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id, filename, mimetype, detected_plate, portal_rolle, analyse_json FROM report_images WHERE report_id=? ORDER BY sort_order, id',
       [reportId]
@@ -133,7 +137,7 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
     for (const i of imgs) i.plate_flaeche = kennzeichenFlaeche(i.analyse_json, report.kennzeichen)
     const dritte = await drittProblem(report)
     if (dritte) throw new PortalError(dritte)
-    const roles = photoRoles(imgs)
+    const roles = adapter.fotos(imgs)
     const dir = reportDir(report.user_id, reportId)
     const files: { role: string; name: string; data: string }[] = []
     for (const role of ['uebersicht', 'fahrzeug'] as const) {

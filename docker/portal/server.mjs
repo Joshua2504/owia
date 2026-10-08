@@ -19,7 +19,12 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { chromium } from 'playwright'
-import { fillForm, submitForm, readSummary, Cancelled } from './ekom21.mjs'
+import { fillSteps, submitForm, readSummary, Cancelled } from './lib.mjs'
+import { PROFILE as EKOM21 } from './ekom21.mjs'
+import { PROFILE as MAINZ } from './mainz.mjs'
+
+// Formular-Profile je Stadt; payload.portal wählt (Standard: Frankfurt).
+const PROFILE = { ...EKOM21, ...MAINZ }
 
 const PORT = 8080
 const VIEWPORT = { width: 1100, height: 860 }
@@ -156,7 +161,9 @@ async function execute(run) {
     run.page.on('dialog', (d) => { run.logMsg(`Dialog: ${d.message()}`); d.accept().catch(() => {}) })
     await startScreencast(run)
     run.setState('filling')
-    await fillForm(run.engine)
+    const profile = PROFILE[run.payload.portal || 'ekom21-ffm']
+    if (!profile) throw new Error(`Unbekanntes Portal „${run.payload.portal}".`)
+    await fillSteps(run.engine, profile)
 
     run.summary = await readSummary(run.page)
     run.artifacts['summary.png'] = await run.page.screenshot({ type: 'png', fullPage: true }).catch(() => null)

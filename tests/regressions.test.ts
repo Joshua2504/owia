@@ -12,6 +12,10 @@ import { aggregiere } from '../src/services/statistik'
 import { regelsatzEuro } from '../src/config/verstoss'
 import { portalTatbestand, verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoles, portalProblem, buildPortalPayload, portalTatzeit, tatortText } from '../src/services/portalFfm'
 import { portalMarke, fahrzeugBeschreibung } from '../src/config/fahrzeug'
+import { wiTatbestand, wiProblem, buildWiPayload } from '../src/services/portalWi'
+import { buildMzPayload, tatortTeile, mzProblem, mzFotos } from '../src/services/portalMz'
+import { portalFuer } from '../src/services/portale'
+import { getCityByName } from '../src/config/cities'
 import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
 import { runMigrations } from '../src/db/migrate'
@@ -728,4 +732,34 @@ test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
   assert.deepEqual(portalTatzeit({ tattag: '2026-09-11', tatzeit_von: '02:13:33' }, '2026-09-11 02:19'), { von: '02:13', bis: '02:19', zusatz: null })
   assert.deepEqual(portalTatzeit({ tattag: '2026-09-11', tatzeit_von: '02:13:33' }, null), { von: '02:13', bis: '02:13', zusatz: null })
   assert.equal(tatortText({ tatort: 'Franz-Simon-Straße 29, 65934 Frankfurt am Main', fahrzeug_verlassen: 1 }), 'Franz-Simon-Straße 29 (Fahrzeug war verlassen)')
+})
+
+test('Wiesbaden- und Mainz-Portal: Zuordnung, Prüfungen, Payload', () => {
+  // Wiesbaden: eine Ebene, Halten → Sonstiges
+  assert.deepEqual(wiTatbestand('141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).'), { gruppe: 'Haltverbot', satz: ['Das Fahrzeug parkte im absoluten Haltverbot (Zeichen 283)'] })
+  assert.equal(wiTatbestand('141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), null)
+  assert.equal(wiTatbestand('141245 – Sie benutzten die Sperrfläche (Zeichen 298) zum Parken.')!.satz[0], 'Das Fahrzeugt parkte auf einer Sperrfläche')
+  const u = { anrede: 'herr', vorname: 'Max', nachname: 'M', strasse: 'Weg', hausnummer: '1', plz: '65183', ort: 'Wiesbaden', email: 'm@x', telefon: '0611 1' } as any
+  const wi = buildWiPayload({ verstoss_art: '112456 – Sie hielten/parkten nicht Platz sparend.', kennzeichen_land: 'D', tattag: '2026-10-07', tatzeit_von: '10:00:00', tatort: 'Wilhelmstraße 10, 65183 Wiesbaden', behinderung: 0, fahrzeug_verlassen: 1 } as any, u)
+  assert.equal(wi.gruppe, 'Sonstiges')
+  assert.deepEqual(wi.pfad, [])
+  assert.match(wi.tatvorwurf, /nicht Platz sparend/)
+  assert.equal(wi.tat.ort, 'Wilhelmstraße 10')
+  assert.match(wi.ergaenzend, /verlassen/)
+  assert.equal(wiProblem({ tattag: '2020-01-01' }), 'Wiesbaden nimmt nur Taten der letzten zwei Monate an.')
+  // Mainz: Art × Rubrik, Tatort zerlegt, Telefon Pflicht
+  assert.deepEqual(tatortTeile('Große Bleiche 12a, 55116 Mainz'), { strasse: 'Große Bleiche', hausnummer: '12a', plz: '55116', ort: 'Mainz' })
+  assert.equal(tatortTeile('Rheinufer, 55116 Mainz')!.hausnummer, null)
+  const mz = buildMzPayload({ verstoss_art: '112262 – Sie parkten weniger als 5 Meter vor der Kreuzung/Einmündung.', verstoss_variante: 'Einmündung', kennzeichen: 'MZ-A 1', kennzeichen_land: 'D', fahrzeug_marke: 'Skoda', fahrzeug_typ: 'Elektrokleinstfahrzeug', tattag: '2026-10-07', tatzeit_von: '10:00:00', tatort: 'Große Bleiche 12, 55116 Mainz', behinderung: 1, behinderung_text: 'Kinderwagen' } as any, u)
+  assert.deepEqual(mz.mz.art, 'Parken')
+  assert.equal(mz.mz.rubrik, 'Das Fahrzeug stand im 5-Meter Kreuzungsbereich')
+  assert.match(mz.mz.freitext, /genauer: Einmündung.*Behinderung: Kinderwagen/)
+  assert.equal(mz.fahrzeug.marke, 'Škoda')
+  assert.equal(mz.fahrzeug.typ, 'Elektrokleinstrad')
+  assert.equal(mzProblem({ tatort: 'Große Bleiche 12, 55116 Mainz' }, { telefon: '' }), 'Mainz verlangt eine Telefonnummer – bitte im Profil ergänzen.')
+  assert.deepEqual(mzFotos({ uebersicht: [1, 2, 3], fahrzeug: [4, 5] }), [4, 1, 5])
+  // Registry + Ortsteile
+  assert.equal(portalFuer('mainz')!.id, 'civento-mz')
+  assert.equal(portalFuer('hanau'), null)
+  assert.equal(getCityByName('Mainz-Kastel')!.id, 'wiesbaden')
 })

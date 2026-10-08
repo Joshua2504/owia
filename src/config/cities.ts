@@ -49,7 +49,10 @@ export interface City {
   /** Versand über ein Online-Formular statt per Mail (services/portalDispatch.ts).
    *  Frankfurt: ekom21/civento seit 10/2026 – Mails mit PDF nimmt das Amt nur
    *  noch für Tatbestände an, die das Portal nicht kennt. */
-  portal?: 'ekom21-ffm'
+  portal?: 'ekom21-ffm' | 'ekom21-wi' | 'civento-mz'
+  /** Weitere Ortsnamen aus districts.csv, die zu dieser Stadt gehören
+   *  (Wiesbaden: „Mainz-Kastel", „Mainz-Kostheim" – rechtsrheinisch, aber Wiesbaden). */
+  aliases?: string[]
   geo: CityGeo
 }
 
@@ -123,6 +126,50 @@ export const CITIES: Record<string, City> = {
       mapLon: 8.9170,
     },
   },
+  // Wiesbaden (Landeshauptstadt Hessen). Seit 10/2026 offizieller Weg das
+  // ekom21-Online-Formular (wiesbaden.de bietet keine Mail mehr an). Dieselbe
+  // Vorlage wie Frankfurt, aber eigene Rubriken und 2-Monats-Frist
+  // (services/portalWi.ts). AKK (Amöneburg, Kastel, Kostheim) gehört zu Wiesbaden –
+  // in districts.csv als „Mainz-Kastel"/„Mainz-Kostheim" geführt.
+  wiesbaden: {
+    id: 'wiesbaden',
+    name: 'Wiesbaden',
+    aliases: ['Mainz-Kastel', 'Mainz-Kostheim'],
+    ordnungsamt: 'Landeshauptstadt Wiesbaden, Verwarngeldstelle',
+    portal: 'ekom21-wi',
+    geo: {
+      scope: 'wi',
+      // Stadtgebiet inkl. Vororte und AKK (rechtsrheinisch gegenüber Mainz).
+      bbox: '8.10,49.99,8.39,50.16',
+      cityMatch: 'wiesbaden',
+      biasLat: 50.0826,
+      biasLon: 8.2400,
+      // Wiesbaden Hauptbahnhof – Default-Kartenmittelpunkt im Formular.
+      mapLat: 50.0706,
+      mapLon: 8.2437,
+    },
+  },
+  // Mainz (Landeshauptstadt Rheinland-Pfalz). Seit 22.05.2025 nur noch über das
+  // civento-Formular (antrag-kommunal.service.rlp.de), Mail-Anzeigen werden nicht
+  // bearbeitet (services/portalMz.ts). Die Mail-Adresse in districts.csv ist tot.
+  mainz: {
+    id: 'mainz',
+    name: 'Mainz',
+    ordnungsamt: 'Landeshauptstadt Mainz, Verkehrsüberwachungsamt',
+    portal: 'civento-mz',
+    geo: {
+      scope: 'mz',
+      bbox: '8.14,49.93,8.35,50.04',
+      // „mainz" träfe auch Mainz-Kastel/-Kostheim (Wiesbaden) – unkritisch, die
+      // Zuständigkeit entscheidet die PLZ (districts.csv).
+      cityMatch: 'mainz',
+      biasLat: 49.9929,
+      biasLon: 8.2473,
+      // Mainz Hauptbahnhof – Default-Kartenmittelpunkt im Formular.
+      mapLat: 50.0012,
+      mapLon: 8.2588,
+    },
+  },
 }
 
 /** Stadt zu einer ID; fällt bei unbekannter/leerer ID auf die Default-Stadt zurück. */
@@ -142,7 +189,9 @@ export function getCityByScope(scope?: string | null): City | undefined {
 export function getCityByName(name?: string | null): City | undefined {
   if (!name) return undefined
   const needle = name.trim().toLowerCase()
-  return Object.values(CITIES).find((c) => c.name.toLowerCase() === needle)
+  return Object.values(CITIES).find(
+    (c) => c.name.toLowerCase() === needle || (c.aliases || []).some((a) => a.toLowerCase() === needle)
+  )
 }
 
 /** Alle freigeschalteten Städte (für Auswahl-Dropdown und Multi-Stadt-Suche). */

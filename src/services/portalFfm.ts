@@ -59,7 +59,7 @@ const v = (value: string, portal: string): Variante => ({ value, portal })
 
 /** Halten / Parken / Parken länger als 1 Stunde – aus dem Katalogtext. Fehlt im
  *  Portal die Stufe „länger als 1 Stunde", wird „Parken" genommen. */
-function aktionAus(text: string): PathEl {
+export function aktionAus(text: string): PathEl {
   if (/länger als 1 Stunde/.test(text)) return { pick: ['Parken länger als 1 Stunde', 'Parken'] }
   if (/^Sie hielten\b/.test(text) && !/parkten/.test(text)) return { pick: ['Halten'] }
   return { pick: ['Parken'] }
@@ -189,7 +189,7 @@ const REGELN: Regel[] = [
 export const ALLE_VARIANTEN = new Set(REGELN.flatMap((r) => r.varianten ?? []).map((x) => x.value))
 
 /** Katalogtext ohne „TBNR – ". */
-function verstossText(label: string): string {
+export function verstossText(label: string): string {
   return label.replace(/^\d{6} – /, '').trim()
 }
 
@@ -265,8 +265,8 @@ export interface PortalPayload {
   email: string
 }
 
-const hhmm = (t: unknown) => (t ? String(t).slice(0, 5) : '')
-const ddmmyyyy = (d: unknown) => {
+export const hhmm = (t: unknown) => (t ? String(t).slice(0, 5) : '')
+export const ddmmyyyy = (d: unknown) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d instanceof Date ? isoDate(d) : String(d ?? ''))
   return m ? `${m[3]}.${m[2]}.${m[1]}` : ''
 }
@@ -309,7 +309,7 @@ export function portalTatzeit(r: Record<string, any>, letztesFoto?: string | nul
   return { von, bis, zusatz: null }
 }
 
-function isoOf(d: unknown): string {
+export function isoOf(d: unknown): string {
   if (!d) return ''
   return d instanceof Date ? isoDate(d) : String(d).slice(0, 10)
 }
