@@ -69,7 +69,7 @@
       warn.appendChild(ul)
       box.appendChild(warn)
     } else if (d.verjaehrung) {
-      box.appendChild(text('div', 'alert alert-info py-2 small', 'Achtung: Verjährt in ' + d.verjaehrung.restTage + ' Tag(en).'))
+      box.appendChild(text('div', 'alert alert-info py-2 small', 'Achtung: Frist endet in ' + d.verjaehrung.restTage + ' Tag(en).'))
     }
     var f = d.fields
     var zeit = [f.tattag, f.tattag_bis ? '– ' + f.tattag_bis : null].filter(Boolean).join(' ') +

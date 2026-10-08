@@ -1873,7 +1873,8 @@
       const tat = parse(bis && bis.value) || parse(von.value)
       let rest = null
       if (tat) {
-        const ab = new Date(tat.getFullYear(), tat.getMonth() + 3, tat.getDate())
+        // Monate: Verjährung (3) oder kürzere Annahmefrist der Stadt (edit.ejs).
+        const ab = new Date(tat.getFullYear(), tat.getMonth() + (Number(hint.dataset.monate) || 3), tat.getDate())
         if (ab.getDate() !== tat.getDate()) ab.setDate(1)
         const n = new Date()
         rest = Math.round((ab - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000)
@@ -1883,8 +1884,8 @@
       hint.hidden = !verjaehrt && !bald
       box.className = 'alert ' + (verjaehrt ? 'alert-danger' : 'alert-warning') + ' py-2 px-3 small mb-0'
       box.textContent = verjaehrt
-        ? '⌛ Verjährt: Die Tat liegt mehr als drei Monate zurück und kann nicht mehr eingereicht werden.'
-        : bald ? '⏳ Verjährt in ' + rest + ' Tag' + (rest === 1 ? '' : 'en') + ' – bitte bald einreichen.' : ''
+        ? '⌛ ' + (hint.dataset.text || 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.') + ' Einreichen ist nicht mehr möglich.'
+        : bald ? '⏳ ' + (Number(hint.dataset.monate) < 3 ? 'Frist endet' : 'Verjährt') + ' in ' + rest + ' Tag' + (rest === 1 ? '' : 'en') + ' – bitte bald einreichen.' : ''
       if (btn) {
         btn.disabled = verjaehrt
         btn.title = verjaehrt ? 'Verjährt – Einreichen nicht mehr möglich' : ''

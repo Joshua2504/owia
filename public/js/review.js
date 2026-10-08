@@ -200,7 +200,7 @@
   function problemsHtml(d) {
     if (!d.problems.length) {
       return '<div class="alert alert-success py-2 small mb-0">Bereit zum Einreichen' +
-        (d.verjaehrung ? ' – verjährt in ' + d.verjaehrung.restTage + ' Tag(en)' : '') + '.</div>'
+        (d.verjaehrung ? ' – Frist endet in ' + d.verjaehrung.restTage + ' Tag(en)' : '') + '.</div>'
     }
     return '<div class="alert alert-warning py-2 small mb-0"><strong>Noch nicht einreichbar:</strong><ul class="mb-0 ps-3">' +
       d.problems.map(function (p) {
@@ -327,7 +327,7 @@
       '<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">' +
       '<code class="fs-6">' + esc(az) + '</code>' +
       (d.bereit ? '<span class="badge text-bg-info">Bereit</span>' : '') +
-      (d.verjaehrung ? '<span class="badge text-bg-warning">verjährt in ' + d.verjaehrung.restTage + ' T.</span>' : '') +
+      (d.verjaehrung ? '<span class="badge text-bg-warning">Frist endet in ' + d.verjaehrung.restTage + ' T.</span>' : '') +
       '<a class="btn btn-sm btn-outline-secondary ms-auto" data-edit-modal href="/anzeige/' + encodeURIComponent(az) + '/bearbeiten">✏️ Editor</a>' +
       '</div>' +
       '<div data-photos>' + photosHtml(d) + '</div>' +

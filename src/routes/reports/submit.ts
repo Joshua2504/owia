@@ -252,7 +252,8 @@ export async function submitProblems(
   if (report.kennzeichen && !kennzeichenBestaetigt(report)) {
     problems.push({ kind: 'kennzeichen', message: 'Bitte das Kennzeichen prüfen und als geprüft bestätigen.' })
   }
-  if (isVerjaehrt(report)) problems.push({ kind: 'verjaehrt', message: 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.' })
+  const vjStatus = verjaehrung(report)
+  if (vjStatus.verjaehrt) problems.push({ kind: 'verjaehrt', message: vjStatus.text })
   const unchecked = await countUncheckedImages(report.id)
   if (unchecked) problems.push({ kind: 'photos', message: uncheckedMessage(unchecked) })
   if (!(await isProfileComplete(userId))) {
@@ -268,7 +269,8 @@ export async function submitProblems(
   }
   if (report.verstoss_art) {
     const p = await portalProblemFuer(report, report.city, userId)
-    if (p) problems.push({ kind: 'variante', message: p })
+    // Abgelaufene Annahmefrist meldet schon „verjaehrt" (gleicher Grund).
+    if (p && !(vjStatus.verjaehrt && /zwei Monate/.test(p))) problems.push({ kind: 'variante', message: p })
   }
   const dritte = await drittProblem(report)
   if (dritte) problems.push({ kind: 'dritte', message: dritte })

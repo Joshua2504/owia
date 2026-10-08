@@ -236,9 +236,9 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       </form>
       <% const _vj = verjaehrung(r) %>
       <% if (_vj.verjaehrt) { %>
-        <span class="badge rounded-pill text-bg-danger" title="Tat liegt mehr als drei Monate zurück – kann nicht mehr eingereicht werden">⌛ Verjährt</span>
+        <span class="badge rounded-pill text-bg-danger" title="<%= _vj.text %>">⌛ <%= _vj.monate < 3 ? 'Frist abgelaufen' : 'Verjährt' %></span>
       <% } else if (_vj.bald) { %>
-        <span class="badge rounded-pill text-bg-light border" title="Verjährt in <%= _vj.restTage %> Tag<%= _vj.restTage === 1 ? '' : 'en' %>">⏳ noch <%= _vj.restTage %> T.</span>
+        <span class="badge rounded-pill text-bg-light border" title="<%= _vj.monate < 3 ? 'Annahmefrist der Stadt endet' : 'Verjährt' %> in <%= _vj.restTage %> Tag<%= _vj.restTage === 1 ? '' : 'en' %>">⏳ noch <%= _vj.restTage %> T.</span>
       <% } %>
     <% } else { %>
       <span class="badge rounded-pill text-bg-info">Eingereicht</span>

@@ -175,13 +175,13 @@ const embedQ = embed ? '&embed=1' : ''
           <%# Verjährung (3 Monate, services/verjaehrung.ts). report-form.js
               (initVerjaehrung) rechnet bei Datumsänderung im Browser nach und
               sperrt dann „Einreichen"; der Server prüft beim Submit erneut. %>
-          <% const _vj = verjaehrung({ tattag: r.tattag || today, tattag_bis: r.tattag_bis }) %>
-          <div class="col-12" id="verjaehrung-hint" <%= _vj.verjaehrt || _vj.bald ? '' : 'hidden' %>>
+          <% const _vj = verjaehrung({ tattag: r.tattag || today, tattag_bis: r.tattag_bis, city: r.city }) %>
+          <div class="col-12" id="verjaehrung-hint" data-monate="<%= _vj.monate %>" data-text="<%= _vj.text %>" <%= _vj.verjaehrt || _vj.bald ? '' : 'hidden' %>>
             <div class="alert <%= _vj.verjaehrt ? 'alert-danger' : 'alert-warning' %> py-2 px-3 small mb-0" data-verjaehrung-text>
               <% if (_vj.verjaehrt) { %>
-                ⌛ Verjährt: Die Tat liegt mehr als drei Monate zurück und kann nicht mehr eingereicht werden.
+                ⌛ <%= _vj.text %> Einreichen ist nicht mehr möglich.
               <% } else if (_vj.bald) { %>
-                ⏳ Verjährt in <%= _vj.restTage %> Tag<%= _vj.restTage === 1 ? '' : 'en' %> – bitte bald einreichen.
+                ⏳ <%= _vj.monate < 3 ? 'Frist endet' : 'Verjährt' %> in <%= _vj.restTage %> Tag<%= _vj.restTage === 1 ? '' : 'en' %> – bitte bald einreichen.
               <% } %>
             </div>
           </div>

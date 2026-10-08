@@ -53,6 +53,9 @@ export interface City {
    *  Frankfurt: ekom21/civento seit 10/2026 – Mails mit PDF nimmt das Amt nur
    *  noch für Tatbestände an, die das Portal nicht kennt. */
   portal?: 'ekom21-ffm' | 'ekom21-wi' | 'civento-mz'
+  /** Annahmefrist der Stadt in Monaten, wenn kürzer als die Verjährung (3) –
+   *  das ekom21-Portal nimmt nur Taten der letzten zwei Monate an. */
+  fristMonate?: number
   /** Weitere Ortsnamen aus districts.csv, die zu dieser Stadt gehören
    *  (Wiesbaden: „Mainz-Kastel", „Mainz-Kostheim" – rechtsrheinisch, aber Wiesbaden). */
   aliases?: string[]
@@ -75,6 +78,7 @@ export const CITIES: Record<string, City> = {
     // der Mailweg zurückkommt. Solange `portal` gesetzt ist, wird kein PDF erzeugt.
     pdfForm: 'formular.pdf',
     portal: 'ekom21-ffm',
+    fristMonate: 2,
     geo: {
       scope: 'ffm',
       bbox: '8.45,50.00,8.81,50.24',
@@ -143,6 +147,7 @@ export const CITIES: Record<string, City> = {
     aliases: ['Mainz-Kastel', 'Mainz-Kostheim'],
     ordnungsamt: 'Landeshauptstadt Wiesbaden, Verwarngeldstelle',
     portal: 'ekom21-wi',
+    fristMonate: 2,
     geo: {
       scope: 'wi',
       // Stadtgebiet inkl. Vororte und AKK (rechtsrheinisch gegenüber Mainz).
