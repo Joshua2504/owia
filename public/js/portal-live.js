@@ -340,6 +340,28 @@
     }
   })
 
+  // Vom Server gestartete Läufe (Auto-Start nach der Freigabe, Warteschlange)
+  // erkennen: alle 3 s nach dem laufenden Versand fragen (wie der Mini-Player)
+  // und ihn ins freie bzw. nicht beschäftigte Fenster holen.
+  function watchLive() {
+    if (document.hidden) return setTimeout(watchLive, 3000)
+    fetch('/api/versand/live', { headers: { Accept: 'application/json' }, cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .catch(function () { return null })
+      .then(function (d) {
+        var l = d && d.live
+        if (l && !slotOf(l.id)) {
+          var s = slots.filter(function (x) { return !x.busy() })[0]
+          if (s) {
+            s.show(l.id)
+            if (!item(l.id)) s.azEl.textContent = s.current.az = l.az
+          }
+        }
+        setTimeout(watchLive, 3000)
+      })
+  }
+  watchLive()
+
   // Laufende Vorgänge (z. B. nach Neuladen) und die Vorauswahl (?az=…) zeigen.
   root.querySelectorAll('.versand-item[data-busy="1"]').forEach(function (li, i) {
     if (slots[i]) slots[i].show(li.getAttribute('data-id'))
