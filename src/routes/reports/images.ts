@@ -168,23 +168,6 @@ export default async function imageRoutes(app: FastifyInstance) {
     return reply.send({ ok: true })
   })
 
-  // Rolle eines Fotos für das Frankfurter Portal (Übersicht/Fahrzeug; leer =
-  // automatisch, services/portalFfm.ts photoRoles). Nur Entwürfe.
-  app.patch('/anzeige/:az/images/:imageId/rolle', { preHandler: requireAuth }, async (request, reply) => {
-    const { az, imageId } = request.params as { az: string; imageId: string }
-    const userId = request.session.userId as number
-    const raw = String((request.body as { rolle?: unknown } | undefined)?.rolle ?? '')
-    const rolle = raw === 'uebersicht' || raw === 'fahrzeug' ? raw : null
-    const [res] = await pool.execute<mysql.ResultSetHeader>(
-      `UPDATE report_images ri JOIN reports r ON r.id = ri.report_id
-          SET ri.portal_rolle = ?
-        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf' AND r.versand_status IS NULL`,
-      [rolle, Number(imageId), az, userId]
-    )
-    if (!res.affectedRows) return reply.status(409).send({ error: 'Nur Fotos von Entwürfen lassen sich zuordnen.' })
-    return reply.send({ ok: true, rolle })
-  })
-
   app.put('/anzeige/:az/images/:imageId', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number

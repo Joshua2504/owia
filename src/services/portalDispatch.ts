@@ -30,7 +30,6 @@ import { repliesDir } from './mailInbox'
 import { getCity } from '../config/cities'
 import { isProfileComplete, drittProblem } from '../routes/reports'
 import { isVerjaehrt } from './verjaehrung'
-import { kennzeichenFlaeche } from './dritte'
 import { prewarmPublicImages } from './publicImages'
 import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 
@@ -144,11 +143,10 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
     )
     const payload = adapter.payload(report, users[0], zeiten[0]?.bis ?? null)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, mimetype, detected_plate, portal_rolle, analyse_json FROM report_images WHERE report_id=? ORDER BY sort_order, id',
+      'SELECT id, filename, mimetype, detected_plate, analyse_json FROM report_images WHERE report_id=? ORDER BY sort_order, id',
       [reportId]
     )
     if (!imgs.length) throw new PortalError('Die Anzeige hat keine Fotos.')
-    for (const i of imgs) i.plate_flaeche = kennzeichenFlaeche(i.analyse_json, report.kennzeichen)
     const dritte = await drittProblem(report)
     if (dritte) throw new PortalError(dritte)
     const roles = adapter.fotos(imgs)

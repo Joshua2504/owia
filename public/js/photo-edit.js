@@ -107,8 +107,6 @@
       '</div>' +
       '<datalist id="pe-marken"></datalist><datalist id="pe-farben"></datalist>' +
       '</div>' +
-      // Frankfurter Portal: Foto als Übersichts- oder Fahrzeugfoto hochladen
-      // (PATCH /anzeige/:az/images/:id/rolle; „Auto" = nach erkanntem Kennzeichen).
       // Datenschutz: erkannte fremde Kennzeichen/Gesichter (services/dritte.ts).
       '<div class="pe-field" data-dritte-row hidden>' +
       '<div class="alert alert-warning py-1 px-2 small mb-1" data-dritte-text></div>' +
@@ -116,12 +114,10 @@
       '<button type="button" class="btn btn-sm btn-dark" data-act="dritte-schwaerzen" title="Die gestrichelt markierten Stellen schwärzen – danach Bestätigen speichert">⬛ Schwärzung übernehmen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-secondary" data-act="dritte-ok" title="Fehlalarm oder nicht identifizierbar">Unbedenklich</button>' +
       '</div></div>' +
-      '<div class="pe-field" data-rolle-row hidden><span class="form-label">Dieses Foto im Portal</span>' +
-      '<div class="btn-group btn-group-sm w-100" role="group" aria-label="Rolle dieses Fotos im Portal">' +
-      '<button type="button" class="btn btn-outline-primary" data-rolle="uebersicht" title="Zeigt den Verstoß samt Beschilderung">Übersicht</button>' +
-      '<button type="button" class="btn btn-outline-primary" data-rolle="fahrzeug" title="Kennzeichen und Fahrzeugtyp gut erkennbar">Fahrzeug</button>' +
-      '<button type="button" class="btn btn-outline-secondary" data-rolle="" title="Automatisch: mit erkanntem Kennzeichen = Fahrzeug">Auto</button>' +
-      '</div><div class="small text-muted mt-1" data-rolle-info></div></div>' +
+      // Portal-Städte: die Reihenfolge entscheidet über die Rolle
+      // (services/portalFfm.ts photoRoles) – Foto 1 Übersicht, Rest Fahrzeug.
+      '<div class="pe-field small text-muted" data-rolle-row hidden><span data-rolle-info></span> ' +
+      '<span data-rolle-hint>Foto 1 ist die Übersicht, die weiteren sind Fahrzeugfotos – Reihenfolge links per Ziehen oder ‹ › ändern.</span></div>' +
       '<div class="pe-field"><label class="form-label">Verstoß</label>' +
       '<div class="photo-edit-verstoss position-relative">' +
       '<input type="hidden">' +
@@ -313,19 +309,6 @@
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ ok: true }),
-      })
-        .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
-        .then(function () { loadStatus(s) })
-        .catch(function (err) { alert(err.message) })
-    })
-    dlg.querySelector('[data-rolle-row]').addEventListener('click', function (e) {
-      var b = e.target.closest('[data-rolle]')
-      var s = state
-      if (!b || !s || !s.put) return
-      fetch(s.put + '/rolle', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ rolle: b.getAttribute('data-rolle') }),
       })
         .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
         .then(function () { loadStatus(s) })
@@ -867,9 +850,13 @@
   }
   // Variante + Langparker-Hinweis passend zum aktuellen Verstoß (bei jedem
   // Status-Laden, denn der Verstoß kann sich im Dialog ändern).
-  // Rolle des aktuellen Fotos + Kennzeichnung Ü/F an allen Kacheln.
-  var ROLLEN = { uebersicht: 'Übersichtsfoto', fahrzeug: 'Fahrzeugfoto', beide: 'Übersichts- und Fahrzeugfoto (einziges Foto)', keine: 'nicht dabei (mehr als 5 Fotos dieser Art)' }
+  // Rolle des aktuellen Fotos + Kennzeichnung Ü/F an allen Kacheln – aus der
+  // Position im Streifen (wie photoRoles), damit Umsortieren sofort sichtbar ist.
+  var ROLLEN = { uebersicht: 'Übersichtsfoto', fahrzeug: 'Fahrzeugfoto', beide: 'Übersichts- und Fahrzeugfoto (einziges Foto)', keine: 'nicht dabei (höchstens 5 Fahrzeugfotos)' }
   var KURZ = { uebersicht: 'Ü', fahrzeug: 'F', beide: 'Ü+F', keine: '–' }
+  function rolleAn(i, n) {
+    return n < 2 ? 'beide' : i === 0 ? 'uebersicht' : i <= 5 ? 'fahrzeug' : 'keine'
+  }
   function currentImage(s) {
     var imgs = (s && s.report && s.report.images) || []
     return imgs.filter(function (i) { return i.put === s.put })[0] || null
@@ -878,25 +865,26 @@
     var row = dlg.querySelector('[data-rolle-row]')
     var portal = !!(s && s.report && s.report.portal)
     var imgs = (s && s.report && s.report.images) || null
+    var thumbs = (s && s.thumbs) || []
     var info = currentImage(s)
     row.hidden = !info || !portal
     dlg.querySelectorAll('.photo-edit-tile').forEach(function (tile) {
-      var t = (s && s.thumbs || [])[Number(tile.getAttribute('data-strip-index'))]
-      var im = imgs && t && imgs.filter(function (i) { return i.put === t.getAttribute('data-photo-edit') })[0]
+      var i = Number(tile.getAttribute('data-strip-index'))
+      var t = thumbs[i]
+      var im = imgs && t && imgs.filter(function (x) { return x.put === t.getAttribute('data-photo-edit') })[0]
       var badge = tile.querySelector('.photo-edit-tile-rolle')
       tile.classList.toggle('has-dritte', !!(im && im.dritte && im.dritte.length))
       if (!im || !portal) { if (badge) badge.remove(); return }
+      var rolle = rolleAn(i, thumbs.length)
       if (!badge) { badge = document.createElement('span'); badge.className = 'photo-edit-tile-rolle'; tile.appendChild(badge) }
-      badge.textContent = (im.dritte && im.dritte.length ? '⚠ ' : '') + (KURZ[im.rolle] || '')
-      badge.title = ROLLEN[im.rolle] + (im.rolleManuell ? '' : ' (automatisch)') + (im.dritte && im.dritte.length ? ' – Daten Dritter erkannt' : '')
+      badge.textContent = (im.dritte && im.dritte.length ? '⚠ ' : '') + KURZ[rolle]
+      badge.title = ROLLEN[rolle] + (im.dritte && im.dritte.length ? ' – Daten Dritter erkannt' : '')
     })
     renderDritte(s, info)
     if (!info || !portal) return
-    row.querySelectorAll('[data-rolle]').forEach(function (b) {
-      var r = b.getAttribute('data-rolle')
-      b.classList.toggle('active', info.rolleManuell ? r === (info.rolle === 'beide' ? '' : info.rolle) : r === '')
-    })
-    row.querySelector('[data-rolle-info]').textContent = 'Geht hoch als ' + ROLLEN[info.rolle] + (info.rolleManuell ? '.' : ' (automatisch).')
+    var pos = thumbs.indexOf(s.thumb)
+    row.querySelector('[data-rolle-info]').textContent = 'Im Portal: ' + ROLLEN[rolleAn(pos < 0 ? 0 : pos, thumbs.length || 1)] + '.'
+    row.querySelector('[data-rolle-hint]').hidden = thumbs.length < 2
   }
   // Datenschutz-Hinweis zum aktuellen Foto.
   function renderDritte(s, info) {
