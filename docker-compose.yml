@@ -166,6 +166,24 @@ services:
       retries: 3
       start_period: 60s
 
+  # Browser-Automatisierung für Online-Anzeigeformulare (Frankfurt nimmt seit
+  # 10/2026 nur noch das ekom21/civento-Portal statt PDF-Mails). Füllt das
+  # Formular per Playwright aus, die App zeigt den Lauf live und schickt erst
+  # nach Bestätigung ab (services/portalDispatch.ts). Intern "portal:8080",
+  # kein Port nach außen. Chromium startet erst beim ersten Lauf.
+  portal:
+    build: ./docker/portal
+    init: true
+    mem_limit: 1500m
+    shm_size: 256m
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
 volumes:
   caddy_data:
   caddy_config:

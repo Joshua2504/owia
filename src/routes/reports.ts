@@ -14,6 +14,8 @@ import { resolveSendCity, cityEmail, detectCityByLabel } from '../services/distr
 import { reverseGeocode } from '../services/geocode'
 import { queueTatortFill } from '../services/tatortFill'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../config/verstoss'
+import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, DEFAULT_FAHRZEUG_TYP, fahrzeugBeschreibung } from '../config/fahrzeug'
+import { ALLE_VARIANTEN, formularHilfen, portalProblem } from '../services/portalFfm'
 import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage, imageVersion } from '../services/images'
 import { cachedMailVariant } from '../services/pixelate'
 import { processReportImage, processReportImageDerivatives, loadThumbnail } from '../services/intakeImageProcessing'
@@ -166,6 +168,27 @@ async function loadQueueContext(
   }
 }
 
+/** Varianten („Kreuzung/Einmündung") und „länger als 1 Stunde"-Gegenstücke je
+ *  Verstoß – für Editor und Foto-Dialog (services/portalFfm.ts). */
+const FORMULAR_HILFEN = formularHilfen(VERSTOSS_ARTEN)
+
+/** Fahrzeugtyp/-farbe/-modell und Tatbestand-Variante (Migration 0039) aus
+ *  einem Request-Body – nur die übergebenen Felder, damit ältere Clients ohne
+ *  diese Felder nichts leeren. Ungültige Werte ⇒ NULL. */
+export function strukturFelder(body: Record<string, unknown>): Record<string, string | null> {
+  const out: Record<string, string | null> = {}
+  const text = (v: unknown, max: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max) || null
+  if (typeof body.fahrzeug_typ === 'string') {
+    out.fahrzeug_typ = (FAHRZEUG_TYPEN as readonly string[]).includes(body.fahrzeug_typ) ? body.fahrzeug_typ : null
+  }
+  if (typeof body.fahrzeug_farbe === 'string') out.fahrzeug_farbe = text(body.fahrzeug_farbe, 40)
+  if (typeof body.fahrzeug_modell === 'string') out.fahrzeug_modell = text(body.fahrzeug_modell, 60)
+  if (typeof body.verstoss_variante === 'string') {
+    out.verstoss_variante = ALLE_VARIANTEN.has(body.verstoss_variante) ? body.verstoss_variante : null
+  }
+  return out
+}
+
 /** Felder eines Entwurfs persistieren (leere Strings -> NULL). */
 async function persistFields(
   reportId: string | number,
@@ -235,6 +258,13 @@ async function persistFields(
       userId,
     ]
   )
+  const extra = strukturFelder(v)
+  if (Object.keys(extra).length) {
+    await pool.execute(
+      `UPDATE reports SET ${Object.keys(extra).map((k) => `${k}=?`).join(', ')} WHERE id=? AND user_id=? AND status='entwurf'`,
+      [...Object.values(extra), reportId, userId]
+    )
+  }
 }
 
 /** Kennzeichen vereinheitlichen, ohne ein Länderformat vorzuschreiben: Es gibt
@@ -279,11 +309,13 @@ export async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
  *  Name und Anschrift des Anzeigenerstatters müssen im PDF stehen. */
 export async function isProfileComplete(userId: number): Promise<boolean> {
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT vorname, nachname, strasse, plz, ort FROM users WHERE id = ?',
+    'SELECT vorname, nachname, strasse, hausnummer, plz, ort FROM users WHERE id = ?',
     [userId]
   )
   const u = rows[0]
-  return !!(u && u.vorname && u.nachname && u.strasse && u.plz && u.ort)
+  // Hausnummer getrennt (Migration 0039): das Frankfurter Portal verlangt sie
+  // als eigenes Pflichtfeld.
+  return !!(u && u.vorname && u.nachname && u.strasse && u.hausnummer && u.plz && u.ort)
 }
 
 /** PDF aus dem aktuellen Stand (inkl. gespeicherter Bilder) neu erzeugen. */
@@ -373,6 +405,10 @@ export default async function reportsRoutes(app: FastifyInstance) {
   app.get('/anzeigen/bearbeitungsoptionen', { preHandler: requireAuth }, async () => ({
     offenses: VERSTOSS_ARTEN,
     frequent: await mostUsedVerstoesse(),
+    ...FORMULAR_HILFEN,
+    fahrzeugTypen: FAHRZEUG_TYPEN,
+    marken: FAHRZEUG_MARKEN,
+    farben: FAHRZEUG_FARBEN,
   }))
   app.post('/anzeigen/sammelbearbeitung/vorschau', { preHandler: requireAuth }, async (request, reply) => {
     try {
@@ -477,6 +513,11 @@ export default async function reportsRoutes(app: FastifyInstance) {
       embed: (request.query as { embed?: string }).embed === '1',
       verstossAlle: VERSTOSS_ARTEN,
       verstossHaeufig: await mostUsedVerstoesse(),
+      formularHilfen: FORMULAR_HILFEN,
+      fahrzeugTypen: FAHRZEUG_TYPEN,
+      fahrzeugMarken: FAHRZEUG_MARKEN,
+      fahrzeugFarben: FAHRZEUG_FARBEN,
+      defaultFahrzeugTyp: DEFAULT_FAHRZEUG_TYP,
       report,
       images,
       city: getCity(report.city),
@@ -596,6 +637,16 @@ export default async function reportsRoutes(app: FastifyInstance) {
       out.verstoss_art = v || null
       sets.push('verstoss_art=?')
       values.push(out.verstoss_art)
+      // Eine Variante gehört zum alten Verstoß (Kreuzung/Einmündung usw.).
+      if (typeof body.verstoss_variante !== 'string') {
+        out.verstoss_variante = null
+        sets.push('verstoss_variante=NULL')
+      }
+    }
+    for (const [k, val] of Object.entries(strukturFelder(body))) {
+      out[k] = val
+      sets.push(`${k}=?`)
+      values.push(val)
     }
     if (!sets.length) return reply.status(400).send({ error: 'Keine Änderung übermittelt.' })
     const [result] = await pool.execute<mysql.ResultSetHeader>(
@@ -1128,6 +1179,9 @@ export default async function reportsRoutes(app: FastifyInstance) {
         `UPDATE reports t JOIN reports s ON s.id = ? AND s.user_id = t.user_id
             SET t.kennzeichen = COALESCE(NULLIF(t.kennzeichen, ''), s.kennzeichen),
                 t.fahrzeug_marke = COALESCE(NULLIF(t.fahrzeug_marke, ''), s.fahrzeug_marke),
+                t.fahrzeug_typ = COALESCE(t.fahrzeug_typ, s.fahrzeug_typ),
+                t.fahrzeug_modell = COALESCE(NULLIF(t.fahrzeug_modell, ''), s.fahrzeug_modell),
+                t.fahrzeug_farbe = COALESCE(NULLIF(t.fahrzeug_farbe, ''), s.fahrzeug_farbe),
                 t.tatort = COALESCE(NULLIF(t.tatort, ''), s.tatort),
                 t.tatort_lat = COALESCE(t.tatort_lat, s.tatort_lat),
                 t.tatort_lon = COALESCE(t.tatort_lon, s.tatort_lon),
@@ -1515,6 +1569,8 @@ export default async function reportsRoutes(app: FastifyInstance) {
       fields: {
         kennzeichen: report.kennzeichen,
         fahrzeug_marke: report.fahrzeug_marke,
+        fahrzeug: fahrzeugBeschreibung(report),
+        verstoss_variante: report.verstoss_variante,
         tattag: fmtDate(report.tattag),
         tattag_bis: report.tattag_bis ? fmtDate(report.tattag_bis) : null,
         tatzeit_von: hhmm(report.tatzeit_von),
@@ -1578,13 +1634,16 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // Ohne vollständiges Profil (Name + Anschrift) keine Einreichung – das
     // Ordnungsamt bearbeitet anonyme Anzeigen nicht.
     if (!(await isProfileComplete(userId))) {
-      return fail('Bitte zuerst dein Profil vervollständigen (Name und Anschrift) – anonyme Anzeigen werden vom Ordnungsamt nicht bearbeitet.', '/einstellungen')
+      return fail('Bitte zuerst dein Profil vervollständigen (Name und Anschrift mit Hausnummer) – anonyme Anzeigen werden vom Ordnungsamt nicht bearbeitet.', '/einstellungen')
     }
 
     // Nur freigeschaltete Orte: aus dem Tatort das zuständige Amt ableiten. Liegt
     // der Tatort in einem (noch) nicht freigeschalteten Ort, wird abgewiesen.
     const gate = resolveSendCity(report.tatort, report.city)
     if (!gate.ok) return fail(gate.message, `/anzeige/${az}/bearbeiten`)
+    // Portal-Städte (Frankfurt): Angaben, die das Online-Formular zwingend braucht.
+    const portalFehlt = getCity(gate.cityId).portal ? portalProblem(report) : null
+    if (portalFehlt) return fail(portalFehlt, `/anzeige/${az}/bearbeiten`)
     // Zuständige Stadt festschreiben (Tatort ist maßgeblich) – vor der PDF-/E-Mail-
     // Erzeugung, damit Formularwahl und Empfänger konsistent sind.
     if (gate.cityId !== report.city) {
@@ -1607,6 +1666,12 @@ export default async function reportsRoutes(app: FastifyInstance) {
     // (routes/admin.ts, 'report.dispatch'); das Ergebnis steht danach im
     // Versandstatus bzw. in /admin/anzeigen.
     const sofort = (request.query as { sofort?: string }).sofort === '1' && isAdminEmail(request.session.userEmail)
+    if (sofort && getCity(report.city).portal) {
+      // Portal-Stadt: kein Hintergrund-Versand, sondern live auf /versand.
+      const url = `/versand?az=${encodeURIComponent(az)}`
+      if (json) return reply.send({ ok: true, sent: false, queued: true, portal: url })
+      return reply.redirect(url)
+    }
     if (sofort) {
       await enqueueJob('report.dispatch', { reportId: report.id, aktenzeichen: az }, { key: `report.dispatch:${report.id}`, maxAttempts: 1 })
       if (json) return reply.send({ ok: true, sent: false, queued: true })
@@ -1671,7 +1736,7 @@ export async function submitProblems(
   const unchecked = await countUncheckedImages(report.id)
   if (unchecked) problems.push({ kind: 'photos', message: uncheckedMessage(unchecked) })
   if (!(await isProfileComplete(userId))) {
-    problems.push({ kind: 'profile', message: 'Dein Profil ist unvollständig (Name und Anschrift).', link: '/einstellungen' })
+    problems.push({ kind: 'profile', message: 'Dein Profil ist unvollständig (Name und Anschrift mit Hausnummer).', link: '/einstellungen' })
   }
   if (report.tatort) {
     const gate = resolveSendCity(report.tatort, report.city)
@@ -1680,6 +1745,10 @@ export async function submitProblems(
       await pool.execute("UPDATE reports SET city=? WHERE id=? AND status='entwurf'", [gate.cityId, report.id])
       report.city = gate.cityId
     }
+  }
+  if (report.verstoss_art && getCity(report.city).portal) {
+    const p = portalProblem(report)
+    if (p) problems.push({ kind: 'variante', message: p })
   }
   return problems
 }

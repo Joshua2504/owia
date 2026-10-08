@@ -1499,6 +1499,10 @@
     'kennzeichen',
     'kennzeichen_land',
     'fahrzeug_marke',
+    'fahrzeug_typ',
+    'fahrzeug_modell',
+    'fahrzeug_farbe',
+    'verstoss_variante',
     'tattag',
     'tattag_bis',
     'tatzeit_von',
@@ -1795,6 +1799,61 @@
   // erscheinen direkt in der Aktionsleiste statt per Umleitung.
   // Verjährung (Spiegel von src/services/verjaehrung.ts): 3 Monate ab Tatende
   // (tattag_bis, sonst tattag). Verjährt → Hinweis + „Einreichen" gesperrt.
+  // Tatbestand-Variante + „länger als 1 Stunde"-Vorschlag (Daten aus
+  // #formular-hilfen, services/portalFfm.ts formularHilfen).
+  function initVariante(form) {
+    const dataEl = document.querySelector('#formular-hilfen')
+    const row = document.querySelector('#verstoss-variante-row')
+    const sel = document.querySelector('#verstoss-variante')
+    const hint = document.querySelector('#langparker-hint')
+    const apply = document.querySelector('#langparker-apply')
+    const hidden = form.elements['verstoss_art']
+    if (!dataEl || !row || !sel || !hidden) return
+    const hilfen = JSON.parse(dataEl.textContent || '{}')
+    function minutes() {
+      const hm = (v) => (/^(\d{2}):(\d{2})/.exec(v || '') || null)
+      const a = hm(form.elements['tatzeit_von'] && form.elements['tatzeit_von'].value)
+      const b = hm(form.elements['tatzeit_bis'] && form.elements['tatzeit_bis'].value)
+      if (!a || !b) return null
+      let d = (+b[1] * 60 + +b[2]) - (+a[1] * 60 + +a[2])
+      const bisTag = form.elements['tattag_bis'] && form.elements['tattag_bis'].value
+      const tag = form.elements['tattag'] && form.elements['tattag'].value
+      if (bisTag && tag && bisTag > tag) d += 1440
+      return d
+    }
+    function render() {
+      const v = hidden.value
+      const opts = (hilfen.varianten || {})[v] || []
+      const cur = sel.value || sel.dataset.current || ''
+      row.hidden = !opts.length
+      sel.innerHTML = '<option value="">Bitte wählen …</option>' +
+        opts.map((o) => '<option' + (o === cur ? ' selected' : '') + '>' + o.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</option>').join('')
+      if (!opts.length) sel.value = ''
+      sel.classList.toggle('is-invalid', !!opts.length && !sel.value)
+      const lang = (hilfen.langparker || {})[v]
+      const m = minutes()
+      hint.hidden = !(lang && m !== null && m > 60)
+      if (lang) apply.textContent = '→ „' + lang.replace(/^\d{6} – /, '') + '" übernehmen'
+      apply.dataset.label = lang || ''
+    }
+    hidden.addEventListener('change', () => { sel.dataset.current = ''; render() })
+    sel.addEventListener('change', () => { sel.dataset.current = sel.value; render() })
+    ;['tatzeit_von', 'tatzeit_bis', 'tattag', 'tattag_bis'].forEach((n) => {
+      const el = form.elements[n]
+      if (el) el.addEventListener('change', render)
+    })
+    apply.addEventListener('click', () => {
+      const label = apply.dataset.label
+      if (!label) return
+      hidden.value = label
+      const vis = form.querySelector('[data-verstoss-input]')
+      if (vis) vis.value = label
+      hidden.dispatchEvent(new Event('input', { bubbles: true }))
+      hidden.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    render()
+  }
+
   function initVerjaehrung(form) {
     const hint = document.querySelector('#verjaehrung-hint')
     const btn = document.querySelector('#btn-submit')
@@ -1890,6 +1949,7 @@
     if (isEmbed) initEmbed(form)
     initSubmit(form)
     initVerjaehrung(form)
+    initVariante(form)
 
     initCurrentLocation()
     initImageEditor()

@@ -358,7 +358,8 @@ export default async function intakeRoutes(app: FastifyInstance) {
     const [drafts] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT r.id, r.aktenzeichen, r.status, r.tattag, r.tattag_bis, r.tatzeit_von, r.tatzeit_bis,
               r.tatort, r.tatort_lat, r.tatort_lon, r.verstoss_art, r.kennzeichen, r.kennzeichen_land,
-              r.fahrzeug_marke, r.beschreibung, r.fahrzeug_verlassen, r.behinderung, r.behinderung_text,
+              r.fahrzeug_marke, r.fahrzeug_typ, r.fahrzeug_modell, r.fahrzeug_farbe, r.verstoss_variante,
+              r.beschreibung, r.fahrzeug_verlassen, r.behinderung, r.behinderung_text,
               (SELECT DATE_FORMAT(MIN(pt.captured_at), '%Y-%m-%d %H:%i') FROM report_images pt WHERE pt.report_id = r.id) AS photo_time_min,
               (SELECT GROUP_CONCAT(DISTINCT dp.detected_plate ORDER BY dp.detected_plate SEPARATOR '|') FROM report_images dp WHERE dp.report_id = r.id AND dp.detected_plate IS NOT NULL AND dp.detected_plate <> '') AS detected_plates,
               (SELECT COUNT(*) FROM report_images gi WHERE gi.report_id = r.id AND gi.gps_lat IS NOT NULL AND gi.gps_lon IS NOT NULL) AS photo_gps_count,

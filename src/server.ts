@@ -26,6 +26,8 @@ import legalRoutes from './routes/legal'
 import statistikRoutes from './routes/statistik'
 import { verjaehrung } from './services/verjaehrung'
 import adminRoutes from './routes/admin'
+import portalRoutes from './routes/portal'
+import { resumeWatchers } from './services/portalDispatch'
 import { startInboxPolling, processInboundMail } from './services/mailInbox'
 import { failStalePlateAnalyses } from './services/plateAnalysis'
 import { viewData } from './middleware/auth'
@@ -185,6 +187,7 @@ async function main() {
   await app.register(legalRoutes)
   await app.register(statistikRoutes)
   await app.register(adminRoutes)
+  await app.register(portalRoutes)
 
   // Antworten des Ordnungsamts aus dem Versand-Postfach abrufen (IMAP).
   startInboxPolling(app.log)
@@ -229,6 +232,9 @@ async function main() {
 
   // Hintergrund-Jobs (services/jobs.ts): Import-Gruppierung, PDFs, Mails, Versand.
   await startJobRunner(app.log)
+
+  // Portal-Versand (Frankfurt/ekom21): offene Läufe nach Neustart weiter beobachten.
+  await resumeWatchers(app.log).catch((err) => app.log.error({ err }, 'Portal-Läufe nicht wieder aufgenommen'))
 
   // Bei einem Neustart mitten in der Kennzeichen-Analyse liegengebliebene
   // 'pending'-Bilder auflösen, sonst zeigt das Formular dort endlos den Spinner.

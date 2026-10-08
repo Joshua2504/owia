@@ -6,6 +6,8 @@ import mysql from 'mysql2/promise'
 import type { ReportImage } from '../routes/reports'
 import { getCity, DEFAULT_CITY_ID } from '../config/cities'
 import { renderTatortMap } from './staticmap'
+import { strasseMitNummer } from '../config/person'
+import { fahrzeugBeschreibung } from '../config/fahrzeug'
 
 /** "14:30:00" / "14:30" -> "14:30" */
 function hhmm(time: unknown): string {
@@ -79,6 +81,7 @@ export const PdfService = {
     // unbrauchbar und bleibt leer.
     const sachverhalt = [
       report.verstoss_art,
+      report.verstoss_variante ? `Genauer: ${report.verstoss_variante}.` : '',
       report.fahrzeug_verlassen === 1 ? 'Das Fahrzeug war verlassen.' : '',
       report.beschreibung,
     ]
@@ -92,7 +95,7 @@ export const PdfService = {
       // Anzeigeerstatter
       Name: user.nachname || '',
       Vorname: user.vorname || '',
-      'Straße Hausnummer': user.strasse || '',
+      'Straße Hausnummer': strasseMitNummer(user),
       PLZ: user.plz || '',
       Ort: user.ort || '',
       Telefon: user.telefon || '',
@@ -109,7 +112,7 @@ export const PdfService = {
         (report.kennzeichen && report.kennzeichen_land && report.kennzeichen_land !== 'D'
           ? ` (${report.kennzeichen_land})`
           : ''),
-      'Marke und Farbe des betroffenen Fahrzeuges': report.fahrzeug_marke || '',
+      'Marke und Farbe des betroffenen Fahrzeuges': fahrzeugBeschreibung(report),
       // Behinderung: Beschreibung "wer wurde wie behindert" (nur bei „Ja")
       'Wurde jemand behindert ja wer wurde wie behindert nein':
         report.behinderung === 1 ? report.behinderung_text || '' : '',

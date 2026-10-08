@@ -4,7 +4,7 @@
 // Prüfung (/admin/anzeigen).
 const u = benutzer
 const name = [u.vorname, u.nachname].filter(Boolean).join(' ')
-const anschrift = [u.strasse, [u.plz, u.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+const anschrift = [[u.strasse, u.hausnummer].filter(Boolean).join(' '), [u.plz, u.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')
 const counts = { entwurf: 0, eingereicht: 0, versendet: 0 }
 for (const r of reports) if (counts[r.status] !== undefined) counts[r.status]++
 %>

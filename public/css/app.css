@@ -1079,6 +1079,7 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 /* Kompakt, damit die Leiste auf üblichen Bildschirmen ohne Scrollen passt. */
 .photo-edit-side .form-control, .photo-edit-side .btn:not(.btn-sm) { padding-top: 0.3rem; padding-bottom: 0.3rem; font-size: 0.925rem; }
 .pe-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; }
+.pe-row-3 { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 0.9fr); }
 .pe-row > .pe-field[hidden] + .pe-field, .pe-row > .pe-field:only-child { grid-column: 1 / -1; }
 .photo-edit-fields .form-label { font-size: 0.8rem; font-weight: 600; color: var(--bs-secondary-color); margin-bottom: 0.2rem; }
 .photo-edit-fields .pe-field[hidden], .photo-edit-details[hidden] { display: none; }
@@ -1114,3 +1115,16 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
   .pe-time { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .pe-time input[type=date] { grid-column: 1 / -1; }
 }
+
+/* ---- Live-Versand (/versand, portal-live.js) ---------------------------- */
+.versand-list { max-height: 70vh; overflow-y: auto; }
+.versand-item { cursor: pointer; }
+.versand-item.active-run { box-shadow: inset 4px 0 0 var(--bs-primary); background: var(--bs-tertiary-bg); }
+.versand-item.is-done { opacity: 0.55; }
+.versand-screen { position: relative; background: #f1f3f5; border: 1px solid var(--bs-border-color); border-radius: 0.375rem; overflow: hidden; outline: none; }
+.versand-screen:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
+.versand-screen img { display: block; width: 100%; height: auto; cursor: crosshair; user-select: none; }
+.versand-screen-empty { padding: 4rem 1rem; text-align: center; }
+.versand-type { max-width: 22rem; }
+.versand-log { max-height: 14rem; overflow-y: auto; font-family: var(--bs-font-monospace); font-size: 0.75rem; padding-left: 1.25rem; }
+@media (max-width: 575.98px) { .versand-type { max-width: none; width: 100%; } }

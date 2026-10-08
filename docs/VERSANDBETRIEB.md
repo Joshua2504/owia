@@ -52,6 +52,35 @@ Ergebnisse sichtbar. Benutzer-Nachrichten im bereits vorhandenen Mailverlauf
 nutzen noch den bisherigen direkten Versand; die neue Sperre betrifft die
 Admin-Freigabe einer Anzeige.
 
+## Portal-Versand (Frankfurt, ekom21)
+
+Frankfurt nimmt Anzeigen seit 10/2026 nur noch über das Online-Formular
+`portal-civ.ekom21.de` an (Mail mit PDF nur für Tatbestände, die das Portal
+nicht anbietet). Ablauf unter `/versand` (nur Admins):
+
+1. „▶ Senden" sperrt die Anzeige (`versand_status='vorbereitung'`,
+   `versand_ergebnis` = `{"portal":{"runId":…}}`) und startet im Container
+   `portal` einen Browser-Lauf. Er füllt Schritt für Schritt aus und hält auf
+   der Zusammenfassung an.
+2. Unklares (Variante fehlt, Tatbestand nicht im Portal, Portal meldet einen
+   Fehler) pausiert den Lauf („braucht dich"): im Live-Bild klicken/tippen,
+   dann „Fortsetzen".
+3. „Jetzt absenden" setzt erst `versand_status='versand'`, dann klickt der
+   Dienst auf „Absenden". Ergebnis: `status='versendet'`, `versand_art='portal'`,
+   `portal_vorgang_id`, ausgehender Eintrag in `report_replies` mit
+   Zusammenfassung (PDF) und Screenshots als Anhängen.
+4. Abbrechen vor dem Absenden löst die Sperre, die Anzeige bleibt eingereicht.
+
+**Unklarer Ausgang** (Fehler nach dem Absenden, Portal-Dienst neu gestartet):
+Die Anzeige bleibt mit „Ergebnis unklar" in der Liste. Bestätigungsmail der
+Stadt im Postfach des Nutzers prüfen, dann „Wurde versendet" (mit Vorgangs-ID)
+oder „Nicht angekommen" (wieder versendbar) klicken – nie blind neu senden.
+
+Läufe leben nur im Speicher des Portal-Dienstes; ekom21 beendet Sitzungen
+nach 60 Minuten Inaktivität, der Dienst bricht wartende Läufe nach 40 Minuten ab.
+Textfelder: das Portal lehnt Zeichen außerhalb von Latin-1 ab (z.B. „–"),
+`portalSafe()` in `docker/portal/ekom21.mjs` ersetzt sie.
+
 ## Posteingang
 
 Neue Nachricht und Anhang-Metadaten werden gemeinsam committed, nachdem die

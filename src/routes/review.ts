@@ -7,6 +7,7 @@ import { cityEmail } from '../services/districts'
 import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
+import { verstossVarianten, langparkerVariante, tatDauerMinuten } from '../services/portalFfm'
 import { submitProblems, mostUsedVerstoesse } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
 
@@ -144,7 +145,15 @@ export default async function reviewRoutes(app: FastifyInstance) {
         tatort_lon: report.tatort_lon !== null ? Number(report.tatort_lon) : null,
         city: report.city || '',
         fahrzeug_verlassen: report.fahrzeug_verlassen === 1,
+        fahrzeug_typ: report.fahrzeug_typ || '',
+        fahrzeug_modell: report.fahrzeug_modell || '',
+        fahrzeug_farbe: report.fahrzeug_farbe || '',
+        verstoss_variante: report.verstoss_variante || '',
       },
+      // Tatbestand-Konkretisierung (Kreuzung/Einmündung …) und Vorschlag
+      // „länger als 1 Stunde", wenn die Tatzeit das hergibt (services/portalFfm.ts).
+      varianten: verstossVarianten(report.verstoss_art).map((x) => x.value),
+      langparker: (tatDauerMinuten(report) ?? 0) > 60 ? langparkerVariante(report.verstoss_art) : null,
       recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
       verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
       hasGps: imgs.some((i) => i.gps_lat !== null),

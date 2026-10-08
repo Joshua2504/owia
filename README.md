@@ -4,10 +4,11 @@ Web-Anwendung, mit der Bürger:innen **Ordnungswidrigkeiten im ruhenden Verkehr*
 (Falschparken, blockierte Rad-/Gehwege, Behindertenparkplätze usw.) rechtssicher
 beim zuständigen Ordnungsamt anzeigen können. Aus hochgeladenen Beweisfotos,
 GPS-/EXIF-Daten und einer Karten-Verortung entsteht eine vollständige Anzeige,
-die – je nach Stadt – als amtliches PDF-Formular oder als strukturierte E-Mail
-ans Ordnungsamt versendet wird.
+die – je nach Stadt – über das Online-Portal der Stadt, als amtliches
+PDF-Formular oder als strukturierte E-Mail ans Ordnungsamt versendet wird.
 
-Aktuell freigeschaltet: **Frankfurt am Main** (amtliches PDF-Formular) und
+Aktuell freigeschaltet: **Frankfurt am Main** (Online-Portal ekom21, live
+im Browser ausgefüllt – seit 10/2026 nimmt die Stadt keine PDF-Mails mehr) und
 **Bad Soden-Salmünster** und **Hanau** (jeweils E-Mail-Versand). Weitere Städte lassen sich über eine
 zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freischalten)).
 
@@ -166,9 +167,14 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
 - Welche Städte tatsächlich **freigeschaltet** sind, entscheidet die Registry
   [`src/config/cities.ts`](src/config/cities.ts). Ein erkannter Ort ohne Eintrag
   dort wird als „noch nicht freigeschaltet" abgewiesen.
+- Städte **mit** `portal` (Frankfurt) werden über das Online-Formular der Stadt
+  versendet: der Container `portal` (`docker/portal/`, Playwright) füllt es aus,
+  der Admin sieht unter `/versand` live zu, greift bei Bedarf per Klick ins
+  Live-Bild ein und sendet ab. Abbildung Katalog → Portal-Auswahlbaum:
+  `src/services/portalFfm.ts`; Ablauf/Zustände: `src/services/portalDispatch.ts`.
 - Städte **mit** `pdfForm` bekommen das amtliche Formular als PDF-Anhang
-  (Frankfurt), Städte **ohne** eine strukturierte E-Mail mit Beweisfotos +
-  Tatort-Karte.
+  (Frankfurt nur noch für Tatbestände, die das Portal nicht kennt), Städte
+  **ohne** eine strukturierte E-Mail mit Beweisfotos + Tatort-Karte.
 
 ### Neue Stadt freischalten
 

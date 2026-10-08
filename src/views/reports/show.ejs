@@ -47,9 +47,10 @@ const versandLabel = {
           <dt class="col-sm-4">Kennzeichen</dt>
           <dd class="col-sm-8"><% if (report.kennzeichen) { %><span class="plate-chip"><% if (report.kennzeichen_land && report.kennzeichen_land !== 'D') { %><small><%= report.kennzeichen_land %></small><% } %><%= report.kennzeichen %></span><% } else { %>—<% } %></dd>
 
-          <% if (report.fahrzeug_marke) { %>
+          <% const _fz = [report.fahrzeug_typ, [report.fahrzeug_marke, report.fahrzeug_modell].filter(Boolean).join(' '), report.fahrzeug_farbe].filter(Boolean).join(', ') %>
+          <% if (_fz) { %>
             <dt class="col-sm-4">Fahrzeug</dt>
-            <dd class="col-sm-8"><%= report.fahrzeug_marke %></dd>
+            <dd class="col-sm-8"><%= _fz %></dd>
           <% } %>
 
           <dt class="col-sm-4">Tattag</dt>
@@ -62,7 +63,7 @@ const versandLabel = {
           <dd class="col-sm-8"><%= report.tatort || '—' %></dd>
 
           <dt class="col-sm-4">Verstoßart</dt>
-          <dd class="col-sm-8"><%= report.verstoss_art || '—' %></dd>
+          <dd class="col-sm-8"><%= report.verstoss_art || '—' %><% if (report.verstoss_variante) { %> <span class="text-muted">(genauer: <%= report.verstoss_variante %>)</span><% } %></dd>
 
           <% if (report.beschreibung) { %>
             <dt class="col-sm-4">Beschreibung</dt>

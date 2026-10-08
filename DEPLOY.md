@@ -71,8 +71,10 @@ sollen. Der obige Frankfurt-Wert ist nur ein Beispiel.
 3. Login per Magic-Link funktioniert (Mail kommt an!)
 4. Eine Test-Anzeige einreichen → Admin-Mail kommt, unter `/admin/anzeigen` sichtbar
 5. Freigabe ausschließlich mit kontrolliertem Testempfänger bzw. in Dev/Mailpit
-   prüfen; keinen Test an ein echtes Ordnungsamt schicken. Frankfurt erhält
-   ein PDF, Bad Soden-Salmünster und Hanau Beweisfotos und ggf. Karte.
+   prüfen; keinen Test an ein echtes Ordnungsamt schicken. Frankfurt läuft
+   über `/versand` (Portal): dort nur bis zur Zusammenfassung testen und
+   abbrechen. Bad Soden-Salmünster und Hanau erhalten Beweisfotos und ggf. Karte.
+6. `docker compose ps portal` → healthy (Browser-Container für das Frankfurter Portal).
 
 `/health` prüft App und DB-Verbindung, aber weder SMTP/IMAP noch Geocoding,
 Karten oder die fachliche Richtigkeit eines Versands. Der manuelle

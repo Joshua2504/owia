@@ -16,6 +16,7 @@ import { regeneratePdf, isProfileComplete } from './reports'
 import { deleteUser, UserDeleteError } from '../services/userDelete'
 import { isAdminEmail } from '../config/admin'
 import { enqueueJob, registerJob, recentJobs } from '../services/jobs'
+import { usesPortal } from '../services/portalDispatch'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
@@ -42,11 +43,17 @@ async function loadReportWithUser(
 export async function approveAndDispatch(
   id: string,
   aktenzeichen: string,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  opts: { viaMail?: boolean } = {}
 ): Promise<{ ok: boolean; message: string }> {
   try {
     const result = await dispatchReport(Number(id), async (messageId) => {
       const fresh = await loadReportWithUser(id)
+      // Portal-Städte (Frankfurt) laufen über /versand (routes/portal.ts); per
+      // Mail nur ausdrücklich (Tatbestand gibt es im Portal nicht).
+      if (fresh && usesPortal(fresh.report) && !opts.viaMail) {
+        throw new ReportPreparationError('Diese Anzeige wird über das Online-Portal der Stadt versendet – bitte unter „Versand".')
+      }
       if (!fresh || !(await isProfileComplete(fresh.report.user_id))) {
         throw new ReportPreparationError('Das Nutzerprofil ist unvollständig. Bitte die Anzeige ablehnen und korrigieren lassen.')
       }
@@ -82,8 +89,8 @@ export async function approveAndDispatch(
 // erzeugt; Fehler landen in jobs.error und werden bis zu 3× wiederholt.
 // Der Versand selbst nur einmal – dispatchReport sperrt über versand_status, ein
 // unklares Ergebnis muss ein Mensch prüfen (docs/VERSANDBETRIEB.md).
-registerJob('report.dispatch', async ({ reportId, aktenzeichen }, log) => {
-  const outcome = await approveAndDispatch(String(reportId), aktenzeichen, log)
+registerJob('report.dispatch', async ({ reportId, aktenzeichen, viaMail }, log) => {
+  const outcome = await approveAndDispatch(String(reportId), aktenzeichen, log, { viaMail: !!viaMail })
   if (!outcome.ok) throw new Error(outcome.message)
 })
 
@@ -110,7 +117,7 @@ export default async function adminRoutes(app: FastifyInstance) {
               r.tatzeit_von, r.tatzeit_bis, r.tatort, r.verstoss_art, r.beschreibung,
               r.behinderung, r.behinderung_text, r.fahrzeug_verlassen,
               DATE_FORMAT(r.eingereicht_at, '%d.%m.%Y %H:%i') AS eingereicht_fmt,
-              u.email AS user_email, u.vorname, u.nachname, u.strasse, u.plz, u.ort,
+              u.email AS user_email, u.vorname, u.nachname, u.strasse, u.hausnummer, u.plz, u.ort,
               (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count
          FROM reports r
          JOIN users u ON u.id = r.user_id
@@ -264,6 +271,8 @@ export default async function adminRoutes(app: FastifyInstance) {
     const loaded = await loadReportWithUser(id)
     if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
+    // Portal-Städte: Versand live auf /versand (mit Browser-Ansicht).
+    if (usesPortal(loaded.report)) return reply.redirect(`/versand?az=${encodeURIComponent(loaded.report.aktenzeichen)}`)
 
     await enqueueJob('report.dispatch', { reportId: loaded.report.id, aktenzeichen: loaded.report.aktenzeichen },
       { key: `report.dispatch:${loaded.report.id}`, maxAttempts: 1 })
@@ -339,7 +348,7 @@ export default async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/benutzer/:id', { preHandler: requireAdmin }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const [users] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, email, vorname, nachname, strasse, plz, ort, telefon, anonymized_at,
+      `SELECT id, email, anrede, vorname, nachname, strasse, hausnummer, plz, ort, telefon, anonymized_at,
               DATE_FORMAT(created_at, '%d.%m.%Y') AS created_fmt
          FROM users WHERE id = ?`,
       [id]

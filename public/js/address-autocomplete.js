@@ -4,6 +4,7 @@
 //   data-fill="full"            -> ganze Adresse ins Feld (z.B. Tatort)
 //   data-fill="street"          -> nur "Straße Hausnr." ins Feld (z.B. Einstellungen)
 //   data-target-plz="#plz"      -> bei Auswahl PLZ in dieses Feld
+//   data-target-hausnummer="#nr" -> (mit fill=street) Hausnummer getrennt in dieses Feld
 //   data-target-ort="#ort"      -> bei Auswahl Ort in dieses Feld
 //   data-geo-scope="ffm"        -> Treffer auf Frankfurt am Main begrenzen
 (function () {
@@ -51,7 +52,10 @@
     }
 
     function choose(s) {
-      if ((input.dataset.fill || 'full') === 'street') {
+      if ((input.dataset.fill || 'full') === 'street' && input.dataset.targetHausnummer) {
+        input.value = s.street || ''
+        fill(input.dataset.targetHausnummer, s.housenumber)
+      } else if ((input.dataset.fill || 'full') === 'street') {
         input.value = [s.street, s.housenumber].filter(Boolean).join(' ')
       } else {
         input.value = s.label

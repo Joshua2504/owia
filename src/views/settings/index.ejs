@@ -10,32 +10,46 @@
         </p>
         <form method="post" action="/einstellungen">
           <div class="row g-3">
-            <div class="col-sm-6">
+            <div class="col-sm-4">
+              <label class="form-label" for="anrede">Anrede</label>
+              <select name="anrede" id="anrede" class="form-select">
+                <option value="">Keine Angabe</option>
+                <% anreden.forEach(function (a) { %>
+                  <option value="<%= a.value %>" <%= user.anrede === a.value ? 'selected' : '' %>><%= a.label %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-sm-4">
               <label class="form-label">Vorname</label>
-              <input type="text" name="vorname" class="form-control"
+              <input type="text" name="vorname" class="form-control" maxlength="100"
                      value="<%= user.vorname || '' %>">
             </div>
-            <div class="col-sm-6">
+            <div class="col-sm-4">
               <label class="form-label">Nachname</label>
-              <input type="text" name="nachname" class="form-control"
+              <input type="text" name="nachname" class="form-control" maxlength="100"
                      value="<%= user.nachname || '' %>">
             </div>
-            <div class="col-sm-8">
-              <label class="form-label">Straße und Hausnummer</label>
-              <input type="text" name="strasse" class="form-control"
+            <div class="col-8 col-sm-9">
+              <label class="form-label">Straße</label>
+              <input type="text" name="strasse" class="form-control" maxlength="255"
                      value="<%= user.strasse || '' %>"
-                     data-address-autocomplete data-fill="street"
+                     data-address-autocomplete data-fill="street" data-target-hausnummer="#hausnummer"
                      data-target-plz="#plz" data-target-ort="#ort"
-                     placeholder="Adresse suchen – PLZ und Ort werden ergänzt">
+                     placeholder="Adresse suchen – Hausnummer, PLZ und Ort werden ergänzt">
+            </div>
+            <div class="col-4 col-sm-3">
+              <label class="form-label" for="hausnummer">Hausnr.</label>
+              <input type="text" name="hausnummer" id="hausnummer" class="form-control" maxlength="20"
+                     value="<%= user.hausnummer || '' %>">
             </div>
             <div class="col-sm-4">
               <label class="form-label">PLZ</label>
               <input type="text" name="plz" id="plz" class="form-control" maxlength="10"
                      value="<%= user.plz || '' %>">
             </div>
-            <div class="col-sm-6">
+            <div class="col-sm-8">
               <label class="form-label">Ort</label>
-              <input type="text" name="ort" id="ort" class="form-control"
+              <input type="text" name="ort" id="ort" class="form-control" maxlength="100"
                      value="<%= user.ort || '' %>">
             </div>
             <div class="col-sm-6">

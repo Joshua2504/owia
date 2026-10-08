@@ -95,13 +95,19 @@
       '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false">' +
       '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
-      '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. VW Golf, grau"></div>' +
+      '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. Volkswagen" list="pe-marken"></div>' +
       '</div>' +
       '<div class="pe-field"><label class="form-label">Verstoß</label>' +
       '<div class="photo-edit-verstoss position-relative">' +
       '<input type="hidden">' +
       '<input type="text" class="form-control" data-verstoss-input autocomplete="off" spellcheck="false" placeholder="Verstoß suchen …" aria-label="Verstoß">' +
-      '</div></div>' +
+      '</div>' +
+      // Konkretisierung („Kreuzung/Einmündung") und „länger als 1 Stunde" – das
+      // Frankfurter Portal fragt beides ab (Werte aus GET /pruefen/:az/daten).
+      '<select class="form-select form-select-sm mt-1" data-variante hidden aria-label="Verstoß genauer"></select>' +
+      '<div class="small mt-1" data-langparker hidden>⏱ Länger als 1 Stunde: ' +
+      '<button type="button" class="btn btn-link btn-sm p-0 align-baseline text-start" data-act="langparker"></button></div>' +
+      '</div>' +
       '<div class="pe-field photo-edit-tatort"><label class="form-label" for="photo-edit-tatort-input">Tatort</label>' +
       '<div class="d-flex gap-1">' +
       '<input type="text" id="photo-edit-tatort-input" class="form-control" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
@@ -113,6 +119,12 @@
       // Restliche Angaben (Werte aus GET /pruefen/:az/daten, gespeichert je
       // Feld über PATCH /anzeige/:az/felder).
       '<div class="photo-edit-details" hidden>' +
+      '<div class="pe-row pe-row-3">' +
+      '<div class="pe-field"><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
+      '<div class="pe-field"><label class="form-label" for="pe-modell">Modell</label><input type="text" id="pe-modell" class="form-control" data-detail="fahrzeug_modell" maxlength="60" autocomplete="off"></div>' +
+      '<div class="pe-field"><label class="form-label" for="pe-farbe">Farbe</label><input type="text" id="pe-farbe" class="form-control" data-detail="fahrzeug_farbe" maxlength="40" autocomplete="off" list="pe-farben"></div>' +
+      '</div>' +
+      '<datalist id="pe-marken"></datalist><datalist id="pe-farben"></datalist>' +
       '<div class="pe-field"><label class="form-label" for="pe-tattag">Tatzeit</label>' +
       '<div class="pe-time">' +
       '<input type="date" id="pe-tattag" class="form-control" data-detail="tattag">' +
@@ -273,6 +285,24 @@
     dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
     dlg.querySelector('[data-act=trash-report]').addEventListener('click', trashReport)
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
+    dlg.querySelector('[data-variante]').addEventListener('change', function (e) {
+      saveDetail({ verstoss_variante: e.target.value })
+    })
+    dlg.querySelector('[data-act=langparker]').addEventListener('click', function (e) {
+      var label = e.currentTarget.dataset.label
+      if (!label) return
+      verstossHidden().value = label
+      verstossInput().value = label
+      savePlate().catch(function () {})
+    })
+    // Auswahllisten aus dem Katalog-Endpunkt (einmal je Seite).
+    loadCatalog().then(function (c) {
+      var typ = dlg.querySelector('#pe-typ')
+      typ.innerHTML = (c.fahrzeugTypen || ['PKW']).map(function (t) { return '<option>' + t + '</option>' }).join('')
+      if (state && state.report) typ.value = state.report.fields.fahrzeug_typ || 'PKW'
+      dlg.querySelector('#pe-marken').innerHTML = (c.marken || []).map(function (m) { return '<option value="' + m + '">' }).join('')
+      dlg.querySelector('#pe-farben').innerHTML = (c.farben || []).map(function (m) { return '<option value="' + m + '">' }).join('')
+    }).catch(function () {})
     // Verstoß: Katalog erst beim ersten Fokus laden (wie report-inline.js);
     // die Auswahl meldet verstoss-select.js per change am versteckten Feld.
     verstossHidden().addEventListener('change', function () { savePlate().then(updateUi, function () {}) })
@@ -384,7 +414,7 @@
           if (!r.ok || r.redirected) throw new Error()
           return r.json()
         })
-        .then(function (d) { return { alle: d.offenses || [], haeufig: d.frequent || [] } })
+        .then(function (d) { return { alle: d.offenses || [], haeufig: d.frequent || [], fahrzeugTypen: d.fahrzeugTypen, marken: d.marken, farben: d.farben } })
       catalog.catch(function () { catalog = null })
     }
     return catalog
@@ -619,6 +649,11 @@
     box.querySelector('[data-detail=tatzeit_von]').value = f.tatzeit_von || ''
     box.querySelector('[data-detail=tatzeit_bis]').value = f.tatzeit_bis || ''
     box.querySelector('[data-detail=fahrzeug_verlassen]').checked = !!f.fahrzeug_verlassen
+    var typSel = box.querySelector('[data-detail=fahrzeug_typ]')
+    if (!typSel.options.length) typSel.innerHTML = '<option>PKW</option>'
+    typSel.value = f.fahrzeug_typ || 'PKW'
+    box.querySelector('[data-detail=fahrzeug_modell]').value = f.fahrzeug_modell || ''
+    box.querySelector('[data-detail=fahrzeug_farbe]').value = f.fahrzeug_farbe || ''
     box.querySelector('#pe-beh-ja').checked = !!f.behinderung
     box.querySelector('#pe-beh-nein').checked = !f.behinderung
     var bt = box.querySelector('[data-detail=behinderung_text]')
@@ -789,9 +824,29 @@
         if (state !== s || seq !== s.statusSeq || !d || d.gone) return
         s.report = d
         fillDetails(s)
+        renderVerstossExtras(s)
         syncMap(s)
         updateRun()
       })
+  }
+  // Variante + Langparker-Hinweis passend zum aktuellen Verstoß (bei jedem
+  // Status-Laden, denn der Verstoß kann sich im Dialog ändern).
+  function renderVerstossExtras(s) {
+    var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') }
+    var sel = dlg.querySelector('[data-variante]')
+    var opts = (s.report && s.report.varianten) || []
+    var cur = (s.report && s.report.fields.verstoss_variante) || ''
+    sel.hidden = !opts.length || verstossHidden().closest('.pe-field').hidden
+    sel.innerHTML = '<option value="">Genauer: bitte wählen …</option>' + opts.map(function (o) {
+      return '<option' + (o === cur ? ' selected' : '') + '>' + esc(o) + '</option>'
+    }).join('')
+    sel.classList.toggle('is-invalid', opts.length > 0 && !cur)
+    var lp = dlg.querySelector('[data-langparker]')
+    var lang = s.report && s.report.langparker
+    lp.hidden = !lang
+    var btn = lp.querySelector('[data-act=langparker]')
+    btn.dataset.label = lang || ''
+    btn.textContent = lang ? '„' + lang.replace(/^\d{6} – /, '') + '" übernehmen' : ''
   }
   function readyToSubmit() {
     var s = state

@@ -130,10 +130,31 @@ const embedQ = embed ? '&embed=1' : ''
             <div id="alpr-status" class="form-text" role="status" aria-live="polite"></div>
           </div>
           <div class="col-12 col-md-7">
-            <label class="form-label" for="fahrzeug-marke">Fahrzeugmarke / -farbe</label>
+            <label class="form-label" for="fahrzeug-typ">Fahrzeugtyp</label>
+            <%# Liste wie im Frankfurter Portal (config/fahrzeug.ts); leer gespeichert = PKW. %>
+            <select name="fahrzeug_typ" id="fahrzeug-typ" class="form-select">
+              <% fahrzeugTypen.forEach(function (t) { %>
+                <option value="<%= t %>" <%= (r.fahrzeug_typ || defaultFahrzeugTyp) === t ? 'selected' : '' %>><%= t %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="col-12 col-md-5">
+            <label class="form-label" for="fahrzeug-marke">Marke</label>
             <input type="text" name="fahrzeug_marke" id="fahrzeug-marke" class="form-control"
-                   value="<%= r.fahrzeug_marke || '' %>" maxlength="100"
-                   placeholder="z. B. VW Golf, grau">
+                   value="<%= r.fahrzeug_marke || '' %>" maxlength="100" list="fahrzeug-marken"
+                   placeholder="z. B. Volkswagen" autocomplete="off">
+            <datalist id="fahrzeug-marken"><% fahrzeugMarken.forEach(function (m) { %><option value="<%= m %>"><% }) %></datalist>
+          </div>
+          <div class="col-6 col-md-4">
+            <label class="form-label" for="fahrzeug-modell">Modell</label>
+            <input type="text" name="fahrzeug_modell" id="fahrzeug-modell" class="form-control"
+                   value="<%= r.fahrzeug_modell || '' %>" maxlength="60" placeholder="z. B. Golf" autocomplete="off">
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label" for="fahrzeug-farbe">Farbe</label>
+            <input type="text" name="fahrzeug_farbe" id="fahrzeug-farbe" class="form-control"
+                   value="<%= r.fahrzeug_farbe || '' %>" maxlength="40" list="fahrzeug-farben" autocomplete="off">
+            <datalist id="fahrzeug-farben"><% fahrzeugFarben.forEach(function (f) { %><option value="<%= f %>"><% }) %></datalist>
           </div>
 
           <div class="col-6 col-md-3">
@@ -235,6 +256,19 @@ const embedQ = embed ? '&embed=1' : ''
                      value="<%= r.verstoss_art || '' %>">
               <script type="application/json" data-verstoss-data><%- JSON.stringify({ haeufig: verstossHaeufig, alle: verstossAlle }).replace(/</g, '\\u003c') %></script>
             </div>
+            <%# Konkretisierung, wo der Katalog Alternativen offen lässt (Kreuzung/
+                Einmündung …) und Hinweis auf „länger als 1 Stunde" – das Frankfurter
+                Portal fragt beides ab (services/portalFfm.ts). report-form.js
+                (initVariante) blendet beides passend zum gewählten Verstoß ein. %>
+            <div class="mt-2" id="verstoss-variante-row" hidden>
+              <label class="form-label small mb-1" for="verstoss-variante">Genauer <span class="text-danger">*</span></label>
+              <select name="verstoss_variante" id="verstoss-variante" class="form-select form-select-sm" data-current="<%= r.verstoss_variante || '' %>"></select>
+            </div>
+            <div class="alert alert-info py-1 px-2 small mt-2 mb-0" id="langparker-hint" hidden>
+              Die Tatzeit ist länger als eine Stunde.
+              <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="langparker-apply"></button>
+            </div>
+            <script type="application/json" id="formular-hilfen"><%- JSON.stringify(formularHilfen).replace(/</g, '\\u003c') %></script>
           </div>
 
           <div class="col-12 col-md-6">

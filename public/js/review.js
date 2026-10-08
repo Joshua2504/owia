@@ -345,6 +345,8 @@
       '</div>' +
       '<div><label class="form-label small mb-1" for="rv-marke">Marke</label>' +
       '<input id="rv-marke" type="text" class="form-control" data-f="fahrzeug_marke" data-inline-field="fahrzeug_marke" value="' + esc(f.fahrzeug_marke) + '" maxlength="100"></div>' +
+      '<div><label class="form-label small mb-1" for="rv-farbe">Farbe</label>' +
+      '<input id="rv-farbe" type="text" class="form-control" data-f="fahrzeug_farbe" value="' + esc(f.fahrzeug_farbe) + '" maxlength="40"></div>' +
       '<div class="review-time">' +
       '<div><label class="form-label small mb-1" for="rv-tag">Tattag</label>' +
       '<input id="rv-tag" type="date" class="form-control' + (f.tattag ? '' : ' is-invalid') + '" data-f="tattag" value="' + esc(f.tattag) + '"></div>' +

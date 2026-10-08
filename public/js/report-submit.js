@@ -74,10 +74,10 @@
       (f.tatzeit_von ? ', ' + f.tatzeit_von + (f.tatzeit_bis && f.tatzeit_bis !== f.tatzeit_von ? ' – ' + f.tatzeit_bis : '') + ' Uhr' : '')
     var rows = [
       ['Empfänger', d.recipient.ordnungsamt + (d.recipient.email ? ' (' + d.recipient.email + ')' : '')],
-      ['Kennzeichen', [f.kennzeichen, f.fahrzeug_marke].filter(Boolean).join(' · ')],
+      ['Kennzeichen', [f.kennzeichen, f.fahrzeug || f.fahrzeug_marke].filter(Boolean).join(' · ')],
       ['Tatzeit', zeit],
       ['Tatort', f.tatort],
-      ['Verstoß', f.verstoss_art],
+      ['Verstoß', f.verstoss_art ? f.verstoss_art + (f.verstoss_variante ? ' (genauer: ' + f.verstoss_variante + ')' : '') : f.verstoss_art],
       ['Fahrzeug verlassen', f.fahrzeug_verlassen ? 'Ja' : 'Nein'],
       ['Behinderung', f.behinderung ? 'Ja' + (f.behinderung_text ? ': ' + f.behinderung_text : '') : 'Nein'],
       ['Beschreibung', f.beschreibung],
@@ -156,6 +156,8 @@
         if (!res.ok) throw new Error(res.d.error || 'Einreichen fehlgeschlagen.')
         close()
         if (onSubmitted) return onSubmitted(az, sofort)
+        // Portal-Stadt (Frankfurt): Versand läuft live auf /versand.
+        if (res.d.portal) { window.location.href = res.d.portal; return }
         if (window.reportTableRefresh) return window.reportTableRefresh(az)
       })
       .catch(function (err) {

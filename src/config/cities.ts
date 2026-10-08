@@ -46,6 +46,10 @@ export interface City {
   /** Dateiname des amtlichen Formulars in resources/. Fehlt es, wird die Anzeige
    *  als rohe E-Mail (Sachverhalt + Fotos/Karte im Anhang) versendet. */
   pdfForm?: string
+  /** Versand über ein Online-Formular statt per Mail (services/portalDispatch.ts).
+   *  Frankfurt: ekom21/civento seit 10/2026 – Mails mit PDF nimmt das Amt nur
+   *  noch für Tatbestände an, die das Portal nicht kennt. */
+  portal?: 'ekom21-ffm'
   geo: CityGeo
 }
 
@@ -61,6 +65,7 @@ export const CITIES: Record<string, City> = {
     name: 'Frankfurt am Main',
     ordnungsamt: 'Ordnungsamt der Stadt Frankfurt am Main',
     pdfForm: 'formular.pdf',
+    portal: 'ekom21-ffm',
     geo: {
       scope: 'ffm',
       bbox: '8.45,50.00,8.81,50.24',

@@ -73,7 +73,13 @@ in Requests: `registerJob` + `enqueueJob` statt `await`.
    freigeschaltet nur, was in `src/config/cities.ts` steht).
 4. Admin-Freigabe (`routes/admin.ts`) regeneriert das PDF (`services/pdf.ts`,
    AcroForm-`fieldMap` je Stadt), versendet (`services/mail.ts`) und legt die
-   ausgehende Mail als erste Zeile in `report_replies` ab.
+   ausgehende Mail als erste Zeile in `report_replies` ab. **Ausnahme Städte mit
+   `portal` (Frankfurt):** Versand live unter `/versand` (`routes/portal.ts` →
+   `services/portalDispatch.ts` → Container `portal`, Playwright,
+   `docker/portal/ekom21.mjs`). Mapping Katalog → Portal-Auswahlbaum und
+   Pflichtangaben (Variante, Fahrzeugtyp, Hausnummer): `services/portalFfm.ts`.
+   Trockenläufe gegen das echte Portal sind ok (bis zur Zusammenfassung,
+   dann abbrechen) – nie mit echten Fotos Dritter testen, nie absenden.
 5. Amts-Antworten: `services/mailInbox.ts` pollt per IMAP, ordnet über
    In-Reply-To/References bzw. `OWiA-\d{6}` im Betreff zu.
 

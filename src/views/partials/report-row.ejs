@@ -89,7 +89,7 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
              autocomplete="off" spellcheck="false" autocapitalize="characters"
              aria-label="Kennzeichen von <%= r.aktenzeichen %>">
       <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="fahrzeug_marke"
-             value="<%= r.fahrzeug_marke || '' %>" placeholder="Marke / Farbe" maxlength="100"
+             value="<%= r.fahrzeug_marke || '' %>" placeholder="Marke" maxlength="100"
              autocomplete="off" aria-label="Fahrzeugmarke von <%= r.aktenzeichen %>">
       <%# Von der Kennzeichen-Erkennung gelesene Kennzeichen der Fotos, die noch
           nicht im Feld stehen: Klick übernimmt (report-inline.js). %>
@@ -103,8 +103,9 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       <% if (r.kennzeichen) { %>
         <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>
       <% } %>
-      <% if (r.fahrzeug_marke) { %>
-        <div class="text-muted small mt-1"><%= r.fahrzeug_marke %></div>
+      <% const _fz = [r.fahrzeug_typ, [r.fahrzeug_marke, r.fahrzeug_modell].filter(Boolean).join(' '), r.fahrzeug_farbe].filter(Boolean).join(', ') %>
+      <% if (_fz) { %>
+        <div class="text-muted small mt-1"><%= _fz %></div>
       <% } %>
     <% } %>
   </td>

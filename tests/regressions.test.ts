@@ -10,6 +10,8 @@ import ejs from 'ejs'
 import { verjaehrung } from '../src/services/verjaehrung'
 import { aggregiere } from '../src/services/statistik'
 import { regelsatzEuro } from '../src/config/verstoss'
+import { portalTatbestand, verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoles, portalProblem, buildPortalPayload } from '../src/services/portalFfm'
+import { portalMarke, fahrzeugBeschreibung } from '../src/config/fahrzeug'
 import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
 import { runMigrations } from '../src/db/migrate'
@@ -73,8 +75,8 @@ before(async () => {
   // Wiederholter Boot darf weder Migrationen duplizieren noch scheitern.
   await runMigrations()
   const [result] = await pool.execute<mysql.ResultSetHeader>(
-    `INSERT INTO users(email, vorname, nachname, strasse, plz, ort)
-     VALUES ('user@example.invalid', 'Test', 'Nutzer', 'Testweg 1', '63628', 'Testort')`
+    `INSERT INTO users(email, vorname, nachname, strasse, hausnummer, plz, ort)
+     VALUES ('user@example.invalid', 'Test', 'Nutzer', 'Testweg', '1', '63628', 'Testort')`
   )
   userId = result.insertId
 })
@@ -82,8 +84,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0038_jobs.sql')
-  assert.equal(rows.length, 38)
+  assert.equal(rows.at(-1)?.filename, '0039_portal_felder.sql')
+  assert.equal(rows.length, 39)
 })
 
 test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
@@ -673,4 +675,50 @@ test('Hintergrund-Jobs: gleicher Schlüssel wird nur einmal eingereiht', async (
   const rows = await query("SELECT COUNT(*) AS n FROM jobs WHERE pending_key = 'test.noop:1'")
   assert.equal(Number(rows[0].n), 1)
   await pool.execute("DELETE FROM jobs WHERE type = 'test.noop'")
+})
+
+test('Frankfurt-Portal: Tatbestand-Pfade, Varianten und Langparker', () => {
+  const pick = (l: string, v?: string) => portalTatbestand(l, v)
+  assert.deepEqual(pick('141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).'), {
+    gruppe: 'Haltverbot/gesperrter Bereich/Sonderparkplätze',
+    pfad: [{ pick: ['im Haltverbot'] }, { pick: ['im absoluten Haltverbot (Zeichen 283)'] }, { pick: ['Parken'] }],
+    rettung: false,
+  })
+  // Mehrdeutig ohne Variante → Live-Auswahl; mit Variante eindeutig.
+  const kreuzung = '112262 – Sie parkten weniger als 5 Meter vor der Kreuzung/Einmündung.'
+  assert.deepEqual(verstossVarianten(kreuzung).map((x) => x.value), ['Kreuzung', 'Einmündung'])
+  assert.ok(pick(kreuzung)!.pfad[0].ask)
+  assert.deepEqual(pick(kreuzung, 'Einmündung')!.pfad, [{ pick: ['weniger als 5 Meter VOR einer Einmündung'] }])
+  // „länger als 1 Stunde" mit Rückfall auf „Parken"
+  assert.deepEqual(pick('112656 – Sie parkten länger als 1 Stunde verbotswidrig auf dem Gehweg.')!.pfad[0], { pick: ['Parken länger als 1 Stunde', 'Parken'] })
+  assert.equal(pick('112612 – Sie parkten vor oder in einer amtlich gekennzeichneten Feuerwehrzufahrt und behinderten dadurch ein Rettungsfahrzeug im Einsatz.')!.rettung, true)
+  // Nicht im Portal
+  assert.equal(pick('112456 – Sie hielten/parkten nicht Platz sparend.'), null)
+  assert.equal(langparkerVariante('112454 – Sie parkten verbotswidrig auf dem Gehweg.'), '112656 – Sie parkten länger als 1 Stunde verbotswidrig auf dem Gehweg.')
+  assert.equal(tatDauerMinuten({ tatzeit_von: '10:15:00', tatzeit_bis: '11:30:00' }), 75)
+  assert.equal(portalProblem({ verstoss_art: kreuzung }), 'Bitte beim Verstoß genauer angeben: Kreuzung oder Einmündung.')
+  assert.equal(portalProblem({ verstoss_art: kreuzung, verstoss_variante: 'Kreuzung', kennzeichen_land: 'D' }), null)
+})
+
+test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
+  assert.equal(portalMarke('VW'), 'Volkswagen')
+  assert.equal(portalMarke('Mercedes'), 'Mercedes-Benz')
+  assert.equal(portalMarke('vw golf'), 'Volkswagen')
+  assert.equal(portalMarke('Lada'), null)
+  assert.equal(fahrzeugBeschreibung({ fahrzeug_marke: 'VW', fahrzeug_modell: 'Golf', fahrzeug_farbe: 'schwarz' }), 'VW Golf, schwarz')
+  const roles = photoRoles([{ id: 1, detected_plate: null }, { id: 2, detected_plate: 'F AB 1' }, { id: 3, detected_plate: null }])
+  assert.deepEqual([roles.uebersicht.map((i) => i.id), roles.fahrzeug.map((i) => i.id)], [[1, 3], [2]])
+  const one = photoRoles([{ id: 7, detected_plate: null }])
+  assert.deepEqual([one.uebersicht.map((i) => i.id), one.fahrzeug.map((i) => i.id)], [[7], [7]])
+  const p = buildPortalPayload(
+    { verstoss_art: '141174 – Sie parkten auf einem Radweg/Radfahrstreifen (Zeichen 237).', kennzeichen: 'F-AB 1', kennzeichen_land: 'D',
+      fahrzeug_marke: 'VW', fahrzeug_farbe: 'rot', tattag: '2026-10-07', tatzeit_von: '22:30:00', tatzeit_bis: '01:00:00', tattag_bis: '2026-10-08',
+      tatort: 'Römerberg 1, 60311 Frankfurt am Main', beschreibung: 'Vor dem Café', behinderung: 0 } as any,
+    { anrede: 'frau', vorname: 'Erika', nachname: 'Muster', strasse: 'Weg', hausnummer: '2', plz: '60311', ort: 'Frankfurt', email: 'e@x' } as any
+  )
+  assert.equal(p.person.anrede, 'Frau')
+  assert.equal(p.fahrzeug.marke, 'Volkswagen')
+  assert.equal(p.fahrzeug.typ, 'PKW')
+  assert.deepEqual(p.tat, { ort: 'Römerberg 1 - Vor dem Café', tattag: '07.10.2026', von: '22:30', bis: '23:59' })
+  assert.equal(p.gruppe, 'Radweg/Radfahrstreifen')
 })

@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify'
+import { ANREDEN } from '../config/person'
 import mysql from 'mysql2/promise'
 import crypto from 'crypto'
 import path from 'path'
@@ -34,23 +35,30 @@ function fmtDate(v: unknown): string {
 export default async function settingsRoutes(app: FastifyInstance) {
   app.get('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT email, vorname, nachname, strasse, plz, ort, telefon, cc_self FROM users WHERE id = ?',
+      'SELECT email, anrede, vorname, nachname, strasse, hausnummer, plz, ort, telefon, cc_self FROM users WHERE id = ?',
       [request.session.userId as number]
     )
     return reply.view('/settings/index.ejs', viewData(request, {
       title: 'Einstellungen',
       user: rows[0],
+      anreden: ANREDEN,
     }))
   })
 
   app.post('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
-    const { vorname, nachname, strasse, plz, ort, telefon, cc_self } =
+    const { vorname, nachname, strasse, hausnummer, plz, ort, telefon, cc_self, anrede } =
       request.body as Record<string, string>
+    const clean = (v: unknown, max: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max) || null
 
     await pool.execute(
-      `UPDATE users SET vorname=?, nachname=?, strasse=?, plz=?, ort=?, telefon=?, cc_self=?
+      `UPDATE users SET anrede=?, vorname=?, nachname=?, strasse=?, hausnummer=?, plz=?, ort=?, telefon=?, cc_self=?
        WHERE id = ?`,
-      [vorname, nachname, strasse, plz, ort, telefon, cc_self ? 1 : 0, request.session.userId as number]
+      [
+        ANREDEN.some((a) => a.value === anrede) ? anrede : null,
+        clean(vorname, 100), clean(nachname, 100), clean(strasse, 255), clean(hausnummer, 20),
+        clean(plz, 10), clean(ort, 100), clean(telefon, 50),
+        cc_self ? 1 : 0, request.session.userId as number,
+      ]
     )
 
     const name = [vorname, nachname].filter(Boolean).join(' ')

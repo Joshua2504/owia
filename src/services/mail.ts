@@ -10,6 +10,8 @@ import { renderTatortMap } from './staticmap'
 import { recipientEmailForReport } from './districts'
 import type { PreparedReportMail } from './reportDispatch'
 import { assertProductionMailConfig } from '../config/mail'
+import { strasseMitNummer } from '../config/person'
+import { fahrzeugBeschreibung } from '../config/fahrzeug'
 
 function createTransport() {
   assertProductionMailConfig()
@@ -88,11 +90,11 @@ export function buildReportMail(
     `Kennzeichen:  ${report.kennzeichen}${
       report.kennzeichen_land && report.kennzeichen_land !== 'D' ? ` (${report.kennzeichen_land})` : ''
     }`,
-    `Fahrzeug:     ${report.fahrzeug_marke || '—'}`,
+    `Fahrzeug:     ${fahrzeugBeschreibung(report) || '—'}`,
     `Tattag:       ${tattag}`,
     `Tatzeit:      ${tatzeit || '—'}`,
     `Tatort:       ${report.tatort}`,
-    `Verstoß:      ${report.verstoss_art}`,
+    `Verstoß:      ${report.verstoss_art}${report.verstoss_variante ? ` (genauer: ${report.verstoss_variante})` : ''}`,
     report.fahrzeug_verlassen === 1 ? 'Das Fahrzeug war verlassen.' : undefined,
     report.behinderung === 1
       ? `Behinderung:  ${report.behinderung_text || 'ja'}`
@@ -429,7 +431,7 @@ export const MailService = {
     let extra: mysql.RowDataPacket | undefined
     try {
       const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-        `SELECT u.email, u.vorname, u.nachname, u.strasse, u.plz, u.ort, u.telefon,
+        `SELECT u.email, u.vorname, u.nachname, u.strasse, u.hausnummer, u.plz, u.ort, u.telefon,
                 (SELECT COUNT(*) FROM report_images ri WHERE ri.report_id = r.id) AS image_count,
                 (SELECT COUNT(*) FROM reports p WHERE p.status = 'eingereicht') AS pending_count
            FROM reports r JOIN users u ON u.id = r.user_id
@@ -453,14 +455,14 @@ export const MailService = {
     const profil = extra
       ? [
           [extra.vorname, extra.nachname].filter(Boolean).join(' '),
-          extra.strasse,
+          strasseMitNummer(extra),
           [extra.plz, extra.ort].filter(Boolean).join(' '),
         ]
           .filter(Boolean)
           .join(', ')
       : ''
     const profilVollstaendig =
-      !!extra && !!(extra.vorname && extra.nachname && extra.strasse && extra.plz && extra.ort)
+      !!extra && !!(extra.vorname && extra.nachname && extra.strasse && extra.hausnummer && extra.plz && extra.ort)
     const fotos = extra ? Number(extra.image_count) : null
     const offen = extra ? Number(extra.pending_count) : null
 
@@ -504,7 +506,7 @@ export const MailService = {
           )
         : zeile('Karte', 'keine Koordinaten hinterlegt'),
       zeile('Kennzeichen', kennzeichen),
-      zeile('Fahrzeug', report.fahrzeug_marke),
+      zeile('Fahrzeug', fahrzeugBeschreibung(report)),
       zeile('Behinderung', report.behinderung === 1 ? report.behinderung_text || 'ja' : 'nein'),
       zeile('Beschreibung', report.beschreibung),
       '',

@@ -1,0 +1,9 @@
+{
+  "name": "owia-portal",
+  "private": true,
+  "type": "module",
+  "description": "Füllt Online-Formulare der Ordnungsämter (ekom21/civento) per Playwright aus",
+  "dependencies": {
+    "playwright": "1.62.1"
+  }
+}
