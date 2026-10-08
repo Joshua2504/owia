@@ -6,10 +6,6 @@
   <div class="d-flex gap-2">
     <a class="btn btn-outline-primary flex-fill d-flex align-items-center justify-content-center"
        href="/import">📸 Foto-Import</a>
-    <% if (locals.draftCount) { %>
-      <a class="btn btn-outline-success flex-fill d-flex align-items-center justify-content-center"
-         href="/pruefen" title="Entwürfe einzeln nacheinander prüfen und einreichen">▶ Prüfen (<%= draftCount %>)</a>
-    <% } %>
     <% if (locals.trashCount) { %>
       <a class="btn btn-outline-secondary d-flex align-items-center justify-content-center"
          href="/papierkorb" title="Papierkorb">🗑 <span class="ms-1"><%= trashCount %></span></a>

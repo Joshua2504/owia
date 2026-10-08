@@ -3,7 +3,7 @@
 // Ablauf: Kamera startet sofort → beliebig viele Fotos (max. MAX je Anzeige) →
 // „Fertig" → Ansicht „Entwurf angelegt" mit optionalem Sticker-Scan (derselbe
 // Kamera-Stream liest den QR-Code) → „Nächster Verstoß" oder „Vervollständigen
-// & senden" (Prüf-Modus nur für diesen Entwurf, /pruefen?az=…&von=kamera).
+// & senden" (Foto-Prüfdialog in der Liste, /anzeigen?anzeige=…&von=kamera).
 //
 // Hochladen läuft im Hintergrund und nacheinander: Beim ersten Foto wird der
 // Entwurf angelegt, jedes Foto geht sofort hoch. Wer schon den nächsten
@@ -582,7 +582,7 @@
     var bereit = d.finished && d.az
     complete.classList.toggle('disabled', !bereit)
     complete.setAttribute('aria-disabled', bereit ? 'false' : 'true')
-    complete.href = bereit ? '/pruefen?az=' + encodeURIComponent(d.az) + '&von=kamera' : '#'
+    complete.href = bereit ? '/anzeigen?anzeige=' + encodeURIComponent(d.az) + '&foto=1&von=kamera' : '#'
 
     var okBox = $('[data-sticker-ok]')
     okBox.hidden = !d.sticker

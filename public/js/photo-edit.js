@@ -22,12 +22,10 @@
 // data-detected-plate am Foto (ALPR-Ergebnis dieses Fotos) wird als
 // Übernehmen-Vorschlag angeboten, wenn es abweicht.
 //
-// Ein Prüf-Lauf für beide Modi: Kopfzeile mit Kennzeichen, Marke, Verstoß,
-// Tatort; Statuszeile mit der Prüfliste der Anzeige und „Einreichen". In der
-// Liste schließt der Dialog nach dem Einreichen. Im Prüf-Modus (/pruefen)
-// setzt review.js window.photoEditorRun = { label(), done(az, action) } –
-// dann gibt es zusätzlich Überspringen/Verwerfen und es geht mit der nächsten
-// Anzeige weiter (action: 'submitted' | 'skipped' | 'trashed').
+// Ein Prüf-Lauf: Seitenleiste mit Kennzeichen, Marke, Verstoß, Tatort;
+// Statuszeile mit der Prüfliste der Anzeige und „Einreichen". Nach dem
+// Einreichen/Verwerfen schließt der Dialog; kam man aus dem Kamera-Modus
+// (?von=kamera), geht es zurück zur Kamera.
 ;(function () {
   var MAX_DIM = 2560 // wie report-form.js
   var MIN_BOX = 6
@@ -88,8 +86,7 @@
       // Seitenleiste mit den Angaben der Anzeige (nur bei Entwürfen). Helles
       // Theme fest, damit Felder/Dropdowns auch im Dark Mode lesbar sind.
       '<aside class="photo-edit-side photo-edit-plate" data-bs-theme="light" hidden>' +
-      // Anzeige als Ganzes: was fehlt noch. Im Prüf-Modus (/pruefen,
-      // window.photoEditorRun) zusätzlich Position.
+      // Anzeige als Ganzes: was fehlt noch.
       '<div class="photo-edit-run">' +
       '<div class="photo-edit-run-label fw-semibold"></div>' +
       '<div class="photo-edit-problems small"></div>' +
@@ -185,7 +182,6 @@
         ? '<button type="button" class="btn btn-primary" data-act="send" disabled title="Ohne Prüfung direkt ans Ordnungsamt senden (nur Admins)">📨 Sofort versenden</button>'
         : '') +
       '<div class="d-flex gap-2">' +
-      '<button type="button" class="btn btn-sm btn-outline-secondary flex-fill" data-act="skip">⏭ Überspringen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-danger flex-fill" data-act="trash-report" title="Anzeige in den Papierkorb (30 Tage wiederherstellbar)">🗑 Verwerfen</button>' +
       '</div>' +
       '</div>' +
@@ -374,7 +370,6 @@
       body[f] = v
       saveDetail(body)
     }
-    dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
     dlg.querySelector('[data-act=trash-report]').addEventListener('click', function () { trashReport() })
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     dlg.querySelector('[data-variante]').addEventListener('change', function (e) {
@@ -1326,9 +1321,7 @@
     var box = dlg.querySelector('.photo-edit-side')
     var s = state
     if (!s || s.plate == null) return
-    var run = window.photoEditorRun
-    dlg.querySelector('.photo-edit-run-label').textContent = (run && run.label ? run.label() + ' · ' : '') + s.az
-    box.querySelector('[data-act=skip]').hidden = !run
+    dlg.querySelector('.photo-edit-run-label').textContent = s.az
     var probs = dlg.querySelector('.photo-edit-problems')
     var btn = box.querySelector('[data-act=submit]')
     var ready = readyToSubmit()
@@ -1358,13 +1351,15 @@
     saveBtn.classList.toggle('btn-outline-light', ready)
   }
 
-  function runDone(action) {
+  function runDone() {
     var s = state
     if (!s) return
-    var run = window.photoEditorRun
     delete detailsChanged[s.az]
-    if (run) return run.done(s.az, action)
     close()
+    if (new URLSearchParams(location.search).get('von') === 'kamera') {
+      location.href = '/kamera'
+      return
+    }
     if (window.reportTableRefresh) window.reportTableRefresh(s.az).catch(function () {})
   }
 
@@ -1383,7 +1378,7 @@
     if (sofort && !bestaetigt) {
       return OWIA.confirmSofort().then(function (ok) { if (ok && state === s) submitReport(true, true) })
     }
-    var done = function () { if (state === s) runDone('submitted') }
+    var done = function () { if (state === s) runDone() }
     if (!sofort && window.submitPreview) {
       return savePlate().then(function () {
         window.submitPreview.open(s.az, { onSubmitted: done })
@@ -1415,7 +1410,7 @@
   function trashReport(bestaetigt) {
     var s = state
     if (!s || s.busy) return
-    if (!window.photoEditorRun && !bestaetigt) {
+    if (!bestaetigt) {
       return OWIA.ask('Anzeige ' + s.az + ' in den Papierkorb verschieben? (30 Tage wiederherstellbar)', { danger: true, ok: 'In den Papierkorb' })
         .then(function (ok) { if (ok && state === s) trashReport(true) })
     }
@@ -1424,7 +1419,7 @@
       .then(function (r) {
         if (!r.ok || r.redirected) throw new Error()
         s.busy = false
-        if (state === s) runDone('trashed')
+        if (state === s) runDone()
       })
       .catch(function () {
         s.busy = false
@@ -2378,7 +2373,7 @@
         document.dispatchEvent(new CustomEvent('owia:photos-moved', { detail: { from: s.az, to: to, newDraft: !!dest.newDraft } }))
         // Liste: Zielzeile auffrischen; neue Anzeige hat noch keine Zeile.
         if (rowOf(to) && window.reportTableRefresh) Promise.resolve(window.reportTableRefresh(to)).catch(function () {})
-        else if (!window.photoEditorRun) reloadOnClose = true
+        else reloadOnClose = true
         s.busy = false
         s.picked = {}
         var movedCurrent = ids.indexOf(Number(String(s.put).split('/').pop())) !== -1
@@ -2389,7 +2384,7 @@
           if (!all.length) {
             // Keine Fotos mehr übrig: leere Anzeige gleich verwerfen?
             return OWIA.ask('Diese Anzeige hat keine Fotos mehr. In den Papierkorb verschieben?', { danger: true, ok: 'In den Papierkorb', cancel: 'Behalten' })
-              .then(function (ok) { if (state !== s) return; if (ok) trashReport(true); else runDone('skipped') })
+              .then(function (ok) { if (state !== s) return; if (ok) trashReport(true); else runDone() })
           }
           if (!movedCurrent) {
             var mine = all.filter(function (x) { return x.getAttribute('data-photo-edit') === s.put })[0]
@@ -2424,7 +2419,6 @@
     state = null
     detailsAz = null
     mapAz = null
-    // Erst nach dem Schließen: review.js baut die Karte dann komplett neu.
     if (az) flushHost(az)
     // Liste: nach Verschieben in eine neue Anzeige gibt es eine neue Zeile.
     if (reloadOnClose) {
@@ -2445,10 +2439,10 @@
     })
   }
 
-  // Zeile der Anzeigen-Liste bzw. Karte des Prüf-Modus (review.js).
+  // Zeile der Anzeigen-Liste.
   function rowOf(az) {
     var q = '="' + (window.CSS && CSS.escape ? CSS.escape(az) : az) + '"'
-    return document.querySelector('tr[data-az' + q + '], [data-review-card][data-az' + q + ']')
+    return document.querySelector('tr[data-az' + q + ']')
   }
 
   // Nach Bestätigen/Löschen: Zeile neu laden (neue Vorschaubilder, Status) und
@@ -2639,8 +2633,7 @@
     img.src = opts.src
   }
 
-  // „Prüfen" in der Zeile bzw. „🔍 N Fotos prüfen" unter den Miniaturen (und
-  // der Knopf der Prüf-Karte in /pruefen): Dialog auf dem ersten ungeprüften,
+  // „Prüfen" in der Zeile bzw. „🔍 N Fotos prüfen" unter den Miniaturen: Dialog auf dem ersten ungeprüften,
   // sonst dem ersten Foto öffnen. Entwürfe ohne Fotos haben nichts zu
   // schwärzen – dann direkt die Einreichen-Vorschau (report-submit.js), die
   // auch das fehlende Foto bemängelt.

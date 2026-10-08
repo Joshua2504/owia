@@ -138,7 +138,7 @@
   }
 
   // Gemeinsame Rückfrage vor dem Admin-Sofortversand (report-submit.js,
-  // review.js, photo-edit.js).
+  // photo-edit.js).
   function confirmSofort() {
     return confirmDialog({
       icon: '⚡',

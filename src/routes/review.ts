@@ -1,63 +1,30 @@
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
-import { requireAuth, viewData } from '../middleware/auth'
-import { getCity, unlockedCities } from '../config/cities'
+import { requireAuth } from '../middleware/auth'
+import { getCity } from '../config/cities'
 import { cityEmail } from '../services/districts'
 import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
-import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap } from '../services/portalFfm'
 import { dritteFunde, parseAnalyse, parseKennzeichenBox, erkannteKennzeichenBox } from '../services/dritte'
-import { submitProblems, kennzeichenBestaetigt, mostUsedVerstoesse, VERSTOSS_SPERREN } from './reports'
+import { submitProblems, kennzeichenBestaetigt } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
 
-// Prüf-Modus: alle offenen Entwürfe nacheinander durchgehen – Fotos prüfen und
-// schwärzen (photo-edit.js, mit Kennzeichen-Abgleich im Dialog), fehlende
-// Angaben ergänzen, einreichen oder überspringen. Gedacht fürs Handy (Bahn)
-// und zum Abarbeiten vieler Entwürfe am Stück. Die Seite lädt die Reihenfolge
-// einmal, die Karten kommen einzeln als JSON (public/js/review.js) – so bleibt
-// jeder Schritt ein kleiner Request, und der nächste Entwurf wird vorgeladen.
-// Einreichen/Verwerfen/Feldänderungen laufen über die bestehenden Endpunkte
-// (POST /anzeige/:az/submit, /discard, PATCH /anzeige/:az/felder).
+// JSON-Endpunkte des Foto-Prüfdialogs (public/js/photo-edit.js). Der frühere
+// Prüf-Modus /pruefen (eine Karte pro Entwurf) ist entfernt – alte Links und
+// der Kamera-Modus landen per Redirect im Foto-Dialog der Anzeigen-Liste.
 export default async function reviewRoutes(app: FastifyInstance) {
   app.get('/pruefen', { preHandler: requireAuth }, async (request, reply) => {
-    const userId = request.session.userId as number
-    const query = request.query as { nur?: string; az?: string; von?: string }
-    const nurBereit = query.nur === 'bereit'
-    // ?az=…: nur dieser eine Entwurf (Kamera-Modus → „Vervollständigen & senden").
-    const nurAz = typeof query.az === 'string' && query.az ? query.az : null
-    // Aus der Kamera gekommen: am Ende/„Beenden" zurück zur Kamera.
-    const zurueck = query.von === 'kamera' ? '/kamera' : '/anzeigen'
-    // Älteste Tat zuerst: die sind der Verjährung am nächsten. Ohne Tattag ans
-    // Ende (meist Fotos ohne EXIF – brauchen ohnehin mehr Handarbeit).
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT aktenzeichen, tattag, tattag_bis, bereit_at FROM reports
-        WHERE user_id = ? AND status = 'entwurf' AND versand_status IS NULL
-        ORDER BY tattag IS NULL, tattag, tatzeit_von, id`,
-      [userId]
-    )
-    // Verjährte Entwürfe lassen sich nicht mehr einreichen – nur zählen, damit
-    // sie nicht stillschweigend verschwinden (Aufräumen geht über die Liste).
-    const offen = rows.filter((r) => !isVerjaehrt(r))
-    const queue = offen
-      .filter((r) => (nurAz ? r.aktenzeichen === nurAz : !nurBereit || r.bereit_at))
-      .map((r) => r.aktenzeichen as string)
-    return reply.view('/reports/pruefen.ejs', viewData(request, {
-      title: 'Prüf-Modus',
-      queue,
-      nurBereit,
-      nurAz,
-      zurueck,
-      countAlle: offen.length,
-      countBereit: offen.filter((r) => r.bereit_at).length,
-      countVerjaehrt: rows.length - offen.length,
-      verstoss: { haeufig: await mostUsedVerstoesse(), alle: VERSTOSS_ARTEN, ...VERSTOSS_SPERREN },
-      // Ordnungsamt-Auswahl + Kartenmitte ohne Tatort (wie edit.ejs).
-      cities: unlockedCities().map((c) => ({
-        id: c.id, name: c.name, ordnungsamt: c.ordnungsamt, email: cityEmail(c) || '', lat: c.geo.mapLat, lon: c.geo.mapLon,
-      })),
-    }))
+    const query = request.query as { az?: string; von?: string }
+    const u = new URLSearchParams()
+    if (typeof query.az === 'string' && query.az) {
+      u.set('anzeige', query.az)
+      u.set('foto', '1')
+      if (query.von === 'kamera') u.set('von', 'kamera')
+    }
+    const qs = u.toString()
+    return reply.redirect('/anzeigen' + (qs ? '?' + qs : ''))
   })
 
   // Ziele für „Foto verschieben" im Foto-Dialog (photo-edit.js): andere offene
