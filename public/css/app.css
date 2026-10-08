@@ -516,6 +516,10 @@ body {
 .inline-input::placeholder { color: var(--bs-tertiary-color); font-style: italic; }
 .inline-input.inline-sub { font-size: 0.8125rem; color: var(--bs-secondary-color); }
 .inline-input.plate-field { font-size: 0.9375rem; }
+/* Fahrzeug unter dem Kennzeichen: Marke | Modell, Typ | Farbe (report-row.ejs). */
+.inline-vehicle { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.1rem 0.25rem; margin-top: 0.1rem; }
+.inline-vehicle .inline-input { margin-left: 0; width: 100%; min-width: 0; }
+.inline-vehicle select.inline-input { padding-right: 1.5rem; background-position: right 0.3rem center; }
 textarea.inline-input { font-size: 0.8125rem; line-height: 1.3; overflow: hidden; }
 .inline-input.is-saving { border-color: var(--bs-warning-border-subtle); background-color: var(--bs-warning-bg-subtle); }
 .inline-input.is-saved { border-color: var(--bs-success); background-color: var(--bs-success-bg-subtle); }
@@ -588,6 +592,7 @@ body.is-dragging .drop-new-draft { display: block; }
   .bulk-action-bar .btn, .report-dialog .btn { min-height: 44px; }
   .bulk-action-bar #bulk-count { width: 100%; text-align: center; }
   .report-table .cell-plate .inline-input + .inline-input { margin-top: 0.35rem; }
+  .report-table .cell-plate .inline-vehicle { margin-top: 0.35rem; gap: 0.35rem 0.35rem; }
 }
 
 /* ---------------------------------------------------------------------------

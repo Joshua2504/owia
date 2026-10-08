@@ -13,13 +13,17 @@
 // und verschwinden in der Kartenansicht – `:empty` greift nicht, weil EJS
 // Zeilenumbrüche im <td> hinterlässt.
 //
-// Entwürfe: Kennzeichen, Fahrzeugmarke und Verstoß sind direkt in der Zeile
-// editierbar (public/js/report-inline.js, PATCH /anzeige/:az/felder).
+// Entwürfe: Kennzeichen, Fahrzeug (Marke/Modell/Typ/Farbe), Tatzeit, Tatort und
+// Verstoß sind direkt in der Zeile editierbar (public/js/report-inline.js,
+// PATCH /anzeige/:az/felder). Erwartet dafür fahrzeugTypen (defaultContext in
+// server.ts bzw. explizit bei ejs.renderFile); die Datalists fz-marken/fz-farben
+// stellt report-table.ejs bereit.
 const _fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '')
 const _hhmm = (t) => (t ? String(t).slice(0, 5) : '')
 const _queue = queueId ? '?queue=' + queueId : ''
 const _isDraft = r.status === 'entwurf'
 const _imgs = (typeof imgs !== 'undefined' && imgs) || []
+const _typen = (typeof fahrzeugTypen !== 'undefined' && fahrzeugTypen) || ['PKW']
 %>
 <%
 // Sortierschlüssel Tatzeit (report-bulk.js): „YYYY-MM-DD HH:MM", leer = ohne Datum.
@@ -81,16 +85,29 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
     <a href="/anzeige/<%= r.aktenzeichen %><%= _isDraft ? '/bearbeiten' + _queue : '' %>" class="az-link"
        <% if (_isDraft) { %>data-edit-modal<% } %>><%= r.aktenzeichen || '—' %></a>
   </td>
-  <td class="cell-plate <%= _isDraft || r.kennzeichen || r.fahrzeug_marke ? '' : 'cell-empty' %>">
+  <td class="cell-plate <%= _isDraft || r.kennzeichen || r.fahrzeug_marke || r.fahrzeug_modell || r.fahrzeug_farbe ? '' : 'cell-empty' %>">
     <% if (_isDraft) { %>
-      <span class="cell-label">Kennzeichen / Marke</span>
+      <span class="cell-label">Kennzeichen / Fahrzeug</span>
       <input type="text" class="form-control form-control-sm inline-input plate-field" data-inline-field="kennzeichen"
              value="<%= r.kennzeichen || '' %>" placeholder="Kennzeichen" maxlength="20"
              autocomplete="off" spellcheck="false" autocapitalize="characters"
              aria-label="Kennzeichen von <%= r.aktenzeichen %>">
-      <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="fahrzeug_marke"
-             value="<%= r.fahrzeug_marke || '' %>" placeholder="Marke" maxlength="100"
-             autocomplete="off" aria-label="Fahrzeugmarke von <%= r.aktenzeichen %>">
+      <%# Fahrzeug wie im Editor getrennt (Migration 0039): Marke, Modell, Typ, Farbe. %>
+      <div class="inline-vehicle">
+        <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="fahrzeug_marke"
+               value="<%= r.fahrzeug_marke || '' %>" placeholder="Marke" maxlength="100" list="fz-marken"
+               autocomplete="off" aria-label="Fahrzeugmarke von <%= r.aktenzeichen %>">
+        <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="fahrzeug_modell"
+               value="<%= r.fahrzeug_modell || '' %>" placeholder="Modell" maxlength="60"
+               autocomplete="off" aria-label="Fahrzeugmodell von <%= r.aktenzeichen %>">
+        <select class="form-select form-select-sm inline-input inline-sub" data-inline-field="fahrzeug_typ"
+                aria-label="Fahrzeugtyp von <%= r.aktenzeichen %>" title="Fahrzeugtyp">
+          <% for (const t of _typen) { %><option value="<%= t %>" <%= (r.fahrzeug_typ || _typen[0]) === t ? 'selected' : '' %>><%= t %></option><% } %>
+        </select>
+        <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="fahrzeug_farbe"
+               value="<%= r.fahrzeug_farbe || '' %>" placeholder="Farbe" maxlength="40" list="fz-farben"
+               autocomplete="off" aria-label="Fahrzeugfarbe von <%= r.aktenzeichen %>">
+      </div>
       <%# Von der Kennzeichen-Erkennung gelesene Kennzeichen der Fotos, die noch
           nicht im Feld stehen: Klick übernimmt (report-inline.js). %>
       <% const _norm = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '') %>
@@ -237,8 +254,10 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
     <div class="d-flex gap-1 justify-content-end">
       <% if (_isDraft) { %>
         <%# Öffnet den Editor im Modal (report-modal.js); Strg-/Mittelklick = neuer Tab. %>
-        <%# Einreichen: Modal mit Datenvorschau + PDF (report-submit.js). %>
-        <button type="button" class="btn btn-sm btn-success" data-submit-preview title="Prüfen und einreichen">Einreichen</button>
+        <%# Prüfen: öffnet den Prüf-Dialog (photo-edit.js) auf dem ersten ungeprüften
+            Foto – Fotos schwärzen, Angaben kontrollieren, dort einreichen. Ohne
+            Fotos fällt der Klick auf die Einreichen-Vorschau (report-submit.js) zurück. %>
+        <button type="button" class="btn btn-sm btn-success" data-review-photos title="Fotos prüfen, Angaben kontrollieren und einreichen">Prüfen</button>
         <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary" data-edit-modal title="Alle Angaben im Editor">✏️</a>
         <%# Löschen verschiebt in den Papierkorb (wiederherstellbar). %>
         <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0">

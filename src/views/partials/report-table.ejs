@@ -1,7 +1,7 @@
 <%
 // Gemeinsame Anzeigen-Tabelle für Dashboard und Foto-Import-Übersicht.
 // Zeile: report-row.ejs. Bearbeitet wird
-//   - direkt in der Zeile (Kennzeichen, Marke, Verstoß: report-inline.js),
+//   - direkt in der Zeile (Kennzeichen, Fahrzeug, Tatzeit, Tatort, Verstoß: report-inline.js),
 //   - komplett im Editor-Modal (report-modal.js, „Bearbeiten"),
 //   - gemeinsam für mehrere Entwürfe (report-bulk.js).
 // Erwartet: reports (Felder s. report-row.ejs inkl. status), imagesByReport
@@ -91,7 +91,7 @@ const _dFmt = (r) => { const d = r.tattag ? new Date(r.tattag).toLocaleDateStrin
         <%# Spaltenköpfe sortieren server-seitig (routes/dashboard.ts übergibt sort);
             erneuter Klick dreht die Richtung. Ohne sort (Import-Übersicht) bleibt
             die Reihenfolge der Seite. %>
-        <% for (const [key, label] of [['photos', 'Fotos'], ['az', 'Aktenzeichen'], ['plate', 'Kennzeichen / Marke'], ['ts', 'Tatzeit'], ['place', 'Tatort'], ['offense', 'Verstoß'], ['status', 'Status']]) { %>
+        <% for (const [key, label] of [['photos', 'Fotos'], ['az', 'Aktenzeichen'], ['plate', 'Kennzeichen / Fahrzeug'], ['ts', 'Tatzeit'], ['place', 'Tatort'], ['offense', 'Verstoß'], ['status', 'Status']]) { %>
           <% if (typeof sort !== 'undefined' && sort) { %>
             <% const _on = sort.key === key %>
             <% const _next = _on ? (sort.dir === 'asc' ? 'desc' : 'asc') : (key === 'ts' || key === 'photos' ? 'desc' : 'asc') %>
@@ -117,6 +117,10 @@ const _dFmt = (r) => { const d = r.tattag ? new Date(r.tattag).toLocaleDateStrin
     </tbody>
   </table>
 </div>
+<%# Vorschlagslisten für Marke/Farbe der Inline-Felder (report-row.ejs) – einmal
+    je Tabelle statt je Zeile (eindeutige IDs). Nachgeladene Zeilen nutzen sie mit. %>
+<datalist id="fz-marken"><% (typeof fahrzeugMarken !== 'undefined' ? fahrzeugMarken : []).forEach(function (m) { %><option value="<%= m %>"><% }) %></datalist>
+<datalist id="fz-farben"><% (typeof fahrzeugFarben !== 'undefined' ? fahrzeugFarben : []).forEach(function (f) { %><option value="<%= f %>"><% }) %></datalist>
 <% if (_hasDrafts) { %>
   <!-- Aktionsleiste für angehakte Entwürfe. Die Checkboxen in den Zeilen
        hängen per form-Attribut an diesem Formular (Zeilen enthalten bereits

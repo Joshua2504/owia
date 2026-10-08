@@ -1,4 +1,6 @@
-// „Einreichen" in der Anzeigen-Liste: Modal mit Datenvorschau, Prüfhinweisen
+// Einreichen-Vorschau (aus dem Prüf-Dialog photo-edit.js, dem Prüf-Modus und
+// als Rückfall des „Prüfen"-Knopfs der Liste bei Entwürfen ohne Fotos):
+// Modal mit Datenvorschau, Prüfhinweisen
 // und dem frisch erzeugten PDF (POST /anzeige/:az/einreichen-vorschau). Erst
 // „Jetzt einreichen" schickt POST /anzeige/:az/submit (JSON-Modus, dieselben
 // serverseitigen Prüfungen). Danach wird die Zeile neu geladen.

@@ -1606,13 +1606,19 @@
     img.src = opts.src
   }
 
-  // „🔍 N Fotos prüfen" unter den Miniaturen: erstes ungeprüftes Foto öffnen.
+  // „Prüfen" in der Zeile bzw. „🔍 N Fotos prüfen" unter den Miniaturen (und
+  // der Knopf der Prüf-Karte in /pruefen): Dialog auf dem ersten ungeprüften,
+  // sonst dem ersten Foto öffnen. Entwürfe ohne Fotos haben nichts zu
+  // schwärzen – dann direkt die Einreichen-Vorschau (report-submit.js), die
+  // auch das fehlende Foto bemängelt.
   document.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-review-photos]')
     if (!b) return
     var row = b.closest('[data-az]')
-    var t = row && row.querySelector('[data-photo-edit][data-geprueft="0"]')
+    if (!row) return
+    var t = row.querySelector('[data-photo-edit][data-geprueft="0"]') || row.querySelector('[data-photo-edit]')
     if (t) openThumb(t)
+    else if (window.submitPreview) window.submitPreview.open(row.getAttribute('data-az'))
   })
 
   window.photoEditor = {

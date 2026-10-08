@@ -1286,6 +1286,7 @@ export default async function reportsRoutes(app: FastifyInstance) {
         // ejs.renderFile kennt den defaultContext von @fastify/view (server.ts)
         // nicht – Helfer, die report-row.ejs nutzt, hier explizit mitgeben.
         verjaehrung,
+        fahrzeugTypen: FAHRZEUG_TYPEN,
         queueId: Number.isInteger(queueParam) && queueParam > 0 ? queueParam : null,
       }
     )

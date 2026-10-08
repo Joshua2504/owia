@@ -1,5 +1,6 @@
 // Inline-Bearbeitung in der Anzeigen-Liste (report-row.ejs): Kennzeichen,
-// Fahrzeugmarke und Verstoß eines Entwurfs direkt in der Zeile ändern.
+// Fahrzeug (Marke/Modell/Typ/Farbe), Tatzeit, Tatort und Verstoß eines
+// Entwurfs direkt in der Zeile ändern.
 // Gespeichert wird beim Verlassen des Feldes bzw. bei Enter/Auswahl über
 // PATCH /anzeige/:az/felder (nur das geänderte Feld – nicht das Autosave des
 // Editors, das immer alle Felder schreibt).
@@ -26,6 +27,17 @@
 
   function rowOf(el) { return el.closest('tr[data-az]') }
 
+  // Ausgangswert eines Feldes (zum Erkennen „unverändert" und für Escape):
+  // <select> hat kein defaultValue – die beim Rendern markierte Option zählt.
+  function savedValue(el) {
+    if (el.dataset.saved !== undefined) return el.dataset.saved
+    if (el.tagName === 'SELECT') {
+      var def = Array.prototype.filter.call(el.options, function (o) { return o.defaultSelected })[0]
+      return def ? def.value : (el.options[0] ? el.options[0].value : '')
+    }
+    return el.defaultValue
+  }
+
   function setState(el, state, message) {
     var target = el.type === 'hidden' ? el.parentNode.querySelector('[data-verstoss-input]') : el
     target.classList.remove('is-saving', 'is-saved', 'is-invalid')
@@ -48,7 +60,7 @@
     if (isBox) { /* unverändert übernehmen */ } else if (field === 'kennzeichen') value = value.toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim()
     else value = value.replace(/\s+/g, ' ').trim()
     // Unverändert (z.B. nur durch das Feld getabbt) → kein Request.
-    if (!extra && value === (el.dataset.saved !== undefined ? el.dataset.saved : el.defaultValue)) {
+    if (!extra && value === savedValue(el)) {
       el.value = value
       return
     }
@@ -68,7 +80,11 @@
         if (!res.ok) throw new Error(res.d.error || 'Speichern fehlgeschlagen.')
         var saved = res.d.values && res.d.values[field]
         if (isBox) el.dataset.saved = saved === '1' ? '1' : '0'
-        else {
+        else if (el.tagName === 'SELECT') {
+          // NULL (Fahrzeugtyp) = Standard = erste Option (PKW).
+          el.value = saved || (el.options[0] ? el.options[0].value : '')
+          el.dataset.saved = el.value
+        } else {
           el.value = saved || ''
           el.dataset.saved = el.value
         }
@@ -101,7 +117,7 @@
         if (el.checked) setTimeout(function () { text.focus() }, 0)
       }
     }
-    if (el.matches && el.matches('input[data-inline-field], textarea[data-inline-field]')) save(el)
+    if (el.matches && el.matches('input[data-inline-field], textarea[data-inline-field], select[data-inline-field]')) save(el)
   })
   document.addEventListener('input', function (e) {
     var el = e.target
@@ -122,9 +138,9 @@
       e.preventDefault() // kein Zeilenumbruch im Suchfeld; Auswahl übernimmt verstoss-select.js
       return
     }
-    if (!el.matches('input[data-inline-field], textarea[data-inline-field]')) return
+    if (!el.matches('input[data-inline-field], textarea[data-inline-field], select[data-inline-field]')) return
     if (e.key === 'Escape') {
-      el.value = el.dataset.saved !== undefined ? el.dataset.saved : el.defaultValue
+      el.value = savedValue(el)
       el.blur()
     } else if (e.key === 'Enter') {
       e.preventDefault()

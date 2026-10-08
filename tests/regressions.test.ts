@@ -541,6 +541,10 @@ test('Einzelne Listenzeile lässt sich nachladen (Helfer wie verjaehrung stehen 
     const row = await app.inject({ method: 'GET', url: `/anzeige/${az}/listenzeile` })
     assert.equal(row.statusCode, 200)
     assert.ok(row.body.includes(`data-az="${az}"`))
+    // Fahrzeugfelder (Migration 0039) sind in der Zeile editierbar – der Typ
+    // braucht die Auswahlliste im Render-Kontext (fahrzeugTypen).
+    for (const f of ['fahrzeug_typ', 'fahrzeug_modell', 'fahrzeug_farbe']) assert.ok(row.body.includes(`data-inline-field="${f}"`), f)
+    assert.ok(row.body.includes('<option value="LKW"'))
   } finally { await app.close() }
 })
 

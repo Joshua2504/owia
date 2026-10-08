@@ -25,6 +25,7 @@ import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
 import statistikRoutes from './routes/statistik'
 import { verjaehrung } from './services/verjaehrung'
+import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN } from './config/fahrzeug'
 import adminRoutes from './routes/admin'
 import portalRoutes from './routes/portal'
 import { resumeWatchers } from './services/portalDispatch'
@@ -149,7 +150,8 @@ async function main() {
     layout: '/layout.ejs',
     // isAdmin ist Standard-false, damit das Layout es immer referenzieren kann,
     // auch bei (seltenen) Views, die ohne viewData gerendert werden.
-    defaultContext: { isAdmin: false, verjaehrung },
+    // Fahrzeuglisten: Auswahl/Vorschläge der Inline-Felder in report-row.ejs.
+    defaultContext: { isAdmin: false, verjaehrung, fahrzeugTypen: FAHRZEUG_TYPEN, fahrzeugMarken: FAHRZEUG_MARKEN, fahrzeugFarben: FAHRZEUG_FARBEN },
   })
 
   // Flash-Cookie nach dem Ausliefern einer HTML-Seite löschen (die Seite hat
