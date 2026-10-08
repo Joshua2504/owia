@@ -1049,7 +1049,21 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 }
 .photo-edit-move { position: absolute; left: 4px; bottom: 4px; display: flex; gap: 2px; }
 .photo-edit-move .btn { padding: 0 0.45rem; line-height: 1.3; font-weight: 700; }
-.photo-edit-tile.is-drop { outline: 3px dashed #0d6efd; outline-offset: 1px; }
+.photo-edit-tile.is-dragging { opacity: 0.35; outline: 3px dashed #0d6efd; outline-offset: 1px; }
+.photo-edit-tile { will-change: transform; }
+/* Knöpfe an Schwärzungen/Vorschlägen über dem Foto (photo-edit.js renderMarks). */
+.photo-edit-marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.photo-edit-mark { position: absolute; display: flex; gap: 3px; pointer-events: auto; }
+.pe-mark-btn {
+  width: 26px; height: 26px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.85); border-radius: 50%;
+  font-size: 13px; line-height: 24px; text-align: center; color: #fff; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+.pe-mark-btn.is-del { background: #dc3545; }
+.pe-mark-btn.is-black { background: #111; }
+.pe-mark-btn.is-ok { background: #198754; }
+.pe-mark-btn:hover, .pe-mark-btn:focus-visible { transform: scale(1.15); outline: none; }
+@media (pointer: coarse) { .pe-mark-btn { width: 32px; height: 32px; line-height: 30px; font-size: 15px; } }
 @media (min-width: 768px) {
   /* Senkrechter Streifen: ‹ = nach oben, › = nach unten. */
   .photo-edit-move .btn { transform: rotate(90deg); }

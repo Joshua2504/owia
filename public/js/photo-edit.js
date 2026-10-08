@@ -1,6 +1,9 @@
 // Foto-Prüfung in der Anzeigen-Liste: Jedes Entwurfs-Foto startet ungeprüft.
 // Klick aufs Foto (data-photo-edit, s. image-preview.js) öffnet es hier als
 // Vollbild-Dialog; man schwärzt/verpixelt/schneidet bei Bedarf und bestätigt –
+// ohne Werkzeugwahl: Ziehen auf dem Foto schwärzt (bzw. verpixelt, wenn
+// umgeschaltet), Ränder/Ecken des Rahmens ziehen schneidet zu. Jede Schwärzung
+// und jeder Datenschutz-Vorschlag hat seine Knöpfe direkt am Bereich.
 // danach öffnet sich automatisch das nächste ungeprüfte Foto derselben Anzeige.
 // Einreichen ist erst möglich, wenn alle Fotos bestätigt sind (Server prüft).
 // Gespeichert wird wie im
@@ -64,17 +67,17 @@
       '<div class="photo-edit-body">' +
       '<div class="photo-edit-strip" aria-label="Alle Fotos der Anzeige"></div>' +
       '<div class="photo-edit-stage">' +
-      '<div class="photo-edit-canvas"><canvas></canvas><div class="photo-edit-msg"></div></div>' +
+      '<div class="photo-edit-canvas"><canvas></canvas><div class="photo-edit-marks"></div><div class="photo-edit-msg"></div></div>' +
       // Bildwerkzeuge unten mittig unter dem Foto (nicht darüber – sonst
       // ließe sich am unteren Bildrand nicht schwärzen).
       '<div class="photo-edit-tools">' +
       '<span class="photo-edit-hint small"></span>' +
       '<div class="d-flex flex-wrap justify-content-center gap-2">' +
-      '<div class="btn-group btn-group-sm" role="group" aria-label="Werkzeug">' +
-      '<button type="button" class="btn btn-outline-light" data-tool="black">⬛ Schwärzen</button>' +
-      '<button type="button" class="btn btn-outline-light" data-tool="pixel">▩ Verpixeln</button>' +
-      '<button type="button" class="btn btn-outline-light" data-tool="crop">✂️ Zuschneiden</button>' +
+      '<div class="btn-group btn-group-sm" role="group" aria-label="Ziehen auf dem Foto …">' +
+      '<button type="button" class="btn btn-outline-light" data-tool="black" title="Ziehen auf dem Foto schwärzt">⬛ Schwärzen</button>' +
+      '<button type="button" class="btn btn-outline-light" data-tool="pixel" title="Ziehen auf dem Foto verpixelt">▩ Verpixeln</button>' +
       '</div>' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="crop-reset" title="Zuschnitt aufheben" hidden>⤢ Ganzes Foto</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
       '</div></div>' +
@@ -109,11 +112,8 @@
       '</div>' +
       // Datenschutz: erkannte fremde Kennzeichen/Gesichter (services/dritte.ts).
       '<div class="pe-field" data-dritte-row hidden>' +
-      '<div class="alert alert-warning py-1 px-2 small mb-1" data-dritte-text></div>' +
-      '<div class="d-flex gap-1">' +
-      '<button type="button" class="btn btn-sm btn-dark" data-act="dritte-schwaerzen" title="Die gestrichelt markierten Stellen schwärzen – danach Bestätigen speichert">⬛ Schwärzung übernehmen</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-secondary" data-act="dritte-ok" title="Fehlalarm oder nicht identifizierbar">Unbedenklich</button>' +
-      '</div></div>' +
+      '<div class="alert alert-warning py-1 px-2 small mb-0" data-dritte-text></div>' +
+      '</div>' +
       // Portal-Städte: die Reihenfolge entscheidet über die Rolle
       // (services/portalFfm.ts photoRoles) – Foto 1 Übersicht, Rest Fahrzeug.
       '<div class="pe-field small text-muted" data-rolle-row hidden><span data-rolle-info></span> ' +
@@ -185,8 +185,38 @@
     canvas = dlg.querySelector('canvas')
     ctx = canvas.getContext('2d')
     dlg.querySelectorAll('[data-tool]').forEach(function (b) {
-      b.addEventListener('click', function () { setTool(state.tool === b.dataset.tool ? null : b.dataset.tool) })
+      b.addEventListener('click', function () { setTool(b.dataset.tool) })
     })
+    dlg.querySelector('[data-act=crop-reset]').addEventListener('click', function () {
+      if (!state || !state.crop) return
+      snapshot()
+      state.crop = null
+      redraw()
+      updateUi()
+    })
+    // Knöpfe an Schwärzungen und Vorschlägen (renderMarks).
+    dlg.querySelector('.photo-edit-marks').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-mark]')
+      if (!b || !state || state.busy) return
+      var i = Number(b.getAttribute('data-i'))
+      var art = b.getAttribute('data-mark')
+      if (art === 'entfernen') {
+        snapshot()
+        state.redactions.splice(i, 1)
+      } else if (art === 'schwaerzen') {
+        var alle = vorschlagBoxen(state)
+        var box = typeof alle === 'string' ? null : alle[i]
+        if (!box) return
+        snapshot()
+        state.redactions.push({ x: box.x, y: box.y, w: box.w, h: box.h, type: 'black' })
+      } else if (art === 'freigeben') {
+        state.freigegeben[i] = true
+      }
+      redraw()
+      updateUi()
+      if (art !== 'entfernen') dritteErledigt()
+    })
+    window.addEventListener('resize', function () { if (dlg.open && state && state.base) renderMarks() })
     dlg.querySelector('[data-act=rotate]').addEventListener('click', rotate)
     dlg.querySelector('[data-act=undo]').addEventListener('click', undo)
     dlg.querySelector('[data-act=cancel]').addEventListener('click', cancel)
@@ -222,34 +252,53 @@
       if (state.dirty && !confirm('Änderungen am Foto verwerfen?')) return
       savePlate().then(function () { openThumb(t) }, function () {})
     })
-    // Reihenfolge per Drag & Drop (Desktop); auf dem Handy die Pfeile.
+    // Reihenfolge per Drag & Drop (Desktop); auf dem Handy die Pfeile. Die
+    // Kacheln weichen schon beim Ziehen aus (DOM live umsortiert, mit kurzer
+    // Gleit-Animation); gespeichert wird erst beim Loslassen.
     var dragFrom = null
+    var dragEl = null
+    var dropped = false
     strip.addEventListener('dragstart', function (e) {
       var b = e.target.closest('[data-strip-index]')
       if (!b) return
       dragFrom = Number(b.getAttribute('data-strip-index'))
+      dragEl = b
+      dropped = false
       e.dataTransfer.effectAllowed = 'move'
       e.dataTransfer.setData('text/plain', String(dragFrom))
       e.stopPropagation() // nicht report-table.js (Foto in andere Anzeige ziehen)
+      // Erst nach dem Start abblenden – sonst wäre auch das Zieh-Bild blass.
+      setTimeout(function () { if (dragEl === b) b.classList.add('is-dragging') }, 0)
     })
     strip.addEventListener('dragover', function (e) {
       if (dragFrom === null) return
       e.preventDefault()
-      strip.querySelectorAll('.is-drop').forEach(function (x) { x.classList.remove('is-drop') })
-      var b = e.target.closest('[data-strip-index]')
-      if (b) b.classList.add('is-drop')
+      e.dataTransfer.dropEffect = 'move'
+      var t = e.target.closest('[data-strip-index]')
+      if (!t || t === dragEl || t.dataset.anim) return
+      var r = t.getBoundingClientRect()
+      var quer = getComputedStyle(strip).flexDirection === 'row'
+      var nach = quer ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2
+      var ref = nach ? t.nextSibling : t
+      if (ref === dragEl || ref === dragEl.nextSibling) return
+      flipMove(strip, function () { strip.insertBefore(dragEl, ref) })
     })
     strip.addEventListener('drop', function (e) {
       if (dragFrom === null) return
       e.preventDefault()
-      var b = e.target.closest('[data-strip-index]')
+      dropped = true
       var from = dragFrom
+      var to = Array.prototype.indexOf.call(strip.children, dragEl)
       dragFrom = null
-      if (b) reorder(from, Number(b.getAttribute('data-strip-index')))
+      dragEl = null
+      if (to !== -1 && to !== from) reorder(from, to)
+      else renderStrip()
     })
     strip.addEventListener('dragend', function () {
+      if (dragFrom === null && dropped) return
       dragFrom = null
-      strip.querySelectorAll('.is-drop').forEach(function (x) { x.classList.remove('is-drop') })
+      dragEl = null
+      if (state) renderStrip() // abgebrochen: alte Reihenfolge zeigen
     })
     plateInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     // Tatort: Vorschläge (address-autocomplete.js, im Layout geladen) beim
@@ -301,19 +350,6 @@
     dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
     dlg.querySelector('[data-act=trash-report]').addEventListener('click', trashReport)
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
-    dlg.querySelector('[data-act=dritte-schwaerzen]').addEventListener('click', dritteSchwaerzen)
-    dlg.querySelector('[data-act=dritte-ok]').addEventListener('click', function () {
-      var s = state
-      if (!s || !s.put) return
-      fetch(s.put + '/dritte', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ ok: true }),
-      })
-        .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
-        .then(function () { loadStatus(s) })
-        .catch(function (err) { alert(err.message) })
-    })
     dlg.querySelector('[data-variante]').addEventListener('change', function (e) {
       saveDetail({ verstoss_variante: e.target.value })
     })
@@ -504,6 +540,27 @@
       })
   }
 
+  // Kacheln umsortieren und von der alten zur neuen Position gleiten lassen.
+  function flipMove(box, change) {
+    var tiles = Array.prototype.slice.call(box.children)
+    var vorher = tiles.map(function (t) { return t.getBoundingClientRect() })
+    change()
+    tiles.forEach(function (t, i) {
+      var b = t.getBoundingClientRect()
+      var dx = vorher[i].left - b.left
+      var dy = vorher[i].top - b.top
+      if (!dx && !dy) return
+      t.dataset.anim = '1' // während der Animation kein Drop-Ziel (sonst Flackern)
+      t.style.transition = 'none'
+      t.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'
+      requestAnimationFrame(function () {
+        t.style.transition = 'transform 160ms ease'
+        t.style.transform = ''
+        setTimeout(function () { delete t.dataset.anim; t.style.transition = '' }, 170)
+      })
+    })
+  }
+
   // Alle Fotos der Anzeige als Kacheln (links bzw. auf dem Handy unten) –
   // Überblick, was schon geprüft ist, und Sprung zu einem beliebigen Foto.
   function renderStrip() {
@@ -625,13 +682,11 @@
       (state.open ? ' · noch ' + state.open + ' offen' : '')
     st.classList.toggle('is-ok', state.ok)
     st.classList.toggle('is-open', !state.ok)
-    var tips = {
-      black: 'Rechtecke über Gesichter oder fremde Kennzeichen ziehen.',
-      pixel: 'Rechtecke über die zu verpixelnden Bereiche ziehen.',
-      crop: 'Den Ausschnitt aufziehen, der übrig bleiben soll.',
-    }
-    dlg.querySelector('.photo-edit-hint').textContent = state.tool ? tips[state.tool] : 'Werkzeug wählen.'
-    canvas.classList.toggle('editing', !!state.tool)
+    dlg.querySelector('.photo-edit-hint').textContent =
+      (state.tool === 'pixel' ? 'Ziehen auf dem Foto verpixelt' : 'Ziehen auf dem Foto schwärzt') +
+      ' · Ränder und Ecken ziehen schneidet zu.'
+    canvas.classList.toggle('editing', !!state.base)
+    dlg.querySelector('[data-act=crop-reset]').hidden = !state.crop
     var pbox = dlg.querySelector('.photo-edit-plate')
     pbox.hidden = state.plate == null
     if (state.plate != null) {
@@ -897,7 +952,7 @@
     row.querySelector('[data-dritte-text]').textContent = '⚠ Daten Dritter erkannt: ' + [
       k.length ? (k.length === 1 ? 'weiteres Kennzeichen ' : k.length + ' weitere Kennzeichen ') + k.map(function (f) { return f.text }).join(', ') : '',
       g ? (g === 1 ? 'ein Gesicht' : g + ' Gesichter') : '',
-    ].filter(Boolean).join(' und ') + '. Vorschlag ist gestrichelt markiert – ohne Schwärzen kein Versand.'
+    ].filter(Boolean).join(' und ') + '. Gestrichelt markiert – am Foto ⬛ schwärzen oder ✓ freigeben; ohne das kein Versand.'
     if (s && s.base) redraw()
   }
   // Schwärzungs-Vorschlag: Boxen aus der Analyse (Bildpixel der gespeicherten
@@ -916,7 +971,7 @@
       var ph = (b[3] - b[1]) * 0.15
       var x = Math.max(0, (b[0] - pw) * sx)
       var y = Math.max(0, (b[1] - ph) * sy)
-      return { x: x, y: y, w: Math.min(canvas.width - x, (b[2] - b[0] + 2 * pw) * sx), h: Math.min(canvas.height - y, (b[3] - b[1] + 2 * ph) * sy) }
+      return { x: x, y: y, w: Math.min(canvas.width - x, (b[2] - b[0] + 2 * pw) * sx), h: Math.min(canvas.height - y, (b[3] - b[1] + 2 * ph) * sy), art: f.art }
     })
   }
   // Schon von einer Schwärzung/Verpixelung abgedeckt (2 px Toleranz)?
@@ -925,18 +980,28 @@
       return r.x <= b.x + 2 && r.y <= b.y + 2 && r.x + r.w >= b.x + b.w - 2 && r.y + r.h >= b.y + b.h - 2
     })
   }
-  // Vorschlag übernehmen: die noch offenen Boxen schwärzen.
-  function dritteSchwaerzen() {
+  // Ist jeder Vorschlag geschwärzt oder freigegeben und mindestens einer
+  // freigegeben, gilt das Foto als unbedenklich (PATCH …/dritte). Der Server
+  // kennt nur „ganzes Foto ok"; geschwärzte Funde verschwinden ohnehin mit der
+  // Neu-Analyse der gespeicherten Fassung. Ist das Foto geändert, erst nach dem
+  // Speichern – der PUT setzt dritte_ok zurück.
+  function dritteErledigt() {
     var s = state
     var boxen = vorschlagBoxen(s)
-    if (typeof boxen === 'string') return alert(boxen)
-    boxen = boxen.filter(function (b) { return !abgedeckt(b) })
-    if (!boxen.length) return
-    snapshot()
-    boxen.forEach(function (b) { s.redactions.push({ x: b.x, y: b.y, w: b.w, h: b.h, type: 'black' }) })
-    redraw()
-    updateUi()
-    msg('Erkannte Stellen geschwärzt – prüfen und mit „Bestätigen" speichern.')
+    if (typeof boxen === 'string' || !boxen.length) return
+    var offen = boxen.some(function (b, i) { return !abgedeckt(b) && !s.freigegeben[i] })
+    if (offen || !Object.keys(s.freigegeben).length) return
+    if (s.dirty) s.dritteOkNachSpeichern = true
+    else dritteOk(s).catch(function (err) { alert(err.message) })
+  }
+  function dritteOk(s) {
+    return fetch(s.put + '/dritte', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ ok: true }),
+    })
+      .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
+      .then(function () { if (state === s) loadStatus(s) })
   }
   function renderVerstossExtras(s) {
     var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') }
@@ -1093,7 +1158,7 @@
   }
 
   function setTool(tool) {
-    state.tool = tool
+    state.tool = tool === 'pixel' ? 'pixel' : 'black'
     updateUi()
   }
 
@@ -1111,8 +1176,105 @@
     ctx.restore()
   }
 
+  // Canvas-Pixel je CSS-Pixel und die tatsächliche Bildfläche im Element
+  // (object-fit: contain kann links/rechts bzw. oben/unten Rand lassen).
+  function bildRect() {
+    var r = canvas.getBoundingClientRect()
+    var k = Math.min(r.width / canvas.width, r.height / canvas.height) || 1
+    var w = canvas.width * k
+    var h = canvas.height * k
+    return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, width: w, height: h, k: k }
+  }
+  function cropRect() {
+    return state.crop || { x: 0, y: 0, w: canvas.width, h: canvas.height }
+  }
+
+  // Zuschnitt-Rahmen: außen abgedunkelt, Winkel an den Ecken. Der Zuschnitt
+  // ist nur ein Rechteck über dem Foto und wird erst beim Speichern (bzw. vor
+  // dem Drehen) angewandt – Schwärzungen und Vorschläge behalten so ihre
+  // Koordinaten.
+  function drawCrop() {
+    var c = cropRect()
+    var k = 1 / bildRect().k
+    var W = canvas.width
+    var H = canvas.height
+    ctx.save()
+    if (state.crop) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'
+      ctx.fillRect(0, 0, W, c.y)
+      ctx.fillRect(0, c.y + c.h, W, H - c.y - c.h)
+      ctx.fillRect(0, c.y, c.x, c.h)
+      ctx.fillRect(c.x + c.w, c.y, W - c.x - c.w, c.h)
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+      ctx.lineWidth = 1.5 * k
+      ctx.strokeRect(c.x, c.y, c.w, c.h)
+    }
+    var len = Math.min(26 * k, c.w / 3, c.h / 3)
+    var t = 5 * k
+    ctx.fillStyle = '#fff'
+    ctx.shadowColor = 'rgba(0,0,0,0.6)'
+    ctx.shadowBlur = 3 * k
+    ;[[c.x, c.y, 1, 1], [c.x + c.w, c.y, -1, 1], [c.x, c.y + c.h, 1, -1], [c.x + c.w, c.y + c.h, -1, -1]].forEach(function (p) {
+      var x = p[2] > 0 ? p[0] : p[0] - t
+      var y = p[3] > 0 ? p[1] : p[1] - t
+      ctx.fillRect(p[2] > 0 ? p[0] : p[0] - len, y, len, t)
+      ctx.fillRect(x, p[3] > 0 ? p[1] : p[1] - len, t, len)
+    })
+    // Kurze Griffe in der Mitte der Seiten.
+    ctx.fillRect(c.x + c.w / 2 - len / 2, c.y, len, t)
+    ctx.fillRect(c.x + c.w / 2 - len / 2, c.y + c.h - t, len, t)
+    ctx.fillRect(c.x, c.y + c.h / 2 - len / 2, t, len)
+    ctx.fillRect(c.x + c.w - t, c.y + c.h / 2 - len / 2, t, len)
+    ctx.restore()
+  }
+
+  // Knöpfe direkt an den Bereichen: ✕ an jeder Schwärzung, ⬛/✓ an jedem
+  // offenen Datenschutz-Vorschlag. Liegen als HTML über dem Canvas.
+  function renderMarks() {
+    var box = dlg.querySelector('.photo-edit-marks')
+    box.replaceChildren()
+    if (!state || !state.base || state.drawing) return
+    var br = bildRect()
+    var cr = box.getBoundingClientRect()
+    var add = function (r, buttons) {
+      var g = el('div', 'photo-edit-mark')
+      buttons.forEach(function (b) {
+        var btn = el('button', 'pe-mark-btn ' + b[2], b[1])
+        btn.type = 'button'
+        btn.title = b[3]
+        btn.setAttribute('aria-label', b[3])
+        btn.setAttribute('data-mark', b[0])
+        btn.setAttribute('data-i', String(r.i))
+        g.appendChild(btn)
+      })
+      box.appendChild(g)
+      // Rechts oben an den Bereich, aber immer ganz sichtbar.
+      var w = g.offsetWidth
+      var h = g.offsetHeight
+      var left = br.left - cr.left + (r.x + r.w) * br.k - w
+      var top = br.top - cr.top + r.y * br.k - h - 2
+      if (top < 0) top = br.top - cr.top + r.y * br.k + 2
+      g.style.left = Math.max(0, Math.min(cr.width - w, left)) + 'px'
+      g.style.top = Math.max(0, Math.min(cr.height - h, top)) + 'px'
+    }
+    var boxen = vorschlagBoxen(state)
+    if (typeof boxen !== 'string') {
+      boxen.forEach(function (b, i) {
+        if (abgedeckt(b) || state.freigegeben[i]) return
+        var was = b.art === 'gesicht' ? 'Gesicht' : 'Kennzeichen'
+        add({ x: b.x, y: b.y, w: b.w, h: b.h, i: i }, [
+          ['schwaerzen', '⬛', 'is-black', was + ' schwärzen'],
+          ['freigeben', '✓', 'is-ok', 'Freigeben – Fehlalarm oder nicht erkennbar'],
+        ])
+      })
+    }
+    state.redactions.forEach(function (r, i) {
+      add({ x: r.x, y: r.y, w: r.w, h: r.h, i: i }, [['entfernen', '✕', 'is-del', r.type === 'pixel' ? 'Verpixelung entfernen' : 'Schwärzung entfernen']])
+    })
+  }
+
   // ohneVorschau: für Export/Einbacken – der gestrichelte Schwärzungs-
-  // Vorschlag darf nie ins gespeicherte Bild geraten.
+  // Vorschlag und der Zuschnitt-Rahmen dürfen nie ins gespeicherte Bild geraten.
   function redraw(ohneVorschau) {
     canvas.width = state.base.width
     canvas.height = state.base.height
@@ -1124,27 +1286,31 @@
         ctx.fillRect(r.x, r.y, r.w, r.h)
       }
     })
-    if (ohneVorschau) return
+    if (ohneVorschau) {
+      dlg.querySelector('.photo-edit-marks').replaceChildren()
+      return
+    }
     var boxen = vorschlagBoxen(state)
-    if (typeof boxen === 'string') return
     var lw = Math.max(2, canvas.width / 300)
     ctx.save()
     ctx.lineWidth = lw
     ctx.setLineDash([lw * 4, lw * 3])
-    boxen.forEach(function (b) {
-      if (abgedeckt(b)) return
+    if (typeof boxen !== 'string') boxen.forEach(function (b, i) {
+      if (abgedeckt(b) || state.freigegeben[i]) return
       ctx.fillStyle = 'rgba(255,193,7,0.25)'
       ctx.fillRect(b.x, b.y, b.w, b.h)
       ctx.strokeStyle = '#ffc107'
       ctx.strokeRect(b.x, b.y, b.w, b.h)
     })
     ctx.restore()
+    drawCrop()
+    renderMarks()
   }
 
   // Schnappschuss vor jeder Änderung (Rotieren/Zuschneiden erzeugen neue
   // Canvas-Objekte, die Referenz genügt) – Rückgängig ohne Rückfragen.
   function snapshot() {
-    state.history.push({ base: state.base, redactions: state.redactions.slice() })
+    state.history.push({ base: state.base, redactions: state.redactions.slice(), crop: state.crop, geometrie: state.geometrie })
     state.dirty = true
   }
   function undo() {
@@ -1152,18 +1318,24 @@
     if (!s) return
     state.base = s.base
     state.redactions = s.redactions
+    state.crop = s.crop
+    state.geometrie = s.geometrie
     state.dirty = state.history.length > 0
     redraw()
     updateUi()
   }
 
-  // Markierungen ins Bild einbacken, damit Rotieren/Zuschneiden sie mitnehmen.
+  // Markierungen einbacken und den Zuschnitt anwenden – fürs Drehen und
+  // fürs Speichern.
   function flatten() {
     redraw(true)
+    var r = cropRect()
+    var x = Math.max(0, Math.round(r.x))
+    var y = Math.max(0, Math.round(r.y))
     var c = document.createElement('canvas')
-    c.width = canvas.width
-    c.height = canvas.height
-    c.getContext('2d').drawImage(canvas, 0, 0)
+    c.width = Math.max(1, Math.min(canvas.width - x, Math.round(r.w)))
+    c.height = Math.max(1, Math.min(canvas.height - y, Math.round(r.h)))
+    c.getContext('2d').drawImage(canvas, x, y, c.width, c.height, 0, 0, c.width, c.height)
     return c
   }
 
@@ -1180,79 +1352,106 @@
     cx.drawImage(old, 0, 0)
     state.base = c
     state.redactions = []
+    state.crop = null
     redraw()
     updateUi()
   }
 
-  function crop(r) {
-    var old = flatten()
-    var x = Math.max(0, Math.round(r.x))
-    var y = Math.max(0, Math.round(r.y))
-    var w = Math.min(old.width - x, Math.round(r.w))
-    var h = Math.min(old.height - y, Math.round(r.h))
-    if (w < 1 || h < 1) return
-    snapshot()
-    state.geometrie = true
-    var c = document.createElement('canvas')
-    c.width = w
-    c.height = h
-    c.getContext('2d').drawImage(old, x, y, w, h, 0, 0, w, h)
-    state.base = c
-    state.redactions = []
-    state.tool = null
-    redraw()
-    updateUi()
-  }
-
+  // Ein Zeiger, zwei Bedeutungen: an Rand/Ecke des Zuschnitt-Rahmens (±18 px)
+  // zieht man den Rahmen, überall sonst zieht man eine Schwärzung auf.
+  var CURSOR = { n: 'ns-resize', s: 'ns-resize', w: 'ew-resize', e: 'ew-resize', nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize' }
+  var MIN_CROP = 40
   function attachDrawing() {
-    var drawing = false
-    var start = null
+    var drag = null // { mode: 'draw'|'crop', start, griff, crop0, moved }
     var pid = null
     function pos(e) {
-      var r = canvas.getBoundingClientRect()
-      return { x: ((e.clientX - r.left) * canvas.width) / r.width, y: ((e.clientY - r.top) * canvas.height) / r.height }
+      var r = bildRect()
+      return { x: (e.clientX - r.left) / r.k, y: (e.clientY - r.top) / r.k }
     }
+    function griffAn(p) {
+      var c = cropRect()
+      var tol = 18 / bildRect().k
+      var inY = p.y > c.y - tol && p.y < c.y + c.h + tol
+      var inX = p.x > c.x - tol && p.x < c.x + c.w + tol
+      var g = ''
+      if (inX && Math.abs(p.y - c.y) < tol) g += 'n'
+      else if (inX && Math.abs(p.y - (c.y + c.h)) < tol) g += 's'
+      if (inY && Math.abs(p.x - c.x) < tol) g += 'w'
+      else if (inY && Math.abs(p.x - (c.x + c.w)) < tol) g += 'e'
+      return g
+    }
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
     canvas.addEventListener('pointerdown', function (e) {
-      if (!state || !state.tool || !e.isPrimary) return
-      drawing = true
-      start = pos(e)
+      if (!state || !state.base || state.busy || !e.isPrimary || e.button > 0) return
+      var p = pos(e)
+      var g = griffAn(p)
+      drag = { mode: g ? 'crop' : 'draw', start: p, griff: g, crop0: cropRect(), moved: false }
       pid = e.pointerId
+      state.drawing = true
       canvas.setPointerCapture(e.pointerId)
+      e.preventDefault()
     })
     canvas.addEventListener('pointermove', function (e) {
-      if (!drawing || e.pointerId !== pid) return
+      if (!state || !state.base) return
+      if (!drag) {
+        if (e.pointerType === 'mouse') canvas.style.cursor = CURSOR[griffAn(pos(e))] || 'crosshair'
+        return
+      }
+      if (e.pointerId !== pid) return
       var p = pos(e)
+      if (drag.mode === 'crop') {
+        if (!drag.moved) snapshot()
+        drag.moved = true
+        var c = drag.crop0
+        var x1 = c.x, y1 = c.y, x2 = c.x + c.w, y2 = c.y + c.h
+        var dx = p.x - drag.start.x
+        var dy = p.y - drag.start.y
+        if (drag.griff.indexOf('w') !== -1) x1 = clamp(c.x + dx, 0, x2 - MIN_CROP)
+        if (drag.griff.indexOf('e') !== -1) x2 = clamp(c.x + c.w + dx, x1 + MIN_CROP, canvas.width)
+        if (drag.griff.indexOf('n') !== -1) y1 = clamp(c.y + dy, 0, y2 - MIN_CROP)
+        if (drag.griff.indexOf('s') !== -1) y2 = clamp(c.y + c.h + dy, y1 + MIN_CROP, canvas.height)
+        var voll = x1 <= 0.5 && y1 <= 0.5 && x2 >= canvas.width - 0.5 && y2 >= canvas.height - 0.5
+        state.crop = voll ? null : { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }
+        redraw()
+        return
+      }
       redraw()
       ctx.save()
-      if (state.tool === 'crop') {
-        ctx.strokeStyle = '#0d6efd'
-        ctx.lineWidth = Math.max(2, canvas.width / 300)
-        ctx.setLineDash([8, 6])
-        ctx.strokeRect(start.x, start.y, p.x - start.x, p.y - start.y)
-      } else {
-        ctx.fillStyle = 'rgba(0,0,0,0.55)'
-        ctx.fillRect(start.x, start.y, p.x - start.x, p.y - start.y)
-      }
+      ctx.fillStyle = state.tool === 'pixel' ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.6)'
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 1 / bildRect().k
+      ctx.fillRect(drag.start.x, drag.start.y, p.x - drag.start.x, p.y - drag.start.y)
+      ctx.strokeRect(drag.start.x, drag.start.y, p.x - drag.start.x, p.y - drag.start.y)
       ctx.restore()
     })
     function finish(e) {
-      if (!drawing || e.pointerId !== pid) return
-      drawing = false
-      var p = pos(e)
-      var r = { x: Math.min(start.x, p.x), y: Math.min(start.y, p.y), w: Math.abs(p.x - start.x), h: Math.abs(p.y - start.y) }
-      if (state.tool === 'crop') {
-        if (r.w >= 40 && r.h >= 40) return crop(r)
-      } else if (r.w >= MIN_BOX && r.h >= MIN_BOX) {
-        snapshot()
-        state.redactions.push({ x: r.x, y: r.y, w: r.w, h: r.h, type: state.tool === 'pixel' ? 'pixel' : 'black' })
-        updateUi()
+      if (!drag || e.pointerId !== pid) return
+      var d = drag
+      drag = null
+      state.drawing = false
+      if (d.mode === 'draw') {
+        var p = pos(e)
+        var x = clamp(Math.min(d.start.x, p.x), 0, canvas.width)
+        var y = clamp(Math.min(d.start.y, p.y), 0, canvas.height)
+        var r = {
+          x: x, y: y,
+          w: clamp(Math.max(d.start.x, p.x), 0, canvas.width) - x,
+          h: clamp(Math.max(d.start.y, p.y), 0, canvas.height) - y,
+        }
+        if (r.w >= MIN_BOX && r.h >= MIN_BOX) {
+          snapshot()
+          state.redactions.push({ x: r.x, y: r.y, w: r.w, h: r.h, type: state.tool === 'pixel' ? 'pixel' : 'black' })
+        }
       }
       redraw()
+      updateUi()
+      if (d.mode === 'draw') dritteErledigt()
     }
     canvas.addEventListener('pointerup', finish)
     canvas.addEventListener('pointercancel', function () {
-      drawing = false
-      redraw()
+      drag = null
+      if (state) state.drawing = false
+      if (state && state.base) redraw()
     })
   }
 
@@ -1456,16 +1655,20 @@
     s.busy = true
     btn.textContent = s.dirty ? 'Speichert …' : 'Bestätigt …'
     updateUi()
-    redraw(true) // keine Zeichen-/Schwärzungs-Vorschau im Export
+    // Ohne Vorschau/Rahmen, mit Zuschnitt.
+    var bild = s.dirty ? flatten() : null
+    redraw()
     var upload = !s.dirty
       ? Promise.resolve()
-      : new Promise(function (resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.9) }).then(function (blob) {
+      : new Promise(function (resolve) { bild.toBlob(resolve, 'image/jpeg', 0.9) }).then(function (blob) {
           var fd = new FormData()
           fd.append('bilder', blob, 'bearbeitet.jpg')
           return fetch(s.put, { method: 'PUT', body: fd })
         }).then(function (r) {
           if (!r.ok || r.redirected) throw new Error()
           s.dirty = false
+          // Freigegebene Vorschläge: erst jetzt, der PUT hat dritte_ok zurückgesetzt.
+          if (s.dritteOkNachSpeichern) return dritteOk(s).catch(function () {})
         })
     upload.catch(function () {}) // Fehler meldet die Kette unten
     savePlate()
@@ -1559,7 +1762,8 @@
       thumb: opts.thumb || null, thumbs: opts.thumbs || null,
       // Häkchen für „Verschieben" bleiben beim Fotowechsel derselben Anzeige.
       picked: state && state.az === opts.az && state.picked ? state.picked : {},
-      put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool || null, dirty: false,
+      put: opts.put, az: opts.az, base: null, redactions: [], history: [], tool: opts.tool === 'pixel' ? 'pixel' : 'black', dirty: false,
+      crop: null, freigegeben: {}, dritteOkNachSpeichern: false, drawing: false,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
     }
     renderStrip()
