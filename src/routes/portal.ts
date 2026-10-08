@@ -15,6 +15,7 @@ import {
   lastKnownStatus, proxy, portalHealthy, PortalError, PortalUnerreichbarError, wartendeStarts,
 } from '../services/portalDispatch'
 import { letzterSelbsttest, enqueueSelbsttest } from '../services/portalSelbsttest'
+import { versandWartezeiten } from '../services/versandWarte'
 import { versandMerken, versandPlatzBelegen, versandPlatzFreigeben } from '../services/versandTakt'
 
 const adapterOf = (r: mysql.RowDataPacket) => portalFuer(r.city)!
@@ -41,6 +42,8 @@ async function loadQueue() {
       ORDER BY r.id DESC LIMIT 15`
   )
   const wartet = await wartendeStarts()
+  // Geplanter Start des wartenden Jobs (Versand-Takt / „ab morgen“) für den Countdown.
+  const warte = await versandWartezeiten(offen.map((r) => Number(r.id)))
   return {
     offen: offen.map((r) => ({
       id: Number(r.id),
@@ -61,6 +64,7 @@ async function loadQueue() {
       versandStatus: r.versand_status as string | null,
       // Nach der Freigabe eingereiht, Lauf startet automatisch (wartet ggf. auf einen freien Platz).
       autoStart: wartet.has(Number(r.id)),
+      autoIn: warte.get(Number(r.id))?.sek || 0,
       unklar: r.versand_status === 'versand' && /"error"/.test(r.versand_ergebnis || ''),
       unklarGrund: (() => { try { return JSON.parse(r.versand_ergebnis || '{}').portal?.error || null } catch { return null } })(),
     })),

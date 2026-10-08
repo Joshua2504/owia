@@ -44,6 +44,13 @@
         <% if (!queue.offen.length) { %>
           <li class="list-group-item text-muted small" data-empty>Keine eingereichten Anzeigen für das Portal.</li>
         <% } %>
+        <%# Wartender Auto-Start: Countdown bis zum geplanten Job-Start (Versand-Takt
+            bzw. nach Mitternacht), zählt in portal-live.js herunter. %>
+        <% function uhr(sek) { const h = Math.floor(sek / 3600), m = Math.floor(sek % 3600 / 60), s = sek % 60, p = (n) => String(n).padStart(2, '0'); return (h ? h + ':' + p(m) : p(m)) + ':' + p(s) } %>
+        <% function autoBadge(sek, fallback) {
+             if (!sek) return '<span class="badge text-bg-info" title="Nach der Freigabe eingereiht – startet automatisch, sobald ein Platz frei ist.">' + fallback + '</span>'
+             return '<span class="badge text-bg-info" data-auto-in="' + sek + '" title="Geplanter Start (Versand-Takt bzw. nach Mitternacht).">⏱ automatischer Versand in <span data-auto-uhr>' + uhr(sek) + '</span></span>'
+           } %>
         <% queue.offen.forEach(function (r) { %>
           <li class="list-group-item versand-item" data-id="<%= r.id %>" data-az="<%= r.az %>" data-sendbar="<%= r.imPortal && !r.abMorgen ? '1' : '' %>"
               data-unklar="<%= r.unklar ? '1' : '' %>" data-busy="<%= (r.versandStatus || (r.autoStart && !r.abMorgen)) && !r.unklar ? '1' : '' %>">
@@ -68,10 +75,10 @@
                   <a class="btn btn-sm btn-outline-secondary ms-auto" href="/anzeige/<%= r.az %>">Ansehen</a>
                 <% } else if (r.abMorgen) { %>
                   <span class="badge text-bg-secondary" title="Das Portal nimmt nur Taten vor dem heutigen Tag an.">Tat von heute – ab morgen versendbar</span>
-                  <% if (r.autoStart) { %><span class="badge text-bg-info">startet automatisch nach Mitternacht</span><% } %>
+                  <% if (r.autoStart) { %><%- autoBadge(r.autoIn, 'startet automatisch nach Mitternacht') %><% } %>
                 <% } else { %>
                   <% if (r.varianteFehlt) { %><span class="badge text-bg-warning" title="Die Konkretisierung (z. B. Kreuzung/Einmündung) fehlt – sie wird live abgefragt.">Variante fehlt</span><% } %>
-                  <% if (r.versandStatus) { %><span class="badge text-bg-info">läuft</span><% } else if (r.autoStart) { %><span class="badge text-bg-info" title="Nach der Freigabe eingereiht – startet automatisch, sobald ein Platz frei ist.">startet automatisch</span><% } %>
+                  <% if (r.versandStatus) { %><span class="badge text-bg-info">läuft</span><% } else if (r.autoStart) { %><%- autoBadge(r.autoIn, 'startet automatisch') %><% } %>
                   <button type="button" class="btn btn-sm btn-primary ms-auto" data-act="start">▶ Senden</button>
                 <% } %>
               <% } %>

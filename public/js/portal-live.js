@@ -332,6 +332,19 @@
     if (li) slot.start(li.getAttribute('data-id'), true)
   }
 
+  // „automatischer Versand in …" (versand.ejs, data-auto-in) sekündlich herunterzählen.
+  var autoStart = Date.now()
+  function autoTick() {
+    root.querySelectorAll('[data-auto-in]').forEach(function (el) {
+      var rest = Math.max(0, Number(el.getAttribute('data-auto-in')) - Math.round((Date.now() - autoStart) / 1000))
+      var h = Math.floor(rest / 3600), m = Math.floor(rest % 3600 / 60), s = rest % 60
+      var p = function (n) { return String(n).padStart(2, '0') }
+      if (rest > 0) el.querySelector('[data-auto-uhr]').textContent = (h ? h + ':' + p(m) : p(m)) + ':' + p(s)
+      else { el.removeAttribute('data-auto-in'); el.textContent = 'automatischer Versand startet …' }
+    })
+  }
+  if (root.querySelector('[data-auto-in]')) setInterval(autoTick, 1000)
+
   var testBtn = document.querySelector('[data-act=selbsttest]')
   if (testBtn) testBtn.addEventListener('click', function () {
     testBtn.disabled = true
