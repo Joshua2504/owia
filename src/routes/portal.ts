@@ -5,7 +5,8 @@
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
-import { requireAdmin, viewData } from '../middleware/auth'
+import { requireAdmin, requireAuth, viewData } from '../middleware/auth'
+import { isAdminEmail } from '../config/admin'
 import { getCity, unlockedCities } from '../config/cities'
 import { fahrzeugBeschreibung } from '../config/fahrzeug'
 import { portalFuer, erstMorgen } from '../services/portale'
@@ -79,7 +80,40 @@ export default async function portalRoutes(app: FastifyInstance) {
     }))
   })
 
+  const reportIdOf = (request: { params: unknown }) => Number((request.params as { id: string }).id)
+
   app.get('/versand/liste', { preHandler: requireAdmin }, async () => loadQueue())
+
+  // Mini-Player (public/js/versand-mini.js, auf jeder Seite): laufender
+  // Portal-Versand – Admins sehen jeden, Nutzer nur den ihrer eigenen Anzeige.
+  // Nur ansehen, Eingriffe gibt es weiter nur auf /versand.
+  async function liveReport(request: { session: { userId?: number; userEmail?: string } }, id?: number) {
+    const admin = isAdminEmail(request.session.userEmail)
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id, aktenzeichen FROM reports
+        WHERE versand_status IN ('vorbereitung','versand') AND versand_ergebnis LIKE '%"portal"%'
+          ${admin ? '' : 'AND user_id = ?'} ${id ? 'AND id = ?' : ''}
+        ORDER BY id LIMIT 1`,
+      [...(admin ? [] : [Number(request.session.userId)]), ...(id ? [id] : [])]
+    )
+    return rows[0] ? { id: Number(rows[0].id), az: String(rows[0].aktenzeichen) } : null
+  }
+  app.get('/api/versand/live', { preHandler: requireAuth, config: { rateLimit: false } }, async (request) => {
+    const r = await liveReport(request)
+    if (!r) return { live: null }
+    const runId = await currentRunId(r.id)
+    const run = (runId && (await runStatus(runId).catch(() => null))) || lastKnownStatus(r.id)
+    return { live: { id: r.id, az: r.az, state: run?.state ?? 'starting', message: run?.message ?? '' } }
+  })
+  app.get('/api/versand/live/:id/frame', { preHandler: requireAuth, config: { rateLimit: false } }, async (request, reply) => {
+    const r = await liveReport(request, reportIdOf(request))
+    const runId = r && (await currentRunId(r.id))
+    if (!runId) return reply.status(204).send()
+    const res = await proxy(runId, '/frame').catch(() => null)
+    if (!res || res.status !== 200) return reply.status(204).send()
+    reply.header('Cache-Control', 'no-store')
+    return reply.type('image/jpeg').send(Buffer.from(await res.arrayBuffer()))
+  })
 
   // Selbsttest von Hand (sonst nachts, services/portalSelbsttest.ts).
   app.post('/versand/selbsttest', { preHandler: requireAdmin }, async () => {
@@ -87,7 +121,6 @@ export default async function portalRoutes(app: FastifyInstance) {
     return { ok: true }
   })
 
-  const reportIdOf = (request: { params: unknown }) => Number((request.params as { id: string }).id)
   const fail = (reply: any, err: unknown) => {
     if (err instanceof PortalError) return reply.status(409).send({ error: err.message })
     throw err

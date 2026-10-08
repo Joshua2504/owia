@@ -1200,3 +1200,21 @@ body:has(.review-actions) .back-to-top { bottom: 5rem; }
 .photo-edit-marks .pe-kz-box { position: absolute; width: 12.5rem; pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,.5); border-radius: .25rem; }
 .photo-edit-marks .pe-kz-land { flex: 0 0 3.4rem; width: 3.4rem; padding-left: .4rem; padding-right: 1.2rem; background-position: right .25rem center; border: 2px solid #0dcaf0; font-weight: 600; }
 .photo-edit-marks .pe-kz-input { position: static; pointer-events: auto; font-weight: 600; text-transform: uppercase; border: 2px solid #0dcaf0; }
+
+/* Mini-Player des laufenden Portal-Versands (versand-mini.js): unten links,
+   beim Hovern groß. */
+.versand-mini { position: fixed; left: 12px; bottom: 12px; z-index: 1080; width: 200px; display: block; color: #fff; text-decoration: none;
+  background: #111; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,.45); transition: width .2s ease; }
+.versand-mini[hidden] { display: none; }
+.versand-mini:hover, .versand-mini:focus-visible { width: min(640px, calc(100vw - 24px)); color: #fff; }
+.versand-mini-screen { aspect-ratio: 16 / 10; background: #222; }
+.versand-mini-screen img { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .2s; }
+.versand-mini.has-frame .versand-mini-screen img { opacity: 1; }
+.versand-mini-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.versand-mini-dot { flex: 0 0 8px; height: 8px; border-radius: 50%; background: #0dcaf0; animation: versand-mini-puls 1.2s ease-in-out infinite; }
+.versand-mini[data-state=needs_input] .versand-mini-dot { background: #ffc107; }
+.versand-mini[data-state=ready] .versand-mini-dot, .versand-mini[data-state=done] .versand-mini-dot { background: #198754; animation: none; }
+.versand-mini[data-state=failed] .versand-mini-dot { background: #dc3545; animation: none; }
+@keyframes versand-mini-puls { 50% { opacity: .3; } }
+@media print { .versand-mini { display: none !important; } }
+.versand-mini-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }

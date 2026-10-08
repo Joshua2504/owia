@@ -37,7 +37,7 @@
 <%# embed: Seite läuft im Editor-Modal der Anzeigen-Liste (report-modal.js) –
     ohne Navigation, Footer und Cookie-Hinweis (die zeigt die umgebende Seite). %>
 <% const _embed = !!locals.embed %>
-<body class="<%= _embed ? 'is-embed' : '' %>"<%= isAdmin ? ' data-admin' : '' %>>
+<body class="<%= _embed ? 'is-embed' : '' %>"<%= isAdmin ? ' data-admin' : '' %><%= currentUser ? ' data-user' : '' %>>
   <% if (!_embed) { %>
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top" id="site-nav">
     <div class="<%= locals.wide ? 'container-fluid px-3 px-xl-4' : 'container' %>">
@@ -142,5 +142,6 @@
   <script src="/public/js/address-autocomplete.js"></script>
   <%# Alle Auswahllisten (select.form-select) durchsuchbar machen. %>
   <script src="/public/js/searchable-select.js"></script>
+  <% if (currentUser) { %><script src="/public/js/versand-mini.js"></script><% } %>
 </body>
 </html>
