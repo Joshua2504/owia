@@ -94,20 +94,20 @@
       '<div class="photo-edit-problems small"></div>' +
       '</div>' +
       '<div class="photo-edit-fields">' +
-      // Kennzeichen + Marke nebeneinander – die Leiste soll ohne Scrollen passen.
-      '<div class="pe-row">' +
+      // Kennzeichen, Typ, Marke nebeneinander – die Leiste soll ohne Scrollen passen.
+      '<div class="pe-row pe-row-kfz">' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
       '<div class="input-group"><select id="pe-land" class="form-select photo-edit-details flex-grow-0 w-auto" data-detail="kennzeichen_land" aria-label="Länderkennzeichen" title="Land des Kennzeichens" hidden><option value="D">D</option></select>' +
       '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>' +
       '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
+      '<div class="pe-field photo-edit-details" hidden><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
       '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. Volkswagen" list="pe-marken"></div>' +
       '</div>' +
       // Fahrzeug direkt unter Kennzeichen/Marke (gleicher Speicherweg wie die
       // übrigen Details, daher ebenfalls .photo-edit-details).
       '<div class="photo-edit-details" hidden>' +
-      '<div class="pe-row pe-row-3">' +
-      '<div class="pe-field"><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
+      '<div class="pe-row">' +
       '<div class="pe-field"><label class="form-label" for="pe-modell">Modell</label><input type="text" id="pe-modell" class="form-control" data-detail="fahrzeug_modell" maxlength="60" autocomplete="off"></div>' +
       '<div class="pe-field"><label class="form-label" for="pe-farbe">Farbe</label><input type="text" id="pe-farbe" class="form-control" data-detail="fahrzeug_farbe" maxlength="40" autocomplete="off" list="pe-farben"></div>' +
       '</div>' +
