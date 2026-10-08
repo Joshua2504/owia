@@ -1,5 +1,5 @@
-// Live-Versand (/versand, src/views/admin/versand.ejs): startet Portal-Läufe in
-// zwei Fenstern parallel (Portal-Dienst: höchstens 2 gleichzeitig), zeigt je das
+// Live-Versand (/versand, src/views/admin/versand.ejs): startet Portal-Läufe
+// nacheinander in einem Fenster (Portal-Dienst: immer nur 1 Lauf), zeigt das
 // Browserbild (Einzelbilder per Polling – robust hinter jedem Proxy) und reicht
 // Klicks, Scrollen und Tastatur durch. Server: src/routes/portal.ts.
 ;(function () {
@@ -66,7 +66,7 @@
     this.btnSubmit = q('[data-act=absenden]')
     this.btnResume = q('[data-act=fortsetzen]')
     this.btnCancel = q('[data-act=abbrechen]')
-    q('[data-slot-nr]').textContent = 'Fenster ' + nr
+    q('[data-slot-nr]').textContent = 'Live'
 
     this.img.addEventListener('click', function (e) {
       var r = self.img.getBoundingClientRect()
@@ -283,7 +283,7 @@
     var s = slotOf(id)
     if (s && s.busy()) return s
     s = s || freeSlot()
-    if (!s) { alert('Beide Fenster sind belegt – bitte warten, bis ein Lauf fertig ist.'); return null }
+    if (!s) { alert('Es läuft bereits eine Anzeige – bitte warten, bis sie fertig ist.'); return null }
     s.start(id)
     return s
   }

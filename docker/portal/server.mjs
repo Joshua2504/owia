@@ -30,10 +30,17 @@ const PORT = 8080
 const VIEWPORT = { width: 1100, height: 860 }
 const IDLE_LIMIT_MS = 40 * 60 * 1000 // ekom21 beendet Sitzungen nach 60 min Inaktivität
 const KEEP_FINISHED_MS = 6 * 60 * 60 * 1000
-const MAX_ACTIVE = 2
+// Immer nur eine Anzeige gleichzeitig (Nutzervorgabe); weitere Starts
+// bekommen 429, die App reiht sie als Job ein (portalDispatch.ts).
+const MAX_ACTIVE = 1
 
 const runs = new Map()
 let browser = null
+// Ab SIGTERM antwortet der Dienst nur noch 503: Die Läufe sterben mit dem
+// Chromium und melden dabei 'failed' – das darf die App nicht als echten
+// Formularfehler lesen. Sie sieht erst 503, dann (neuer Prozess) 404 und
+// startet den Versand von vorn.
+let shuttingDown = false
 
 async function getBrowser() {
   if (!browser || !browser.isConnected()) {
@@ -257,11 +264,12 @@ async function handle(req, res) {
   const url = new URL(req.url, 'http://x')
   const parts = url.pathname.split('/').filter(Boolean)
 
+  if (shuttingDown) return send(res, 503, { error: 'Portal-Dienst wird beendet.' })
   if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, runs: runs.size })
 
   if (req.method === 'POST' && url.pathname === '/runs') {
     const active = [...runs.values()].filter((r) => ACTIVE.has(r.state)).length
-    if (active >= MAX_ACTIVE) return send(res, 429, { error: 'Es laufen bereits zu viele Portal-Vorgänge.' })
+    if (active >= MAX_ACTIVE) return send(res, 429, { error: 'Es läuft bereits ein Portal-Vorgang – bitte warten, bis er fertig ist.' })
     const body = await readBody(req)
     if (!body.payload) return send(res, 400, { error: 'payload fehlt' })
     // Idempotenz: Die App gibt eine eigene Lauf-ID mit. Kommt dieselbe ID noch
@@ -358,6 +366,7 @@ http
   .listen(PORT, () => console.log(`portal listening on ${PORT}`))
 
 process.on('SIGTERM', async () => {
+  shuttingDown = true
   await browser?.close().catch(() => {})
   process.exit(0)
 })

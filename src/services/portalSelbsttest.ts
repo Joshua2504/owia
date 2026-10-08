@@ -14,7 +14,7 @@ import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { verstossVarianten } from './portalFfm'
 import { portalFuer } from './portale'
 import { MailService } from './mail'
-import { enqueueJob, registerJob } from './jobs'
+import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
@@ -50,7 +50,7 @@ function testbild(rgb: [number, number, number]): string {
 async function portal(p: string, init: RequestInit = {}): Promise<any> {
   const res = await fetch(PORTAL_URL + p, { ...init, signal: AbortSignal.timeout(60000) })
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body.error || `Portal-Dienst HTTP ${res.status}`)
+  if (!res.ok) throw Object.assign(new Error(body.error || `Portal-Dienst HTTP ${res.status}`), { status: res.status })
   return body
 }
 
@@ -115,6 +115,9 @@ registerJob('portal.selbsttest', async (_payload, log) => {
     const r = await runSelbsttest()
     log.info(r, 'Portal-Selbsttest erfolgreich')
   } catch (err) {
+    // Der Dienst nimmt nur einen Lauf gleichzeitig an – läuft gerade ein
+    // echter Versand, später erneut versuchen statt Alarm zu schlagen.
+    if ((err as { status?: number })?.status === 429) throw new JobRetryLater('Portal-Dienst belegt', 300)
     const msg = err instanceof Error ? err.message : String(err)
     await MailService.sendAdminHinweis(
       'OWiA: Portal-Selbsttest fehlgeschlagen (Frankfurt/ekom21)',

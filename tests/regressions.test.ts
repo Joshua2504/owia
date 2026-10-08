@@ -20,6 +20,7 @@ import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
 import { runMigrations } from '../src/db/migrate'
 import { dispatchReport } from '../src/services/reportDispatch'
+import { resumeWatchers } from '../src/services/portalDispatch'
 import { consumeLoginCode, consumeMagicLink, MAX_LOGIN_ATTEMPTS } from '../src/services/loginTokens'
 import { processInboundMail, repliesDir } from '../src/services/mailInbox'
 import { MailService } from '../src/services/mail'
@@ -166,6 +167,28 @@ test('Prozessabbruch bei Vorbereitung führt nicht zu automatischer Wiederholung
   const id = await report()
   await pool.execute("UPDATE reports SET versand_status='vorbereitung' WHERE id=?", [id])
   assert.equal(await dispatchReport(id, async () => { throw new Error('Nicht aufrufen') }), 'busy')
+})
+
+test('Portal-Start, den ein Neustart abbrach, beginnt komplett von vorn', async () => {
+  const id = await report()
+  const unklar = await report()
+  await pool.execute("UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=? WHERE id=?", [
+    JSON.stringify({ portal: { pendingRunId: '00000000-0000-4000-8000-000000000000', startedAt: new Date().toISOString(), auto: true } }), id,
+  ])
+  // Nach dem Absenden-Klick verloren: bleibt unklar, kein zweiter Versand.
+  await pool.execute("UPDATE reports SET versand_status='versand', versand_ergebnis=? WHERE id=?", [
+    JSON.stringify({ portal: { runId: 'weg', submittedAt: new Date().toISOString(), error: 'Ergebnis unklar' } }), unklar,
+  ])
+  await resumeWatchers(logger)
+  const [r] = await query('SELECT versand_status, versand_ergebnis FROM reports WHERE id=?', [id])
+  assert.equal(r.versand_status, null)
+  assert.equal(r.versand_ergebnis, null)
+  const jobs = await query("SELECT payload FROM jobs WHERE type='portal.start' AND status='queued'")
+  const payloads = jobs.map((j) => JSON.parse(j.payload))
+  assert.deepEqual(payloads.filter((p) => p.reportId === id), [{ reportId: id, auto: true }])
+  assert.equal(payloads.filter((p) => p.reportId === unklar).length, 0)
+  assert.equal((await query('SELECT versand_status FROM reports WHERE id=?', [unklar]))[0].versand_status, 'versand')
+  await pool.execute("DELETE FROM jobs WHERE type='portal.start'")
 })
 
 test('Zurückziehen und Ablehnen sind während des Versands gesperrt', async () => {

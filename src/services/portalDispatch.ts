@@ -9,6 +9,9 @@
 //   done                       → status='versendet', versand_art='portal',
 //                                Vorgangs-ID + Beleg in report_replies
 //   abgebrochen/Fehler vor Absenden → Sperre lösen (bleibt 'eingereicht')
+//   Lauf verloren vor Absenden (Neustart/Deploy des Portal-Dienstes oder der
+//   App mitten im Start) → Sperre lösen und komplett neu starten (Job
+//                                portal.start, Formular von vorn)
 //   Fehler nach Absenden / Lauf verloren nach Absenden
 //                              → bleibt 'versand' = unklar, Mensch prüft
 //                                (resolveUncertain, Knöpfe auf /versand)
@@ -36,8 +39,11 @@ import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
 export class PortalError extends Error {}
-/** Portal-Dienst hat gerade keinen freien Platz (höchstens 2 Läufe). */
+/** Portal-Dienst ist belegt (immer nur ein Lauf gleichzeitig, MAX_ACTIVE in
+ *  docker/portal/server.mjs). */
 export class PortalBusyError extends PortalError {}
+/** Portal-Dienst nicht erreichbar (z. B. startet nach einem Deploy noch). */
+export class PortalUnerreichbarError extends PortalError {}
 /** Tat von heute, das Portal nimmt sie erst ab morgen an. */
 export class PortalAbMorgenError extends PortalError {}
 
@@ -85,7 +91,9 @@ export function usesPortal(report: Record<string, any>): boolean {
   return !!getCity(report.city).portal
 }
 
-function portalInfo(report: mysql.RowDataPacket): { runId?: string; error?: string; submittedAt?: string; auto?: boolean } | null {
+function portalInfo(
+  report: mysql.RowDataPacket
+): { runId?: string; pendingRunId?: string; error?: string; submittedAt?: string; auto?: boolean } | null {
   try {
     const j = JSON.parse(report.versand_ergebnis || 'null')
     return j && j.portal ? j.portal : null
@@ -127,14 +135,21 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
   await checkStartbar(report)
   const adapter = portalFuer(report.city)!
 
+  // Lauf-ID selbst vergeben (Idempotenz im Portal-Dienst) und schon mit dem
+  // Claim speichern: Geht die Antwort auf POST /runs verloren (Timeout,
+  // Netzfehler) oder stirbt die App mittendrin, wäre im Dienst sonst ein
+  // Chromium-Lauf gestartet, von dem die App nichts weiß – er belegte bis zum
+  // 40-Minuten-Idle-Limit den einzigen Platz. Fehlerbehandlung bzw.
+  // resumeWatchers() können ihn so gezielt abbrechen.
+  let clientRunId: string | null = crypto.randomUUID()
+  const startInfo = { pendingRunId: clientRunId, startedAt: new Date().toISOString(), ...(opts.auto ? { auto: true } : {}) }
   const [claim] = await pool.execute<mysql.ResultSetHeader>(
     `UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=?
       WHERE id=? AND status='eingereicht' AND versand_status IS NULL`,
-    [JSON.stringify({ portal: { startedAt: new Date().toISOString() } }), reportId]
+    [JSON.stringify({ portal: startInfo }), reportId]
   )
   if (!claim.affectedRows) throw new PortalError('Die Anzeige wird bereits versendet.')
 
-  let clientRunId: string | null = null
   try {
     const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
     const [zeiten] = await pool.execute<mysql.RowDataPacket[]>(
@@ -160,12 +175,6 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
         files.push({ role, name: `${report.aktenzeichen}-${role}-${img.id}.jpg`, data: buffer.toString('base64') })
       }
     }
-    // Lauf-ID selbst vergeben (Idempotenz im Portal-Dienst): Geht die Antwort
-    // auf POST /runs verloren (Timeout, Netzfehler), wäre im Dienst sonst ein
-    // Chromium-Lauf gestartet, von dem die App nichts weiß – er belegte bis
-    // zum 40-Minuten-Idle-Limit einen der zwei Plätze. So kann die Fehler-
-    // behandlung den Lauf gezielt abbrechen.
-    clientRunId = crypto.randomUUID()
     const res = await portalFetch('/runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -173,11 +182,12 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
       timeoutMs: 60000,
     })
     const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string }
-    if (res.status === 429) throw new PortalBusyError(body.error || 'Es laufen bereits zu viele Portal-Vorgänge.')
+    if (res.status === 429) throw new PortalBusyError(body.error || 'Es läuft bereits ein Portal-Vorgang.')
+    if (res.status === 503) throw new PortalUnerreichbarError(body.error || 'Der Portal-Dienst startet gerade neu.')
     if (!res.ok || !body.id) throw new PortalError(body.error || `Portal-Dienst antwortet nicht (HTTP ${res.status}).`)
     clientRunId = null
     await pool.execute('UPDATE reports SET versand_ergebnis=? WHERE id=?', [
-      JSON.stringify({ portal: { runId: body.id, startedAt: new Date().toISOString(), ...(opts.auto ? { auto: true } : {}) } }),
+      JSON.stringify({ portal: { runId: body.id, startedAt: startInfo.startedAt, ...(opts.auto ? { auto: true } : {}) } }),
       reportId,
     ])
     if (opts.auto) autoSubmit.add(reportId)
@@ -194,11 +204,10 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
     if (err instanceof PortalError) throw err
     if (err instanceof PortalDatenFehler) throw new PortalError(err.message)
     log?.error({ err, reportId }, 'Portal-Lauf konnte nicht gestartet werden')
-    throw new PortalError(
-      err instanceof Error && /fetch failed|abort/i.test(err.message)
-        ? 'Der Portal-Dienst ist nicht erreichbar (Container „portal" läuft?).'
-        : 'Portal-Lauf konnte nicht gestartet werden.'
-    )
+    if (err instanceof Error && /fetch failed|abort/i.test(err.message)) {
+      throw new PortalUnerreichbarError('Der Portal-Dienst ist nicht erreichbar (Container „portal" läuft?).')
+    }
+    throw new PortalError('Portal-Lauf konnte nicht gestartet werden.')
   }
 }
 
@@ -260,6 +269,21 @@ async function releaseClaim(reportId: number): Promise<void> {
     "UPDATE reports SET versand_status=NULL, versand_ergebnis=NULL WHERE id=? AND versand_status='vorbereitung'",
     [reportId]
   )
+}
+
+/** Lauf ging vor dem Absenden verloren (Portal-Dienst oder App neu gestartet,
+ *  z. B. beim Deploy): Ein halb ausgefülltes Formular lässt sich nicht
+ *  fortsetzen (die Portal-Sitzung lebte im alten Chromium) – also Sperre lösen
+ *  und den Versand komplett von vorn starten. Nach dem Absenden-Klick
+ *  ('versand') nie: dort ist unklar, ob die Anzeige angekommen ist. */
+async function restartFromScratch(reportId: number, auto: boolean, grund: string): Promise<void> {
+  const [rel] = await pool.execute<mysql.ResultSetHeader>(
+    "UPDATE reports SET versand_status=NULL, versand_ergebnis=NULL WHERE id=? AND versand_status='vorbereitung'",
+    [reportId]
+  )
+  if (!rel.affectedRows) return
+  await enqueueJob('portal.start', { reportId, auto }, { key: `portal.start:${reportId}`, maxAttempts: 3 })
+  log?.warn({ reportId, grund }, 'Portal-Lauf verloren – Versand startet neu')
 }
 
 async function markUncertain(reportId: number, info: Record<string, unknown>, error: string): Promise<void> {
@@ -368,8 +392,11 @@ function watch(reportId: number, runId: string): void {
           // Lauf unbekannt (Portal-Dienst neu gestartet).
           if (report.versand_status === 'versand') {
             await markUncertain(reportId, portalInfo(report)!, 'Portal-Dienst nach dem Absenden neu gestartet – Ergebnis unklar.')
-          } else await releaseClaim(reportId)
-          lastStatus.set(reportId, { ...(lastStatus.get(reportId) as PortalRunStatus), reportId, state: 'failed', message: 'Lauf ging verloren (Portal-Dienst neu gestartet).' })
+            lastStatus.set(reportId, { ...(lastStatus.get(reportId) as PortalRunStatus), reportId, state: 'failed', message: 'Lauf ging nach dem Absenden verloren – Ergebnis unklar.' })
+          } else {
+            await restartFromScratch(reportId, !!portalInfo(report)?.auto, 'Portal-Dienst neu gestartet')
+            lastStatus.set(reportId, { ...(lastStatus.get(reportId) as PortalRunStatus), reportId, state: 'failed', message: 'Lauf ging verloren (Portal-Dienst neu gestartet) – startet von vorn.' })
+          }
           return
         }
         lastStatus.set(reportId, { ...st, reportId })
@@ -401,13 +428,15 @@ function watch(reportId: number, runId: string): void {
     } finally {
       watching.delete(reportId)
       autoSubmit.delete(reportId)
-      // Ein Platz im Portal-Dienst ist frei: wartende Starts nach Freigabe sofort versuchen.
+      // Der Portal-Dienst ist frei: wartende Starts nach Freigabe sofort versuchen.
       void pool.execute("UPDATE jobs SET run_after=NOW() WHERE type='portal.start' AND status='queued'").catch(() => undefined)
     }
   })()
 }
 
-/** Nach App-Neustart: offene Portal-Läufe wieder beobachten. */
+/** Nach App-Neustart: offene Portal-Läufe wieder beobachten. Starb die App
+ *  mitten im Start (Claim ohne bestätigte runId), wird ein evtl. doch
+ *  angelegter Lauf abgebrochen und der Versand von vorn gestartet. */
 export async function resumeWatchers(logger: FastifyBaseLogger): Promise<void> {
   log = logger
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -419,7 +448,10 @@ export async function resumeWatchers(logger: FastifyBaseLogger): Promise<void> {
       if (info.auto && r.versand_status === 'vorbereitung') autoSubmit.add(Number(r.id))
       watch(Number(r.id), info.runId)
     }
-    else if (!info?.runId && r.versand_status === 'vorbereitung') await releaseClaim(Number(r.id)) // Start abgebrochen
+    else if (!info?.runId && r.versand_status === 'vorbereitung') {
+      if (info?.pendingRunId) await proxy(info.pendingRunId, '/cancel', { method: 'POST' }).catch(() => null)
+      await restartFromScratch(Number(r.id), !!info?.auto, 'App-Neustart während des Starts')
+    }
   }
 }
 
@@ -441,7 +473,7 @@ export async function resolveUncertain(reportId: number, outcome: 'gesendet' | '
 // Anzeige „Einreichen & versenden") startet den Lauf direkt im Hintergrund –
 // ohne Klick auf /versand. Abgeschickt wird ohne Rückfrage nur, wenn der Lauf
 // ohne Eingriff durchkommt; sonst wartet er auf /versand auf „Jetzt absenden".
-// Ist der Portal-Dienst voll belegt, wartet der Job auf einen freien Platz;
+// Es läuft immer nur ein Lauf gleichzeitig; ist der Dienst belegt, wartet der Job;
 // Taten von heute (Frankfurt) starten kurz nach Mitternacht.
 
 function sekundenBisMorgen(): number {
@@ -449,14 +481,17 @@ function sekundenBisMorgen(): number {
   return 24 * 3600 - (h * 3600 + m * 60 + s) + 5 * 60
 }
 
-registerJob('portal.start', async ({ reportId }) => {
+registerJob('portal.start', async ({ reportId, auto }) => {
   const report = await loadReport(Number(reportId))
   // Inzwischen abgelehnt, von Hand auf /versand gestartet oder erledigt.
   if (!report || report.status !== 'eingereicht' || report.versand_status) return
   try {
-    await startPortalRun(Number(reportId), { auto: true })
+    // auto fehlt bei Starts nach der Freigabe (= ohne Rückfrage absenden);
+    // ein Neustart übernimmt die Einstellung des verlorenen Laufs.
+    await startPortalRun(Number(reportId), { auto: auto !== false })
   } catch (err) {
-    if (err instanceof PortalBusyError) throw new JobRetryLater(err.message, 60)
+    // Belegt oder (nach Deploy/Neustart) noch nicht wieder da: warten, kein Fehlversuch.
+    if (err instanceof PortalBusyError || err instanceof PortalUnerreichbarError) throw new JobRetryLater(err.message, 60)
     if (err instanceof PortalAbMorgenError) throw new JobRetryLater(err.message, sekundenBisMorgen())
     throw err
   }
