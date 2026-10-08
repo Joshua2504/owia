@@ -1,0 +1,196 @@
+<%
+  // Explorative Analyse (GET /analyse öffentlich, GET /admin/analyse mit
+  // Kennzeichen). Daten: services/analyse.ts. Öffentlich sind Fahrzeuge
+  // pseudonymisiert und Zeiträume nur monatsgenau.
+  const a = analyse
+  const eur = (n) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+  const zahl = (n) => n.toLocaleString('de-DE')
+  const proz = (n, d) => d ? Math.round(n / d * 100) + ' %' : '–'
+  const datum = (d) => {
+    if (!d) return '–'
+    const [y, m, t] = d.split('-')
+    return t ? `${t}.${m}.${y}` : `${m}/${y}`
+  }
+  const maxHeat = Math.max(1, ...a.heatmap.flat())
+  const WT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+%>
+<style>
+  .an-bar-track { background: var(--bs-tertiary-bg); border-radius: 4px; height: .5rem; }
+  .an-bar { background: var(--bs-primary); height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .an-rows { display: grid; grid-template-columns: minmax(5rem, 11rem) 1fr 3rem; gap: .35rem .5rem; align-items: center; font-size: .875rem; }
+  .an-rows .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .an-cols { display: flex; align-items: flex-end; gap: 2px; height: 7rem; }
+  .an-cols > div { flex: 1; background: var(--bs-primary); border-radius: 3px 3px 0 0; min-height: 1px; }
+  .an-cols-lbl { display: flex; gap: 2px; font-size: .7rem; color: var(--bs-secondary-color); }
+  .an-cols-lbl > div { flex: 1; text-align: center; }
+  .an-heat { display: grid; grid-template-columns: 2rem repeat(24, 1fr); gap: 2px; font-size: .7rem; }
+  .an-heat .c { aspect-ratio: 1; border-radius: 2px; background: var(--bs-tertiary-bg); position: relative; }
+  .an-heat .c > i { position: absolute; inset: 0; border-radius: 2px; background: var(--bs-primary); }
+  .an-heat .h { text-align: center; color: var(--bs-secondary-color); }
+  .an-rank summary { list-style: none; cursor: pointer; }
+  .an-rank summary::-webkit-details-marker { display: none; }
+  .an-rank summary .an-chev { transition: transform .15s; display: inline-block; }
+  .an-rank details[open] summary .an-chev { transform: rotate(90deg); }
+  .an-platz { font-size: 1.4rem; font-weight: 700; width: 2.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+  .an-kz { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .03em; }
+  .an-rank table td { font-size: .85rem; }
+  @media (max-width: 575.98px) { .an-heat { font-size: .55rem; grid-template-columns: 1.4rem repeat(24, 1fr); gap: 1px; } }
+</style>
+
+<div class="mx-auto" style="max-width: 1040px">
+  <h1 class="h3 mb-1">Analyse<% if (admin) { %> <span class="badge text-bg-warning align-middle fs-6">Admin – mit Kennzeichen</span><% } %></h1>
+  <p class="text-muted mb-4">
+    Explorative Auswertung aller über den OWiA-Anzeiger versendeten Anzeigen:
+    Wer parkt immer wieder falsch, wann, mit welchem Fahrzeug und wie?
+    <% if (!admin) { %>Mehr Zahlen zu Bußgeldern unter <a href="/statistik">Statistik</a>.<% } %>
+  </p>
+
+  <div class="row g-2 mb-4 text-center">
+    <% [
+      [zahl(a.anzahl), 'Anzeigen versendet'],
+      [zahl(a.fahrzeuge), 'verschiedene Fahrzeuge'],
+      [zahl(a.wiederholer), 'Wiederholungstäter (≥ 2 Anzeigen)'],
+      [proz(a.anzeigenVonWiederholern, a.anzahl), 'der Anzeigen gehen auf Wiederholer'],
+      [proz(a.behinderung, a.anzahl), 'mit Behinderung anderer'],
+      [proz(a.verlassen, a.anzahl), 'Fahrzeug verlassen'],
+    ].forEach(([v, l]) => { %>
+      <div class="col-6 col-md-4 col-lg-2"><div class="border rounded py-2 px-1 h-100">
+        <div class="fs-4 fw-bold"><%= v %></div>
+        <div class="text-muted small"><%= l %></div>
+      </div></div>
+    <% }) %>
+  </div>
+
+  <% if (!a.anzahl) { %>
+    <div class="alert alert-secondary">Noch keine versendeten Anzeigen.</div>
+  <% } else { %>
+
+  <h2 class="h5 mb-1">Ranking: notorische Falschparker</h2>
+  <p class="text-muted small mb-3">
+    Fahrzeuge mit mindestens zwei Anzeigen, sortiert nach Anzahl verschiedener Tattage,
+    dann nach Anzahl Anzeigen. Klick auf einen Platz zeigt alle Vergehen.
+    <% if (!admin) { %>Kennzeichen werden nicht veröffentlicht – die Fahrzeuge sind durchnummeriert.<% } %>
+  </p>
+  <% if (!a.ranking.length) { %>
+    <div class="alert alert-secondary">Bisher wurde kein Fahrzeug mehr als einmal angezeigt.</div>
+  <% } else { %>
+  <div class="an-rank list-group mb-5">
+    <% a.ranking.forEach((w) => { %>
+      <details class="list-group-item p-0">
+        <summary class="d-flex align-items-center gap-2 p-2">
+          <div class="an-platz <%= w.platz <= 3 ? 'text-primary' : 'text-muted' %>"><%= w.platz %></div>
+          <div class="flex-grow-1 min-w-0">
+            <div><span class="an-kz"><%= w.name %></span>
+              <span class="text-muted small"><%= [w.marke, w.typ, w.farbe].filter(Boolean).join(' · ') %></span></div>
+            <div class="small text-muted">
+              <%= zahl(w.anzahl) %> Anzeigen an <%= zahl(w.tage) %> Tag<%= w.tage === 1 ? '' : 'en' %>
+              · <%= datum(w.erst) %><% if (w.letzt !== w.erst) { %> – <%= datum(w.letzt) %><% } %>
+              <% if (w.euro) { %>· Regelsätze <%= eur(w.euro) %><% } %>
+            </div>
+          </div>
+          <span class="an-chev text-muted" aria-hidden="true">›</span>
+        </summary>
+        <div class="table-responsive px-2 pb-2">
+          <table class="table table-sm mb-0 align-middle">
+            <thead><tr>
+              <th>Datum</th><th>Uhrzeit</th><th>Tatbestand</th>
+              <% if (admin) { %><th>Tatort</th><% } else { %><th class="d-none d-md-table-cell">Stadt</th><% } %>
+              <th class="text-end">Regelsatz</th>
+            </tr></thead>
+            <tbody>
+              <% w.vergehen.forEach((v) => { %>
+                <tr>
+                  <td class="text-nowrap"><%= v.wochentag || '' %> <%= datum(v.datum) %></td>
+                  <td class="text-nowrap"><%= v.stunde === null ? '–' : `${String(v.stunde).padStart(2, '0')}–${String((v.stunde + 1) % 24).padStart(2, '0')} Uhr` %></td>
+                  <td><%= v.tatbestand %><% if (v.behinderung) { %> <span class="badge text-bg-secondary">mit Behinderung</span><% } %></td>
+                  <% if (admin) { %><td class="small"><%= v.tatort || '–' %></td><% } else { %><td class="d-none d-md-table-cell"><%= v.stadt %></td><% } %>
+                  <td class="text-end text-nowrap"><%= v.euro === null ? '–' : eur(v.euro) %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    <% }) %>
+  </div>
+  <% } %>
+
+  <div class="row g-4 mb-5">
+    <div class="col-md-6">
+      <h2 class="h6 mb-1">Wie oft wird ein Fahrzeug angezeigt?</h2>
+      <p class="text-muted small mb-2">Anzahl Fahrzeuge je Anzahl Anzeigen.</p>
+      <% const maxH = Math.max(1, ...a.haeufigkeit.map((z) => z.anzahl)) %>
+      <div class="an-rows">
+        <% a.haeufigkeit.forEach((z) => { %>
+          <div><%= z.label %> angezeigt</div>
+          <div class="an-bar-track"><div class="an-bar" style="width: <%= (z.anzahl / maxH * 100).toFixed(1) %>%"></div></div>
+          <div class="num"><%= zahl(z.anzahl) %></div>
+        <% }) %>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <h2 class="h6 mb-1">Wochentage</h2>
+      <p class="text-muted small mb-2">Anzeigen je Wochentag der Tat.</p>
+      <% const maxW = Math.max(1, ...a.wochentage.map((z) => z.anzahl)) %>
+      <div class="an-cols" role="img" aria-label="Anzeigen je Wochentag: <%= a.wochentage.map((z) => `${z.label} ${z.anzahl}`).join(', ') %>">
+        <% a.wochentage.forEach((z) => { %><div style="height: <%= (z.anzahl / maxW * 100).toFixed(1) %>%" title="<%= z.label %>: <%= z.anzahl %>"></div><% }) %>
+      </div>
+      <div class="an-cols-lbl"><% a.wochentage.forEach((z) => { %><div><%= z.label %><br><%= z.anzahl %></div><% }) %></div>
+    </div>
+  </div>
+
+  <h2 class="h5 mb-1">Wann wird falsch geparkt?</h2>
+  <p class="text-muted small mb-2">Wochentag × Uhrzeit (Beginn der Beobachtung). Je dunkler, desto mehr Anzeigen. Basis: <%= zahl(a.mitStunde) %> Anzeigen mit Uhrzeit.</p>
+  <div class="an-heat mb-1" role="img" aria-label="Heatmap Wochentag mal Stunde">
+    <div></div><% for (let h = 0; h < 24; h++) { %><div class="h"><%= h % 3 === 0 ? h : '' %></div><% } %>
+    <% a.heatmap.forEach((row, d) => { %>
+      <div class="h text-start"><%= WT[d] %></div>
+      <% row.forEach((n, h) => { %>
+        <div class="c" title="<%= WT[d] %> <%= h %>–<%= h + 1 %> Uhr: <%= n %>"><% if (n) { %><i style="opacity: <%= (0.15 + 0.85 * n / maxHeat).toFixed(2) %>"></i><% } %></div>
+      <% }) %>
+    <% }) %>
+  </div>
+  <% const maxS = Math.max(1, ...a.stunden.map((z) => z.anzahl)) %>
+  <div class="an-cols mt-3" style="height: 5rem" role="img" aria-label="Anzeigen je Stunde">
+    <% a.stunden.forEach((z) => { %><div style="height: <%= (z.anzahl / maxS * 100).toFixed(1) %>%" title="<%= z.label %> Uhr: <%= z.anzahl %>"></div><% }) %>
+  </div>
+  <div class="an-cols-lbl mb-5"><% a.stunden.forEach((z) => { %><div><%= Number(z.label) % 3 === 0 ? z.label : '' %></div><% }) %></div>
+
+  <div class="row g-4 mb-5">
+    <% [['Marken', a.marken], ['Fahrzeugtypen', a.typen], ['Farben', a.farben]].forEach(([titel, liste]) => { %>
+      <div class="col-md-4">
+        <h2 class="h6 mb-2"><%= titel %></h2>
+        <% if (!liste.length) { %><div class="text-muted small">Keine Angaben.</div><% } else { %>
+        <% const m = Math.max(...liste.map((z) => z.anzahl)) %>
+        <div class="an-rows">
+          <% liste.forEach((z) => { %>
+            <div class="text-truncate" title="<%= z.label %>"><%= z.label %></div>
+            <div class="an-bar-track"><div class="an-bar" style="width: <%= (z.anzahl / m * 100).toFixed(1) %>%"></div></div>
+            <div class="num"><%= zahl(z.anzahl) %></div>
+          <% }) %>
+        </div>
+        <% } %>
+      </div>
+    <% }) %>
+  </div>
+
+  <h2 class="h5 mb-2">Häufigste Tatbestände</h2>
+  <% const mT = Math.max(1, ...a.tatbestaende.map((z) => z.anzahl)) %>
+  <div class="an-rows mb-5" style="grid-template-columns: minmax(10rem, 1.6fr) 1fr 3rem">
+    <% a.tatbestaende.forEach((z) => { %>
+      <div><%= z.label %></div>
+      <div class="an-bar-track"><div class="an-bar" style="width: <%= (z.anzahl / mT * 100).toFixed(1) %>%"></div></div>
+      <div class="num"><%= zahl(z.anzahl) %></div>
+    <% }) %>
+  </div>
+  <% } %>
+
+  <div class="border rounded p-3 small text-muted">
+    <strong>So entstehen die Zahlen.</strong>
+    Grundlage sind nur Anzeigen, die an das zuständige Ordnungsamt versendet wurden.
+    Eine Anzeige ist kein festgestellter Verstoß – ob die Behörde ein Verfahren
+    einleitet, erfahren wir nicht. Fahrzeuge werden über das Kennzeichen
+    zusammengeführt; <% if (admin) { %>diese Ansicht enthält personenbezogene Daten und ist nur für Admins.<% } else { %>Kennzeichen, Tatorte und genaue Daten veröffentlichen wir nicht, die Nummerierung der Fahrzeuge ergibt sich nur aus dem Ranking und kann sich ändern.<% } %>
+    Regelsätze laut Bußgeldkatalog (KBA, Stand 22.08.2024).
+  </div>
+</div>
