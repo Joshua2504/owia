@@ -26,6 +26,7 @@ import tilesRoutes from './routes/tiles'
 import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
 import statistikRoutes from './routes/statistik'
+import logosRoutes from './routes/logos'
 import { verjaehrung } from './services/verjaehrung'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN } from './config/fahrzeug'
 import adminRoutes from './routes/admin'
@@ -219,6 +220,7 @@ async function main() {
   await app.register(publicRoutes)
   await app.register(legalRoutes)
   await app.register(statistikRoutes)
+  await app.register(logosRoutes)
   await app.register(adminRoutes)
   await app.register(portalRoutes)
 

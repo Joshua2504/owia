@@ -1,0 +1,49 @@
+<style>
+  /* Je Entwurf: groß auf Hell und Dunkel, dazu die Größen, in denen ein Logo
+     wirklich bestehen muss (App-Icon, Favicon, Navbar). */
+  .logo-card .logo-tile { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: .5rem; padding: 12%; }
+  .logo-card .logo-tile img { width: 100%; height: 100%; }
+  .logo-card .logo-hell { background: #fff; border: 1px solid #dee2e6; }
+  .logo-card .logo-dunkel { background: #212529; }
+  .logo-card .logo-groessen { background: #fff; border: 1px solid #dee2e6; border-radius: .5rem; }
+  .logo-card .logo-nav { background: #212529; color: #fff; border-radius: .5rem; font-weight: 700; }
+  .logo-nr { font-variant-numeric: tabular-nums; }
+</style>
+
+<div class="mb-4">
+  <h1 class="h3 mb-1">Logo-Entwürfe</h1>
+  <p class="text-muted mb-0">
+    30 Entwürfe für den OWiA-Anzeiger – jeweils auf hellem und dunklem Grund, als App-Icon (64 px),
+    Favicon (32/16 px) und in der Navigationsleiste. Favoriten einfach per Nummer nennen.
+  </p>
+</div>
+
+<div class="row g-3">
+  <% logos.forEach((l) => { %>
+    <div class="col-12 col-sm-6 col-lg-4 col-xxl-3">
+      <div class="card h-100 logo-card" id="logo-<%= l.nr %>">
+        <div class="card-body">
+          <div class="d-flex align-items-baseline gap-2 mb-2">
+            <span class="badge text-bg-secondary logo-nr"><%= String(l.nr).padStart(2, '0') %></span>
+            <h2 class="h6 mb-0"><%= l.name %></h2>
+            <a class="ms-auto small" href="<%= l.hell %>" download>SVG</a>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6"><div class="logo-tile logo-hell"><img src="<%= l.hell %>" alt="Entwurf <%= l.nr %> auf hellem Grund"></div></div>
+            <div class="col-6"><div class="logo-tile logo-dunkel"><img src="<%= l.dunkel %>" alt="Entwurf <%= l.nr %> auf dunklem Grund"></div></div>
+          </div>
+          <div class="d-flex align-items-end gap-3 px-3 py-2 mb-2 logo-groessen">
+            <img src="<%= l.hell %>" width="64" height="64" alt="">
+            <img src="<%= l.hell %>" width="32" height="32" alt="">
+            <img src="<%= l.hell %>" width="16" height="16" alt="">
+          </div>
+          <div class="d-flex align-items-center gap-2 px-3 py-2 mb-2 logo-nav">
+            <img src="<%= l.dunkel %>" width="26" height="26" alt="">
+            <span>OWiA-Anzeiger</span>
+          </div>
+          <p class="small text-muted mb-0"><%= l.idee %></p>
+        </div>
+      </div>
+    </div>
+  <% }) %>
+</div>
