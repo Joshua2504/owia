@@ -262,9 +262,13 @@ export default async function stickerRoutes(app: FastifyInstance) {
       )
     }
 
+    // Sticker kleben meist schon, bevor die Anzeige abgeschickt ist: verknüpfte
+    // Entwürfe zeigen daher „wird vorbereitet" (ohne Details), statt so zu tun,
+    // als gäbe es nichts. Papierkorb/gelöscht → „leer".
     const zustand = !row ? 'unbekannt'
       : !row.linked_at ? (row.voided_at ? 'entwertet' : 'offen')
-      : oeffentlich ? 'oeffentlich' : 'leer'
+      : oeffentlich ? 'oeffentlich'
+      : row.status === 'entwurf' ? 'vorbereitung' : 'leer'
 
     return reply.view('/sticker/show.ejs', viewData(request, {
       title: 'Anzeige wegen Falschparkens',

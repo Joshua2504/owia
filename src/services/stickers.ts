@@ -310,24 +310,24 @@ export async function voidOpenCodes(userId: number, batchId: number): Promise<nu
 
 const MM = 72 / 25.4
 
-// Texte exakt nach Vorgabe: sachlich, Deutsch groß, Englisch klein darunter.
-// {BETRAG} wird als Leerfeld zum Ausfüllen von Hand gedruckt – beim Druck ist
-// noch nicht bekannt, welcher Verstoß (und damit welcher Betrag) es wird.
+// Texte: sachlich, Deutsch groß, Englisch klein darunter. Neutral formuliert,
+// weil der Sticker meist schon klebt, bevor die Anzeige abgeschickt ist – und
+// ohne Betrag, weil beim Druck noch kein Verstoß feststeht.
 // {PFEIL} zeigt auf den QR-Code rechts daneben. Nur WinAnsi-Zeichen (Standard-
 // fonts von pdf-lib), daher wird der Pfeil gezeichnet statt als „→" gesetzt.
 const ABSAETZE: { de: string; en: string; fett?: boolean }[] = [
   {
-    de: 'Sie wurden wegen einer Ordnungswidrigkeit im ruhenden Verkehr angezeigt.',
-    en: 'You have been reported for a parking violation.',
+    de: 'Dieses Fahrzeug wurde wegen einer Ordnungswidrigkeit im ruhenden Verkehr dokumentiert.',
+    en: 'This vehicle has been documented for a parking violation.',
     fett: true,
   },
   {
-    de: 'Wenn das Ordnungsamt dem nachgeht, kostet Sie das {BETRAG} Euro.',
-    en: 'If the authorities follow up, this will cost you the amount stated above.',
+    de: 'Die Angaben können an das zuständige Ordnungsamt übermittelt werden.',
+    en: 'The details may be forwarded to the local authority.',
   },
   {
-    de: 'Die Anzeige gegen Sie hier ansehen {PFEIL}',
-    en: 'View the report against you here.',
+    de: 'Stand und Hinweise hier ansehen {PFEIL}',
+    en: 'Status and information here.',
   },
 ]
 
@@ -338,18 +338,17 @@ interface Fonts {
   mono: PDFFont
 }
 
-type Token = { text: string; kind: 'wort' | 'betrag' | 'pfeil' }
+type Token = { text: string; kind: 'wort' | 'pfeil' }
 type Line = { tokens: Token[]; size: number; font: PDFFont; color: number; gapBefore: number }
 
 function tokenWidth(t: Token, font: PDFFont, size: number): number {
-  if (t.kind === 'betrag') return Math.max(14 * MM, size * 4.5)
   if (t.kind === 'pfeil') return size * 1.3
   return font.widthOfTextAtSize(t.text, size)
 }
 
 function tokenize(text: string): Token[] {
   return text.split(' ').map((w) =>
-    w === '{BETRAG}' ? { text: '', kind: 'betrag' } : w === '{PFEIL}' ? { text: '', kind: 'pfeil' } : { text: w, kind: 'wort' }
+    w === '{PFEIL}' ? { text: '', kind: 'pfeil' } : { text: w, kind: 'wort' }
   )
 }
 
@@ -363,9 +362,11 @@ function wrap(tokens: Token[], font: PDFFont, size: number, maxW: number): Token
     if (tw > maxW) return null // einzelnes Wort passt nicht: Schrift zu groß
     const nw = cur.length ? w + space + tw : tw
     if (nw > maxW && cur.length) {
+      // Der Pfeil steht nie allein am Zeilenanfang: letztes Wort mitnehmen.
+      const carry = t.kind === 'pfeil' && cur.length > 1 ? cur.pop()! : null
       lines.push(cur)
-      cur = [t]
-      w = tw
+      cur = carry ? [carry, t] : [t]
+      w = carry ? tokenWidth(carry, font, size) + space + tw : tw
     } else {
       cur.push(t)
       w = nw
@@ -464,12 +465,6 @@ function drawSticker(
       const tw = tokenWidth(t, line.font, line.size)
       if (t.kind === 'wort') {
         page.drawText(t.text, { x: cx, y: baseline, size: line.size, font: line.font, color })
-      } else if (t.kind === 'betrag') {
-        page.drawLine({
-          start: { x: cx, y: baseline - line.size * 0.12 },
-          end: { x: cx + tw, y: baseline - line.size * 0.12 },
-          thickness: 0.5, color,
-        })
       } else {
         const mid = baseline + line.size * 0.33
         const head = line.size * 0.3

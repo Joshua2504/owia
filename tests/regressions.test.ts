@@ -627,17 +627,23 @@ test('Sticker-Seite zeigt Fremden nur öffentliche Angaben und zählt nur deren 
     assert.equal(page.headers['x-robots-tag'], 'noindex, nofollow')
     assert.equal((await query('SELECT scan_count FROM sticker_codes WHERE code=?', [code]))[0].scan_count, 1)
 
-    // Entwürfe sind nicht öffentlich.
+    // Entwürfe: nur „wird vorbereitet", keine Details.
     await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
     const draft = await app.inject({ method: 'GET', url: `/S/${code}` })
-    assert.match(draft.body, /keine öffentlichen Angaben/)
+    assert.match(draft.body, /wird gerade vorbereitet/)
     assert.ok(!draft.body.includes('Gehweg'))
+    assert.ok(!draft.body.includes('01.10.2026'))
+    // Papierkorb: gar keine Angaben.
+    await pool.execute("UPDATE reports SET status='papierkorb' WHERE id=?", [id])
+    const trash = await app.inject({ method: 'GET', url: `/S/${code}` })
+    assert.match(trash.body, /keine öffentlichen Angaben/)
+    await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
 
     // Besitzer: Banner, Verknüpfungsformular für offene Codes, kein Zähler.
     viewer = owner
     const own = await app.inject({ method: 'GET', url: `/S/${code}` })
     assert.ok(own.body.includes(az))
-    assert.equal((await query('SELECT scan_count FROM sticker_codes WHERE code=?', [code]))[0].scan_count, 2)
+    assert.equal((await query('SELECT scan_count FROM sticker_codes WHERE code=?', [code]))[0].scan_count, 3)
     const form = await app.inject({ method: 'GET', url: `/S/${offen}` })
     assert.match(form.body, /Sticker verknüpfen/)
     const linked = await app.inject({ method: 'POST', url: `/S/${offen}/verknuepfen`, payload: { report: String(id) } })

@@ -1,0 +1,37 @@
+<%
+// „Was bedeutet das?" auf der Sticker-Seite (sticker/show.ejs). vorbereitung = Anzeige
+// ist verknüpft, aber noch nicht eingereicht.
+const en = (text) => `<div class="small text-body-secondary fst-italic">${text}</div>`
+%>
+<h2 class="h5">Was bedeutet das?</h2>
+<div class="small text-body-secondary fst-italic mb-2">What does this mean?</div>
+<ul class="mb-4">
+  <li class="mb-2">
+    <% if (vorbereitung) { %>
+      Dieser Aufkleber stammt nicht von einer Behörde. Eine Privatperson hat den Verstoß
+      mit dem OWiA-Anzeiger dokumentiert und kann ihn beim zuständigen Ordnungsamt anzeigen.
+      <%- en('This sticker was not issued by an authority. A private person documented the violation with OWiA-Anzeiger and may report it to the responsible public order office.') %>
+    <% } else { %>
+      Dieser Aufkleber stammt nicht von einer Behörde. Eine Privatperson hat den Verstoß
+      über den OWiA-Anzeiger beim zuständigen Ordnungsamt angezeigt.
+      <%- en('This sticker was not issued by an authority. A private person reported the violation to the responsible public order office via OWiA-Anzeiger.') %>
+    <% } %>
+  </li>
+  <li class="mb-2">
+    Das Ordnungsamt prüft eine Anzeige und entscheidet selbst, ob es ein Verfahren einleitet.
+    In diesem Fall erhält die Halterin oder der Halter Post von der Behörde.
+    <%- en('The authority reviews a report and decides whether to take action. If so, the registered keeper will receive a letter.') %>
+  </li>
+  <li class="mb-2">
+    Zahlen Sie nichts aufgrund dieses Aufklebers. Maßgeblich ist allein ein Schreiben der Behörde.
+    <%- en('Do not pay anything because of this sticker. Only a letter from the authority is binding.') %>
+  </li>
+  <li class="mb-2">
+    Diese Seite enthält bewusst keine personenbezogenen Daten – kein Kennzeichen und keine Namen.
+    <%- en('This page intentionally contains no personal data – no licence plate and no names.') %>
+  </li>
+  <li>
+    Sie dürfen den Aufkleber entfernen.
+    <%- en('You may remove the sticker.') %>
+  </li>
+</ul>

@@ -15,7 +15,7 @@ const en = (text) => `<div class="small text-body-secondary fst-italic">${text}<
         <% if (aktenzeichen) { %>– verknüpft mit <a href="/anzeige/<%= aktenzeichen %>" class="alert-link"><%= aktenzeichen %></a><% } %>.
         <%= scans === 1 ? '1 Aufruf' : `${scans} Aufrufe` %> durch andere.
         <% if (reportStatus === 'entwurf') { %>
-          <br>Die Anzeige ist noch ein Entwurf – öffentliche Angaben erscheinen hier, sobald du sie einreichst.
+          <br>Die Anzeige ist noch ein Entwurf – andere sehen hier bis zur Einreichung nur, dass sie vorbereitet wird. Verstoß, Tattag und Ort erscheinen erst danach.
         <% } %>
         <% if (loesbar) { %>
           <form method="post" action="/S/<%= code %>/loesen" class="d-inline">
@@ -67,32 +67,26 @@ const en = (text) => `<div class="small text-body-secondary fst-italic">${text}<
         </figure>
       <% } %>
 
-      <h2 class="h5">Was bedeutet das?</h2>
-      <div class="small text-body-secondary fst-italic mb-2">What does this mean?</div>
-      <ul class="mb-4">
-        <li class="mb-2">
-          Dieser Aufkleber stammt nicht von einer Behörde. Eine Privatperson hat den Verstoß
-          über den OWiA-Anzeiger beim zuständigen Ordnungsamt angezeigt.
-          <%- en('This sticker was not issued by an authority. A private person reported the violation to the responsible public order office via OWiA-Anzeiger.') %>
-        </li>
-        <li class="mb-2">
-          Das Ordnungsamt prüft die Anzeige und entscheidet selbst, ob es ein Verfahren einleitet.
-          In diesem Fall erhält die Halterin oder der Halter Post von der Behörde.
-          <%- en('The authority reviews the report and decides whether to take action. If so, the registered keeper will receive a letter.') %>
-        </li>
-        <li class="mb-2">
-          Zahlen Sie nichts aufgrund dieses Aufklebers. Maßgeblich ist allein ein Schreiben der Behörde.
-          <%- en('Do not pay anything because of this sticker. Only a letter from the authority is binding.') %>
-        </li>
-        <li class="mb-2">
-          Diese Seite enthält bewusst keine personenbezogenen Daten – kein Kennzeichen und keine Namen.
-          <%- en('This page intentionally contains no personal data – no licence plate and no names.') %>
-        </li>
-        <li>
-          Sie dürfen den Aufkleber entfernen.
-          <%- en('You may remove the sticker.') %>
-        </li>
-      </ul>
+      <%- include('../partials/sticker-hinweise', { vorbereitung: false }) %>
+
+    <% } else if (zustand === 'vorbereitung') { %>
+      <h1 class="h3 mb-0">Ordnungswidrigkeit im ruhenden Verkehr dokumentiert</h1>
+      <div class="text-body-secondary fst-italic mb-4">Parking violation documented</div>
+
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Stand<%- en('Status') %></dt>
+            <dd class="col-sm-8 mb-0">
+              Die Anzeige wird gerade vorbereitet und ist noch nicht beim Ordnungsamt.
+              Sobald sie eingereicht ist, stehen hier Verstoß, Tattag und Ort.
+              <%- en('The report is being prepared and has not yet been sent to the authority. Once it is submitted, this page will show the violation, date and city.') %>
+            </dd>
+          </dl>
+        </div>
+      </div>
+
+      <%- include('../partials/sticker-hinweise', { vorbereitung: true }) %>
 
     <% } else if (zustand === 'offen' && isOwner) { %>
       <h1 class="h3">Sticker <span class="font-monospace"><%= codeFmt %></span> verknüpfen</h1>
