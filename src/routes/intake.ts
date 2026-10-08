@@ -51,14 +51,26 @@ async function movePhotoFiles(
   const from = intakeDir(userId, batchId)
   const to = reportDir(userId, reportId)
   await fs.mkdir(to, { recursive: true })
-  await fs.rename(path.join(from, filename), path.join(to, filename))
+  // Kopieren statt umbenennen: Bricht der Prozess zwischen Datei- und DB-
+  // Änderung ab, liegt die Datei so noch am alten Ort (DB zeigt dorthin) –
+  // beim Umbenennen wäre sie dauerhaft verwaist. Die Quelle räumt
+  // removeIntakeSources() nach dem DB-Schreiben weg.
+  await fs.copyFile(path.join(from, filename), path.join(to, filename))
   if (originalFilename && originalFilename !== filename) {
-    await fs.rename(path.join(from, originalFilename), path.join(to, originalFilename))
+    await fs.copyFile(path.join(from, originalFilename), path.join(to, originalFilename))
   }
   // Gecachtes Vorschaubild mitnehmen (falls schon berechnet); sonst egal.
   await fs
-    .rename(path.join(from, `${filename}.thumb.jpg`), path.join(to, `${filename}.thumb.jpg`))
+    .copyFile(path.join(from, `${filename}.thumb.jpg`), path.join(to, `${filename}.thumb.jpg`))
     .catch(() => {})
+}
+
+/** Quelldateien nach erfolgreicher DB-Zuordnung entfernen (best-effort). */
+async function removeIntakeSources(userId: number, batchId: number | string, filename: string, originalFilename: string): Promise<void> {
+  const from = intakeDir(userId, batchId)
+  for (const f of [filename, originalFilename !== filename ? originalFilename : '', `${filename}.thumb.jpg`]) {
+    if (f) await fs.rm(path.join(from, f), { force: true }).catch(() => {})
+  }
 }
 
 type PhotoRow = mysql.RowDataPacket & {
@@ -185,6 +197,7 @@ async function groupIntakeBatch(payload: { batchId: number; userId: number }, lo
               gpsLon: p.gps_lon !== null ? Number(p.gps_lon) : null,
               sha256: p.sha256,
             })
+            await removeIntakeSources(userId, batch.id, p.filename, p.original_filename)
             // Kennzeichen im Hintergrund erkennen (füllt das leere Feld des Entwurfs).
             queuePlateAnalysis(userId, draft.id, imageId, p.filename, p.mimetype)
             await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [
@@ -425,8 +438,13 @@ export default async function intakeRoutes(app: FastifyInstance) {
 
     try {
       const buffer = await fs.readFile(path.join(intakeDir(userId, batchId), photo.filename))
+      // Nie als etwas anderes als Bild ausliefern: Der gespeicherte Mimetype
+      // stammt beim Rohupload vom Client. Alles außer image/* wird als Download
+      // geschickt, damit der Browser es nicht same-origin rendert (HTML/SVG).
+      const type = /^image\/(jpeg|png|heic|heif|webp|gif)$/.test(photo.mimetype || '') ? photo.mimetype : 'application/octet-stream'
+      if (type === 'application/octet-stream') reply.header('Content-Disposition', 'attachment; filename="foto"')
       return reply
-        .header('Content-Type', photo.mimetype || 'application/octet-stream')
+        .header('Content-Type', type)
         .header('Cache-Control', 'private, max-age=3600')
         .send(buffer)
     } catch {
@@ -472,11 +490,15 @@ export default async function intakeRoutes(app: FastifyInstance) {
     const batch = await loadBatch(batchId, userId)
     if (!batch) return reply.status(404).send({ error: 'not found' })
 
+    // Nur fertig verarbeitete Fotos ('ready': konvertiert, EXIF gelesen) und nur
+    // nach Abschluss des Uploads – ein rohes HEIC aus einem noch offenen Batch
+    // hätte sonst als „nutzbare Fassung“ in der Anzeige gelegen.
+    if (batch.status === 'open') return reply.status(409).send({ error: 'Der Import läuft noch – bitte erst abschließen.' })
     const [rows] = await pool.execute<PhotoRow[]>(
       `SELECT id, filename, mimetype, original_filename, original_mimetype,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at,
               gps_lat, gps_lon, report_id, sha256
-         FROM intake_photos WHERE id = ? AND batch_id = ?`,
+         FROM intake_photos WHERE id = ? AND batch_id = ? AND processing_status = 'ready'`,
       [photoId, batch.id]
     )
     const photo = rows[0]
@@ -524,8 +546,9 @@ export default async function intakeRoutes(app: FastifyInstance) {
       gpsLon: photo.gps_lon !== null ? Number(photo.gps_lon) : null,
       sha256: photo.sha256,
     })
-    queuePlateAnalysis(userId, reportId, imageId, photo.filename, photo.mimetype)
     await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [reportId, photo.id])
+    await removeIntakeSources(userId, batch.id, photo.filename, photo.original_filename)
+    queuePlateAnalysis(userId, reportId, imageId, photo.filename, photo.mimetype)
     // Neuer/leerer Entwurf: Tatort aus den Foto-Koordinaten (no-op, wenn gesetzt).
     queueTatortFill(reportId)
     return reply.send({ ok: true })

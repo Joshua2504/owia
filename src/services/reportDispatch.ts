@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
+import { prewarmPublicImages } from './publicImages'
 
 export type PreparedReportMail = {
   messageId: string
@@ -43,6 +44,7 @@ async function finishDispatch(reportId: number): Promise<void> {
       [mail.messageId, reportId]
     )
     await conn.commit()
+    void prewarmPublicImages(reportId)
   } catch (err) {
     await conn.rollback()
     throw err

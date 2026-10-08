@@ -274,7 +274,7 @@ export const MailService = {
           subject, text, attachments,
         })
         // Eine angenommene CC allein ist kein erfolgreicher Versand ans Amt.
-        const accepted = (info.accepted || []).map((address) =>
+        const accepted = ((info.accepted || []) as unknown as (string | { address: string })[]).map((address) =>
           (typeof address === 'string' ? address : address.address).toLowerCase()
         )
         if (!accepted.includes(to.toLowerCase())) {

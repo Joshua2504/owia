@@ -28,7 +28,40 @@ const BOX_RAND = 0.3
 
 export type Raw = { data: Uint8Array | Buffer; width: number; height: number }
 
+/** Obergrenze der Pixelzahl, die dekodiert wird (RGBA ⇒ 4 Byte/Pixel, 80 MP ≈
+ *  320 MB). Aktuelle Handys liefern bis ~50 MP. Darüber ist es entweder kein
+ *  Foto oder eine Dekompressionsbombe (20-MB-PNG mit 40000×40000 px würde
+ *  ~6 GB belegen – pngjs kennt kein eigenes Speicherlimit). */
+const MAX_PIXELS = 80_000_000
+
+/** Bildmaße aus dem Header lesen, ohne zu dekodieren (PNG: IHDR; JPEG: erstes
+ *  SOF-Segment). null, wenn nicht erkennbar – dann entscheidet der Decoder. */
+export function headerDimensions(buffer: Buffer, mimetype: string): { width: number; height: number } | null {
+  if (mimetype === 'image/png') {
+    if (buffer.length < 24) return null
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
+  }
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null
+  let i = 2
+  while (i + 9 < buffer.length) {
+    if (buffer[i] !== 0xff) { i++; continue }
+    const marker = buffer[i + 1]
+    if (marker === 0xff) { i++; continue }
+    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) { i += 2; continue }
+    const len = buffer.readUInt16BE(i + 2)
+    const sof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc
+    if (sof) return { height: buffer.readUInt16BE(i + 5), width: buffer.readUInt16BE(i + 7) }
+    if (marker === 0xda) return null // Bilddaten erreicht, kein SOF gefunden
+    i += 2 + len
+  }
+  return null
+}
+
 export function decode(buffer: Buffer, mimetype: string): Raw {
+  const dims = headerDimensions(buffer, mimetype)
+  if (dims && (dims.width * dims.height > MAX_PIXELS || !dims.width || !dims.height)) {
+    throw new Error(`Bild zu groß (${dims.width}×${dims.height} px)`)
+  }
   if (mimetype === 'image/png') {
     const png = PNG.sync.read(buffer)
     return { data: png.data, width: png.width, height: png.height }

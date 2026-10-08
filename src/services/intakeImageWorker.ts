@@ -5,10 +5,17 @@ import path from 'node:path'
 import { parentPort } from 'node:worker_threads'
 import { prepareImage, writePreparedImage } from './images'
 import { extractPhotoMeta } from './exif'
-import { writeThumbnailCache, writeMailVariantCache } from './pixelate'
+import { writeThumbnailCache, writeMailVariantCache, cachedPixelate } from './pixelate'
+import type { BildAnalyse } from './alpr'
 
-parentPort!.on('message', async (job: { kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path'; buffer?: Uint8Array; rawPath?: string; filename: string; mimetype: string; dir: string }) => {
+parentPort!.on('message', async (job: { kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path' | 'pixel'; buffer?: Uint8Array; rawPath?: string; filename: string; mimetype: string; dir: string; analyse?: BildAnalyse | null }) => {
   try {
+    if (job.kind === 'pixel') {
+      // Schreibt <datei>.pixel.jpg als Cache (öffentliche Karte, routes/public.ts).
+      await cachedPixelate(job.dir, job.filename, job.mimetype, job.analyse ?? null)
+      parentPort!.postMessage({ ok: true })
+      return
+    }
     if (job.kind === 'thumbnail' || job.kind === 'derivatives') {
       const buffer = await fs.readFile(path.join(job.dir, job.filename))
       await writeThumbnailCache(job.dir, job.filename, buffer, job.mimetype)

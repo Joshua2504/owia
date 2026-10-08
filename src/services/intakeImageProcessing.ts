@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { cachedThumbnail, thumbFilename } from './pixelate'
+import { cachedThumbnail, cachedPixelate, thumbFilename } from './pixelate'
+import type { BildAnalyse } from './alpr'
 
 export type IntakeImageResult = {
   filename: string
@@ -11,7 +12,8 @@ export type IntakeImageResult = {
   meta: { capturedAt: string | null; lat: number | null; lon: number | null }
 }
 type Job = {
-  kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path'; buffer?: Buffer; rawPath?: string; filename: string; mimetype: string; dir: string
+  kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path' | 'pixel'; buffer?: Buffer; rawPath?: string; filename: string; mimetype: string; dir: string
+  analyse?: BildAnalyse | null
   resolve: (result: IntakeImageResult | undefined) => void; reject: (error: Error) => void
 }
 const jobs: Job[] = []
@@ -23,7 +25,13 @@ function startNext() {
   if (!worker) {
     // Die App führt TypeScript direkt aus. Derselbe lokale tsx-Loader gilt
     // auch im Worker (kein Build und keine zusätzliche Laufzeitabhängigkeit).
-    const current = new Worker(`require(${JSON.stringify(require.resolve('tsx/cjs'))}); require(${JSON.stringify(path.join(__dirname, 'intakeImageWorker.ts'))});`, { eval: true })
+    // resourceLimits: ein einzelnes Riesenbild (PNG-Dekompressionsbombe) soll
+    // den Worker killen, nicht den ganzen App-Prozess; der Worker wird dann
+    // beim nächsten Job neu gestartet (failed() unten).
+    const current = new Worker(`require(${JSON.stringify(require.resolve('tsx/cjs'))}); require(${JSON.stringify(path.join(__dirname, 'intakeImageWorker.ts'))});`, {
+      eval: true,
+      resourceLimits: { maxOldGenerationSizeMb: 1024, maxYoungGenerationSizeMb: 128 },
+    })
     worker = current
     current.on('message', (message: { ok: boolean; result?: IntakeImageResult }) => {
       if (worker !== current || !active) return
@@ -51,7 +59,7 @@ function startNext() {
   // Eigener übertragbarer Puffer: niemals einen Buffer-Pool oder andere
   // Originalbytes durch Detaching beschädigen. Nur begrenzt viele Jobs aktiv.
   const bytes = active.buffer ? Uint8Array.from(active.buffer) : undefined
-  worker.postMessage({ kind: active.kind, buffer: bytes, rawPath: active.rawPath, filename: active.filename, mimetype: active.mimetype, dir: active.dir }, bytes ? [bytes.buffer] : [])
+  worker.postMessage({ kind: active.kind, buffer: bytes, rawPath: active.rawPath, filename: active.filename, mimetype: active.mimetype, dir: active.dir, analyse: active.analyse ?? null }, bytes ? [bytes.buffer] : [])
 }
 
 export function processIntakeImage(buffer: Buffer, filename: string, mimetype: string, dir: string): Promise<IntakeImageResult> {
@@ -99,6 +107,25 @@ export function processReportImage(buffer: Buffer, filename: string, mimetype: s
     if (!result) throw new Error('Bild konnte nicht verarbeitet werden.')
     return result
   })
+}
+
+/** Öffentliches Pixelbild (Karte) im Worker berechnen – nicht vorrangig, die
+ *  Karte ist nicht interaktiv-kritisch, ein Nutzer-Upload schon. */
+export function processPixelNow(filename: string, mimetype: string, dir: string, analyse: BildAnalyse | null): Promise<void> {
+  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+    enqueue({ kind: 'pixel', filename, mimetype, dir, analyse, resolve, reject }, false)
+  }).then(() => {})
+}
+
+/** Pixelbild ausliefern; fehlt der Cache, zuerst im Worker berechnen (wie
+ *  loadThumbnail). cachedPixelate liest danach nur noch die Datei. */
+export async function loadPixelated(dir: string, filename: string, mimetype: string, analyse: BildAnalyse | null): Promise<Buffer> {
+  try {
+    await fs.access(path.join(dir, `${filename}.pixel.jpg`))
+  } catch {
+    await processPixelNow(filename, mimetype, dir, analyse)
+  }
+  return cachedPixelate(dir, filename, mimetype, analyse)
 }
 
 /** Fehlendes Vorschaubild vorrangig nachrechnen (On-demand-Fallback der Listen). */

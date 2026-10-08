@@ -39,12 +39,32 @@ function isHeic(filename: string, mimetype: string): boolean {
   )
 }
 
+/** Bildtyp aus den ersten Bytes statt aus dem vom Client gemeldeten Mimetype:
+ *  JPEG (FF D8), PNG (89 50 4E 47), HEIC/HEIF (ISO-BMFF „ftyp“-Box mit heic/
+ *  heix/hevc/mif1/msf1). Alles andere ist kein Bild – auch wenn der Upload
+ *  „image/jpeg“ behauptet. Sonst landete z.B. HTML als „.jpg“ auf der Platte
+ *  und wurde mit dem Client-Mimetype wieder ausgeliefert. */
+export function sniffImageType(buffer: Buffer): 'image/jpeg' | 'image/png' | 'image/heic' | null {
+  if (buffer.length < 12) return null
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg'
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (buffer.subarray(4, 8).toString('latin1') === 'ftyp') {
+    const brand = buffer.subarray(8, 12).toString('latin1').toLowerCase()
+    if (/^(heic|heix|hevc|hevx|heim|heis|mif1|msf1|avif)/.test(brand)) return 'image/heic'
+  }
+  return null
+}
+
 /** Hochgeladenes Bild in ein nutzbares JPG/PNG (+ ggf. HEIC-Original) überführen. */
 export async function prepareImage(
   buffer: Buffer,
   filename: string,
   mimetype: string
 ): Promise<PreparedImage> {
+  // Der gemeldete Mimetype ist nur ein Hinweis – maßgeblich sind die Bytes.
+  const sniffed = sniffImageType(buffer)
+  if (!sniffed) throw new Error('unsupported')
+  mimetype = sniffed === 'image/heic' ? (mimetype || 'image/heic') : sniffed
   if (DIRECT_IMAGE_TYPES.includes(mimetype)) {
     const ext = extFromMime(mimetype)
     return {

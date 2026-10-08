@@ -141,11 +141,14 @@ export default async function stickerRoutes(app: FastifyInstance) {
   // PDF eines Batches – immer dieselben Codes, beliebig oft. Druckversatz und
   // Rahmen lassen sich beim Download ändern und werden am Batch gemerkt (und
   // damit für den nächsten Batch vorgeschlagen).
-  app.get('/sticker/:id/sticker.pdf', { preHandler: requireAuth }, async (request, reply) => {
+  // Layout-Änderung (Versatz/Rahmen) nur per POST – ein GET darf nichts
+  // speichern (Link-Vorschauen, Browser-Prefetch). Der GET liefert das PDF mit
+  // dem gemerkten Layout.
+  const stickerPdf = async (request: FastifyRequest, reply: FastifyReply) => {
     const userId = request.session.userId as number
     const batch = await loadBatch(userId, Number((request.params as { id: string }).id))
     if (!batch) return reply.status(404).send('Nicht gefunden.')
-    const q = request.query as Record<string, unknown>
+    const q = (request.method === 'POST' ? request.body || {} : {}) as Record<string, unknown>
     let layout = batch.layout
     if ('dx' in q || 'dy' in q) {
       // Ohne Haken fehlt „rahmen" im Query ganz – dann gilt er als abgewählt.
@@ -160,7 +163,9 @@ export default async function stickerRoutes(app: FastifyInstance) {
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `inline; filename="owia-sticker-${batch.id}.pdf"`)
       .send(Buffer.from(pdf))
-  })
+  }
+  app.get('/sticker/:id/sticker.pdf', { preHandler: requireAuth }, stickerPdf)
+  app.post('/sticker/:id/sticker.pdf', { preHandler: requireAuth }, stickerPdf)
 
   app.get('/sticker/kalibrierung.pdf', { preHandler: requireAuth }, async (request, reply) => {
     const layout = parseLayout(request.query as Record<string, unknown>)
@@ -236,7 +241,7 @@ export default async function stickerRoutes(app: FastifyInstance) {
     reply.header('X-Robots-Tag', 'noindex, nofollow')
     // Kanonische Schreibweise, damit Abtipper mit Kleinbuchstaben/Bindestrich
     // dieselbe Seite (und dieselben Verknüpfungs-Formulare) bekommen.
-    if (code && raw !== code) return reply.redirect(301, `/S/${code}`)
+    if (code && raw !== code) return reply.redirect(`/S/${code}`, 301)
 
     const userId = request.session.userId
     const [rows] = code
@@ -263,7 +268,13 @@ export default async function stickerRoutes(app: FastifyInstance) {
     // verworfen werden, der Papierkorb sowieso).
     const oeffentlich = !!row && (row.status === 'eingereicht' || row.status === 'versendet')
 
-    if (row && row.linked_at && !isOwner) {
+    // Zählen nur echte Aufrufe von Menschen: Link-Vorschauen (Messenger,
+    // Mail-Clients) und Crawler melden sich meist per User-Agent oder kommen
+    // ohne Navigations-Fetch-Metadaten – sie machten die Scan-Zahl wertlos.
+    const ua = String(request.headers['user-agent'] || '')
+    const mode = String(request.headers['sec-fetch-mode'] || 'navigate')
+    const bot = /bot|crawl|spider|preview|fetch|curl|wget|python|slurp|facebookexternalhit|whatsapp|telegram|discord|slack|skype|linkpreview|headless/i.test(ua)
+    if (row && row.linked_at && !isOwner && mode === 'navigate' && !bot) {
       await pool.execute(
         'UPDATE sticker_codes SET scan_count = scan_count + 1, last_scan_at = NOW() WHERE code = ?',
         [row.code]
@@ -326,6 +337,6 @@ export default async function stickerRoutes(app: FastifyInstance) {
   const limit = { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }
   app.get('/S/:code', limit, showSticker)
   app.get('/s/:code', limit, async (request, reply) =>
-    reply.redirect(301, `/S/${encodeURIComponent((request.params as { code: string }).code)}`)
+    reply.redirect(`/S/${encodeURIComponent((request.params as { code: string }).code)}`, 301)
   )
 }

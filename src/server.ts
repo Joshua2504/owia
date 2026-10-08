@@ -1,9 +1,10 @@
 import './types'
-import { startJobRunner, purgeJobs } from './services/jobs'
+import { startJobRunner, purgeJobs, jobStats } from './services/jobs'
+import { setLogger } from './services/logger'
 import { assertProductionMailConfig } from './config/mail'
 import path from 'path'
 import fs from 'fs/promises'
-import Fastify from 'fastify'
+import Fastify, { FastifyError } from 'fastify'
 import cookie from '@fastify/cookie'
 import session from '@fastify/session'
 import formbody from '@fastify/formbody'
@@ -28,7 +29,9 @@ import { verjaehrung } from './services/verjaehrung'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN } from './config/fahrzeug'
 import adminRoutes from './routes/admin'
 import portalRoutes from './routes/portal'
-import { resumeWatchers } from './services/portalDispatch'
+import { resumeWatchers, portalHealthy } from './services/portalDispatch'
+import { alprHealthy } from './services/alpr'
+import { unlockedCities } from './config/cities'
 import { startSelbsttestPlan } from './services/portalSelbsttest'
 import { startInboxPolling, processInboundMail } from './services/mailInbox'
 import { failStalePlateAnalyses } from './services/plateAnalysis'
@@ -43,8 +46,11 @@ import { purgeTrash } from './services/drafts'
 import { fillMissingTatorte } from './services/tatortFill'
 
 // trustProxy: hinter Caddy sonst falsches Protokoll (secure-Cookies) und
-// Docker-interne IPs statt Client-IPs in Logs und Rate-Limits.
-const app = Fastify({ logger: { level: 'info' }, trustProxy: true })
+// Docker-interne IPs statt Client-IPs in Logs und Rate-Limits. Nur Loopback
+// und private Netze (Docker-Bridge, Caddy) gelten als Proxy – ein direkt
+// erreichbarer Port 3000 könnte sonst per X-Forwarded-For jede IP vortäuschen
+// und so die Login-Limits umgehen.
+const app = Fastify({ logger: { level: 'info' }, trustProxy: ['loopback', 'uniquelocal'] })
 
 const IS_PROD = process.env.NODE_ENV === 'production'
 
@@ -64,6 +70,7 @@ async function main() {
     }
   }
 
+  setLogger(app.log)
   assertProductionMailConfig()
   await initDb()
 
@@ -90,7 +97,11 @@ async function main() {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"], // Inline-Scripts in den Views (Theme, Lightbox, JSON-LD)
+        // Keine Inline-Scripts mehr (alles in public/js/, theme-init.js im
+        // <head>); ein übersehenes <%- oder DOM-XSS kann so keinen Code
+        // ausführen. <script type="application/json|ld+json"> ist davon
+        // unberührt (wird nicht ausgeführt).
+        scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'"],
@@ -111,6 +122,22 @@ async function main() {
     global: true,
     max: 2000,
     timeWindow: '1 minute',
+  })
+
+  // CSRF-Schutz über Fetch Metadata: Alle zustandsändernden Requests müssen
+  // von der eigenen Origin kommen. Moderne Browser schicken Sec-Fetch-Site bei
+  // jedem Request; fremde Seiten (cross-site) werden abgewiesen, 'none' ist
+  // eine Nutzer-Navigation (Adresszeile/Lesezeichen). Fehlt der Header (alte
+  // Browser, curl, interne Dienste), greift weiterhin sameSite=lax des
+  // Session-Cookies. Ergänzt das bisherige Lax-Cookie um einen zweiten Ring,
+  // ohne Token in jedem Formular und jedem fetch.
+  app.addHook('onRequest', async (request, reply) => {
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return
+    const site = String(request.headers['sec-fetch-site'] || '')
+    if (site && site !== 'same-origin' && site !== 'none') {
+      request.log.warn({ site, url: request.url }, 'Cross-Site-Request abgewiesen')
+      return reply.status(403).send('Anfrage von fremder Seite abgewiesen.')
+    }
   })
 
   await app.register(formbody)
@@ -167,14 +194,14 @@ async function main() {
 
   // Alte (englische) Pfade auf die neuen deutschen umleiten – Lesezeichen und
   // bereits versendete Mail-Links (/report/...) sollen weiter funktionieren.
-  app.get('/dashboard', (_req, reply) => reply.redirect(301, '/anzeigen'))
-  app.get('/settings', (_req, reply) => reply.redirect(301, '/einstellungen'))
-  app.get('/intake', (_req, reply) => reply.redirect(301, '/import'))
+  app.get('/dashboard', (_req, reply) => reply.redirect('/anzeigen', 301))
+  app.get('/settings', (_req, reply) => reply.redirect('/einstellungen', 301))
+  app.get('/intake', (_req, reply) => reply.redirect('/import', 301))
   app.get('/intake/*', (req, reply) =>
-    reply.redirect(301, req.url.replace(/^\/intake/, '/import'))
+    reply.redirect(req.url.replace(/^\/intake/, '/import'), 301)
   )
   app.get('/report/*', (req, reply) =>
-    reply.redirect(301, req.url.replace(/^\/report/, '/anzeige').replace(/\/edit(\?|$)/, '/bearbeiten$1'))
+    reply.redirect(req.url.replace(/^\/report/, '/anzeige').replace(/\/edit(\?|$)/, '/bearbeiten$1'), 301)
   )
 
   await app.register(authRoutes)
@@ -245,14 +272,29 @@ async function main() {
   // 'pending'-Bilder auflösen, sonst zeigt das Formular dort endlos den Spinner.
   void failStalePlateAnalyses()
 
-  // Healthcheck für Monitoring/Compose: prüft DB-Verbindung.
-  app.get('/health', async (_request, reply) => {
+  // Healthcheck für Monitoring/Compose: ok nur mit DB. Dazu Warnfelder (kein
+  // 503, sonst würde Compose die App bei einem hängenden Job neu starten):
+  // Job-Runner (ältester wartender Job, Fehlschläge, letzter Tick), Portal-
+  // und ALPR-Dienst – mit `?voll=1` auch die (langsameren) Dienst-Pings.
+  app.get('/health', { config: { rateLimit: false } }, async (request, reply) => {
     try {
       await pool.execute('SELECT 1')
-      return reply.send({ ok: true })
     } catch {
       return reply.status(503).send({ ok: false })
     }
+    const jobs = await jobStats().catch(() => null)
+    const warnungen: string[] = []
+    if (jobs?.oldestQueuedMin != null && jobs.oldestQueuedMin > 15) warnungen.push(`ältester wartender Job ${jobs.oldestQueuedMin} min`)
+    if (jobs?.lastTickSec != null && jobs.lastTickSec > 120) warnungen.push(`Job-Runner seit ${jobs.lastTickSec} s ohne Tick`)
+    if (jobs?.failedLastHour) warnungen.push(`${jobs.failedLastHour} Job(s) in der letzten Stunde fehlgeschlagen`)
+    const out: Record<string, unknown> = { ok: true, jobs, warnungen }
+    if ((request.query as { voll?: string }).voll === '1') {
+      const [portal, alpr] = await Promise.all([portalHealthy(), alprHealthy()])
+      out.dienste = { portal, alpr }
+      if (unlockedCities().some((c) => c.portal) && !portal) warnungen.push('Portal-Dienst nicht erreichbar')
+      if (!alpr) warnungen.push('ALPR-Dienst nicht erreichbar')
+    }
+    return reply.send(out)
   })
 
   if (process.env.NODE_ENV !== 'production') {
@@ -282,12 +324,27 @@ async function main() {
     return reply.status(404).view('/error.ejs', viewData(_req, { title: 'Nicht gefunden', statusCode: 404 }))
   })
 
-  app.setErrorHandler((err, req, reply) => {
-    app.log.error(err)
-    // Rate-Limit-Fehler behalten ihren Status (429) und die Plain-Antwort.
-    if (err.statusCode === 429) {
-      return reply.status(429).send('Zu viele Anfragen – bitte kurz warten.')
+  // Fehlerhandler: Client-Fehler (400 ungültiges JSON, 413 zu groß, 415
+  // Content-Type, 429 Rate-Limit, Schema-Fehler) behalten ihren Status – vorher
+  // wurde alles zur 500-HTML-Seite, die fetch-Frontends (Autosave, Inline-
+  // Bearbeitung) zeigten „Serverfehler" und das Log füllte sich mit Fehlalarmen.
+  // Nur echte 5xx werden als error geloggt. Wer JSON akzeptiert, bekommt JSON.
+  app.setErrorHandler((err: FastifyError, req, reply) => {
+    const status = typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500
+    const wantsJson = String(req.headers.accept || '').includes('application/json')
+    if (status >= 500) app.log.error({ err, url: req.url }, 'Unbehandelter Fehler')
+    else req.log.info({ status, msg: err.message, url: req.url }, 'Client-Fehler')
+    if (status === 429) return reply.status(429).send('Zu viele Anfragen – bitte kurz warten.')
+    if (status < 500) {
+      const texte: Record<number, string> = {
+        400: 'Ungültige Anfrage.', 403: 'Nicht erlaubt.', 404: 'Nicht gefunden.',
+        413: 'Die Datei ist zu groß.', 415: 'Dieses Format wird nicht unterstützt.',
+      }
+      const message = texte[status] || err.message || 'Ungültige Anfrage.'
+      if (wantsJson) return reply.status(status).send({ error: message })
+      return reply.status(status).view('/error.ejs', viewData(req, { title: 'Fehler', statusCode: status, message }))
     }
+    if (wantsJson) return reply.status(500).send({ error: 'Interner Fehler.' })
     return reply.status(500).view('/error.ejs', viewData(req, { title: 'Fehler', statusCode: 500 }))
   })
 

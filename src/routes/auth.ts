@@ -201,8 +201,23 @@ export default async function authRoutes(app: FastifyInstance) {
     return reply.redirect(afterLogin(request, reply))
   })
 
-  // Alternative: Anmeldung direkt über den Link in der E-Mail
+  // Alternative: Anmeldung direkt über den Link in der E-Mail. Der GET zeigt
+  // nur eine Bestätigungsseite – Mail-Gateways und Link-Vorschauen (Outlook
+  // Safe Links, Messenger) rufen Links vorab ab und hätten den Einmal-Token
+  // sonst verbraucht, bevor der Nutzer klickt. Erst der POST meldet an.
   app.get('/login/link/:token', async (request, reply) => {
+    const { token } = request.params as { token: string }
+    if (!/^[0-9a-f]{64}$/.test(token)) {
+      return reply.view('/auth/login.ejs', viewData(request, {
+        title: 'Anmelden',
+        error: 'Der Anmeldelink ist ungültig oder abgelaufen. Bitte erneut anmelden.',
+      }))
+    }
+    if (request.session.userId) return reply.redirect(afterLogin(request, reply))
+    return reply.view('/auth/link.ejs', viewData(request, { title: 'Anmelden', token }))
+  })
+
+  app.post('/login/link/:token', async (request, reply) => {
     const { token } = request.params as { token: string }
 
     const tokenRow = await consumeMagicLink(token)
@@ -218,8 +233,12 @@ export default async function authRoutes(app: FastifyInstance) {
     return reply.redirect(afterLogin(request, reply))
   })
 
-  app.get('/logout', async (request, reply) => {
+  // Abmelden nur per POST: Ein GET wäre zustandsändernd und ließe sich von
+  // fremden Seiten per <img src> auslösen (sameSite=lax schützt Top-Level-
+  // Navigationen nicht). Der alte GET-Pfad landet harmlos auf der Startseite.
+  app.post('/logout', async (request, reply) => {
     await request.session.destroy()
     return reply.redirect('/login')
   })
+  app.get('/logout', async (_request, reply) => reply.redirect('/'))
 }

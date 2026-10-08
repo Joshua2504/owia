@@ -1,0 +1,21 @@
+<%# Bestätigungsseite für den Anmeldelink aus der E-Mail (routes/auth.ts):
+    Der Token wird erst beim POST verbraucht, damit Link-Vorschauen und
+    Mail-Sicherheits-Gateways ihn nicht vorab entwerten. %>
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <div class="card shadow-sm">
+      <div class="card-body p-4 text-center">
+        <h2 class="card-title mb-3">Anmeldung bestätigen</h2>
+        <p class="text-muted small mb-4">
+          Du hast den Anmeldelink aus der E-Mail geöffnet. Mit einem Klick bist du angemeldet.
+        </p>
+        <form method="post" action="/login/link/<%= token %>">
+          <button type="submit" class="btn btn-primary btn-lg w-100" autofocus>Jetzt anmelden</button>
+        </form>
+        <p class="small text-muted mt-3 mb-0">
+          Nicht du? Dann einfach diese Seite schließen – ohne Klick passiert nichts.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

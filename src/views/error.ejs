@@ -5,6 +5,8 @@
     <p class="text-muted mb-4">
       <% if (locals.statusCode === 404) { %>
         Die aufgerufene Seite existiert nicht (mehr). Vielleicht hilft die Übersicht weiter.
+      <% } else if (locals.message && locals.statusCode < 500) { %>
+        <%= locals.message %>
       <% } else { %>
         Ein interner Fehler ist aufgetreten – wir wurden informiert. Bitte versuch es gleich noch einmal.
       <% } %>

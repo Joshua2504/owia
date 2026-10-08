@@ -835,3 +835,145 @@ test('Automatisches Schwärzen: Gesichter immer, fremde Kennzeichen nur neben de
   assert.ok(out.data[(10 * 400 + 10) * 4] > 225, 'Rest unverändert')
   assert.throws(() => schwaerzeBoxen(original, 'image/jpeg', 1, { ...mit, w: 150, h: 200 } as any, plan.boxen), /Bildausrichtung/)
 })
+
+// ---------------------------------------------------------------------------
+// Härtung 08.10.2026: Bildtyp aus Bytes, Dekodier-Deckel, Posteingang-
+// Authentizität, Magic-Link ohne Vorab-Verbrauch, Autosave-Validierung,
+// öffentliche API ohne punktgenaue Koordinaten, Einreichen-Kernfunktion.
+// ---------------------------------------------------------------------------
+
+test('Bildtyp kommt aus den Bytes, nicht aus dem Client-Mimetype; Riesenbilder werden nicht dekodiert', async () => {
+  const { sniffImageType, prepareImage } = await import('../src/services/images')
+  const { headerDimensions, decode } = await import('../src/services/pixelate')
+  const jpeg = (await import('jpeg-js')).default
+  const foto = Buffer.from(jpeg.encode({ data: Buffer.alloc(40 * 30 * 4, 200), width: 40, height: 30 }, 80).data)
+  assert.equal(sniffImageType(foto), 'image/jpeg')
+  assert.deepEqual(headerDimensions(foto, 'image/jpeg'), { width: 40, height: 30 })
+  const html = Buffer.from('<html><script>alert(1)</script></html>')
+  assert.equal(sniffImageType(html), null)
+  await assert.rejects(() => prepareImage(html, 'bild.jpg', 'image/jpeg'), /unsupported/, 'HTML mit Bild-Mimetype ist kein Bild')
+  // Gemeldeter Mimetype PNG, Bytes JPEG ⇒ als JPEG behandelt.
+  const prepared = await prepareImage(foto, 'bild.png', 'image/png')
+  assert.equal(prepared.mimetype, 'image/jpeg')
+  // PNG-Header mit 40000×40000 px (Dekompressionsbombe) wird vor dem Dekodieren abgewiesen.
+  const bombe = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)])
+  bombe.writeUInt32BE(13, 8); bombe.write('IHDR', 12); bombe.writeUInt32BE(40000, 16); bombe.writeUInt32BE(40000, 20)
+  assert.equal(sniffImageType(Buffer.concat([bombe, Buffer.alloc(8)])), 'image/png')
+  assert.throws(() => decode(bombe, 'image/png'), /zu groß/)
+})
+
+test('Posteingang: Authentication-Results mit DMARC/SPF-Fehlschlag entzieht dem Absender das Vertrauen', async () => {
+  const { authenticationFailed } = await import('../src/services/mailInbox')
+  const mail = (ar: string | null) => ({ headers: new Map(ar === null ? [] : [['authentication-results', ar]]) }) as any
+  assert.equal(authenticationFailed(mail(null)), false, 'ohne Prüfer bleibt es beim bisherigen Verhalten')
+  assert.equal(authenticationFailed(mail('mx.example; dmarc=pass header.from=stadt-frankfurt.de')), false)
+  assert.equal(authenticationFailed(mail('mx.example; spf=fail smtp.mailfrom=x; dmarc=fail header.from=stadt-frankfurt.de')), true)
+  assert.equal(authenticationFailed(mail('mx.example; spf=softfail; dkim=none')), true)
+  assert.equal(authenticationFailed(mail('mx.example; spf=fail; dkim=pass')), false, 'gültige DKIM-Signatur reicht')
+})
+
+test('Magic-Link: GET verbraucht den Token nicht, erst der POST meldet an', async () => {
+  const authRoutes = (await import('../src/routes/auth')).default
+  const t = await token()
+  const hex = 'a'.repeat(64)
+  await pool.execute('UPDATE login_tokens SET token=? WHERE token=?', [hex, t.value])
+  const app = Fastify()
+  await app.register(cookie)
+  await app.register(formbody)
+  await app.register(view, { engine: { ejs }, root: path.join(process.cwd(), 'src', 'views'), layout: '/layout.ejs', defaultContext: { isAdmin: false, verjaehrung } })
+  const session: Record<string, unknown> = {
+    regenerate: async () => {}, save: async () => {}, destroy: async () => {}, cookie: {},
+  }
+  app.addHook('preHandler', async request => { request.session = session as unknown as typeof request.session })
+  await app.register(authRoutes)
+  try {
+    const preview = await app.inject({ method: 'GET', url: `/login/link/${hex}` })
+    assert.equal(preview.statusCode, 200)
+    assert.match(preview.body, /Jetzt anmelden/)
+    assert.equal((await query('SELECT used_at FROM login_tokens WHERE token=?', [hex]))[0].used_at, null, 'Vorschau-Abruf darf nicht verbrauchen')
+    const bad = await app.inject({ method: 'GET', url: '/login/link/nicht-hex' })
+    assert.match(bad.body, /ungültig oder abgelaufen/)
+    const login = await app.inject({ method: 'POST', url: `/login/link/${hex}` })
+    assert.equal(login.statusCode, 302)
+    assert.equal(session.userEmail, t.email)
+    assert.notEqual((await query('SELECT used_at FROM login_tokens WHERE token=?', [hex]))[0].used_at, null)
+    const again = await app.inject({ method: 'POST', url: `/login/link/${hex}` })
+    assert.equal(again.statusCode, 200, 'zweiter POST: Token verbraucht ⇒ Login-Seite mit Fehler')
+    // Abmelden nur per POST; der alte GET ist ein harmloser Redirect.
+    assert.equal((await app.inject({ method: 'GET', url: '/logout' })).headers.location, '/')
+    assert.equal((await app.inject({ method: 'POST', url: '/logout' })).headers.location, '/login')
+  } finally { await app.close() }
+})
+
+test('Autosave validiert Datum, Uhrzeit und Katalog wie die Inline-Bearbeitung', async () => {
+  const { VERSTOSS_ARTEN } = await import('../src/config/verstoss')
+  const id = await report()
+  await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  const app = Fastify()
+  app.addHook('preHandler', async request => { request.session = { userId } as typeof request.session })
+  await app.register(reportsRoutes)
+  try {
+    const res = await app.inject({ method: 'PATCH', url: `/anzeige/${az}`, payload: {
+      kennzeichen: 'f ab 123', tattag: 'foo', tatzeit_von: '25:99', verstoss_art: 'Erfundener Verstoß', tatort: 'x'.repeat(600), beschreibung: 'ok',
+    } })
+    assert.equal(res.statusCode, 200, 'ungültige Werte ergeben keinen DB-Fehler')
+    let row = (await query('SELECT kennzeichen, tattag, tatzeit_von, verstoss_art, LENGTH(tatort) l FROM reports WHERE id=?', [id]))[0]
+    assert.equal(row.kennzeichen, 'F AB 123')
+    assert.equal(row.tattag, null)
+    assert.equal(row.tatzeit_von, null)
+    assert.equal(row.verstoss_art, null)
+    assert.equal(row.l, 500)
+    await app.inject({ method: 'PATCH', url: `/anzeige/${az}`, payload: { tattag: '2026-10-01', tatzeit_von: '10:15', verstoss_art: VERSTOSS_ARTEN[0] } })
+    row = (await query("SELECT DATE_FORMAT(tattag, '%Y-%m-%d') t, tatzeit_von, verstoss_art FROM reports WHERE id=?", [id]))[0]
+    assert.deepEqual([row.t, String(row.tatzeit_von).slice(0, 5), row.verstoss_art], ['2026-10-01', '10:15', VERSTOSS_ARTEN[0]])
+  } finally { await app.close() }
+})
+
+test('Öffentliche Karten-API liefert Koordinaten nur auf ~100 m genau und keine Kennungen', async () => {
+  const publicRoutes = (await import('../src/routes/public')).default
+  const id = await report()
+  await pool.execute("UPDATE reports SET status='versendet', tatort_lat=50.1234567, tatort_lon=8.7654321, tattag='2026-09-01' WHERE id=?", [id])
+  const app = Fastify()
+  await app.register(cookie)
+  await app.register(view, { engine: { ejs }, root: path.join(process.cwd(), 'src', 'views'), layout: '/layout.ejs', defaultContext: { isAdmin: false, verjaehrung } })
+  app.addHook('preHandler', async request => { request.session = {} as typeof request.session })
+  await app.register(publicRoutes)
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/public/reports' })
+    assert.equal(res.statusCode, 200)
+    const eintrag = (res.json().reports as any[]).find((r) => Math.abs(r.lat - 50.123) < 1e-9)
+    assert.ok(eintrag, 'Anzeige erscheint mit gerundeter Breite')
+    assert.equal(eintrag.lon, 8.765)
+    assert.deepEqual(Object.keys(eintrag).sort(), ['imageUrl', 'lat', 'lon', 'tattag', 'verstossArt'], 'keine zusätzlichen Felder (Aktenzeichen, Kennzeichen, Nutzer)')
+  } finally { await app.close() }
+})
+
+test('submitDraft: Hinderungsgründe sperren, vollständiger Entwurf wird eingereicht und reiht Folgejobs ein', async () => {
+  const { submitDraft } = await import('../src/routes/reports')
+  const { VERSTOSS_ARTEN } = await import('../src/config/verstoss')
+  const id = await report()
+  await pool.execute(
+    `UPDATE reports SET status='entwurf', tattag=DATE_SUB(CURDATE(), INTERVAL 3 DAY), tatzeit_von='10:00:00',
+       tatort='Kurpark 1, 63628 Bad Soden-Salmünster', verstoss_art=? WHERE id=?`, [VERSTOSS_ARTEN[0], id])
+  let row = (await query('SELECT * FROM reports WHERE id=?', [id]))[0]
+  // Ungeprüftes Foto ⇒ nicht einreichbar, Status bleibt Entwurf.
+  await pool.execute(
+    `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype, sort_order)
+     VALUES (?, 'bild-x.jpg', 'image/jpeg', 'bild-x.jpg', 'image/jpeg', 1)`, [id])
+  let out = await submitDraft(row, userId)
+  assert.equal(out.ok, false)
+  assert.equal((out as any).status, 422)
+  assert.equal((await query('SELECT status FROM reports WHERE id=?', [id]))[0].status, 'entwurf')
+  await pool.execute('UPDATE report_images SET geprueft_at=NOW() WHERE report_id=?', [id])
+  row = (await query('SELECT * FROM reports WHERE id=?', [id]))[0]
+  out = await submitDraft(row, userId, { userEmail: 'user@example.invalid' })
+  assert.equal(out.ok, true, JSON.stringify(out))
+  assert.equal((await query('SELECT status FROM reports WHERE id=?', [id]))[0].status, 'eingereicht')
+  const jobs = await query("SELECT type FROM jobs WHERE type='mail.submit-notification' AND payload LIKE ? ORDER BY id DESC LIMIT 1", [`%"reportId":${id}%`])
+  assert.equal(jobs.length, 1, 'Admin-Benachrichtigung als Job eingereiht')
+  // Zweiter Versuch: kein Entwurf mehr ⇒ 409.
+  row = (await query('SELECT * FROM reports WHERE id=?', [id]))[0]
+  out = await submitDraft(row, userId)
+  assert.equal((out as any).status, 409)
+})

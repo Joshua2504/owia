@@ -7,6 +7,7 @@
 // Die Verarbeitung läuft SERIELL über eine einfache Promise-Kette: die
 // CPU-Inferenz teilt sich die Maschine mit dem Tileserver – mehrere Bilder
 // gleichzeitig würden die CPU sättigen (der Dienst serialisiert zusätzlich).
+import { logger } from './logger'
 import fs from 'fs/promises'
 import path from 'path'
 import mysql from 'mysql2/promise'
@@ -138,7 +139,7 @@ async function runAnalysis(
 
     await prefillReportPlate(userId, reportId)
   } catch (err) {
-    console.error('Kennzeichen-Analyse fehlgeschlagen', err)
+    logger.error({ err, imageId, reportId }, 'Kennzeichen-Analyse fehlgeschlagen')
     await setStatus(imageId, 'failed')
   }
 }

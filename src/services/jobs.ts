@@ -16,6 +16,16 @@ export type JobHandler = (payload: any, log: FastifyBaseLogger) => Promise<void>
 const handlers = new Map<string, JobHandler>()
 const CONCURRENCY = 3
 const POLL_MS = 5000
+/** Zeitlimit je Job: ein hängender Handler (SMTP ohne Socket-Timeout, Photon
+ *  ohne Antwort) soll nicht dauerhaft einen der CONCURRENCY-Plätze belegen.
+ *  Nach Ablauf gilt der Versuch als gescheitert (Backoff wie bei Fehlern); der
+ *  Handler selbst läuft im Hintergrund weiter, bis er aufgibt – Handler sind
+ *  wiederholbar (siehe oben), ein doppelter Lauf ist also verkraftbar. */
+const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS || 10 * 60 * 1000)
+/** Ein 'running'-Job, der länger als das ist, stammt aus einem früheren
+ *  Prozess (Absturz ohne sauberes Requeue) und wird neu eingereiht. */
+const STALE_RUNNING_MS = 2 * JOB_TIMEOUT_MS
+let lastTickAt: Date | null = null
 
 let log: FastifyBaseLogger | null = null
 let running = 0
@@ -33,11 +43,39 @@ export async function enqueueJob(
   payload: unknown,
   opts: { key?: string; maxAttempts?: number } = {}
 ): Promise<void> {
-  await pool.execute(
-    'INSERT IGNORE INTO jobs (type, payload, pending_key, max_attempts) VALUES (?, ?, ?, ?)',
-    [type, JSON.stringify(payload ?? null), opts.key ?? null, opts.maxAttempts ?? 3]
-  )
+  // Kein INSERT IGNORE: das verschluckte neben dem gewollten Schlüssel-Duplikat
+  // auch echte Fehler (z.B. abgeschnittenes Payload) – der Job fehlte dann
+  // stillschweigend. ER_DUP_ENTRY ist der einzige erwartete Fall.
+  try {
+    await pool.execute(
+      'INSERT INTO jobs (type, payload, pending_key, max_attempts) VALUES (?, ?, ?, ?)',
+      [type, JSON.stringify(payload ?? null), opts.key ?? null, opts.maxAttempts ?? 3]
+    )
+  } catch (err) {
+    if ((err as { code?: string })?.code !== 'ER_DUP_ENTRY') throw err
+  }
   setImmediate(() => void tick())
+}
+
+/** Kennzahlen für /health: ältester wartender Job, Fehlschläge der letzten
+ *  Stunde, letzter Tick – damit ein stehender Runner im Monitoring auffällt. */
+export async function jobStats(): Promise<{ queued: number; oldestQueuedMin: number | null; running: number; failedLastHour: number; lastTickSec: number | null }> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT
+       SUM(status = 'queued') AS queued,
+       SUM(status = 'running') AS running,
+       TIMESTAMPDIFF(MINUTE, MIN(CASE WHEN status = 'queued' AND run_after <= NOW() THEN created_at END), NOW()) AS oldest_min,
+       SUM(status = 'failed' AND finished_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)) AS failed_hour
+     FROM jobs`
+  )
+  const r = rows[0] || {}
+  return {
+    queued: Number(r.queued || 0),
+    running: Number(r.running || 0),
+    oldestQueuedMin: r.oldest_min == null ? null : Number(r.oldest_min),
+    failedLastHour: Number(r.failed_hour || 0),
+    lastTickSec: lastTickAt ? Math.round((Date.now() - lastTickAt.getTime()) / 1000) : null,
+  }
 }
 
 /** Offene (wartend/laufend) und zuletzt gescheiterte Jobs eines Typs – für
@@ -70,9 +108,15 @@ async function claim(): Promise<mysql.RowDataPacket | null> {
 
 async function runJob(job: mysql.RowDataPacket): Promise<void> {
   const handler = handlers.get(job.type)
+  let timer: NodeJS.Timeout | null = null
   try {
     if (!handler) throw new Error(`Unbekannter Job-Typ ${job.type}`)
-    await handler(JSON.parse(job.payload), log!)
+    await Promise.race([
+      handler(JSON.parse(job.payload), log!),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Zeitlimit von ${Math.round(JOB_TIMEOUT_MS / 60000)} min überschritten`)), JOB_TIMEOUT_MS)
+      }),
+    ])
     await pool.execute("UPDATE jobs SET status = 'done', finished_at = NOW(), error = NULL WHERE id = ?", [job.id])
   } catch (err) {
     const attempt = Number(job.attempts) + 1
@@ -84,12 +128,15 @@ async function runJob(job: mysql.RowDataPacket): Promise<void> {
               run_after = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?`,
       [final ? 'failed' : 'queued', String((err as Error)?.message || err).slice(0, 2000), final, attempt * attempt, job.id]
     ).catch(() => undefined)
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 
 async function tick(): Promise<void> {
   if (ticking || !log) return
   ticking = true
+  lastTickAt = new Date()
   try {
     while (running < CONCURRENCY) {
       const job = await claim()
@@ -113,6 +160,14 @@ export async function startJobRunner(logger: FastifyBaseLogger): Promise<void> {
   log = logger
   await pool.execute("UPDATE jobs SET status = 'queued', started_at = NULL WHERE status = 'running'")
   setInterval(() => void tick(), POLL_MS)
+  // Liegengebliebene 'running'-Jobs (Prozess verschwand ohne das Requeue oben,
+  // z.B. OOM-Kill mit anschließendem Start einer zweiten Instanz) neu einreihen.
+  setInterval(() => {
+    void pool.execute(
+      "UPDATE jobs SET status = 'queued', started_at = NULL WHERE status = 'running' AND started_at < DATE_SUB(NOW(), INTERVAL ? SECOND)",
+      [Math.round(STALE_RUNNING_MS / 1000)]
+    ).catch((err) => log?.warn({ err }, 'Stale-Job-Prüfung fehlgeschlagen'))
+  }, 5 * 60 * 1000).unref()
   void tick()
 }
 

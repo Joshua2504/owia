@@ -41,6 +41,17 @@ export type BildAnalyse = {
   faces: { score: number; bbox: number[] }[]
 }
 
+/** Erreichbarkeit des Dienstes für /health (nur wenn ALPR überhaupt genutzt wird). */
+export async function alprHealthy(): Promise<boolean> {
+  if (!alprEnabled()) return true
+  try {
+    const res = await fetch(`${ALPR_URL}/health`, { signal: AbortSignal.timeout(3000) })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 /** Erfolgreiche Analyse; best=null heißt "kein Kennzeichen im Bild gefunden". */
 export type RecognizeResult = { best: PlateResult | null; analyse: BildAnalyse | null }
 

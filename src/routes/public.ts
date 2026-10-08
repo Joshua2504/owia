@@ -5,7 +5,7 @@ import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { viewData, setFlash } from '../middleware/auth'
-import { cachedPixelate } from '../services/pixelate'
+import { loadPixelated } from '../services/intakeImageProcessing'
 import { parseAnalyse } from '../services/dritte'
 import { getCity, unlockedCities, DEFAULT_CITY_ID } from '../config/cities'
 import { isValidEmail, normalizeEmail } from './auth'
@@ -28,26 +28,49 @@ const PUBLIC_WHERE =
   "r.status='versendet' AND r.tatort_lat IS NOT NULL AND r.tatort_lon IS NOT NULL" +
   ' AND r.tatort_lat <> 0 AND r.tatort_lon <> 0'
 
+/** Öffentliche Koordinaten auf ~100 m vergröbern (3 Nachkommastellen): Die
+ *  Karte braucht nur die Straße, nicht die Einfahrt – punktgenaue Position
+ *  plus Datum ließe auf Stellplätze einzelner Anwohner schließen. */
+const grob = (v: unknown) => Math.round(Number(v) * 1000) / 1000
+
+/** Startseiten-Kennzahlen kurz zwischenspeichern: drei COUNT-Abfragen und ein
+ *  GROUP BY bei jedem Aufruf der (öffentlichen, nicht limitierten) Startseite
+ *  wären bei Crawler-Traffic unnötige DB-Last. */
+let statsCache: { bis: number; stats: { total: number; last30: number; fotos: number }; top: string | null } | null = null
+const STATS_TTL_MS = 5 * 60 * 1000
+async function startseitenKennzahlen() {
+  if (statsCache && statsCache.bis > Date.now()) return statsCache
+  const [statsRows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT
+       (SELECT COUNT(*) FROM reports WHERE status='versendet') AS total,
+       (SELECT COUNT(*) FROM reports WHERE status='versendet'
+          AND tattag >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS last30,
+       (SELECT COUNT(*) FROM report_images ri
+          JOIN reports r ON r.id = ri.report_id WHERE r.status='versendet') AS fotos`
+  )
+  const [topRows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT verstoss_art, COUNT(*) AS c FROM reports
+      WHERE status='versendet' AND verstoss_art IS NOT NULL
+      GROUP BY verstoss_art ORDER BY c DESC LIMIT 1`
+  )
+  statsCache = {
+    bis: Date.now() + STATS_TTL_MS,
+    stats: { total: Number(statsRows[0]?.total || 0), last30: Number(statsRows[0]?.last30 || 0), fotos: Number(statsRows[0]?.fotos || 0) },
+    top: topRows[0]?.verstoss_art || null,
+  }
+  return statsCache
+}
+
 export default async function publicRoutes(app: FastifyInstance) {
   // Öffentliche Startseite mit der Übersichtskarte.
   app.get('/', async (request, reply) => {
     const geo = getCity(DEFAULT_CITY_ID).geo
 
     // Öffentliche Kennzahlen – nur aggregierte Werte über versendete Anzeigen,
-    // keine personenbezogenen Daten.
-    const [statsRows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT
-         (SELECT COUNT(*) FROM reports WHERE status='versendet') AS total,
-         (SELECT COUNT(*) FROM reports WHERE status='versendet'
-            AND tattag >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) AS last30,
-         (SELECT COUNT(*) FROM report_images ri
-            JOIN reports r ON r.id = ri.report_id WHERE r.status='versendet') AS fotos`
-    )
-    const [topRows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT verstoss_art, COUNT(*) AS c FROM reports
-        WHERE status='versendet' AND verstoss_art IS NOT NULL
-        GROUP BY verstoss_art ORDER BY c DESC LIMIT 1`
-    )
+    // keine personenbezogenen Daten (5 min gecacht).
+    const kz = await startseitenKennzahlen()
+    const statsRows = [kz.stats]
+    const topRows = kz.top ? [{ verstoss_art: kz.top }] : []
 
     const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
     return reply.view('/public/index.ejs', viewData(request, {
@@ -232,8 +255,8 @@ export default async function publicRoutes(app: FastifyInstance) {
         LIMIT 1000`
     )
     const reports = rows.map((r) => ({
-      lat: Number(r.tatort_lat),
-      lon: Number(r.tatort_lon),
+      lat: grob(r.tatort_lat),
+      lon: grob(r.tatort_lon),
       verstossArt: r.verstoss_art || null,
       tattag: r.tattag || null,
       imageUrl: r.image_id ? `/api/public/bild/${r.image_id}/pixel.jpg` : null,
@@ -244,7 +267,7 @@ export default async function publicRoutes(app: FastifyInstance) {
   // Öffentliche Fassung des ersten Fotos einer versendeten Anzeige: erkannte
   // Kennzeichen/Gesichter geschwärzt, sonst stark verpixelt (pixelate.ts).
   // Das Original verlässt den Server nie.
-  app.get('/api/public/bild/:imageId/pixel.jpg', async (request, reply) => {
+  app.get('/api/public/bild/:imageId/pixel.jpg', { config: { rateLimit: { max: 240, timeWindow: '1 minute' } } }, async (request, reply) => {
     const { imageId } = request.params as { imageId: string }
 
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -260,7 +283,10 @@ export default async function publicRoutes(app: FastifyInstance) {
 
     const imageDir = path.join(UPLOAD_DIR, String(img.user_id), String(img.report_id))
     try {
-      const pixelated = await cachedPixelate(imageDir, img.filename, img.mimetype, parseAnalyse(img.analyse_json))
+      // Berechnung im Bild-Worker (nicht im Eventloop): ohne Cache dekodierte
+      // cachedPixelate() das Vollbild synchron – ein Durchzählen der Bild-IDs
+      // hätte die App sekundenweise angehalten.
+      const pixelated = await loadPixelated(imageDir, img.filename, img.mimetype, parseAnalyse(img.analyse_json))
       return reply
         .header('Content-Type', 'image/jpeg')
         .header('Cache-Control', 'public, max-age=3600')

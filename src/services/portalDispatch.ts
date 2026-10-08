@@ -31,6 +31,7 @@ import { getCity } from '../config/cities'
 import { isProfileComplete, drittProblem } from '../routes/reports'
 import { isVerjaehrt } from './verjaehrung'
 import { kennzeichenFlaeche } from './dritte'
+import { prewarmPublicImages } from './publicImages'
 
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
@@ -122,6 +123,7 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
   )
   if (!claim.affectedRows) throw new PortalError('Die Anzeige wird bereits versendet.')
 
+  let clientRunId: string | null = null
   try {
     const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
     const [zeiten] = await pool.execute<mysql.RowDataPacket[]>(
@@ -148,14 +150,21 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
         files.push({ role, name: `${report.aktenzeichen}-${role}-${img.id}.jpg`, data: buffer.toString('base64') })
       }
     }
+    // Lauf-ID selbst vergeben (Idempotenz im Portal-Dienst): Geht die Antwort
+    // auf POST /runs verloren (Timeout, Netzfehler), wäre im Dienst sonst ein
+    // Chromium-Lauf gestartet, von dem die App nichts weiß – er belegte bis
+    // zum 40-Minuten-Idle-Limit einen der zwei Plätze. So kann die Fehler-
+    // behandlung den Lauf gezielt abbrechen.
+    clientRunId = crypto.randomUUID()
     const res = await portalFetch('/runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payload, files }),
+      body: JSON.stringify({ id: clientRunId, payload, files }),
       timeoutMs: 60000,
     })
     const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string }
     if (!res.ok || !body.id) throw new PortalError(body.error || `Portal-Dienst antwortet nicht (HTTP ${res.status}).`)
+    clientRunId = null
     await pool.execute('UPDATE reports SET versand_ergebnis=? WHERE id=?', [
       JSON.stringify({ portal: { runId: body.id, startedAt: new Date().toISOString() } }),
       reportId,
@@ -169,6 +178,8 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
       "UPDATE reports SET versand_status=NULL, versand_ergebnis=NULL WHERE id=? AND versand_status='vorbereitung'",
       [reportId]
     )
+    // Evtl. doch gestarteten Lauf (Antwort verloren) im Dienst abbrechen.
+    if (clientRunId) void proxy(clientRunId, '/cancel', { method: 'POST' }).catch(() => null)
     if (err instanceof PortalDatenFehler || err instanceof PortalError) throw new PortalError(err.message)
     log?.error({ err, reportId }, 'Portal-Lauf konnte nicht gestartet werden')
     throw new PortalError(
@@ -312,6 +323,7 @@ async function finishRun(reportId: number, runId: string, st: PortalRunStatus): 
       [messageId, vorgangsId, beleg, reportId]
     )
     await conn.commit()
+    void prewarmPublicImages(reportId)
   } catch (err) {
     await conn.rollback()
     throw err
