@@ -3,9 +3,16 @@ const hhmm = (t) => (t ? String(t).slice(0, 5) : '')
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
 %>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<% const unmatched = locals.unmatched || [] %>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <h2 class="mb-0">Prüfung eingereichter Anzeigen</h2>
+  <nav class="d-flex gap-2 flex-wrap small" aria-label="Abschnitte">
+    <a href="#offen" class="btn btn-sm <%= pending.length ? 'btn-primary' : 'btn-outline-secondary' %>">Offen <span class="badge text-bg-light"><%= pending.length %></span></a>
+    <% if (unmatched.length) { %><a href="#antworten" class="btn btn-sm btn-outline-warning">Antworten <span class="badge text-bg-warning"><%= unmatched.length %></span></a><% } %>
+    <% if (recent.length) { %><a href="#verschickt" class="btn btn-sm btn-outline-secondary">Zuletzt verschickt</a><% } %>
+  </nav>
 </div>
+<div id="offen" style="scroll-margin-top:calc(var(--owia-nav-h, 0px) + 1rem)"></div>
 
 <% if (!pending.length) { %>
   <div class="card shadow-sm mb-4">
@@ -15,12 +22,14 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
   </div>
 <% } %>
 
-<% for (const r of pending) { %>
+<% pending.forEach((r, i) => { %>
   <%# id = Sprungziel der Admin-Benachrichtigungsmail (#a-<id>) %>
-  <div class="card shadow-sm mb-4" id="a-<%= r.id %>" style="scroll-margin-top:1rem">
+  <div class="card shadow-sm mb-4" id="a-<%= r.id %>" style="scroll-margin-top:calc(var(--owia-nav-h, 0px) + 1rem)">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div>
+        <span class="text-muted small me-1"><%= i + 1 %>/<%= pending.length %></span>
         <code><%= r.aktenzeichen %></code>
+        <% if (r.city) { %><span class="badge text-bg-secondary ms-1"><%= r.city %></span><% } %>
         <span class="text-muted small ms-2">von <%= r.user_email %> · eingereicht <%= r.eingereicht_fmt %></span>
       </div>
       <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>
@@ -81,6 +90,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
               <% } %>
             </div>
           <% } %>
+          <div class="d-flex gap-2 flex-wrap align-items-start">
           <% if ((!r.versand_status || r.versand_status === 'angenommen') && !(vj && (vj.status === 'queued' || vj.status === 'running'))) { %>
             <form method="post" action="/admin/anzeigen/<%= r.id %>/approve"
                   data-confirm="<%= r.versand_status === 'angenommen' ? 'Versandabschluss ohne erneute Mail speichern?' : 'Anzeige freigeben und ans Ordnungsamt verschicken?' %>">
@@ -88,8 +98,14 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
             </form>
           <% } %>
           <% if (!r.versand_status) { %>
-            <button type="button" class="btn btn-outline-danger mt-2" data-bs-toggle="collapse"
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="collapse"
                     data-bs-target="#reject-<%= r.id %>">✕ Ablehnen</button>
+          <% } %>
+          <% if (r.pdf_filename) { %>
+            <a class="btn btn-outline-secondary ms-auto" href="/admin/anzeigen/<%= r.id %>/pdf" target="_blank" rel="noopener">PDF ↗</a>
+          <% } %>
+          </div>
+          <% if (!r.versand_status) { %>
             <div class="collapse mt-2" id="reject-<%= r.id %>">
               <form method="post" action="/admin/anzeigen/<%= r.id %>/reject">
                 <textarea name="grund" class="form-control form-control-sm mb-2" rows="2" required
@@ -103,7 +119,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
           <% if (r.pdf_filename) { %>
           <!-- Das PDF enthält alle Angaben, Kartenseite und Beweisfotos. -->
           <iframe src="/admin/anzeigen/<%= r.id %>/pdf" class="w-100 border rounded"
-                  style="height:420px" title="PDF <%= r.aktenzeichen %>" loading="lazy"></iframe>
+                  style="height:min(70vh, 640px)" title="PDF <%= r.aktenzeichen %>" loading="lazy"></iframe>
           <% } else { %>
           <!-- Portal-Städte: kein PDF, die Anzeige wird auf /versand ins Online-Formular übertragen. -->
           <div class="alert alert-secondary small mb-0">Kein PDF – diese Anzeige wird über das Online-Formular der Stadt versendet (<a href="/versand?az=<%= r.aktenzeichen %>">/versand</a>).</div>
@@ -112,11 +128,10 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
       </div>
     </div>
   </div>
-<% } %>
+<% }) %>
 
-<% const unmatched = locals.unmatched || [] %>
 <% if (unmatched.length) { %>
-  <div class="card shadow-sm mb-4 border-warning" id="antworten" style="scroll-margin-top:1rem">
+  <div class="card shadow-sm mb-4 border-warning" id="antworten" style="scroll-margin-top:calc(var(--owia-nav-h, 0px) + 1rem)">
     <div class="card-body">
       <h5 class="card-title mb-1">Nicht zugeordnete Antworten (<%= unmatched.length %>)</h5>
       <p class="text-muted small mb-3">
@@ -174,7 +189,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
 <% } %>
 
 <% if (recent.length) { %>
-  <div class="card shadow-sm">
+  <div class="card shadow-sm" id="verschickt" style="scroll-margin-top:calc(var(--owia-nav-h, 0px) + 1rem)">
     <div class="card-body">
       <h5 class="card-title mb-3">Zuletzt verschickt</h5>
       <div class="table-responsive">
@@ -184,10 +199,11 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
               <tr>
                 <td><code class="small"><%= r.aktenzeichen %></code></td>
                 <td><code><%= r.kennzeichen %></code></td>
+                <td class="small"><%= r.city || '' %> <span class="badge <%= r.versand_art === 'portal' ? 'text-bg-info' : 'text-bg-light' %>"><%= r.versand_art === 'portal' ? 'Portal' : 'E-Mail' %></span></td>
                 <td class="small text-muted"><%= r.tatort %></td>
                 <td class="small text-muted"><%= r.user_email %></td>
                 <td class="text-end">
-                  <% if (r.pdf_filename) { %><a class="btn btn-sm btn-outline-secondary" href="/admin/anzeigen/<%= r.id %>/pdf" target="_blank">PDF</a><% } %>
+                  <% if (r.pdf_filename) { %><a class="btn btn-sm btn-outline-secondary" href="/admin/anzeigen/<%= r.id %>/pdf" target="_blank" rel="noopener">PDF</a><% } %>
                 </td>
               </tr>
             <% } %>

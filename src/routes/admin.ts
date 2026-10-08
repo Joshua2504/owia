@@ -123,10 +123,10 @@ export default async function adminRoutes(app: FastifyInstance) {
         ORDER BY r.eingereicht_at, r.id`
     )
     const [recent] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.tatort, r.pdf_filename, u.email AS user_email
+      `SELECT r.id, r.aktenzeichen, r.kennzeichen, r.tatort, r.city, r.versand_art, r.pdf_filename, u.email AS user_email
          FROM reports r
          JOIN users u ON u.id = r.user_id
-        WHERE r.status = 'versendet' AND r.versand_art = 'system_email'
+        WHERE r.status = 'versendet' AND r.versand_art IN ('system_email', 'portal')
         ORDER BY r.id DESC
         LIMIT 15`
     )
