@@ -52,7 +52,17 @@ Ergebnisse sichtbar. Benutzer-Nachrichten im bereits vorhandenen Mailverlauf
 nutzen noch den bisherigen direkten Versand; die neue Sperre betrifft die
 Admin-Freigabe einer Anzeige.
 
-## Portal-Versand (Frankfurt, ekom21)
+## Portal-Versand (Frankfurt, Wiesbaden, Mainz)
+
+Besonderheiten je Stadt (Adapter in `src/services/portale.ts`):
+
+| Stadt | Formular | Fristen | Besonderes |
+|---|---|---|---|
+| Frankfurt | ekom21 (`oe=…FFOrdA`) | nur Taten vor heute | Tatbestand-Baum, Variante Pflicht, unbekannte Tatbestände nicht versendbar |
+| Wiesbaden | ekom21 (`oe=…WIOrdA`) | max. 2 Monate | eine Ebene, sonst „Sonstiges" + Beschreibung; E-Mail Pflicht; Feld „Ergänzende Angaben" |
+| Mainz | civento RLP | – | Art × 11 Rubriken + Freitext, Telefon Pflicht, max. 3 Fotos, Tatort in Feldern |
+
+### Frankfurt (ekom21)
 
 Frankfurt nimmt Anzeigen seit 10/2026 nur noch über das Online-Formular
 `portal-civ.ekom21.de` an. Tatbestände, die das Portal nicht anbietet, sind

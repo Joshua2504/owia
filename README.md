@@ -7,8 +7,9 @@ GPS-/EXIF-Daten und einer Karten-Verortung entsteht eine vollständige Anzeige,
 die – je nach Stadt – über das Online-Portal der Stadt, als amtliches
 PDF-Formular oder als strukturierte E-Mail ans Ordnungsamt versendet wird.
 
-Aktuell freigeschaltet: **Frankfurt am Main** (Online-Portal ekom21, live
-im Browser ausgefüllt – seit 10/2026 nimmt die Stadt keine PDF-Mails mehr) und
+Aktuell freigeschaltet: **Frankfurt am Main**, **Wiesbaden** (beide Online-Portal
+ekom21) und **Mainz** (civento-Formular RLP) – jeweils live im Browser ausgefüllt,
+da diese Städte keine Mail-Anzeigen mehr annehmen – sowie
 **Bad Soden-Salmünster** und **Hanau** (jeweils E-Mail-Versand). Weitere Städte lassen sich über eine
 zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freischalten)).
 
@@ -170,8 +171,10 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
 - Städte **mit** `portal` (Frankfurt) werden über das Online-Formular der Stadt
   versendet: der Container `portal` (`docker/portal/`, Playwright) füllt es aus,
   der Admin sieht unter `/versand` live zu (zwei Läufe parallel), greift bei
-  Bedarf per Klick ins Live-Bild ein und sendet ab; nächtlicher Selbsttest. Abbildung Katalog → Portal-Auswahlbaum:
-  `src/services/portalFfm.ts`; Ablauf/Zustände: `src/services/portalDispatch.ts`.
+  Bedarf per Klick ins Live-Bild ein und sendet ab; nächtlicher Selbsttest. Je Stadt
+  ein Adapter (`src/services/portale.ts` → `portalFfm.ts`, `portalWi.ts`,
+  `portalMz.ts`) und ein Formular-Profil im Dienst (`docker/portal/ekom21.mjs`,
+  `mainz.mjs`, Bausteine in `lib.mjs`); Ablauf/Zustände: `src/services/portalDispatch.ts`.
 - Städte **ohne** `portal` und **mit** `pdfForm` bekommen das amtliche Formular
   als PDF-Anhang, Städte **ohne** beides eine strukturierte E-Mail mit
   Beweisfotos + Tatort-Karte.
