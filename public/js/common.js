@@ -85,11 +85,54 @@
     return catalog
   }
 
+  // Bestätigungsdialog statt window.confirm(): natives <dialog> im Top-Layer
+  // (liegt damit auch über Bootstrap-Modals und dem Foto-Dialog), im
+  // Seiten-Design, Esc/Klick daneben = Abbrechen. Liefert Promise<boolean>.
+  // opts: title, text, ok (Knopftext), cancel, danger (roter OK-Knopf).
+  function confirmDialog(opts) {
+    opts = opts || {}
+    return new Promise(function (resolve) {
+      var d = document.createElement('dialog')
+      d.className = 'owia-confirm'
+      d.innerHTML =
+        '<form method="dialog">' +
+        '<div class="owia-confirm-icon" aria-hidden="true">' + escapeHtml(opts.icon || '✉') + '</div>' +
+        '<h2 class="owia-confirm-title">' + escapeHtml(opts.title || 'Bist du sicher?') + '</h2>' +
+        (opts.text ? '<p class="owia-confirm-text">' + escapeHtml(opts.text) + '</p>' : '') +
+        '<div class="owia-confirm-actions">' +
+        '<button type="submit" value="cancel" class="btn btn-outline-secondary">' + escapeHtml(opts.cancel || 'Abbrechen') + '</button>' +
+        '<button type="submit" value="ok" class="btn ' + (opts.danger ? 'btn-danger' : 'btn-primary') + '" data-ok>' + escapeHtml(opts.ok || 'OK') + '</button>' +
+        '</div></form>'
+      d.addEventListener('click', function (e) { if (e.target === d) d.close('cancel') })
+      d.addEventListener('close', function () {
+        var ok = d.returnValue === 'ok'
+        d.remove()
+        resolve(ok)
+      })
+      document.body.appendChild(d)
+      d.showModal()
+      d.querySelector('[data-ok]').focus()
+    })
+  }
+
+  // Gemeinsame Rückfrage vor dem Admin-Sofortversand (report-submit.js,
+  // review.js, photo-edit.js).
+  function confirmSofort() {
+    return confirmDialog({
+      icon: '⚡',
+      title: 'Direkt versenden?',
+      text: 'Die Anzeige geht ohne weitere Prüfung sofort ans Ordnungsamt. Das lässt sich nicht rückgängig machen.',
+      ok: 'Jetzt versenden',
+    })
+  }
+
   window.OWIA = {
     escapeHtml: escapeHtml,
     debounce: debounce,
     loadCatalog: loadCatalog,
     normalizePlate: normalizePlate,
     fetchJson: fetchJson,
+    confirmDialog: confirmDialog,
+    confirmSofort: confirmSofort,
   }
 })()

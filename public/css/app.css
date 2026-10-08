@@ -1381,3 +1381,15 @@ body.is-bare { overflow: hidden; overscroll-behavior: none; background: #000; }
 .kam-preview-bar { display: flex; gap: .75rem; padding: 1rem 1rem calc(env(safe-area-inset-bottom) + 1rem); }
 .kam-preview-bar .btn { flex: 1; }
 .kam-preview-bar .btn[hidden] { display: none; }
+
+/* Bestätigungsdialog (OWIA.confirmDialog in common.js) */
+.owia-confirm { border: 0; border-radius: 1rem; padding: 1.5rem; width: min(26rem, calc(100vw - 2rem)); background: var(--bs-body-bg); color: var(--bs-body-color); box-shadow: 0 1.25rem 3rem rgba(0,0,0,.35); text-align: center; }
+.owia-confirm[open] { animation: owia-confirm-in .16s ease-out; }
+.owia-confirm::backdrop { background: rgba(0,0,0,.5); backdrop-filter: blur(3px); }
+.owia-confirm-icon { width: 3rem; height: 3rem; margin: 0 auto .75rem; border-radius: 50%; display: grid; place-items: center; font-size: 1.5rem; background: var(--bs-primary-bg-subtle); }
+.owia-confirm-title { font-size: 1.2rem; font-weight: 600; margin-bottom: .5rem; }
+.owia-confirm-text { color: var(--bs-secondary-color); margin-bottom: 1.25rem; }
+.owia-confirm-actions { display: flex; gap: .5rem; }
+.owia-confirm-actions .btn { flex: 1; }
+@keyframes owia-confirm-in { from { opacity: 0; transform: translateY(.5rem) scale(.97); } }
+@media (prefers-reduced-motion: reduce) { .owia-confirm[open] { animation: none; } }

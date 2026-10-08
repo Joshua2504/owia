@@ -148,7 +148,9 @@
     var sofort = go.hasAttribute('data-sofort')
     var label = go.textContent
     var msg = dlg.querySelector('[data-msg]')
-    if (sofort && !confirm('Anzeige ohne weitere Prüfung direkt ans Ordnungsamt versenden?')) return
+    if (sofort && !e.bestaetigt) {
+      return OWIA.confirmSofort().then(function (ok) { if (ok) submit({ currentTarget: go, bestaetigt: true }) })
+    }
     dlg.querySelectorAll('[data-go]').forEach(function (b) { b.disabled = true })
     go.textContent = sofort ? 'Wird versendet …' : 'Wird eingereicht …'
     var az = current

@@ -493,9 +493,11 @@
     return p
   }
 
-  function submit(sofort) {
+  function submit(sofort, bestaetigt) {
     if (!cur || busy) return
-    if (sofort && !confirm('Anzeige ohne weitere Prüfung direkt ans Ordnungsamt versenden?')) return
+    if (sofort && !bestaetigt) {
+      return OWIA.confirmSofort().then(function (ok) { if (ok) submit(true, true) })
+    }
     var az = cur.az
     busy = true
     var btn = root.querySelector('[data-act=submit]')

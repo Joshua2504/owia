@@ -1371,16 +1371,18 @@
   // Einreichen: Vorschau mit PDF (report-submit.js) über dem Foto-Dialog; erst
   // dort wird abgeschickt (Admins dort auch „Einreichen & versenden").
   // sofort = Admin-Knopf „📨 Sofort versenden" direkt im Dialog.
-  function submitReport(sofort) {
+  function submitReport(sofort, bestaetigt) {
     var s = state
     if (!s || s.busy || !s.report || !s.report.canSubmit) return
     if (unsaved(s) || s.saving) {
       // Erst speichern, dann einreichen – nie ungespeichert verwerfen.
-      return flushSave(s).then(function () { if (state === s) submitReport(sofort) }, function (err) {
+      return flushSave(s).then(function () { if (state === s) submitReport(sofort, bestaetigt) }, function (err) {
         alert((err && err.message) || 'Foto konnte nicht gespeichert werden – bitte erneut versuchen.')
       })
     }
-    if (sofort && !confirm('Anzeige ohne weitere Prüfung direkt ans Ordnungsamt versenden?')) return
+    if (sofort && !bestaetigt) {
+      return OWIA.confirmSofort().then(function (ok) { if (ok && state === s) submitReport(true, true) })
+    }
     var done = function () { if (state === s) runDone('submitted') }
     if (!sofort && window.submitPreview) {
       return savePlate().then(function () {
