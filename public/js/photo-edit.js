@@ -447,23 +447,10 @@
     }
   }
 
-  var catalog = null
-  function loadCatalog() {
-    if (!catalog) {
-      catalog = fetch('/anzeigen/bearbeitungsoptionen', { headers: { Accept: 'application/json' } })
-        .then(function (r) {
-          if (!r.ok || r.redirected) throw new Error()
-          return r.json()
-        })
-        .then(function (d) { return { alle: d.offenses || [], haeufig: d.frequent || [], fahrzeugTypen: d.fahrzeugTypen, marken: d.marken, farben: d.farben } })
-      catalog.catch(function () { catalog = null })
-    }
-    return catalog
-  }
-  // Gleiche Normalisierung wie normalizePlate() in routes/reports.ts.
-  function normPlate(v) {
-    return String(v || '').toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim().slice(0, 20)
-  }
+  // Katalog (alle/haeufig/fahrzeugTypen/marken/farben) und Kennzeichen-
+  // Normalisierung (wie normalizePlate() in routes/reports.ts) aus common.js.
+  var loadCatalog = window.OWIA.loadCatalog
+  var normPlate = window.OWIA.normalizePlate
   function compact(v) {
     return normPlate(v).replace(/[^A-Z0-9ÄÖÜ]/g, '')
   }
@@ -490,15 +477,14 @@
     }
     chosenCoords = null
     if (!Object.keys(body).length) return Promise.resolve()
-    return fetch('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
+    return window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      fallback: 'Kennzeichen konnte nicht gespeichert werden.',
     })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.d.error || 'Kennzeichen konnte nicht gespeichert werden.')
-        var vals = res.d.values || {}
+      .then(function (d) {
+        var vals = d.values || {}
         if ('kennzeichen' in vals) s.plate = vals.kennzeichen || ''
         if ('fahrzeug_marke' in vals) s.marke = vals.fahrzeug_marke || ''
         if ('verstoss_art' in vals) s.verstoss = vals.verstoss_art || ''

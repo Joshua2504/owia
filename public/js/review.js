@@ -49,11 +49,7 @@
   autoBox.checked = store('localStorage', AUTO_KEY) !== '0'
   autoBox.addEventListener('change', function () { store('localStorage', AUTO_KEY, autoBox.checked ? '1' : '0') })
 
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    })
-  }
+  var esc = window.OWIA.escapeHtml
   function compact(v) {
     return String(v || '').toLocaleUpperCase('de-DE').replace(/[^A-Z0-9ÄÖÜ]/g, '')
   }

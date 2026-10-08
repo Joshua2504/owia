@@ -72,16 +72,15 @@
   }
 
   function moveDragged(moved, body) {
-    return fetch('/anzeige/' + moved.az + '/images/' + moved.imageId + '/move', {
+    return window.OWIA.fetchJson('/anzeige/' + moved.az + '/images/' + moved.imageId + '/move', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      fallback: 'Verschieben fehlgeschlagen.',
     })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.d.error || 'Verschieben fehlgeschlagen.')
-        if (body.newDraft) return insertNewDraftRow(moved, res.d.targetAz)
-        else adoptImage(moved, res.d.targetAz)
+      .then(function (d) {
+        if (body.newDraft) return insertNewDraftRow(moved, d.targetAz)
+        else adoptImage(moved, d.targetAz)
       })
 
   }
@@ -235,4 +234,17 @@
     bindRow(row)
     document.dispatchEvent(new Event('reports:updated'))
   }
+
+  // Doppel-Anzeigen-Hinweis (report-table.ejs): Klick auf ein Aktenzeichen
+  // springt zur Zeile und hebt sie kurz hervor.
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('[data-dup-jump]')
+    if (!a) return
+    e.preventDefault()
+    var row = document.querySelector('tr[data-az="' + CSS.escape(a.dataset.dupJump) + '"]')
+    if (!row) return
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    row.classList.add('table-warning')
+    setTimeout(function () { row.classList.remove('table-warning') }, 1500)
+  })
 })()

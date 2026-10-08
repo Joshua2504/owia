@@ -128,7 +128,7 @@
           Tipp: vorher die Daten exportieren.
         </p>
         <form method="post" action="/einstellungen/loeschen" class="d-flex gap-2 flex-wrap"
-              onsubmit="return confirm('Konto schließen? Deine personenbezogenen Daten werden unwiderruflich entfernt.')">
+              data-confirm="Konto schließen? Deine personenbezogenen Daten werden unwiderruflich entfernt.">
           <input type="text" name="bestaetigung" class="form-control w-auto"
                  placeholder="Zur Bestätigung: LÖSCHEN" required autocomplete="off">
           <button type="submit" class="btn btn-outline-danger">Konto schließen &amp; anonymisieren</button>

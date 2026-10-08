@@ -102,12 +102,12 @@
       if (az.length > 50) { message.textContent = 'Bitte höchstens 50 Entwürfe gleichzeitig bearbeiten.'; return }
       working(true)
       try {
-        var options = await request('/anzeigen/bearbeitungsoptionen')
+        var options = await window.OWIA.loadCatalog()
         content.innerHTML = '<form data-edit><label class="form-label d-block">Verstoßart<select name="offenseMode" class="form-select"><option value="keep">Unverändert lassen</option><option value="set">Setzen</option><option value="clear">Leeren</option></select></label><label class="form-label d-block" data-offense-label hidden>Verstoß auswählen<select name="offense" class="form-select"></select></label><label class="report-select-label d-flex gap-2 mb-3"><input name="overwrite" type="checkbox" class="form-check-input"> Vorhandene Verstoßarten überschreiben oder leeren</label><p class="small text-muted">Ohne diese Auswahl werden nur leere Verstoßarten ergänzt. „Fahrzeug verlassen“ setzt die gewählte Angabe für alle ausgewählten Entwürfe.</p><label class="form-label d-block">Fahrzeug verlassen<select name="leftMode" class="form-select"><option value="keep">Unverändert lassen</option><option value="yes">Ja</option><option value="no">Nein</option></select></label><button class="btn btn-primary mt-2" type="submit">Änderungen prüfen</button></form><div data-preview class="mt-3"></div>'
         var form = content.querySelector('form')
         // Ganzer Katalog; durchsucht wird im Auswahlfeld selbst (searchable-select.js).
         form.elements.offense.replaceChildren(new Option('Verstoß suchen oder auswählen …', ''))
-        options.offenses.forEach(function (offense) { form.elements.offense.add(new Option(offense, offense)) })
+        options.alle.forEach(function (offense) { form.elements.offense.add(new Option(offense, offense)) })
         form.elements.offenseMode.addEventListener('change', function () {
           content.querySelector('[data-offense-label]').hidden = form.elements.offenseMode.value !== 'set'
         })

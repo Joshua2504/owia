@@ -54,8 +54,4 @@
     <button type="submit" class="btn btn-danger">Papierkorb leeren</button>
   </form>
 <% } %>
-<script>
-  document.querySelectorAll('form[data-confirm]').forEach(function (f) {
-    f.addEventListener('submit', function (e) { if (!confirm(f.dataset.confirm)) e.preventDefault() })
-  })
-</script>
+<%# Rückfragen über data-confirm: globaler Handler in public/js/layout.js. %>

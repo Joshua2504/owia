@@ -11,15 +11,6 @@
   const MIN_CHARS = 3
   const DEBOUNCE_MS = 250
 
-  function debounce(fn, ms) {
-    let t
-    return function () {
-      const args = arguments
-      clearTimeout(t)
-      t = setTimeout(() => fn.apply(this, args), ms)
-    }
-  }
-
   function fill(selector, value) {
     if (!selector) return
     const el = document.querySelector(selector)
@@ -99,7 +90,7 @@
       menu.style.display = 'block'
     }
 
-    const search = debounce(async function () {
+    const search = window.OWIA.debounce(async function () {
       const q = input.value.trim()
       if (q.length < MIN_CHARS) {
         close()

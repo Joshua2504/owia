@@ -83,7 +83,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
           <% } %>
           <% if ((!r.versand_status || r.versand_status === 'angenommen') && !(vj && (vj.status === 'queued' || vj.status === 'running'))) { %>
             <form method="post" action="/admin/anzeigen/<%= r.id %>/approve"
-                  onsubmit="return confirm('<%= r.versand_status === 'angenommen' ? 'Versandabschluss ohne erneute Mail speichern?' : 'Anzeige freigeben und ans Ordnungsamt verschicken?' %>')">
+                  data-confirm="<%= r.versand_status === 'angenommen' ? 'Versandabschluss ohne erneute Mail speichern?' : 'Anzeige freigeben und ans Ordnungsamt verschicken?' %>">
               <button type="submit" class="btn btn-success"><%= r.versand_status === 'angenommen' ? 'Abschluss speichern (ohne erneuten Versand)' : '✓ Freigeben & verschicken' %></button>
             </form>
           <% } %>
@@ -158,7 +158,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
                       <button type="submit" class="btn btn-sm btn-outline-primary">Zuordnen</button>
                     </form>
                     <form method="post" action="/admin/replies/<%= m.id %>/discard" class="ms-auto"
-                          onsubmit="return confirm('Antwort endgültig verwerfen? Text und Anhänge werden gelöscht.')">
+                          data-confirm="Antwort endgültig verwerfen? Text und Anhänge werden gelöscht.">
                       <button type="submit" class="btn btn-sm btn-outline-danger">🗑 Verwerfen</button>
                     </form>
                   </div>
@@ -170,32 +170,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
       </div>
     </div>
   </div>
-  <script>
-    (() => {
-      const checks = () => [...document.querySelectorAll('.reply-check')]
-      const visible = () => checks().filter((c) => !c.closest('tr').hidden)
-      const update = () => {
-        const n = checks().filter((c) => c.checked).length
-        document.getElementById('reply-count').textContent = n
-        document.getElementById('reply-bulk-btn').disabled = n === 0
-      }
-      document.getElementById('reply-bulk-form').addEventListener('submit', (e) => {
-        const n = checks().filter((c) => c.checked).length
-        if (!n || !confirm(n + ' Antwort(en) endgültig verwerfen? Text und Anhänge werden gelöscht.')) e.preventDefault()
-      })
-      document.addEventListener('change', (e) => { if (e.target.classList.contains('reply-check')) update() })
-      document.getElementById('reply-all').addEventListener('change', (e) => { visible().forEach((c) => (c.checked = e.target.checked)); update() })
-      document.getElementById('reply-select-visible').addEventListener('click', () => { visible().forEach((c) => (c.checked = true)); update() })
-      document.getElementById('reply-select-none').addEventListener('click', () => { checks().forEach((c) => (c.checked = false)); document.getElementById('reply-all').checked = false; update() })
-      document.getElementById('reply-filter').addEventListener('input', (e) => {
-        const q = e.target.value.trim().toLowerCase()
-        document.querySelectorAll('.reply-row').forEach((tr) => {
-          tr.hidden = q && !tr.dataset.search.includes(q)
-          if (tr.hidden) tr.nextElementSibling.classList.remove('show')
-        })
-      })
-    })()
-  </script>
+  <script src="/public/js/admin-anzeigen.js"></script>
 <% } %>
 
 <% if (recent.length) { %>

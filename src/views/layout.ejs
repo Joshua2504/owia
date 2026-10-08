@@ -3,18 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script>
-    // Theme VOR dem ersten Rendern setzen (kein Aufblitzen): gespeicherte Wahl,
-    // sonst Systemeinstellung. Umschalter unten in der Navbar.
-    (function () {
-      var theme
-      try { theme = localStorage.getItem('theme') } catch (_) {}
-      if (theme !== 'light' && theme !== 'dark') {
-        theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      }
-      document.documentElement.setAttribute('data-bs-theme', theme)
-    })()
-  </script>
+  <%# Theme vor dem ersten Rendern (kein Aufblitzen) – deshalb synchron und als
+      erstes; common.js liefert window.OWIA für alle Seiten-Skripte, auch für
+      die, die Views ohne defer mitten im Body laden. Keine Inline-Scripts:
+      die CSP erlaubt nur Dateien unter /public/. %>
+  <script src="/public/js/theme-init.js"></script>
+  <script src="/public/js/common.js"></script>
   <title><%= locals.pageTitle || `${title} – OWiA-Anzeiger` %></title>
   <%# SEO: Beschreibung/Canonical/OG setzen nur öffentliche Seiten (z.B. Startseite);
       interne Seiten bleiben ohne (und sind per robots.txt ausgenommen). %>
@@ -39,13 +33,6 @@
   <link rel="apple-touch-icon" href="/public/icons/icon-180.png">
   <link rel="stylesheet" href="/public/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="/public/css/app.css">
-  <script>
-    // Service Worker (public/sw.js, Route /sw.js): cacht nur statische
-    // /public/-Assets und macht die App installierbar.
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(function () {})
-    }
-  </script>
 </head>
 <%# embed: Seite läuft im Editor-Modal der Anzeigen-Liste (report-modal.js) –
     ohne Navigation, Footer und Cookie-Hinweis (die zeigt die umgebende Seite). %>
@@ -93,7 +80,7 @@
               <a class="nav-link" href="/einstellungen"><%= currentUser.name %></a>
             </li>
             <li class="nav-item">
-              <a class="btn btn-outline-light btn-sm" href="/logout">Abmelden</a>
+              <form method="post" action="/logout" class="m-0 d-inline"><button type="submit" class="btn btn-outline-light btn-sm">Abmelden</button></form>
             </li>
           <% } else { %>
             <li class="nav-item"><a class="btn btn-primary btn-sm" href="/login">Anmelden</a></li>
@@ -115,21 +102,6 @@
         <%= flash.message %>
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
       </div>
-      <script>
-        (function () {
-          var el = document.getElementById('flash-message')
-          if (!el) return
-          function dismiss() {
-            el.classList.remove('show')
-            setTimeout(function () { el.remove() }, 200)
-          }
-          // Eigener Handler, damit das X auch ohne geladenes Bootstrap-JS funktioniert.
-          var closeBtn = el.querySelector('.btn-close')
-          if (closeBtn) closeBtn.addEventListener('click', dismiss)
-          // Erfolgsmeldungen nach kurzer Zeit automatisch ausblenden.
-          if (el.classList.contains('alert-success')) setTimeout(dismiss, 6000)
-        })()
-      </script>
     <% } %>
 
     <%- body %>
@@ -151,22 +123,6 @@
       </div>
     </div>
   </div>
-  <script>
-    (function () {
-      try {
-        if (localStorage.getItem('cookieNoticeSeen')) return
-      } catch (_) { /* localStorage gesperrt -> Hinweis einfach zeigen */ }
-      var box = document.getElementById('cookie-notice')
-      var ok = document.getElementById('cookie-notice-ok')
-      if (!box || !ok) return
-      box.classList.remove('d-none')
-      ok.addEventListener('click', function () {
-        try { localStorage.setItem('cookieNoticeSeen', '1') } catch (_) {}
-        box.remove()
-      })
-    })()
-  </script>
-
   <footer class="text-center text-muted py-4 small">
     <div class="mt-1">
       <a href="/impressum" class="text-muted">Impressum</a> ·
@@ -178,23 +134,9 @@
   </footer>
   <% } %>
 
-  <script>
-    // Hell/Dunkel-Umschalter: Wahl in localStorage, Icon zeigt das Ziel-Theme.
-    (function () {
-      var btn = document.getElementById('theme-toggle')
-      if (!btn) return
-      function icon() {
-        btn.textContent = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? '☀️' : '🌙'
-      }
-      icon()
-      btn.addEventListener('click', function () {
-        var next = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark'
-        document.documentElement.setAttribute('data-bs-theme', next)
-        try { localStorage.setItem('theme', next) } catch (_) {}
-        icon()
-      })
-    })()
-  </script>
+  <%# layout.js: Service Worker, Flash, Cookie-Hinweis, Theme-Umschalter und
+      die data-confirm-Rückfragen (Ersatz für onsubmit/onclick="return confirm"). %>
+  <script src="/public/js/layout.js"></script>
   <script src="/public/vendor/bootstrap.bundle.min.js"></script>
   <script src="/public/js/address-autocomplete.js"></script>
   <%# Alle Auswahllisten (select.form-select) durchsuchbar machen. %>

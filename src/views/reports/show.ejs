@@ -159,7 +159,7 @@ const versandLabel = {
               <textarea name="text" class="form-control mb-2" rows="4" maxlength="10000" required
                         placeholder="Sehr geehrte Damen und Herren, …"></textarea>
               <button type="submit" class="btn btn-primary btn-sm"
-                      onclick="return confirm('Nachricht jetzt ans Ordnungsamt senden?')">
+                      data-confirm="Nachricht jetzt ans Ordnungsamt senden?">
                 📤 Senden
               </button>
               <span class="form-text ms-2">Wird von <%= locals.mailFrom || 'unserem Postfach' %> gesendet<%= locals.ccSelf ? ', du erhältst eine Kopie' : '' %>.</span>
@@ -214,7 +214,7 @@ const versandLabel = {
             </p>
           </div>
           <form method="post" action="/anzeige/<%= report.aktenzeichen %>/submit"
-                onsubmit="return confirm('Anzeige jetzt zur Prüfung einreichen?\n\nMit dem Einreichen bestätigst du die Richtigkeit deiner Angaben – wissentlich falsche Anzeigen sind strafbar (§ 164 StGB).')">
+                data-confirm="Anzeige jetzt zur Prüfung einreichen?&#10;&#10;Mit dem Einreichen bestätigst du die Richtigkeit deiner Angaben – wissentlich falsche Anzeigen sind strafbar (§ 164 StGB).">
             <button type="submit" class="btn btn-success" <%= complete && locals.profileComplete && !locals.verjaehrt ? '' : 'disabled' %>>
               ✓ Einreichen
             </button>
@@ -239,7 +239,7 @@ const versandLabel = {
             </p>
           </div>
           <form method="post" action="/anzeige/<%= report.aktenzeichen %>/withdraw"
-                onsubmit="return confirm('Anzeige zurückziehen und wieder bearbeiten?')">
+                data-confirm="Anzeige zurückziehen und wieder bearbeiten?">
             <button type="submit" class="btn btn-outline-secondary">Zurückziehen &amp; bearbeiten</button>
           </form>
         </div>

@@ -86,11 +86,7 @@
     }
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    })
-  }
+  const escapeHtml = window.OWIA.escapeHtml
 
   function formatDate(d) {
     if (!d) return ''

@@ -5,7 +5,9 @@
   var startBtn = document.getElementById('intake-start')
   if (!input || !startBtn) return
 
-  var CHUNK_SIZE = window.INTAKE_CHUNK_SIZE || 5
+  // Fotos je Request: Server-Wert (CHUNK_SIZE in routes/intake.ts) kommt als
+  // data-chunk-size am Datei-Input (upload.ejs) – der Server weist größere Pakete ab.
+  var CHUNK_SIZE = Number(input.getAttribute('data-chunk-size')) || 5
   var CONCURRENCY = 2
   var SOFT_CAP = 120
 
@@ -45,17 +47,12 @@
   }
 
   function showErrors(list) {
-    errorsBox.innerHTML = list.map(function (e) { return '<div>' + escapeHtml(e) + '</div>' }).join('')
+    errorsBox.innerHTML = list.map(function (e) { return '<div>' + window.OWIA.escapeHtml(e) + '</div>' }).join('')
     errorsBox.classList.remove('d-none')
   }
   function hideErrors() {
     errorsBox.classList.add('d-none')
     errorsBox.innerHTML = ''
-  }
-  function escapeHtml(s) {
-    var div = document.createElement('div')
-    div.textContent = s
-    return div.innerHTML
   }
 
   // --- Fortschritt: Prozent nach Bytes, Geschwindigkeit als gleitendes

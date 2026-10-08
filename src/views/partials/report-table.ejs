@@ -24,7 +24,7 @@ const _dFmt = (r) => { const d = r.tattag ? new Date(r.tattag).toLocaleDateStrin
     Wenn es derselbe Vorfall ist, führe die Entwürfe zusammen (Fotos wandern in den gewählten Entwurf, die übrigen werden gelöscht).
     <% _dupGroups.forEach((g, gi) => { %>
       <form method="post" action="/anzeigen/zusammenfuehren" class="dup-group mt-2 pt-2 border-top"
-            onsubmit="return confirm('Entwürfe wirklich zusammenführen? Die übrigen Entwürfe werden danach gelöscht.')">
+            data-confirm="Entwürfe wirklich zusammenführen? Die übrigen Entwürfe werden danach gelöscht.">
         <input type="hidden" name="back" value="<%= _back %>">
         <span class="plate-chip me-2"><%= g.kennzeichen %></span>
         <% const _firstDraft = g.reports.find((x) => x.status === 'entwurf') %>
@@ -49,14 +49,7 @@ const _dFmt = (r) => { const d = r.tattag ? new Date(r.tattag).toLocaleDateStrin
       </form>
     <% }) %>
   </div>
-  <script>
-    document.addEventListener('click', (e) => {
-      const a = e.target.closest('[data-dup-jump]'); if (!a) return
-      e.preventDefault()
-      const row = document.querySelector('tr[data-az="' + CSS.escape(a.dataset.dupJump) + '"]')
-      if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('table-warning'); setTimeout(() => row.classList.remove('table-warning'), 1500) }
-    })
-  </script>
+  <%# Klick auf ein Aktenzeichen im Hinweis springt zur Zeile: report-table.js (data-dup-jump). %>
 <% } %>
 <%# Ab md eine Tabelle, darunter Karten (Regeln in app.css, Zellklassen in
     report-row.ejs) – der Großteil der Nutzer kommt per Handy und soll nicht

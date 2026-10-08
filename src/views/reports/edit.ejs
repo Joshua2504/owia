@@ -374,14 +374,13 @@ const embedQ = embed ? '&embed=1' : ''
 <!-- Leaflet für die Tatort-Karte (Tiles kommen same-origin über /tiles/...). -->
 <link rel="stylesheet" href="/public/vendor/leaflet.css">
 
-<script>
-  // Ziel-Entwürfe für „Fotos verschieben"; "<" wird escaped, damit Nutzereingaben
-  // (z.B. Tatort) das Script-Tag nicht vorzeitig beenden können.
-  window.OTHER_DRAFTS = <%- JSON.stringify((locals.otherDrafts || []).map((d) => ({
-    az: d.aktenzeichen,
-    label: [d.aktenzeichen, d.kennzeichen, d.tattag_fmt, d.tatort && d.tatort.slice(0, 40)].filter(Boolean).join(' · '),
-  }))).replace(/</g, '\\u003c') %>;
-</script>
+<%# Ziel-Entwürfe für „Fotos verschieben" (report-form.js liest #other-drafts);
+    nicht ausführbar (type=application/json, CSP-konform). "<" wird escaped, damit
+    Nutzereingaben (z.B. Tatort) das Script-Tag nicht vorzeitig beenden können. %>
+<script type="application/json" id="other-drafts"><%- JSON.stringify((locals.otherDrafts || []).map((d) => ({
+  az: d.aktenzeichen,
+  label: [d.aktenzeichen, d.kennzeichen, d.tattag_fmt, d.tatort && d.tatort.slice(0, 40)].filter(Boolean).join(' · '),
+}))).replace(/</g, '\\u003c') %></script>
 <!-- Optionale Hilfe: EXIF-GPS aus Fotos lesen. heic2any lädt report-form.js bei Bedarf nach. -->
 <script src="/public/vendor/exifr-lite.umd.js"></script>
 <script src="/public/vendor/leaflet.js"></script>

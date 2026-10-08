@@ -159,7 +159,7 @@ const gesperrt = freieSeiten < 1
           </div>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-end">
-          <form method="get" action="/sticker/<%= b.id %>/sticker.pdf" target="_blank" class="d-flex flex-wrap gap-2 align-items-end m-0">
+          <form method="post" action="/sticker/<%= b.id %>/sticker.pdf" target="_blank" class="d-flex flex-wrap gap-2 align-items-end m-0">
             <div>
               <label class="form-label small mb-0" for="dx-<%= b.id %>">rechts (mm)</label>
               <input type="number" class="form-control form-control-sm" style="width:6rem" id="dx-<%= b.id %>" name="dx" value="<%= b.layout.dx %>" step="0.5" min="-15" max="15">
@@ -177,7 +177,7 @@ const gesperrt = freieSeiten < 1
           <% if (b.offen > 0) { %>
             <form method="post" action="/sticker/<%= b.id %>/entwerten" class="m-0 ms-auto">
               <button type="submit" class="btn btn-outline-danger btn-sm"
-                      onclick="return confirm('Alle <%= b.offen %> offenen Sticker dieses Batches entwerten? Sie lassen sich danach nicht mehr verknüpfen.')">
+                      data-confirm="Alle <%= b.offen %> offenen Sticker dieses Batches entwerten? Sie lassen sich danach nicht mehr verknüpfen.">
                 Offene entwerten
               </button>
             </form>
@@ -215,22 +215,4 @@ const gesperrt = freieSeiten < 1
   </div>
 <% } %>
 
-<script>
-  // „Eigenes Format": Maßfelder nur dann zeigen.
-  (function () {
-    var sel = document.getElementById('vorlage')
-    var felder = document.getElementById('eigen-felder')
-    sel.addEventListener('change', function () { felder.classList.toggle('d-none', sel.value !== 'eigen') })
-  })()
-  // Verstoß gewählt: Aufdruck-Feld zeigen und mit dem Katalogtext vorbelegen.
-  ;(function () {
-    var sel = document.getElementById('tbnr')
-    var feld = document.getElementById('aufdruck-feld')
-    var text = document.getElementById('aufdruck')
-    sel.addEventListener('change', function () {
-      var opt = sel.options[sel.selectedIndex]
-      feld.classList.toggle('d-none', !sel.value)
-      text.value = sel.value ? opt.getAttribute('data-text') : ''
-    })
-  })()
-</script>
+<script src="/public/js/sticker-page.js"></script>

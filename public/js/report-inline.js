@@ -10,20 +10,10 @@
 ;(function () {
   if (!document.querySelector('.report-table')) return
 
-  // Verstoß-Katalog erst beim ersten Fokus laden (~55 KB) und dann teilen.
-  var catalog = null
-  function loadCatalog() {
-    if (!catalog) {
-      catalog = fetch('/anzeigen/bearbeitungsoptionen', { headers: { Accept: 'application/json' } })
-        .then(function (r) {
-          if (!r.ok || r.redirected) throw new Error()
-          return r.json()
-        })
-        .then(function (d) { return { alle: d.offenses || [], haeufig: d.frequent || [] } })
-        .catch(function () { catalog = null; throw new Error('Verstoß-Katalog nicht ladbar.') })
-    }
-    return catalog
-  }
+  // Verstoß-Katalog erst beim ersten Fokus laden (~55 KB); den Cache teilt
+  // common.js mit photo-edit.js/report-bulk.js.
+  var loadCatalog = window.OWIA.loadCatalog
+  var fetchJson = window.OWIA.fetchJson
 
   function rowOf(el) { return el.closest('tr[data-az]') }
 
@@ -57,7 +47,7 @@
       if (el.dataset.saved === undefined) el.dataset.saved = el.defaultChecked ? '1' : '0'
     }
     var value = isBox ? (el.checked ? '1' : '0') : el.value
-    if (isBox) { /* unverändert übernehmen */ } else if (field === 'kennzeichen') value = value.toLocaleUpperCase('de-DE').replace(/\s+/g, ' ').trim()
+    if (isBox) { /* unverändert übernehmen */ } else if (field === 'kennzeichen') value = window.OWIA.normalizePlate(value)
     else value = value.replace(/\s+/g, ' ').trim()
     // Unverändert (z.B. nur durch das Feld getabbt) → kein Request.
     if (!extra && value === savedValue(el)) {
@@ -67,18 +57,14 @@
     var body = extra || {}
     body[field] = value
     setState(el, 'is-saving')
-    fetch('/anzeige/' + encodeURIComponent(row.dataset.az) + '/felder', {
+    fetchJson('/anzeige/' + encodeURIComponent(row.dataset.az) + '/felder', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      fallback: 'Speichern fehlgeschlagen.',
     })
-      .then(function (r) {
-        if (r.redirected) throw new Error('Bitte neu anmelden.')
-        return r.json().then(function (d) { return { ok: r.ok, d: d } })
-      })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.d.error || 'Speichern fehlgeschlagen.')
-        var saved = res.d.values && res.d.values[field]
+      .then(function (d) {
+        var saved = d.values && d.values[field]
         if (isBox) el.dataset.saved = saved === '1' ? '1' : '0'
         else if (el.tagName === 'SELECT') {
           // NULL (Fahrzeugtyp) = Standard = erste Option (PKW).
@@ -277,12 +263,8 @@
     if (!btn) return
     var row = rowOf(btn)
     btn.disabled = true
-    fetch('/anzeige/' + encodeURIComponent(row.dataset.az) + '/zeit-aus-fotos', { method: 'POST', headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.d.error || 'Übernahme fehlgeschlagen.')
-        return window.reportTableRefresh(row.dataset.az)
-      })
+    fetchJson('/anzeige/' + encodeURIComponent(row.dataset.az) + '/zeit-aus-fotos', { method: 'POST', fallback: 'Übernahme fehlgeschlagen.' })
+      .then(function () { return window.reportTableRefresh(row.dataset.az) })
       .catch(function (err) {
         btn.disabled = false
         alert(err.message)
@@ -297,15 +279,8 @@
     var row = rowOf(btn)
     btn.disabled = true
     btn.textContent = 'Wird ermittelt …'
-    fetch('/anzeige/' + encodeURIComponent(row.dataset.az) + '/tatort-aus-fotos', {
-      method: 'POST',
-      headers: { Accept: 'application/json' },
-    })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.d.error || 'Übernahme fehlgeschlagen.')
-        return window.reportTableRefresh(row.dataset.az)
-      })
+    fetchJson('/anzeige/' + encodeURIComponent(row.dataset.az) + '/tatort-aus-fotos', { method: 'POST', fallback: 'Übernahme fehlgeschlagen.' })
+      .then(function () { return window.reportTableRefresh(row.dataset.az) })
       .catch(function (err) {
         btn.disabled = false
         btn.textContent = '📍 aus Fotos übernehmen'

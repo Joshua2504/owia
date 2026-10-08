@@ -32,14 +32,7 @@
     }
   }
 
-  function debounce(fn, ms) {
-    let t
-    return function () {
-      const args = arguments
-      clearTimeout(t)
-      t = setTimeout(() => fn.apply(this, args), ms)
-    }
-  }
+  const debounce = window.OWIA.debounce
 
   // ---------------------------------------------------------------------------
   // Gemeinsame Helfer
@@ -1065,11 +1058,19 @@
     }
   }
 
+  // Ziel-Entwürfe für „Fotos verschieben": edit.ejs liefert sie als JSON-Block
+  // #other-drafts (kein ausführbares Inline-Script, CSP).
+  function otherDrafts() {
+    const el = document.getElementById('other-drafts')
+    try { return el ? JSON.parse(el.textContent) || [] : [] } catch (_) { return [] }
+  }
+
   function initSelection() {
     const target = document.querySelector('#photo-move-target')
     if (!target) return
-    ;(window.OTHER_DRAFTS || []).forEach((d) => target.add(new Option(d.label, d.az)))
-    if (!target.options.length || target.options.length === 1) target.hidden = !(window.OTHER_DRAFTS || []).length
+    const drafts = otherDrafts()
+    drafts.forEach((d) => target.add(new Option(d.label, d.az)))
+    if (!target.options.length || target.options.length === 1) target.hidden = !drafts.length
     target.addEventListener('change', () => {
       if (!target.value) return
       const label = target.options[target.selectedIndex].textContent
