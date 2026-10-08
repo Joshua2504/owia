@@ -101,17 +101,38 @@
     }
     const date = formatDate(r.tattag)
     if (date) parts.push('<div class="text-muted small">' + date + '</div>')
-    if (r.imageUrl) {
-      // Serverseitig anonymisiert: Kennzeichen/Gesichter geschwärzt (160 px) oder,
-      // ohne Bildanalyse, winzig verpixelt (32 px) und hier blockig hochskaliert.
-      parts.push(
-        '<img src="' +
-          encodeURI(r.imageUrl) +
-          '" alt="Anonymisiertes Beweisfoto" ' +
-          'style="width:160px;height:auto;margin-top:6px;border-radius:4px;image-rendering:pixelated">'
-      )
-    }
+    const fotos = fotosHtml(r)
+    if (fotos) parts.push(fotos)
     return parts.join('') || 'Anzeige'
+  }
+
+  function photoUrls(r) {
+    return r.imageUrls && r.imageUrls.length ? r.imageUrls : r.imageUrl ? [r.imageUrl] : []
+  }
+
+  // Alle Fotos der Anzeige. Serverseitig anonymisiert: Kennzeichen/Gesichter
+  // geschwärzt (160 px) oder, ohne Bildanalyse, winzig verpixelt (32 px) und
+  // hier blockig hochskaliert.
+  function fotosHtml(r) {
+    const urls = photoUrls(r)
+    if (!urls.length) return ''
+    return (
+      '<div class="overview-fotos' + (urls.length > 1 ? ' is-multi' : '') + '">' +
+      urls
+        .map((u, i) => '<img src="' + encodeURI(u) + '" alt="Anonymisiertes Beweisfoto ' + (i + 1) + '" loading="lazy">')
+        .join('') +
+      '</div>'
+    )
+  }
+
+  // Hover (nur mit Maus): alle Fotos als Tooltip, Klick öffnet weiter das Popup.
+  function hoverHtml(r) {
+    const date = formatDate(r.tattag)
+    return (
+      (r.verstossArt ? '<div class="fw-semibold text-wrap">' + escapeHtml(r.verstossArt) + '</div>' : '') +
+      (date ? '<div class="text-muted small">' + date + '</div>' : '') +
+      fotosHtml(r)
+    )
   }
 
   // Popup für eigene Entwürfe (nicht anonym – mit Adresse und Bearbeiten-Link).
@@ -154,9 +175,14 @@
       const lat = num(r.lat)
       const lon = num(r.lon)
       if (lat === null || lon === null) return
-      L.marker([lat, lon], r.imageUrl ? { icon: imageIcon(r.imageUrl, '#495057') } : {})
+      const m = L.marker([lat, lon], r.imageUrl ? { icon: imageIcon(r.imageUrl, '#495057') } : {})
         .addTo(map)
-        .bindPopup(popupHtml(r))
+        .bindPopup(popupHtml(r), { maxWidth: 360 })
+      if (photoUrls(r).length && window.matchMedia('(hover: hover)').matches) {
+        m.bindTooltip(() => hoverHtml(r), { direction: 'top', offset: [0, -24], className: 'overview-hover', opacity: 1 })
+        // Popup offen → Tooltip wäre doppelt.
+        m.on('popupopen', () => m.closeTooltip())
+      }
       bounds.push([lat, lon])
     })
 

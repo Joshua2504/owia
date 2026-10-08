@@ -36,6 +36,9 @@ const grob = (v: unknown) => Math.round(Number(v) * 1000) / 1000
 /** Startseiten-Kennzahlen kurz zwischenspeichern: drei COUNT-Abfragen und ein
  *  GROUP BY bei jedem Aufruf der (öffentlichen, nicht limitierten) Startseite
  *  wären bei Crawler-Traffic unnötige DB-Last. */
+/** Fotos je Anzeige auf der öffentlichen Karte (wie publicImages.ts). */
+const MAX_KARTENFOTOS = 10
+
 let statsCache: { bis: number; stats: { total: number; last30: number; fotos: number }; top: string | null } | null = null
 const STATS_TTL_MS = 5 * 60 * 1000
 async function startseitenKennzahlen() {
@@ -247,20 +250,25 @@ export default async function publicRoutes(app: FastifyInstance) {
   app.get('/api/public/reports', async (_request, reply) => {
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
       `SELECT r.tattag, r.verstoss_art, r.tatort_lat, r.tatort_lon,
-              (SELECT ri.id FROM report_images ri
-                WHERE ri.report_id = r.id ORDER BY ri.sort_order, ri.id LIMIT 1) AS image_id
+              (SELECT GROUP_CONCAT(ri.id ORDER BY ri.sort_order, ri.id) FROM report_images ri
+                WHERE ri.report_id = r.id) AS image_ids
          FROM reports r
         WHERE ${PUBLIC_WHERE}
         ORDER BY r.tattag DESC
         LIMIT 1000`
     )
-    const reports = rows.map((r) => ({
+    const reports = rows.map((r) => {
+      // Alle Fotos (Hover/Popup der Karte), höchstens MAX_KARTENFOTOS.
+      const ids = String(r.image_ids || '').split(',').filter(Boolean).slice(0, MAX_KARTENFOTOS)
+      const imageUrls = ids.map((id) => `/api/public/bild/${id}/pixel.jpg`)
+      return {
       lat: grob(r.tatort_lat),
       lon: grob(r.tatort_lon),
       verstossArt: r.verstoss_art || null,
       tattag: r.tattag || null,
-      imageUrl: r.image_id ? `/api/public/bild/${r.image_id}/pixel.jpg` : null,
-    }))
+      imageUrl: imageUrls[0] || null,
+      imageUrls,
+    }})
     return reply.send({ reports })
   })
 

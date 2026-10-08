@@ -1183,3 +1183,10 @@ html { scroll-padding-top: calc(var(--owia-nav-h, 0px) + 0.5rem); }
 .back-to-top[hidden] { display: none; }
 body:has(.editor-actions) .back-to-top,
 body:has(.review-actions) .back-to-top { bottom: 5rem; }
+
+/* Öffentliche Übersichtskarte (overview-map.js): alle Fotos einer Anzeige im
+   Popup und beim Hovern. Pixelbilder blockig hochskalieren. */
+.overview-fotos { display: grid; grid-template-columns: 160px; gap: 4px; margin-top: 6px; }
+.overview-fotos.is-multi { grid-template-columns: repeat(2, 160px); }
+.overview-fotos img { width: 160px; height: auto; border-radius: 4px; image-rendering: pixelated; background: #ddd; }
+.leaflet-tooltip.overview-hover { white-space: normal; max-width: 340px; padding: 6px; }

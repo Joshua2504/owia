@@ -13,10 +13,11 @@ export async function prewarmPublicImages(reportId: number): Promise<void> {
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(
     `SELECT r.user_id, ri.filename, ri.mimetype, ri.analyse_json, ri.kennzeichen_box, ri.kennzeichen_keins
        FROM report_images ri JOIN reports r ON r.id = ri.report_id
-      WHERE ri.report_id = ? ORDER BY ri.sort_order, ri.id LIMIT 1`,
+      WHERE ri.report_id = ? ORDER BY ri.sort_order, ri.id LIMIT 10`,
     [reportId]
   )
-  const img = rows[0]
-  if (!img) return
-  await processPixelNow(img.filename, img.mimetype, reportDir(img.user_id, reportId), kartenAnalyse(img.analyse_json, img.kennzeichen_box, img.kennzeichen_keins)).catch(() => {})
+  // Die Karte zeigt beim Hovern alle Fotos (routes/public.ts, max. 10).
+  for (const img of rows) {
+    await processPixelNow(img.filename, img.mimetype, reportDir(img.user_id, reportId), kartenAnalyse(img.analyse_json, img.kennzeichen_box, img.kennzeichen_keins)).catch(() => {})
+  }
 }

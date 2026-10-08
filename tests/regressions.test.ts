@@ -1053,7 +1053,7 @@ test('Öffentliche Karten-API liefert Koordinaten nur auf ~100 m genau und keine
     const eintrag = (res.json().reports as any[]).find((r) => Math.abs(r.lat - 50.123) < 1e-9)
     assert.ok(eintrag, 'Anzeige erscheint mit gerundeter Breite')
     assert.equal(eintrag.lon, 8.765)
-    assert.deepEqual(Object.keys(eintrag).sort(), ['imageUrl', 'lat', 'lon', 'tattag', 'verstossArt'], 'keine zusätzlichen Felder (Aktenzeichen, Kennzeichen, Nutzer)')
+    assert.deepEqual(Object.keys(eintrag).sort(), ['imageUrl', 'imageUrls', 'lat', 'lon', 'tattag', 'verstossArt'], 'keine zusätzlichen Felder (Aktenzeichen, Kennzeichen, Nutzer)')
   } finally { await app.close() }
 })
 
