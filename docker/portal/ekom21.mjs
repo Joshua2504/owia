@@ -376,7 +376,9 @@ async function stepAngaben(run, page, p, used) {
   await choosePathElement(run, page, p.gruppe ? { pick: [p.gruppe] } : { manual: true, hint: 'Bitte die Rubrik der Ordnungswidrigkeit im Live-Bild auswählen.' }, used)
   const f = p.fahrzeug
   await select2(page, 'Fahrzeugtyp', f.typ || 'PKW')
-  if (f.land && f.land !== 'Deutschland') await select2(page, 'Kennzeichen Land', f.land)
+  // Auch „Deutschland" ausdrücklich wählen – vorausgewählt ist es nur optisch,
+  // ohne Auswahl steht in der Zusammenfassung „Kennzeichen-Land: -".
+  await select2(page, 'Kennzeichen Land', f.land || 'Deutschland')
   await fillText(page, 'Kennzeichen', f.kennzeichen)
   if (f.marke) {
     try {
@@ -512,7 +514,28 @@ export async function submitForm(run) {
     run.log(`Zusammenfassung nicht heruntergeladen: ${err.message}`)
     return null
   })
+  if (!result.vorgangsId && result.receipt) {
+    result.vorgangsId = await vorgangsIdAusPdf(result.receipt.buffer)
+    run.log(result.vorgangsId ? `Vorgangs-ID (aus der Zusammenfassung): ${result.vorgangsId}` : 'Vorgangs-ID auch in der Zusammenfassung nicht gefunden.')
+  }
   return result
+}
+
+/** Vorgangs-ID aus der PDF-Zusammenfassung: Fußzeile
+ *  „Vorgang: Anzeige einer Ordnungswidrigkeit / 26.111745" (Stand 10/2026). */
+export async function vorgangsIdAusPdf(buffer) {
+  const { spawn } = await import('node:child_process')
+  const text = await new Promise((resolve) => {
+    const p = spawn('pdftotext', ['-layout', '-', '-'])
+    let out = ''
+    p.stdout.on('data', (d) => (out += d))
+    p.on('error', () => resolve(''))
+    p.on('close', () => resolve(out))
+    p.stdin.on('error', () => {})
+    p.stdin.end(buffer)
+  })
+  const m = text.match(/Vorgang:[^\n/]*\/\s*(\d{2}\.\d{3,})/) || text.match(/Vorgangs-?(?:ID|nummer)\s*:?\s*([A-Za-z0-9][A-Za-z0-9.\-/]{3,})/i)
+  return m ? m[1] : null
 }
 
 /** PDF-Zusammenfassung der Abschlussseite holen (Download oder neues Fenster). */
