@@ -24,6 +24,7 @@ import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { queueTatortFill } from '../services/tatortFill'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 import { normalizeCode, linkCode, formatCode, LINK_MELDUNG } from '../services/stickers'
+import { tatzeitBis } from '../services/tatzeit'
 import { MAX_IMAGES, loadReportByAktenzeichen } from './reports/shared'
 import { saveImageToReport } from './reports/images'
 
@@ -143,7 +144,7 @@ export default async function kameraRoutes(app: FastifyInstance) {
     const t = rows[0]
     if (t?.tag_von) {
       const tagBis = t.tag_bis !== t.tag_von ? t.tag_bis : null
-      const zeitBis = t.zeit_bis !== t.zeit_von || tagBis ? t.zeit_bis : null
+      const zeitBis = tatzeitBis(t.zeit_von, t.zeit_bis, !!tagBis)
       await pool.execute(
         `UPDATE reports SET tattag = ?, tattag_bis = ?, tatzeit_von = ?, tatzeit_bis = ?
           WHERE id = ? AND status = 'entwurf'`,

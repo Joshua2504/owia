@@ -3,6 +3,7 @@
 // ansicht mit Nachrichtenverlauf ans Ordnungsamt und Anhang-Download.
 import { versandWartezeiten } from '../../services/versandWarte'
 import { isVerjaehrt, verjaehrung } from '../../services/verjaehrung'
+import { tatzeitBis } from '../../services/tatzeit'
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import path from 'path'
@@ -306,11 +307,10 @@ export default async function editorRoutes(app: FastifyInstance) {
     const bis = rows[0]?.bis as string | null
     if (!von || !bis) return reply.status(422).send({ error: 'Die Fotos enthalten keine Aufnahmezeit.' })
     const sameDay = von.slice(0, 10) === bis.slice(0, 10)
-    const sameMinute = von.slice(0, 16) === bis.slice(0, 16)
     await pool.execute(
       `UPDATE reports SET tattag=?, tatzeit_von=?, tattag_bis=?, tatzeit_bis=?
         WHERE id=? AND user_id=? AND status='entwurf' AND versand_status IS NULL`,
-      [von.slice(0, 10), von.slice(11, 19), sameDay ? null : bis.slice(0, 10), sameMinute ? null : bis.slice(11, 19), report.id, userId]
+      [von.slice(0, 10), von.slice(11, 19), sameDay ? null : bis.slice(0, 10), tatzeitBis(von.slice(11, 19), bis.slice(11, 19), !sameDay), report.id, userId]
     )
     return reply.send({ ok: true })
   })

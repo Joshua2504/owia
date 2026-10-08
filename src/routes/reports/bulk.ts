@@ -10,6 +10,7 @@ import { deleteDraft, trashDrafts, restoreDrafts, purgeTrash, PAPIERKORB_TAGE } 
 import { previewBulkEdit, applyBulkEdit, BulkEditInputError } from '../../services/bulkEdit'
 import { loadReportByAktenzeichen, FORMULAR_HILFEN, VERSTOSS_SPERREN, mostUsedVerstoesse, enqueuePdf } from './shared'
 import { moveImages } from './images'
+import { TATZEIT_BIS_MIN_ABSTAND } from '../../services/tatzeit'
 
 export default async function bulkRoutes(app: FastifyInstance) {
   // Verstoß-Katalog für Sammelbearbeitung und Inline-Bearbeitung der Liste
@@ -189,6 +190,13 @@ export default async function bulkRoutes(app: FastifyInstance) {
                 t.tattag = COALESCE(t.tattag, s.tattag)
           WHERE t.id = ? AND t.user_id = ?`,
         [source.id, target.id, userId]
+      )
+      // Zusammengelegter Zeitraum unter 3 Minuten = ein Zeitpunkt (services/tatzeit.ts).
+      await pool.execute(
+        `UPDATE reports SET tatzeit_bis = NULL
+          WHERE id = ? AND tattag_bis IS NULL AND tatzeit_bis >= tatzeit_von
+            AND TIME_TO_SEC(TIMEDIFF(tatzeit_bis, tatzeit_von)) < ${TATZEIT_BIS_MIN_ABSTAND * 60}`,
+        [target.id]
       )
       await deleteDraft(userId, { id: source.id, pdf_filename: source.pdf_filename })
       merged++

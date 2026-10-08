@@ -21,7 +21,7 @@ import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
 import { runMigrations } from '../src/db/migrate'
 import { dispatchReport } from '../src/services/reportDispatch'
-import { versandPlatzBelegen, versandPlatzFreigeben, versandMerken } from '../src/services/versandTakt'
+import { versandPlatzBelegen, versandPlatzFreigeben, versandMerken, VERSAND_ABSTAND_SEK } from '../src/services/versandTakt'
 import { resumeWatchers } from '../src/services/portalDispatch'
 import { consumeLoginCode, consumeMagicLink, MAX_LOGIN_ATTEMPTS } from '../src/services/loginTokens'
 import { processInboundMail, repliesDir } from '../src/services/mailInbox'
@@ -91,16 +91,16 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0044_versand_takt.sql')
-  assert.equal(rows.length, 44)
+  assert.equal(rows.at(-1)?.filename, '0045_tatzeit_bis_zeitpunkt.sql')
+  assert.equal(rows.length, 45)
 })
 
-test('Versand-Takt: höchstens ein Versand je 5 Minuten, Freigabe gibt den Platz zurück', async () => {
+test('Versand-Takt: höchstens ein Versand je VERSAND_ABSTAND_SEK, Freigabe gibt den Platz zurück', async () => {
   await pool.execute("UPDATE versand_takt SET letzter='2000-01-01', vorher='2000-01-01' WHERE id=1")
   const [a, b] = await Promise.all([versandPlatzBelegen(), versandPlatzBelegen()])
   assert.deepEqual([a, b].filter((x) => x === null).length, 1)
   const warten = a ?? b
-  assert.ok(warten! > 290 && warten! <= 300)
+  assert.ok(warten! > VERSAND_ABSTAND_SEK - 10 && warten! <= VERSAND_ABSTAND_SEK)
   await versandPlatzFreigeben()
   assert.equal(await versandPlatzBelegen(), null)
   await pool.execute("UPDATE versand_takt SET letzter='2000-01-01', vorher='2000-01-01' WHERE id=1")

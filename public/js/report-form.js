@@ -1231,6 +1231,12 @@
   function toHHMM(d) {
     return pad2(d.getHours()) + ':' + pad2(d.getMinutes())
   }
+  // „bis" nur bei Tageswechsel oder ab 3 Minuten Abstand (wie services/tatzeit.ts).
+  function isZeitraum(range) {
+    if (toDateValue(range.min) !== toDateValue(range.max)) return true
+    const min = (d) => d.getHours() * 60 + d.getMinutes()
+    return min(range.max) - min(range.min) >= 3
+  }
   function toDateValue(d) {
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
   }
@@ -1257,7 +1263,7 @@
   }
 
   // Tattag/Uhrzeit aus den Fotos setzen: von = frühestes, bis = spätestes Foto.
-  // bis bleibt leer, wenn alle Fotos in dieselbe Minute fallen. Fällt das späteste
+  // bis bleibt leer, wenn weniger als 3 Minuten zwischen den Fotos liegen. Fällt das späteste
   // Foto auf einen anderen Tag (z.B. Dauerparken über Nacht), wird zusätzlich
   // "Tattag bis" gesetzt.
   function applyPhotoTimes() {
@@ -1271,7 +1277,7 @@
     setFieldValue(form.elements['tattag'], vonTag)
     setFieldValue(form.elements['tatzeit_von'], von)
     if (bisTag !== vonTag) setFieldValue(form.elements['tattag_bis'], bisTag)
-    if (bis !== von || bisTag !== vonTag) setFieldValue(form.elements['tatzeit_bis'], bis)
+    if (isZeitraum(range)) setFieldValue(form.elements['tatzeit_bis'], bis)
   }
 
   // Zeitspanne der Fotos als Text, bei Tageswechsel mit Datum des Endes.
@@ -1282,7 +1288,7 @@
       const d = range.max
       return von + ' – ' + pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1) + '.' + d.getFullYear() + ', ' + bis
     }
-    return bis !== von ? von + ' – ' + bis : von
+    return isZeitraum(range) ? von + ' – ' + bis : von
   }
 
   // Button/Hinweis aktualisieren; bei allowAuto zusätzlich automatisch befüllen,

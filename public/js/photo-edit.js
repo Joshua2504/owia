@@ -1032,10 +1032,16 @@
   }
   function photoSpan(t) {
     if (t.vonTag !== t.bisTag) return fmtDay(t.vonTag) + ' ' + t.von + ' – ' + fmtDay(t.bisTag) + ' ' + t.bis
-    return fmtDay(t.vonTag) + ', ' + t.von + (t.bis !== t.von ? ' – ' + t.bis : '') + ' Uhr'
+    return fmtDay(t.vonTag) + ', ' + t.von + (zeitraum(t) ? ' – ' + t.bis : '') + ' Uhr'
+  }
+  // „bis" nur bei Tageswechsel oder ab 3 Minuten Abstand (wie services/tatzeit.ts).
+  function zeitraum(t) {
+    if (t.bisTag !== t.vonTag) return true
+    var min = function (s) { return Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5)) }
+    return min(t.bis) - min(t.von) >= 3
   }
   // Wie report-form.js: von = frühestes, bis = spätestes Foto; bis leer, wenn
-  // alles in derselben Minute; „Tag bis" nur bei Tageswechsel.
+  // weniger als 3 Minuten dazwischen liegen; „Tag bis" nur bei Tageswechsel.
   function applyPhotoTimes() {
     var s = state
     var t = s && s.report && s.report.photoTimes
@@ -1044,7 +1050,7 @@
       tattag: t.vonTag,
       tatzeit_von: t.von,
       tattag_bis: t.bisTag !== t.vonTag ? t.bisTag : '',
-      tatzeit_bis: t.bis !== t.von || t.bisTag !== t.vonTag ? t.bis : '',
+      tatzeit_bis: zeitraum(t) ? t.bis : '',
     }
     var box = dlg
     box.querySelector('[data-detail=tattag]').value = body.tattag

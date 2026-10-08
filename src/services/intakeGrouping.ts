@@ -8,6 +8,8 @@
 // der Vorfall trägt dann day..dayTo. Bewusst ohne Libraries und
 // deterministisch, damit dieselben Fotos immer dieselben Gruppen ergeben.
 
+import { tatzeitBis } from './tatzeit'
+
 export type IntakePhoto = {
   id: number
   capturedAt: string | null // 'YYYY-MM-DD HH:MM:SS' (Wanduhrzeit)
@@ -96,8 +98,9 @@ function toIncident(photos: IntakePhoto[]): Incident {
     dayTo,
     timeFrom,
     // Bei Tageswechsel gehört timeTo immer dazu – auch wenn die Uhrzeit zufällig
-    // der Startzeit entspricht (24h später ist ein anderer Zeitpunkt).
-    timeTo: timeToRaw && (timeToRaw !== timeFrom || dayTo) ? timeToRaw : null,
+    // der Startzeit entspricht (24h später ist ein anderer Zeitpunkt); am selben
+    // Tag erst ab TATZEIT_BIS_MIN_ABSTAND Minuten.
+    timeTo: tatzeitBis(timeFrom, timeToRaw, !!dayTo),
     lat: coords.length
       ? Math.round((coords.reduce((s, p) => s + (p.lat as number), 0) / coords.length) * 1e6) / 1e6
       : null,
