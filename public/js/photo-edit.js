@@ -237,7 +237,10 @@
       plateInput().value = state.detected
       savePlate().then(updateUi, function () {})
     })
-    plateInput().addEventListener('input', updateUi)
+    plateInput().addEventListener('input', function () {
+      if (kzInEl) kzInEl.value = plateInput().value
+      updateUi()
+    })
     // Kachel-Streifen: anderes Foto derselben Anzeige öffnen.
     var strip = dlg.querySelector('.photo-edit-strip')
     strip.addEventListener('click', function (e) {
@@ -429,7 +432,7 @@
         e.target.blur() // löst change → speichern aus
         return
       }
-      if (e.target === plateInput() || e.target === markeInput()) {
+      if (e.target === plateInput() || e.target === markeInput() || e.target === kzInEl) {
         e.preventDefault()
         savePlate().then(function () { dlg.querySelector('[data-act=save]').focus() }, function () {})
         return
@@ -441,6 +444,62 @@
       else save()
     })
     attachDrawing()
+    attachZoom()
+  }
+
+  // ---- Zoom: Mausrad zoomt zum Mauszeiger, mittlere Maustaste (oder Alt +
+  // Ziehen) verschiebt, Doppelklick setzt zurück. Nur CSS-Transform am Canvas –
+  // bildRect() rechnet über getBoundingClientRect, Zeichnen bleibt exakt.
+  var zoom = { z: 1, x: 0, y: 0 }
+  function applyZoom() {
+    canvas.style.transformOrigin = '0 0'
+    canvas.style.transform = zoom.z === 1 ? '' : 'translate(' + zoom.x + 'px,' + zoom.y + 'px) scale(' + zoom.z + ')'
+    if (state && state.base && !state.drawing) redraw()
+  }
+  function resetZoom() {
+    zoom = { z: 1, x: 0, y: 0 }
+    applyZoom()
+  }
+  function attachZoom() {
+    var wrap = dlg.querySelector('.photo-edit-canvas')
+    wrap.addEventListener('wheel', function (e) {
+      if (!state || !state.base) return
+      e.preventDefault()
+      var z = Math.max(1, Math.min(10, zoom.z * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015))))
+      if (z === 1) return resetZoom()
+      var r = canvas.getBoundingClientRect()
+      zoom.x += (e.clientX - r.left) * (1 - z / zoom.z)
+      zoom.y += (e.clientY - r.top) * (1 - z / zoom.z)
+      zoom.z = z
+      applyZoom()
+    }, { passive: false })
+    var pan = null
+    wrap.addEventListener('pointerdown', function (e) {
+      if (zoom.z === 1 || !(e.button === 1 || (e.button === 0 && e.altKey))) return
+      e.preventDefault()
+      e.stopPropagation()
+      pan = { id: e.pointerId, x: e.clientX - zoom.x, y: e.clientY - zoom.y }
+      wrap.setPointerCapture(e.pointerId)
+      wrap.style.cursor = 'grabbing'
+    }, true)
+    wrap.addEventListener('pointermove', function (e) {
+      if (!pan || e.pointerId !== pan.id) return
+      zoom.x = e.clientX - pan.x
+      zoom.y = e.clientY - pan.y
+      applyZoom()
+    })
+    var stop = function (e) {
+      if (!pan || e.pointerId !== pan.id) return
+      pan = null
+      wrap.style.cursor = ''
+    }
+    wrap.addEventListener('pointerup', stop)
+    wrap.addEventListener('pointercancel', stop)
+    wrap.addEventListener('auxclick', function (e) { if (e.button === 1) e.preventDefault() })
+    wrap.addEventListener('dblclick', function (e) {
+      if (e.target.closest('input,button')) return
+      resetZoom()
+    })
   }
 
   function plateInput() {
@@ -707,6 +766,10 @@
         ' · Ränder und Ecken ziehen schneidet zu.'
     hint.classList.toggle('text-warning', !!fehlt)
     hint.classList.toggle('fw-semibold', !!fehlt)
+    if (kzInEl && state.plate != null) {
+      if (document.activeElement !== kzInEl) kzInEl.value = plateInput().value
+      kzSyncKlassen()
+    }
     var keinsBtn = dlg.querySelector('[data-act=kz-keins]')
     keinsBtn.hidden = !kzPflicht(state) || !!state.kz
     keinsBtn.classList.toggle('active', !!state.kzKeins)
@@ -1200,6 +1263,32 @@
   // schwärzt die Box (services/pixelate.ts) – auch wenn die Erkennung das
   // Schild übersehen hat. state.kz in Canvas-Pixeln, gespeichert als Anteile
   // 0..1 der gespeicherten Fassung (PATCH …/kennzeichen).
+  var kzInEl = null
+  function kzInput() {
+    if (kzInEl) return kzInEl
+    kzInEl = document.createElement('input')
+    kzInEl.type = 'text'
+    kzInEl.className = 'form-control form-control-sm plate-field pe-kz-input'
+    kzInEl.maxLength = 20
+    kzInEl.autocomplete = 'off'
+    kzInEl.spellcheck = false
+    kzInEl.setAttribute('autocapitalize', 'characters')
+    kzInEl.setAttribute('aria-label', 'Kennzeichen')
+    kzInEl.hidden = true
+    kzInEl.addEventListener('input', function () {
+      plateInput().value = kzInEl.value
+      updateUi()
+    })
+    kzInEl.addEventListener('change', function () { savePlate().catch(function () {}) })
+    dlg.querySelector('.photo-edit-marks').appendChild(kzInEl)
+    return kzInEl
+  }
+  function kzSyncKlassen() {
+    var cur = plateInput().value
+    kzInEl.placeholder = state.detected || 'Kennzeichen'
+    kzInEl.classList.toggle('is-invalid', !normPlate(cur))
+    kzInEl.classList.toggle('is-mismatch', !!state.detected && !!normPlate(cur) && compact(state.detected) !== compact(cur))
+  }
   function kzPflicht(s) {
     return !!(s && s.plate != null && s.az)
   }
@@ -1322,7 +1411,9 @@
   // offenen Datenschutz-Vorschlag. Liegen als HTML über dem Canvas.
   function renderMarks() {
     var box = dlg.querySelector('.photo-edit-marks')
-    box.replaceChildren()
+    var kzIn = kzInput()
+    ;[].slice.call(box.children).forEach(function (c) { if (c !== kzIn) c.remove() })
+    kzIn.hidden = true
     if (!state || !state.base || state.drawing) return
     var br = bildRect()
     var cr = box.getBoundingClientRect()
@@ -1358,7 +1449,23 @@
         ])
       })
     }
-    if (state.kz) add({ x: state.kz.x, y: state.kz.y, w: state.kz.w, h: state.kz.h, i: 0 }, [['kz-entfernen', '✕', 'is-del', 'Kennzeichen-Markierung entfernen']])
+    if (state.kz) {
+      add({ x: state.kz.x, y: state.kz.y, w: state.kz.w, h: state.kz.h, i: 0 }, [['kz-entfernen', '✕', 'is-del', 'Kennzeichen-Markierung entfernen']])
+      // Kennzeichen der Anzeige direkt unter dem Rahmen bearbeiten (gleicher
+      // Wert wie das Feld in der Seitenleiste).
+      if (state.plate != null) {
+        if (document.activeElement !== kzIn) kzIn.value = plateInput().value
+        kzSyncKlassen()
+        kzIn.hidden = false
+        var w = kzIn.offsetWidth
+        var h = kzIn.offsetHeight
+        var left = br.left - cr.left + (state.kz.x + state.kz.w / 2) * br.k - w / 2
+        var top = br.top - cr.top + (state.kz.y + state.kz.h) * br.k + 4
+        if (top + h > cr.height) top = br.top - cr.top + state.kz.y * br.k - h - 4
+        kzIn.style.left = Math.max(0, Math.min(cr.width - w, left)) + 'px'
+        kzIn.style.top = Math.max(0, Math.min(cr.height - h, top)) + 'px'
+      }
+    }
     state.redactions.forEach(function (r, i) {
       add({ x: r.x, y: r.y, w: r.w, h: r.h, i: i }, [['entfernen', '✕', 'is-del', r.type === 'pixel' ? 'Verpixelung entfernen' : 'Schwärzung entfernen']])
     })
@@ -1378,11 +1485,13 @@
       }
     })
     if (ohneVorschau) {
-      dlg.querySelector('.photo-edit-marks').replaceChildren()
+      var marks = dlg.querySelector('.photo-edit-marks')
+      ;[].slice.call(marks.children).forEach(function (c) { if (c !== kzInEl) c.remove() })
+      if (kzInEl) kzInEl.hidden = true
       return
     }
     var boxen = vorschlagBoxen(state)
-    var lw = Math.max(2, canvas.width / 300)
+    var lw = Math.max(2, canvas.width / 300) / zoom.z
     ctx.save()
     ctx.lineWidth = lw
     ctx.setLineDash([lw * 4, lw * 3])
@@ -1399,15 +1508,6 @@
       ctx.strokeStyle = '#0dcaf0'
       ctx.lineWidth = lw * 1.5
       ctx.strokeRect(k.x, k.y, k.w, k.h)
-      var fs = Math.max(12, canvas.width / 70)
-      ctx.font = 'bold ' + fs + 'px system-ui, sans-serif'
-      var txt = 'Kennzeichen'
-      var tw = ctx.measureText(txt).width + fs * 0.6
-      var ty = k.y - fs * 1.4 >= 0 ? k.y - fs * 1.4 : k.y + k.h
-      ctx.fillStyle = '#0dcaf0'
-      ctx.fillRect(k.x, ty, tw, fs * 1.4)
-      ctx.fillStyle = '#000'
-      ctx.fillText(txt, k.x + fs * 0.3, ty + fs * 1.05)
     }
     ctx.restore()
     drawCrop()
@@ -1463,6 +1563,7 @@
     cx.translate(c.width, 0)
     cx.rotate(Math.PI / 2)
     cx.drawImage(old, 0, 0)
+    resetZoom()
     state.base = c
     state.redactions = []
     state.crop = null
@@ -1908,6 +2009,7 @@
       kz: null, kzKeins: false, kzGeaendert: false, kzBereit: false,
       ok: !!opts.ok, pos: opts.pos || 1, total: opts.total || 1, open: opts.open || 0, busy: false,
     }
+    resetZoom()
     renderStrip()
     updateMoveLabel()
     setUrl(state)
