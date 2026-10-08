@@ -526,9 +526,13 @@
   // Bildschirm positioniert – die scrollende Seitenleiste würde sie sonst
   // abschneiden. Rechtsbündig zum Feld, ragt nach links über das Foto.
   function fitVerstossMenu() {
-    var menu = verstossHidden().parentNode.querySelector('.list-group')
+    fitMenu(verstossHidden().parentNode, verstossInput())
+    if (kzVerstossEl) fitMenu(kzVerstossEl, kzVerstossEl.querySelector('[data-verstoss-input]'))
+  }
+  function fitMenu(root, input) {
+    var menu = root.querySelector('.list-group')
     if (!menu) return
-    var r = verstossInput().getBoundingClientRect()
+    var r = input.getBoundingClientRect()
     var w = Math.max(r.width, Math.min(736, window.innerWidth - 32))
     var left = Math.min(r.left, window.innerWidth - 16 - w)
     menu.style.position = 'fixed'
@@ -1278,13 +1282,24 @@
   var kzInEl = null
   var kzBoxEl = null
   var kzMirrors = []
+  var kzVerstossEl = null
   // Fahrzeug-Felder am Foto aus der Seitenleiste nachziehen (nicht beim Tippen).
   function kzMehrSync() {
     kzMirrors.forEach(function (x) {
-      if (x.el.tagName === 'SELECT' && x.el.options.length !== x.src.options.length) x.el.innerHTML = x.src.innerHTML
+      if (x.el.tagName === 'SELECT' && (x.el.options.length !== x.src.options.length || (x.variante && x.el.innerHTML !== x.src.innerHTML))) x.el.innerHTML = x.src.innerHTML
       if (document.activeElement !== x.el) x.el.value = x.src.value
       x.el.hidden = !!x.src.closest('[hidden]')
     })
+    if (kzVerstossEl) {
+      var vIn = kzVerstossEl.querySelector('[data-verstoss-input]')
+      kzVerstossEl.hidden = !!verstossHidden().closest('[hidden]')
+      if (document.activeElement !== vIn) {
+        kzVerstossEl.querySelector('input[type=hidden]').value = verstossHidden().value
+        vIn.value = verstossHidden().value
+        vIn.title = verstossHidden().value
+        vIn.classList.toggle('is-missing', !verstossHidden().value)
+      }
+    }
   }
   var kzLandEl = null
   function landSel() {
@@ -1378,6 +1393,44 @@
       return { src: src, el: m }
     })
     kzBoxEl.appendChild(mehr)
+    // Dritte Zeile: Verstoß (eigenes verstoss-select, Katalog lazy beim
+    // Fokus) + Konkretisierung – gespeichert über die Felder der Seitenleiste.
+    kzVerstossEl = document.createElement('div')
+    kzVerstossEl.className = 'position-relative pe-kz-verstoss'
+    kzVerstossEl.innerHTML = '<input type="hidden"><input type="text" class="form-control form-control-sm" data-verstoss-input autocomplete="off" spellcheck="false" placeholder="Verstoß suchen …" aria-label="Verstoß">'
+    var vHidden = kzVerstossEl.querySelector('input[type=hidden]')
+    var vInput = kzVerstossEl.querySelector('[data-verstoss-input]')
+    vInput.addEventListener('focus', function () {
+      kzVerstossEl.dataset.city = verstossHidden().parentNode.dataset.city || ''
+      if (kzVerstossEl.dataset.verstossReady || !window.verstossSelect) return fitVerstossMenu()
+      loadCatalog().then(function (data) {
+        if (kzVerstossEl.dataset.verstossReady) return
+        window.verstossSelect.init(kzVerstossEl, data)
+        fitVerstossMenu()
+        if (document.activeElement === vInput) vInput.dispatchEvent(new Event('focus'))
+      }, function () {})
+    })
+    vInput.addEventListener('input', fitVerstossMenu)
+    vInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.stopPropagation() })
+    vHidden.addEventListener('change', function () {
+      if (!vHidden.value || vHidden.value === verstossHidden().value) return
+      verstossHidden().value = vHidden.value
+      verstossInput().value = vHidden.value
+      if (window.verstossSelect) window.verstossSelect.check(verstossHidden().parentNode)
+      verstossHidden().dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    kzBoxEl.appendChild(kzVerstossEl)
+    var varSrc = dlg.querySelector('[data-variante]')
+    var varEl = document.createElement('select')
+    varEl.className = 'form-select form-select-sm pe-kz-variante'
+    varEl.setAttribute('data-native', '')
+    varEl.setAttribute('aria-label', 'Verstoß genauer')
+    varEl.addEventListener('change', function () {
+      varSrc.value = varEl.value
+      varSrc.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    kzBoxEl.appendChild(varEl)
+    kzMirrors.push({ src: varSrc, el: varEl, variante: true })
     kzInEl.addEventListener('input', function () {
       plateInput().value = kzInEl.value
       updateUi()
