@@ -251,6 +251,7 @@
     // Kachel-Streifen: anderes Foto derselben Anzeige öffnen.
     var strip = dlg.querySelector('.photo-edit-strip')
     strip.addEventListener('click', function (e) {
+      if (e.target.closest('[data-act=add-photos]')) return addPhotos()
       var pick = e.target.closest('.photo-edit-pick')
       if (pick) {
         if (!state) return
@@ -684,8 +685,10 @@
     var strip = dlg.querySelector('.photo-edit-strip')
     strip.replaceChildren()
     var thumbs = state.thumbs || []
-    strip.hidden = thumbs.length < 2
-    dlg.classList.toggle('has-strip', thumbs.length >= 2)
+    // Bei Anzeigen immer sichtbar – unten die Kachel „+ Fotos" (addPhotos).
+    var mitStreifen = thumbs.length >= 2 || state.plate != null
+    strip.hidden = !mitStreifen
+    dlg.classList.toggle('has-strip', mitStreifen)
     thumbs.forEach(function (t, i) {
       // div statt button: die aktuelle Kachel enthält die Verschiebe-Knöpfe.
       var b = el('div', 'photo-edit-tile' + (t === state.thumb ? ' is-current' : '') +
@@ -739,7 +742,66 @@
         }, 0)
       }
     })
+    if (state.plate != null && state.az) {
+      var add = el('button', 'photo-edit-tile photo-edit-add', '+ Fotos')
+      add.type = 'button'
+      add.setAttribute('data-act', 'add-photos')
+      add.title = 'Weitere Fotos zu dieser Anzeige hinzufügen'
+      strip.appendChild(add)
+    }
     renderRolle(state)
+  }
+
+  // Weitere Fotos hochladen (POST /anzeige/:az/images, wie im früheren Editor);
+  // danach Zeile neu laden und das erste neue Foto öffnen.
+  var addInput = null
+  function addPhotos() {
+    var s = state
+    if (!s || !s.az || s.busy) return
+    if (!addInput) {
+      addInput = document.createElement('input')
+      addInput.type = 'file'
+      addInput.accept = 'image/*,.heic,.heif'
+      addInput.multiple = true
+      addInput.hidden = true
+      dlg.appendChild(addInput)
+      addInput.addEventListener('change', function () {
+        var s2 = state
+        var files = [].slice.call(addInput.files || [])
+        addInput.value = ''
+        if (!s2 || !files.length) return
+        var fd = new FormData()
+        files.forEach(function (f) { fd.append('bilder', f, f.name) })
+        s2.busy = true
+        msg('Fotos werden hochgeladen …')
+        updateUi()
+        flushSave(s2).catch(function () {}).then(function () {
+          return fetch('/anzeige/' + encodeURIComponent(s2.az) + '/images', { method: 'POST', body: fd, headers: { Accept: 'application/json' } })
+        }).then(function (r) {
+          return r.json().catch(function () { return {} }).then(function (d) {
+            if (!r.ok || r.redirected) throw new Error(d.error || 'Hochladen fehlgeschlagen.')
+            if (d.errors && d.errors.length) alert(d.errors.join('\n'))
+            return d
+          })
+        }).then(function (d) {
+          var neu = (d.images || []).map(function (i) { return '/anzeige/' + s2.az + '/images/' + i.id })
+          return Promise.resolve(window.reportTableRefresh ? window.reportTableRefresh(s2.az) : null).then(function () {
+            var row = rowOf(s2.az)
+            var all = row ? [].slice.call(row.querySelectorAll('[data-photo-edit]')) : []
+            var ziel = all.filter(function (t) { return neu.indexOf(t.getAttribute('data-photo-edit')) !== -1 })[0] ||
+              all.filter(function (t) { return t.getAttribute('data-photo-edit') === s2.put })[0] || all[0]
+            s2.busy = false
+            if (ziel && state === s2) openThumb(ziel)
+          })
+        }).catch(function (err) {
+          alert(err.message || 'Hochladen fehlgeschlagen.')
+        }).then(function () {
+          s2.busy = false
+          if (state === s2) { msg(''); updateUi() }
+        })
+      })
+    }
+    addInput.click()
   }
 
   // Foto von Position from nach to verschieben: POST …/images/reorder, dann

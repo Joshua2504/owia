@@ -160,6 +160,12 @@
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
     if (typeof HTMLDialogElement === 'undefined') return // sehr alte Browser: normale Seite
     e.preventDefault()
+    // Bearbeiten = Prüf-Dialog (photo-edit.js) auf dem ersten ungeprüften,
+    // sonst dem ersten Foto. Der alte Editor nur noch für Entwürfe ohne Fotos.
+    var az = editPath(new URL(a.href, location.href).pathname)
+    var row = az && document.querySelector('[data-az="' + az.replace(/[^\w-]/g, '') + '"]')
+    var t = row && (row.querySelector('[data-photo-edit][data-geprueft="0"]') || row.querySelector('[data-photo-edit]'))
+    if (t && window.photoEditor) return window.photoEditor.openThumb(t)
     open(a.getAttribute('href'))
   })
 })()
