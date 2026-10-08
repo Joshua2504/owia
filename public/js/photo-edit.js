@@ -97,7 +97,7 @@
       // Kennzeichen, Typ, Marke nebeneinander – die Leiste soll ohne Scrollen passen.
       '<div class="pe-row pe-row-kfz">' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
-      '<div class="input-group"><select id="pe-land" class="form-select photo-edit-details flex-grow-0 w-auto" data-detail="kennzeichen_land" aria-label="Länderkennzeichen" title="Land des Kennzeichens" hidden><option value="D">D</option></select>' +
+      '<div class="input-group flex-nowrap"><select id="pe-land" class="form-select photo-edit-details" style="flex:0 0 3.6rem;width:3.6rem;padding-left:.45rem;padding-right:1.3rem;background-position:right .3rem center" data-detail="kennzeichen_land" aria-label="Länderkennzeichen" title="Land des Kennzeichens" hidden><option value="D">D</option></select>' +
       '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>' +
       '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
       '<div class="pe-field photo-edit-details" hidden><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
@@ -769,6 +769,7 @@
     if (kzInEl && state.plate != null) {
       if (document.activeElement !== kzInEl) kzInEl.value = plateInput().value
       kzSyncKlassen()
+      kzLandSync()
     }
     var keinsBtn = dlg.querySelector('[data-act=kz-keins]')
     keinsBtn.hidden = !kzPflicht(state) || !!state.kz
@@ -1264,8 +1265,32 @@
   // Schild übersehen hat. state.kz in Canvas-Pixeln, gespeichert als Anteile
   // 0..1 der gespeicherten Fassung (PATCH …/kennzeichen).
   var kzInEl = null
+  var kzBoxEl = null
+  var kzLandEl = null
+  function landSel() {
+    return dlg.querySelector('#pe-land')
+  }
+  // Land-Auswahl am Foto spiegelt #pe-land (Optionen + Wert).
+  function kzLandSync() {
+    var src = landSel()
+    if (kzLandEl.options.length !== src.options.length) kzLandEl.innerHTML = src.innerHTML
+    if (document.activeElement !== kzLandEl) kzLandEl.value = src.value
+    kzLandEl.hidden = src.hidden
+  }
   function kzInput() {
     if (kzInEl) return kzInEl
+    kzBoxEl = document.createElement('div')
+    kzBoxEl.className = 'input-group input-group-sm flex-nowrap pe-kz-box'
+    kzBoxEl.hidden = true
+    kzLandEl = document.createElement('select')
+    kzLandEl.className = 'form-select pe-kz-land'
+    kzLandEl.setAttribute('aria-label', 'Länderkennzeichen')
+    kzLandEl.addEventListener('change', function () {
+      var src = landSel()
+      src.value = kzLandEl.value
+      src.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    kzBoxEl.appendChild(kzLandEl)
     kzInEl = document.createElement('input')
     kzInEl.type = 'text'
     kzInEl.className = 'form-control form-control-sm plate-field pe-kz-input'
@@ -1274,13 +1299,13 @@
     kzInEl.spellcheck = false
     kzInEl.setAttribute('autocapitalize', 'characters')
     kzInEl.setAttribute('aria-label', 'Kennzeichen')
-    kzInEl.hidden = true
+    kzBoxEl.appendChild(kzInEl)
     kzInEl.addEventListener('input', function () {
       plateInput().value = kzInEl.value
       updateUi()
     })
     kzInEl.addEventListener('change', function () { savePlate().catch(function () {}) })
-    dlg.querySelector('.photo-edit-marks').appendChild(kzInEl)
+    dlg.querySelector('.photo-edit-marks').appendChild(kzBoxEl)
     return kzInEl
   }
   function kzSyncKlassen() {
@@ -1412,8 +1437,8 @@
   function renderMarks() {
     var box = dlg.querySelector('.photo-edit-marks')
     var kzIn = kzInput()
-    ;[].slice.call(box.children).forEach(function (c) { if (c !== kzIn) c.remove() })
-    kzIn.hidden = true
+    ;[].slice.call(box.children).forEach(function (c) { if (c !== kzBoxEl) c.remove() })
+    kzBoxEl.hidden = true
     if (!state || !state.base || state.drawing) return
     var br = bildRect()
     var cr = box.getBoundingClientRect()
@@ -1456,14 +1481,15 @@
       if (state.plate != null) {
         if (document.activeElement !== kzIn) kzIn.value = plateInput().value
         kzSyncKlassen()
-        kzIn.hidden = false
-        var w = kzIn.offsetWidth
-        var h = kzIn.offsetHeight
+        kzLandSync()
+        kzBoxEl.hidden = false
+        var w = kzBoxEl.offsetWidth
+        var h = kzBoxEl.offsetHeight
         var left = br.left - cr.left + (state.kz.x + state.kz.w / 2) * br.k - w / 2
         var top = br.top - cr.top + (state.kz.y + state.kz.h) * br.k + 4
         if (top + h > cr.height) top = br.top - cr.top + state.kz.y * br.k - h - 4
-        kzIn.style.left = Math.max(0, Math.min(cr.width - w, left)) + 'px'
-        kzIn.style.top = Math.max(0, Math.min(cr.height - h, top)) + 'px'
+        kzBoxEl.style.left = Math.max(0, Math.min(cr.width - w, left)) + 'px'
+        kzBoxEl.style.top = Math.max(0, Math.min(cr.height - h, top)) + 'px'
       }
     }
     state.redactions.forEach(function (r, i) {
@@ -1486,8 +1512,8 @@
     })
     if (ohneVorschau) {
       var marks = dlg.querySelector('.photo-edit-marks')
-      ;[].slice.call(marks.children).forEach(function (c) { if (c !== kzInEl) c.remove() })
-      if (kzInEl) kzInEl.hidden = true
+      ;[].slice.call(marks.children).forEach(function (c) { if (c !== kzBoxEl) c.remove() })
+      if (kzBoxEl) kzBoxEl.hidden = true
       return
     }
     var boxen = vorschlagBoxen(state)
