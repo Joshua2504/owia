@@ -11,7 +11,7 @@
 //   „Ort/Gemarkung" (vorbelegt).
 
 import {
-  choosePathElement, answerBehinderung, select2, fillText, fillDate, visibleRadios, clickRadioId,
+  choosePathElement, answerBehinderung, select2, fillText, fillDate, fieldId, visibleRadios, clickRadioId,
   uploadSection, sleep,
 } from './lib.mjs'
 
@@ -78,9 +78,16 @@ async function stepTat(run, page, p) {
   const t = p.tat
   await fillText(page, 'Straße und Hausnummer', t.ort, { prefix: true })
   await fillDate(page, 'Tattag (Datum)', t.tattag)
-  await fillText(page, 'Beginn Tatzeit', t.von)
-  await fillText(page, 'Ende Tatzeit', t.bis)
-  run.log(`Tat: ${t.ort}, ${t.tattag} ${t.von}–${t.bis}`)
+  // Je nach Tatbestand fragt das Portal Beginn/Ende ab oder (z. B. „hielten
+  // … auf einem Radweg", 141070) nur einen Zeitpunkt „Tatzeit (Zeitpunkt)".
+  if (await fieldId(page, 'Beginn Tatzeit', false)) {
+    await fillText(page, 'Beginn Tatzeit', t.von)
+    await fillText(page, 'Ende Tatzeit', t.bis)
+    run.log(`Tat: ${t.ort}, ${t.tattag} ${t.von}–${t.bis}`)
+  } else {
+    await fillText(page, 'Tatzeit', t.von, { prefix: true })
+    run.log(`Tat: ${t.ort}, ${t.tattag} ${t.von} (nur Zeitpunkt)`)
+  }
   await uploadSection(run, page, 0, 'Beweis-Übersichtsfoto', run.files.uebersicht)
   await uploadSection(run, page, 1, 'Beweis-Fahrzeugfoto', run.files.fahrzeug)
 }
