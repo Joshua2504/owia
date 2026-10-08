@@ -55,6 +55,7 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
                draggable="true" data-drag-image="<%= img.id %>" data-drag-az="<%= r.aktenzeichen %>"
                data-photo-edit="/anzeige/<%= r.aktenzeichen %>/images/<%= img.id %>"
                data-geprueft="<%= img.ok ? 1 : 0 %>"
+               <% if (img.zeit) { %>data-zeit="<%= img.zeit %>"<% } %>
                <% if (img.plate) { %>data-detected-plate="<%= img.plate %>"<% } %>
                title="<%= img.ok ? 'Geprüft' : 'Noch nicht geprüft' %> – Klick: prüfen/schwärzen · Strg-Klick: auswählen · Ziehen: verschieben"
              <% } else { %>

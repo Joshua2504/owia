@@ -52,16 +52,17 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     // Foto-IDs pro Anzeige für die Thumbnail-Leiste (gemeinsames Tabellen-Partial).
     const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.id, ri.report_id, ri.filename, ri.geprueft_at, ri.detected_plate
+      `SELECT ri.id, ri.report_id, ri.filename, ri.geprueft_at, ri.detected_plate,
+              DATE_FORMAT(ri.captured_at, '%H:%i') AS zeit
          FROM report_images ri
          JOIN reports r ON r.id = ri.report_id
         WHERE r.user_id = ? AND r.status <> 'papierkorb'
         ORDER BY ri.report_id, ri.sort_order, ri.id`,
       [userId]
     )
-    const imagesByReport: Record<number, { id: number; v: string; ok: boolean; plate: string | null }[]> = {}
+    const imagesByReport: Record<number, { id: number; v: string; ok: boolean; plate: string | null; zeit: string | null }[]> = {}
     for (const img of images) {
-      ;(imagesByReport[img.report_id] ??= []).push({ id: img.id, v: imageVersion(img.filename), ok: img.geprueft_at !== null, plate: img.detected_plate || null })
+      ;(imagesByReport[img.report_id] ??= []).push({ id: img.id, v: imageVersion(img.filename), ok: img.geprueft_at !== null, plate: img.detected_plate || null, zeit: img.zeit || null })
     }
 
     const [[trash]] = await pool.execute<mysql.RowDataPacket[]>(

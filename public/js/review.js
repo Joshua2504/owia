@@ -182,6 +182,7 @@
         '<img src="' + esc(im.thumb) + '" alt="Beweisfoto" decoding="async"' +
         ' data-photo-edit="' + esc(im.put) + '" data-full-src="' + esc(im.full) + '"' +
         ' data-geprueft="' + (im.ok ? 1 : 0) + '"' +
+        (im.zeit ? ' data-zeit="' + esc(im.zeit) + '"' : '') +
         (im.detected ? ' data-detected-plate="' + esc(im.detected) + '"' : '') +
         ' title="' + (im.ok ? 'Geprüft' : 'Noch nicht geprüft') + ' – antippen zum Prüfen/Schwärzen">' +
         '<span class="thumb-check" aria-hidden="true">' + (im.ok ? '✓' : '?') + '</span></span>'

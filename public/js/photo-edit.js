@@ -584,6 +584,8 @@
       b.appendChild(img)
       b.appendChild(el('span', 'thumb-check', t.getAttribute('data-geprueft') === '1' ? '✓' : '?'))
       b.appendChild(el('span', 'photo-edit-tile-no', String(i + 1)))
+      // Aufnahmezeit (EXIF), damit die Reihenfolge/Spanne auf einen Blick sichtbar ist.
+      if (t.getAttribute('data-zeit')) b.appendChild(el('span', 'photo-edit-tile-zeit', t.getAttribute('data-zeit')))
       if (state.plate != null) {
         var pk = el('input', 'form-check-input photo-edit-pick')
         pk.type = 'checkbox'

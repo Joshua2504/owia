@@ -176,6 +176,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
           groesse: (() => { const a = parseAnalyse(i.analyse_json); return a ? { w: a.w, h: a.h } : null })(),
           ok: i.geprueft_at !== null,
           detected: i.detected_plate || null,
+          zeit: i.captured ? String(i.captured).slice(11, 16) : null,
           thumb: `/anzeige/${az}/image/${i.id}/thumb.jpg?v=${v}`,
           full: `/anzeige/${az}/image/${i.id}?v=${v}`,
           put: `/anzeige/${az}/images/${i.id}`,
