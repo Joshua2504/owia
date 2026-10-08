@@ -2052,7 +2052,10 @@
         var w = kzBoxEl.offsetWidth
         var h = kzBoxEl.offsetHeight
         var left = br.left - cr.left + (state.kz.x + state.kz.w / 2) * br.k - w / 2
-        var top = br.top - cr.top + (state.kz.y + state.kz.h) * br.k + 4
+        // Möglichst weit unten am Fotorand, damit das Fahrzeug über dem
+        // Kennzeichen frei bleibt; nie über die Kennzeichen-Unterkante.
+        var unter = br.top - cr.top + (state.kz.y + state.kz.h) * br.k + 4
+        var top = Math.max(unter, br.top - cr.top + br.height - h - 8)
         if (top + h > cr.height) top = br.top - cr.top + state.kz.y * br.k - h - 4
         kzBoxEl.style.left = Math.max(0, Math.min(cr.width - w, left)) + 'px'
         kzBoxEl.style.top = Math.max(0, Math.min(cr.height - h, top)) + 'px'
