@@ -52,7 +52,43 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    env_file: .env
+    # Bewusst kein env_file: Die App bekäme sonst die ganze .env inklusive
+    # DB_ROOT_PASSWORD und ACME_EMAIL – die braucht nur db bzw. caddy. Neue
+    # Variablen, die src/ per process.env liest, hier ergänzen.
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      APP_URL: ${APP_URL:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      DB_HOST: ${DB_HOST:-db}
+      DB_NAME: ${DB_NAME:-}
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      MAIL_DRIVER: ${MAIL_DRIVER:-}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASS: ${MAIL_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
+      IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-}
+      IMAP_USER: ${IMAP_USER:-}
+      IMAP_PASS: ${IMAP_PASS:-}
+      IMAP_POLL_SECONDS: ${IMAP_POLL_SECONDS:-}
+      REPLY_TRUSTED_DOMAINS: ${REPLY_TRUSTED_DOMAINS:-}
+      PHOTON_URL: ${PHOTON_URL:-}
+      TILESERVER_URL: ${TILESERVER_URL:-}
+      ALPR_URL: ${ALPR_URL:-}
+      ALPR_ENABLED: ${ALPR_ENABLED:-}
+      ALPR_MIN_CONFIDENCE: ${ALPR_MIN_CONFIDENCE:-}
+      PORTAL_URL: ${PORTAL_URL:-}
+      JOB_TIMEOUT_MS: ${JOB_TIMEOUT_MS:-}
+      # Shell-Default im command oben: unset ⇒ "watch" (Dev), leer ⇒ kein watch (Prod).
+      TSX_WATCH: ${TSX_WATCH-watch}
+    # Speichergrenze: Ein Riesenbild oder ein Leck darf nicht den ganzen Host
+    # (8 GB, geteilt mit DB, Tileserver, Photon, ALPR) in den OOM-Killer treiben.
+    mem_limit: 2g
     networks: [default, proxy]
     restart: unless-stopped
     logging: *default-logging
@@ -73,6 +109,7 @@ services:
       MARIADB_DATABASE: ${DB_NAME}
       MARIADB_USER: ${DB_USER}
       MARIADB_PASSWORD: ${DB_PASSWORD}
+    mem_limit: 1500m
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
@@ -103,6 +140,7 @@ services:
       - UPDATE_STRATEGY=PARALLEL
     volumes:
       - ./data/photon:/photon/data
+    mem_limit: 1500m
     # Port nur bei Bedarf zum Debuggen freigeben – die App spricht Photon
     # intern über den Namen "photon:2322" an.
     # ports:
@@ -146,6 +184,7 @@ services:
     volumes:
       - osm-tile-data:/data/database/
       - osm-tile-cache:/data/tiles/
+    mem_limit: 2g
     shm_size: 512m
     restart: unless-stopped
     logging: *default-logging

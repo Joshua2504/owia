@@ -38,6 +38,9 @@ rsync -az --delete \
 echo "==> Stack neu starten"
 cd "$DEPLOY_TARGET"
 mkdir -p data/mysql data/pdfs data/uploads data/photon
+# Die App läuft im Container als Nutzer node (UID 1000) – Upload-/PDF-Verzeichnisse
+# müssen ihm gehören, sonst „Datenverzeichnis nicht beschreibbar" beim Start.
+chown -R 1000:1000 data/pdfs data/uploads
 docker network create owia-proxy 2>/dev/null || true
 docker compose pull --quiet 2>/dev/null || true
 docker compose up -d --build --force-recreate --remove-orphans

@@ -264,6 +264,12 @@ async function handle(req, res) {
     if (active >= MAX_ACTIVE) return send(res, 429, { error: 'Es laufen bereits zu viele Portal-Vorgänge.' })
     const body = await readBody(req)
     if (!body.payload) return send(res, 400, { error: 'payload fehlt' })
+    // Idempotenz: Die App gibt eine eigene Lauf-ID mit. Kommt dieselbe ID noch
+    // einmal (Antwort beim ersten Mal verloren, Timeout), liefern wir den
+    // vorhandenen Lauf statt einen zweiten Chromium-Tab zu öffnen.
+    if (typeof body.id === 'string' && /^[0-9a-f-]{36}$/.test(body.id) && runs.has(body.id)) {
+      return send(res, 200, publicRun(runs.get(body.id)))
+    }
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-'))
     const files = { uebersicht: [], fahrzeug: [] }
     let i = 0
@@ -275,6 +281,11 @@ async function handle(req, res) {
       files[role].push(p)
     }
     const run = createRun(body.payload, files, dir)
+    if (typeof body.id === 'string' && /^[0-9a-f-]{36}$/.test(body.id)) {
+      runs.delete(run.id)
+      run.id = body.id
+      runs.set(run.id, run)
+    }
     run.logMsg(`Lauf angelegt (${files.uebersicht.length} Übersichts-, ${files.fahrzeug.length} Fahrzeugfoto(s))`)
     execute(run)
     return send(res, 201, publicRun(run))
