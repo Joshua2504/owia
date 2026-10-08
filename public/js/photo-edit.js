@@ -775,6 +775,7 @@
       if (document.activeElement !== kzInEl) kzInEl.value = plateInput().value
       kzSyncKlassen()
       kzLandSync()
+      kzMehrSync()
     }
     var keinsBtn = dlg.querySelector('[data-act=kz-keins]')
     keinsBtn.hidden = !kzPflicht(state) || !!state.kz
@@ -1276,6 +1277,15 @@
   // 0..1 der gespeicherten Fassung (PATCH …/kennzeichen).
   var kzInEl = null
   var kzBoxEl = null
+  var kzMirrors = []
+  // Fahrzeug-Felder am Foto aus der Seitenleiste nachziehen (nicht beim Tippen).
+  function kzMehrSync() {
+    kzMirrors.forEach(function (x) {
+      if (x.el.tagName === 'SELECT' && x.el.options.length !== x.src.options.length) x.el.innerHTML = x.src.innerHTML
+      if (document.activeElement !== x.el) x.el.value = x.src.value
+      x.el.hidden = !!x.src.closest('[hidden]')
+    })
+  }
   var kzLandEl = null
   function landSel() {
     return dlg.querySelector('#pe-land')
@@ -1311,8 +1321,11 @@
   function kzInput() {
     if (kzInEl) return kzInEl
     kzBoxEl = document.createElement('div')
-    kzBoxEl.className = 'input-group input-group-sm flex-nowrap pe-kz-box'
+    kzBoxEl.className = 'pe-kz-box'
     kzBoxEl.hidden = true
+    var grp = document.createElement('div')
+    grp.className = 'input-group input-group-sm flex-nowrap'
+    kzBoxEl.appendChild(grp)
     kzLandEl = document.createElement('select')
     kzLandEl.className = 'form-select pe-kz-land'
     kzLandEl.setAttribute('aria-label', 'Länderkennzeichen')
@@ -1322,7 +1335,7 @@
       src.value = kzLandEl.value
       src.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    kzBoxEl.appendChild(kzLandEl)
+    grp.appendChild(kzLandEl)
     kzInEl = document.createElement('input')
     kzInEl.type = 'text'
     kzInEl.className = 'form-control form-control-sm plate-field pe-kz-input'
@@ -1331,7 +1344,40 @@
     kzInEl.spellcheck = false
     kzInEl.setAttribute('autocapitalize', 'characters')
     kzInEl.setAttribute('aria-label', 'Kennzeichen')
-    kzBoxEl.appendChild(kzInEl)
+    grp.appendChild(kzInEl)
+    // Zweite Zeile: Fahrzeug (Typ, Marke, Modell, Farbe) – Spiegel der Felder
+    // in der Seitenleiste, gespeichert wird über deren change-Handler.
+    var mehr = document.createElement('div')
+    mehr.className = 'pe-kz-mehr'
+    kzMirrors = [
+      ['#pe-typ', 'select', 'Typ'],
+      ['#photo-edit-marke-input', 'input', 'Marke', 'pe-marken'],
+      ['#pe-modell', 'input', 'Modell'],
+      ['#pe-farbe', 'input', 'Farbe', 'pe-farben'],
+    ].map(function (d) {
+      var src = dlg.querySelector(d[0])
+      var m = document.createElement(d[1])
+      m.className = d[1] === 'select' ? 'form-select form-select-sm' : 'form-control form-control-sm'
+      m.setAttribute('aria-label', d[2])
+      m.title = d[2]
+      if (d[1] === 'select') m.setAttribute('data-native', '')
+      else {
+        m.placeholder = d[2]
+        m.autocomplete = 'off'
+        if (src.maxLength > 0) m.maxLength = src.maxLength
+        if (d[3]) m.setAttribute('list', d[3])
+      }
+      var push = function () {
+        src.value = m.value
+        src.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      m.addEventListener('change', push)
+      // Enter übernimmt (Dialog-Enter bestätigt sonst das Foto).
+      m.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); push() } })
+      mehr.appendChild(m)
+      return { src: src, el: m }
+    })
+    kzBoxEl.appendChild(mehr)
     kzInEl.addEventListener('input', function () {
       plateInput().value = kzInEl.value
       updateUi()
@@ -1517,6 +1563,7 @@
         if (document.activeElement !== kzIn) kzIn.value = plateInput().value
         kzSyncKlassen()
         kzLandSync()
+        kzMehrSync()
         kzBoxEl.hidden = false
         var w = kzBoxEl.offsetWidth
         var h = kzBoxEl.offsetHeight

@@ -1197,7 +1197,11 @@ body:has(.review-actions) .back-to-top { bottom: 5rem; }
 .leaflet-tooltip.overview-hover { white-space: normal; max-width: 340px; padding: 6px; }
 
 /* Kennzeichen-Feld direkt unter der Markierung im Foto (photo-edit.js). */
-.photo-edit-marks .pe-kz-box { position: absolute; width: 12.5rem; pointer-events: auto; box-shadow: 0 2px 6px rgba(0,0,0,.5); border-radius: .25rem; }
+.photo-edit-marks .pe-kz-box { position: absolute; width: 21rem; max-width: 100%; pointer-events: auto; display: flex; flex-direction: column; gap: 3px; }
+.photo-edit-marks .pe-kz-box > .input-group { width: 12.5rem; align-self: center; box-shadow: 0 2px 6px rgba(0,0,0,.5); border-radius: .25rem; }
+.pe-kz-mehr { display: grid; grid-template-columns: 4.6rem 1fr 1fr 1fr; gap: 3px; }
+.pe-kz-mehr > * { min-width: 0; box-shadow: 0 2px 6px rgba(0,0,0,.5); border: 1px solid #0dcaf0; }
+.pe-kz-mehr > select { padding-right: 1.4rem; background-position: right .3rem center; }
 .photo-edit-marks .pe-kz-land { flex: 0 0 3.4rem; width: 3.4rem; padding-left: .4rem; padding-right: 1.2rem; background-position: right .25rem center; border: 2px solid #0dcaf0; font-weight: 600; }
 .photo-edit-marks .pe-kz-input { position: static; pointer-events: auto; font-weight: 600; text-transform: uppercase; border: 2px solid #0dcaf0; }
 
