@@ -374,17 +374,17 @@ type Absatz = { de: string; en: string; fett?: boolean }
 
 const ABSAETZE: Absatz[] = [
   {
-    de: 'Privatanzeige: Dieses Fahrzeug wurde wegen einer Ordnungswidrigkeit im ruhenden Verkehr dokumentiert.',
-    en: 'Private report: This vehicle has been documented for a parking violation.',
+    de: 'Sie wurden von einer Privatperson wegen Falschparkens angezeigt.',
+    en: 'You have been reported for illegal parking by a private person.',
     fett: true,
   },
   {
-    de: 'Die Angaben können an das zuständige Ordnungsamt übermittelt werden.',
-    en: 'The details may be forwarded to the local authority.',
+    de: 'Fotos, Ort und Uhrzeit gehen an das Ordnungsamt.',
+    en: 'Photos, location and time are sent to the local authority.',
   },
   {
-    de: 'Stand und Hinweise hier ansehen {PFEIL}',
-    en: 'Status and information here.',
+    de: 'Die Anzeige gegen Sie hier ansehen {PFEIL}',
+    en: 'View the report here.',
   },
 ]
 
@@ -398,7 +398,7 @@ interface Fall {
 
 function fallAbsaetze(fall: Fall): Absatz[] {
   const out: Absatz[] = [
-    { de: `Privatanzeige: ${fall.aufdruck}`, en: 'Private report of a parking violation.', fett: true },
+    { de: `Sie wurden von einer Privatperson angezeigt: ${fall.aufdruck}`, en: 'You have been reported by a private person.', fett: true },
   ]
   if (fall.euro !== null) {
     out.push({
@@ -407,7 +407,7 @@ function fallAbsaetze(fall: Fall): Absatz[] {
       fett: true,
     })
   }
-  out.push({ de: 'Stand der Anzeige hier {PFEIL}', en: 'Status here.' })
+  out.push({ de: 'Die Anzeige gegen Sie hier ansehen {PFEIL}', en: 'View the report here.' })
   return out
 }
 
