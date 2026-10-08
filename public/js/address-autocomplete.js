@@ -137,6 +137,10 @@
           e.preventDefault()
           choose(it)
         }
+      } else if (e.key === 'Tab') {
+        // Wie Enter, Fokus wandert danach normal weiter.
+        const it = items[active >= 0 ? active : 0]
+        if (it) choose(it)
       } else if (e.key === 'Escape') {
         close()
       }

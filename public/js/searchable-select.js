@@ -148,7 +148,9 @@
           close()
         }
       } else if (e.key === 'Tab') {
-        close()
+        // Wie Enter: aktiven (bei Suche ersten) Treffer übernehmen, Fokus wandert weiter.
+        if (items[active]) choose(items[active].opt)
+        else close()
       }
     })
 

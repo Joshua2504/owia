@@ -352,6 +352,10 @@
           e.preventDefault()
           choose(b.dataset.text)
         }
+      } else if (e.key === 'Tab') {
+        // Wie Enter, aber nur wenn getippt wurde (reines Durchtabben ändert nichts).
+        const b = buttons[active >= 0 ? active : 0]
+        if (b && (active >= 0 || (input.value.trim() && input.value !== committed()))) choose(b.dataset.text)
       } else if (e.key === 'Escape') {
         close()
       }
