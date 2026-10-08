@@ -934,6 +934,7 @@
     var saveBtn = dlg.querySelector('[data-act=save]')
     saveBtn.disabled = !state.base || !!state.busy
     if (!state.busy) saveBtn.textContent = '✓ Bestätigen'
+    dlg.querySelectorAll('.pe-kz-weiter').forEach(function (b) { b.disabled = saveBtn.disabled })
     dlg.querySelector('[data-act=delete]').disabled = !!state.busy
     var mvb = dlg.querySelector('[data-act=move-menu]')
     mvb.hidden = state.plate == null
@@ -1720,6 +1721,14 @@
     })
     kzBoxEl.appendChild(varEl)
     kzMirrors.push({ src: varSrc, el: varEl, variante: true })
+    // Foto direkt hier als geprüft markieren und zum nächsten (= „Bestätigen“).
+    var weiter = document.createElement('button')
+    weiter.type = 'button'
+    weiter.className = 'btn btn-sm btn-success pe-kz-weiter'
+    weiter.title = 'Foto als geprüft markieren und zum nächsten (Enter)'
+    weiter.textContent = '✓ Geprüft – weiter'
+    weiter.addEventListener('click', save)
+    kzBoxEl.appendChild(weiter)
     kzInEl.addEventListener('input', function () {
       if (state) { state.kzOk = false; kzOkSync() }
       plateInput().value = kzInEl.value
