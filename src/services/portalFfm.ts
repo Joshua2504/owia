@@ -29,6 +29,9 @@ export interface PortalTatbestand {
   pfad: PathEl[]
   /** Frage „Wurde ein Rettungsfahrzeug im Einsatz behindert?" (Feuerwehrzufahrt). */
   rettung?: boolean
+  /** Der Pfad legt „Parken" fest – damit ist „Fahrzeug war verlassen" schon
+   *  gesagt (§ 12 Abs. 2 StVO) und muss nicht mehr in den Tatort. */
+  parken?: boolean
 }
 
 export interface Variante {
@@ -59,6 +62,8 @@ interface Regel {
   /** Das Portal kennt an dieser Stelle nur „Parken" – „Sie hielten …" hat
    *  keinen Eintrag (der Verstoß ist dann nicht versendbar). */
   nurParken?: boolean
+  /** Umgekehrt: hier gibt es nur „Halten" – auch bei verlassenem Fahrzeug. */
+  nurHalten?: boolean
 }
 
 const v = (value: string, portal: string): Variante => ({ value, portal })
@@ -90,7 +95,7 @@ const REGELN: Regel[] = [
     ],
   },
   { re: /Fahrradstraße/, gruppe: RUBRIK.radweg, pfad: (a) => [a, { pick: ['auf einer Fahrradstraße'] }] },
-  { re: /Schutzstreifen/, gruppe: RUBRIK.radweg, pfad: (a) => [a, { pick: ['verbotswidrig auf einem Schutzstreifen'] }] },
+  { re: /Schutzstreifen/, gruppe: RUBRIK.radweg, nurHalten: true, pfad: (a) => [a, { pick: ['verbotswidrig auf einem Schutzstreifen'] }] },
 
   // --- Gehweg / Fußgänger -----------------------------------------------------
   {
@@ -229,17 +234,24 @@ export function imPortal(label: string | null | undefined): boolean {
   return !!regelFuer(label)
 }
 
+/** Ein Pfad-Element, das sicher „Parken" wählt. */
+const istParken = (el: PathEl) => !!el.pick?.length && el.pick.every((o) => /^Parken\b|\bparkte\b/.test(o))
+
 /** Portal-Pfad für einen Verstoß (+ gewählte Variante). `null` = kein passender
- *  Tatbestand im Portal (Auswahl dann live im Browser). */
-export function portalTatbestand(label: string | null | undefined, variante?: string | null): PortalTatbestand | null {
+ *  Tatbestand im Portal (Auswahl dann live im Browser). War das Fahrzeug
+ *  verlassen, ist es Parken (§ 12 Abs. 2 StVO), auch wenn der Katalogtext
+ *  „Sie hielten …" sagt – außer wo das Portal nur „Halten" kennt (Schutzstreifen). */
+export function portalTatbestand(label: string | null | undefined, variante?: string | null, verlassen = false): PortalTatbestand | null {
   const regel = regelFuer(label)
   if (!regel) return null
   const text = verstossText(label!)
   const varianteEl = regel.varianten?.find((x) => x.value === variante)
-  const pfad = regel.pfad(aktionAus(text)).map((el) =>
+  let aktion = aktionAus(text)
+  if (verlassen && !regel.nurHalten && aktion.pick?.[0] === 'Halten') aktion = { pick: ['Parken'] }
+  const pfad = regel.pfad(aktion).map((el) =>
     el.ask && varianteEl && el.ask.includes(varianteEl.portal) ? { pick: [varianteEl.portal] } : el
   )
-  return { gruppe: regel.gruppe, pfad, rettung: regel.rettung?.(text) ?? false }
+  return { gruppe: regel.gruppe, pfad, rettung: regel.rettung?.(text) ?? false, parken: pfad.some(istParken) }
 }
 
 // ---------------------------------------------------------------------------
@@ -299,12 +311,13 @@ function isoDate(d: Date): string {
  *  Ein eigenes Feld für ergänzende Angaben zeigt das öffentliche Formular nicht
  *  (V.Z.Zustimmung.ErgAngaben bleibt unsichtbar, Stand 10/2026) – Zusätze wie
  *  „Fahrzeug war verlassen", ein Tatzeitraum über Mitternacht und die
- *  Beschreibung stehen deshalb in Klammern hinter der Adresse. PLZ/Ort fallen
- *  weg (das Portal gilt nur für Frankfurt). */
-export function tatortText(r: Record<string, any>, zusaetze: string[] = []): string {
+ *  Beschreibung stehen deshalb in Klammern hinter der Adresse. „Fahrzeug war
+ *  verlassen" nur, wenn der Tatbestand es nicht schon sagt (`parken`: Pfad
+ *  wählt „Parken"). PLZ/Ort fallen weg (das Portal gilt nur für Frankfurt). */
+export function tatortText(r: Record<string, any>, zusaetze: string[] = [], parken = false): string {
   const ort = String(r.tatort || '').replace(/,\s*\d{5}\s+[^,]+$/, '').trim()
   const extra = [
-    r.fahrzeug_verlassen === 1 ? 'Fahrzeug war verlassen' : '',
+    r.fahrzeug_verlassen === 1 && !parken ? 'Fahrzeug war verlassen' : '',
     ...zusaetze,
     String(r.beschreibung || '').replace(/\s+/g, ' ').trim().replace(/[.;]+$/, ''),
   ].filter(Boolean)
@@ -368,7 +381,7 @@ export function portalProblem(r: Record<string, any>): string | null {
 /** `letztesFoto`: späteste Aufnahmezeit der Fotos ('YYYY-MM-DD HH:MM'), für
  *  die Tatzeit „bis", wenn keine eingetragen ist. */
 export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacket, letztesFoto?: string | null): PortalPayload {
-  const tb = portalTatbestand(r.verstoss_art, r.verstoss_variante)
+  const tb = portalTatbestand(r.verstoss_art, r.verstoss_variante, r.fahrzeug_verlassen === 1)
   const land = KENNZEICHEN_LAENDER[String(r.kennzeichen_land || 'D').toUpperCase()]
   if (!land) throw new PortalDatenFehler(`Das Länderkennzeichen „${r.kennzeichen_land}" kennt das Portal nicht.`)
   if (!u.hausnummer) throw new PortalDatenFehler('Im Profil fehlt die Hausnummer.')
@@ -406,7 +419,7 @@ export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacke
       modell: String(r.fahrzeug_modell || '').trim(),
       farbe: String(r.fahrzeug_farbe || '').trim(),
     },
-    tat: { ort: tatortText(r, zeit.zusatz ? [zeit.zusatz] : []), tattag: ddmmyyyy(r.tattag), von: zeit.von, bis: zeit.bis },
+    tat: { ort: tatortText(r, zeit.zusatz ? [zeit.zusatz] : [], !!tb?.parken), tattag: ddmmyyyy(r.tattag), von: zeit.von, bis: zeit.bis },
     email: u.email || '',
   }
 }

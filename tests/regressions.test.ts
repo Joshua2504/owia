@@ -741,7 +741,19 @@ test('Frankfurt-Portal: Tatbestand-Pfade, Varianten und Langparker', () => {
     gruppe: 'Haltverbot/gesperrter Bereich/Sonderparkplätze',
     pfad: [{ pick: ['im Haltverbot'] }, { pick: ['im absoluten Haltverbot (Zeichen 283)'] }, { pick: ['Parken'] }],
     rettung: false,
+    parken: true,
   })
+  // Fahrzeug verlassen = Parken, auch bei „Sie hielten …"; der Schutzstreifen
+  // kennt im Portal nur Halten.
+  const lbl = (tbnr: string) => { const x = VERSTOESSE.find((y) => y.tbnr === tbnr)!; return `${x.tbnr} – ${x.text}` }
+  assert.deepEqual(portalTatbestand(lbl('141070'), null, false)!.pfad[0], { pick: ['Halten'] })
+  assert.equal(portalTatbestand(lbl('141070'), null, false)!.parken, false)
+  assert.deepEqual(portalTatbestand(lbl('141070'), null, true)!.pfad[0], { pick: ['Parken'] })
+  assert.equal(portalTatbestand(lbl('141070'), null, true)!.parken, true)
+  assert.deepEqual(portalTatbestand(lbl('142170'), null, true)!.pfad[0], { pick: ['Halten'] })
+  assert.equal(portalTatbestand(lbl('142170'), null, true)!.parken, false)
+  // Bordsteinabsenkung u. Ä.: kein Halten/Parken im Pfad → Zusatz bleibt nötig.
+  assert.equal(portalTatbestand(lbl('112372'), null, true)!.parken, false)
   // Mehrdeutig ohne Variante → Live-Auswahl; mit Variante eindeutig.
   const kreuzung = '112262 – Sie parkten weniger als 5 Meter vor der Kreuzung/Einmündung.'
   assert.deepEqual(verstossVarianten(kreuzung).map((x) => x.value), ['Kreuzung', 'Einmündung'])
@@ -791,9 +803,11 @@ test('Frankfurt-Portal: jeder waehlbare Verstoß führt im Portal-Baum zu einem 
     waehlbar++
     const vs = verstossVarianten(label)
     for (const v of vs.length ? vs.map((y) => y.value) : [null]) {
-      const tb = portalTatbestand(label, v)!
-      const f = fehler(tb.gruppe, tb.pfad)
-      if (f) probleme.push(`${x.tbnr} [${v ?? '-'}]: ${f}`)
+      for (const verlassen of [false, true]) {
+        const tb = portalTatbestand(label, v, verlassen)!
+        const f = fehler(tb.gruppe, tb.pfad)
+        if (f) probleme.push(`${x.tbnr} [${v ?? '-'}${verlassen ? ', verlassen' : ''}]: ${f}`)
+      }
     }
   }
   assert.deepEqual(probleme, [])
@@ -809,6 +823,7 @@ test('Frankfurt-Portal: jeder waehlbare Verstoß führt im Portal-Baum zu einem 
 })
 
 test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
+  const lbl2 = (tbnr: string) => { const x = VERSTOESSE.find((y) => y.tbnr === tbnr)!; return `${x.tbnr} – ${x.text}` }
   assert.equal(portalMarke('VW'), 'Volkswagen')
   assert.equal(portalMarke('Mercedes'), 'Mercedes-Benz')
   assert.equal(portalMarke('vw golf'), 'Volkswagen')
@@ -834,6 +849,20 @@ test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
   assert.deepEqual(portalTatzeit({ tattag: '2026-09-11', tatzeit_von: '02:13:33' }, '2026-09-11 02:19'), { von: '02:13', bis: '02:19', zusatz: null })
   assert.deepEqual(portalTatzeit({ tattag: '2026-09-11', tatzeit_von: '02:13:33' }, null), { von: '02:13', bis: '02:13', zusatz: null })
   assert.equal(tatortText({ tatort: 'Franz-Simon-Straße 29, 65934 Frankfurt am Main', fahrzeug_verlassen: 1 }), 'Franz-Simon-Straße 29 (Fahrzeug war verlassen)')
+  assert.equal(tatortText({ tatort: 'Franz-Simon-Straße 29, 65934 Frankfurt am Main', fahrzeug_verlassen: 1 }, [], true), 'Franz-Simon-Straße 29')
+  // Payload: Parken im Pfad → kein Zusatz; Halten-Tatbestand + verlassen → Parken.
+  const basis = { kennzeichen: 'F-AB 1', kennzeichen_land: 'D', tattag: '2026-10-07', tatzeit_von: '10:00:00', tatzeit_bis: '10:30:00',
+    tatort: 'Römerberg 1, 60311 Frankfurt am Main', behinderung: 0, fahrzeug_verlassen: 1 }
+  const nutzer = { anrede: 'herr', vorname: 'M', nachname: 'M', strasse: 'Weg', hausnummer: '1', plz: '60311', ort: 'Frankfurt', email: 'm@x' } as any
+  const geparkt = buildPortalPayload({ ...basis, verstoss_art: '141174 – Sie parkten auf einem Radweg/Radfahrstreifen (Zeichen 237).' } as any, nutzer)
+  assert.equal(geparkt.tat.ort, 'Römerberg 1')
+  const gehalten = buildPortalPayload({ ...basis, verstoss_art: lbl2('141070') } as any, nutzer)
+  assert.deepEqual(gehalten.pfad[0], { pick: ['Parken'] })
+  assert.equal(gehalten.tat.ort, 'Römerberg 1')
+  const schutz = buildPortalPayload({ ...basis, verstoss_art: lbl2('142170') } as any, nutzer)
+  assert.equal(schutz.tat.ort, 'Römerberg 1 (Fahrzeug war verlassen)')
+  const bordstein = buildPortalPayload({ ...basis, verstoss_art: lbl2('112372') } as any, nutzer)
+  assert.equal(bordstein.tat.ort, 'Römerberg 1 (Fahrzeug war verlassen)')
 })
 
 test('Wiesbaden- und Mainz-Portal: Zuordnung, Prüfungen, Payload', () => {
