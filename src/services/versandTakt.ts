@@ -8,7 +8,7 @@ import { pool } from '../db/connection'
 // außer beim „nacheinander senden" (takt: true, routes/portal.ts).
 // Tabelle: migrations/0044_versand_takt.sql.
 
-export const VERSAND_ABSTAND_SEK = Number(process.env.VERSAND_ABSTAND_SEK || 300)
+export const VERSAND_ABSTAND_SEK = Number(process.env.VERSAND_ABSTAND_SEK || 60)
 
 /** Versandplatz belegen. null = belegt; sonst die Wartezeit in Sekunden bis
  *  zum nächsten freien Platz. */

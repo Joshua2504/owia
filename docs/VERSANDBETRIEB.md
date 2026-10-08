@@ -134,7 +134,7 @@ Keine Tests gegen die laufende Dev-/Produktionsdatenbank ausführen.
 ## Versand-Takt
 
 Der Portal-Versand (ekom21-Formulare, `portal.start`) startet höchstens **eine
-Anzeige alle 5 Minuten** (`services/versandTakt.ts`, Tabelle `versand_takt`).
+Anzeige pro Minute** (`services/versandTakt.ts`, Tabelle `versand_takt`).
 Der Mail-Versand (`report.dispatch`) ist nicht getaktet. Wartende Jobs stehen mit
 „Versand-Takt: nächster Versand frühestens in … min" in `jobs.error` und laufen
 automatisch weiter. Ein einzelner Start auf `/versand` wird nicht aufgehalten,
@@ -144,4 +144,4 @@ Neustarts eines verlorenen Portal-Laufs sind ausgenommen.
 Vor jedem Lauf prüft der Portal-Dienst, ob das Online-Portal der Stadt antwortet
 (Startseite, 15 s). Antwortet es nicht, startet kein Lauf (HTTP 503): der Job
 versucht es nach 60 s erneut, „nacheinander senden" ebenso.
-Abstand per `VERSAND_ABSTAND_SEK` (Default 300) änderbar.
+Abstand per `VERSAND_ABSTAND_SEK` (Default 60) änderbar.
