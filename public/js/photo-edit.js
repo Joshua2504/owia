@@ -148,6 +148,7 @@
       '<div class="small text-muted mt-1" data-photo-times hidden>' +
       '<button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-act="photo-times" title="Tattag und Uhrzeit aus den Aufnahmezeiten der Fotos übernehmen">🕒 Zeit aus Fotos übernehmen</button>' +
       ' <span data-photo-span></span></div>' +
+      '<div class="small text-muted mt-1" data-ffm-zeit hidden></div>' +
       '</div>' +
       '</div>' +
       '<div class="pe-field photo-edit-tatort"><label class="form-label" for="photo-edit-tatort-input">Tatort</label>' +
@@ -170,8 +171,8 @@
       // Feld über PATCH /anzeige/:az/felder).
       '<div class="photo-edit-details" hidden>' +
       '<label class="form-check" data-verlassen-row><input type="checkbox" class="form-check-input" data-detail="fahrzeug_verlassen"> <span class="form-check-label">Fahrzeug war verlassen</span></label>' +
-      '<div class="pe-field"><div class="d-flex align-items-center gap-2"><span class="form-label mb-0">Wurde jemand behindert?</span>' +
-      '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?">' +
+      '<div class="pe-field"><div class="d-flex align-items-center gap-2"><span class="form-label mb-0" data-beh-frage>Wurde jemand behindert?</span>' +
+      '<span class="btn-group btn-group-sm" role="group" aria-label="Wurde jemand behindert?" data-beh-wahl>' +
       '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-ja" value="1" data-detail="behinderung">' +
       '<label class="btn btn-outline-secondary" for="pe-beh-ja">Ja</label>' +
       '<input type="radio" class="btn-check" name="pe-beh" id="pe-beh-nein" value="0" data-detail="behinderung">' +
@@ -1326,7 +1327,7 @@
       return '<option' + (o === cur ? ' selected' : '') + '>' + esc(o) + '</option>'
     }).join('')
     sel.classList.toggle('is-invalid', opts.length > 0 && !cur)
-    dlg.querySelector('[data-verlassen-row]').hidden = !!(s.report && s.report.verlassenFrage === false)
+    renderFfm(s)
     var emp = s.report && s.report.recipient
     var empRow = dlg.querySelector('[data-empfaenger-row]')
     empRow.hidden = !(emp && emp.ordnungsamt)
@@ -1339,6 +1340,24 @@
     var btn = lp.querySelector('[data-act=langparker]')
     btn.dataset.label = lang || ''
     btn.textContent = lang ? '„' + lang.replace(/^\d{6} – /, '') + '" übernehmen' : ''
+  }
+  // Frankfurt-Portal (GET /pruefen/:az/daten → ffm, services/portalFfm.ts
+  // ffmFormHinweise): nur fragen, was das Portal wirklich wissen will.
+  function renderFfm(s) {
+    var ffm = (s.report && s.report.ffm) || null
+    dlg.querySelector('[data-verlassen-row]').hidden = !!(ffm && ffm.verlassenGesagt)
+    // Tatbestand „… und behinderten dadurch Andere": Ja steht fest, nur wer/wie.
+    var behFix = !!(ffm && ffm.behindert)
+    var bt = dlg.querySelector('[data-detail=behinderung_text]')
+    dlg.querySelector('[data-beh-wahl]').hidden = behFix
+    dlg.querySelector('[data-beh-frage]').textContent = behFix ? 'Wer wurde wie behindert? (laut Verstoß)' : 'Wurde jemand behindert?'
+    bt.hidden = !behFix && !dlg.querySelector('#pe-beh-ja').checked
+    var zeit = dlg.querySelector('[data-ffm-zeit]')
+    var hinweise = []
+    if (ffm && ffm.bisAuto) hinweise.push('Ohne Ende trägt das Portal-Formular ' + ffm.bisAuto + ' Uhr als Ende ein.')
+    if (ffm && ffm.abMorgen) hinweise.push('Das Portal nimmt nur vergangene Tage an – Versand ab morgen.')
+    zeit.textContent = hinweise.join(' ')
+    zeit.hidden = !hinweise.length
   }
   function readyToSubmit() {
     var s = state

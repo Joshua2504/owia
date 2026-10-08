@@ -254,11 +254,24 @@ export function portalTatbestand(label: string | null | undefined, variante?: st
   return { gruppe: regel.gruppe, pfad, rettung: regel.rettung?.(text) ?? false, parken: pfad.some(istParken) }
 }
 
-/** Legt der Frankfurter Portal-Pfad schon „Parken" fest? Dann ist „Fahrzeug
- *  war verlassen" überflüssig (§ 12 Abs. 2 StVO) und der Foto-Dialog blendet
- *  die Frage aus. Schutzstreifen kennt das Portal nur als „Halten". */
-export function verlassenSchonGesagt(label: string | null | undefined, variante: string | null | undefined): boolean {
-  return !!label && !!portalTatbestand(label, variante)?.parken
+/** Sagt schon der Tatbestand, dass Andere behindert wurden? Dann fragt das
+ *  Portal nicht mehr Ja/Nein – es ist Ja, nur noch wer und wie. */
+export const behindertLautVerstoss = (label: string | null | undefined) => /behinderten|behindert wurden/.test(String(label || ''))
+
+/** Frankfurt-Portal: was der Foto-Dialog anders zeigt als für Mail-Städte.
+ *  - verlassenGesagt: Pfad legt „Parken" fest → „Fahrzeug war verlassen" ist
+ *    überflüssig (§ 12 Abs. 2 StVO); Schutzstreifen kennt das Portal nur als „Halten".
+ *  - behindert: Ja folgt aus dem Tatbestand (s. o.).
+ *  - bisAuto: das Portal will ein Ende; fehlt es, was eingetragen wird.
+ *  - abMorgen: Tattag heute → das Portal nimmt die Anzeige erst morgen an. */
+export function ffmFormHinweise(r: Record<string, any>, letztesFoto?: string | null) {
+  const zeit = r.tatzeit_von ? portalTatzeit(r, letztesFoto) : null
+  return {
+    verlassenGesagt: !!r.verstoss_art && !!portalTatbestand(r.verstoss_art, r.verstoss_variante)?.parken,
+    behindert: behindertLautVerstoss(r.verstoss_art),
+    bisAuto: zeit && !hhmm(r.tatzeit_bis) && !zeit.zusatz ? zeit.bis : null,
+    abMorgen: erstAbMorgen(r),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -409,7 +422,7 @@ export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacke
   // führt es als „Gab es Behinderung?" – gemeint ist jede Behinderung. Daher
   // Ja, sobald jemand behindert wurde (Häkchen oder Tatbestand „… und behinderten
   // dadurch Andere"); wer und wie, steht im Pflichttext.
-  const behindert = r.behinderung === 1 || /behinderten|behindert wurden/.test(String(r.verstoss_art || ''))
+  const behindert = r.behinderung === 1 || behindertLautVerstoss(r.verstoss_art)
   const behinderungText = String(r.behinderung_text || '').trim() ||
     (behindert ? 'Andere Verkehrsteilnehmer wurden behindert (siehe Beweisfotos).' : '')
   return {

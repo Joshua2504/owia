@@ -6,7 +6,7 @@ import { getCity } from '../config/cities'
 import { cityEmail } from '../services/districts'
 import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
-import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap, verlassenSchonGesagt } from '../services/portalFfm'
+import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap, ffmFormHinweise } from '../services/portalFfm'
 import { dritteFunde, parseAnalyse, parseKennzeichenBox, erkannteKennzeichenBox } from '../services/dritte'
 import { submitProblems, kennzeichenBestaetigt } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
@@ -136,8 +136,8 @@ export default async function reviewRoutes(app: FastifyInstance) {
       varianten: verstossVarianten(report.verstoss_art).map((x) => x.value),
       langparker: (tatDauerMinuten(report) ?? 0) > 60 ? langparkerVariante(report.verstoss_art) : null,
       recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
-      // Frankfurt-Portal: „Fahrzeug war verlassen" nur fragen, wenn der Tatbestand nicht schon „Parken" sagt.
-      verlassenFrage: city.portal !== 'ekom21-ffm' || !verlassenSchonGesagt(report.verstoss_art, report.verstoss_variante),
+      // Frankfurt-Portal: Formular an dessen Fragen anpassen (photo-edit.js renderFfm).
+      ffm: city.portal === 'ekom21-ffm' ? ffmFormHinweise(report, times[times.length - 1]) : null,
       verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
       hasGps: imgs.some((i) => i.gps_lat !== null),
       // Kartenmitte ohne Tatort (Foto-Dialog, photo-edit.js): Stadtmitte.
