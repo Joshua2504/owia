@@ -133,9 +133,9 @@ Keine Tests gegen die laufende Dev-/Produktionsdatenbank ausführen.
 
 ## Versand-Takt
 
-Die Warteschlange verschickt höchstens **eine Anzeige alle 10 Minuten** – Mail
-(`report.dispatch`) wie Portal (`portal.start`), gemeinsam gezählt
-(`services/versandTakt.ts`, Tabelle `versand_takt`). Wartende Jobs stehen mit
+Der Portal-Versand (ekom21-Formulare, `portal.start`) startet höchstens **eine
+Anzeige alle 10 Minuten** (`services/versandTakt.ts`, Tabelle `versand_takt`).
+Der Mail-Versand (`report.dispatch`) ist nicht getaktet. Wartende Jobs stehen mit
 „Versand-Takt: nächster Versand frühestens in … min" in `jobs.error` und laufen
 automatisch weiter. Ein manueller Start auf `/versand` wird nicht aufgehalten,
 zählt aber mit. Neustarts eines verlorenen Portal-Laufs sind ausgenommen.

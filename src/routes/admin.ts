@@ -15,8 +15,7 @@ import { resolveSendCity } from '../services/districts'
 import { regeneratePdf, isProfileComplete } from './reports'
 import { deleteUser, UserDeleteError } from '../services/userDelete'
 import { isAdminEmail } from '../config/admin'
-import { enqueueJob, registerJob, recentJobs, JobRetryLater } from '../services/jobs'
-import { versandPlatzBelegen, versandPlatzFreigeben } from '../services/versandTakt'
+import { enqueueJob, registerJob, recentJobs } from '../services/jobs'
 import { usesPortal, enqueuePortalStart } from '../services/portalDispatch'
 
 const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
@@ -89,23 +88,7 @@ export async function approveAndDispatch(
 // Der Versand selbst nur einmal – dispatchReport sperrt über versand_status, ein
 // unklares Ergebnis muss ein Mensch prüfen (docs/VERSANDBETRIEB.md).
 registerJob('report.dispatch', async ({ reportId, aktenzeichen }, log) => {
-  // Höchstens eine Anzeige je 10 Minuten (services/versandTakt.ts) – nur
-  // takten, wenn wirklich ein Versand ansteht; sonst meldet approveAndDispatch
-  // sofort den Grund.
-  const offen = async () => {
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      "SELECT 1 FROM reports WHERE id=? AND status='eingereicht' AND versand_status IS NULL", [reportId]
-    )
-    return rows.length > 0
-  }
-  const getaktet = await offen()
-  if (getaktet) {
-    const warten = await versandPlatzBelegen()
-    if (warten !== null) throw new JobRetryLater('Versand-Takt: nächster Versand frühestens in ' + Math.ceil(warten / 60) + ' min', warten)
-  }
   const outcome = await approveAndDispatch(String(reportId), aktenzeichen, log)
-  // Nichts verschickt (Vorbereitung gescheitert): Platz zurückgeben.
-  if (getaktet && await offen()) await versandPlatzFreigeben()
   if (!outcome.ok) throw new Error(outcome.message)
 })
 

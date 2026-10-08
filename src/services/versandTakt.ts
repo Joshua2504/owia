@@ -1,9 +1,9 @@
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 
-// Versand-Warteschlange drosseln: höchstens eine Anzeige je VERSAND_ABSTAND
-// (Mail-Versand 'report.dispatch' und Portal-Start 'portal.start'), damit die
-// Bußgeldstellen nicht in kurzer Zeit viele Anzeigen auf einmal bekommen.
+// Portal-Versand drosseln: höchstens ein Portal-Start ('portal.start', ekom21-
+// Formulare) je VERSAND_ABSTAND, damit die Portale nicht in kurzer Zeit viele
+// Anzeigen auf einmal bekommen. Der Mail-Versand ist nicht getaktet.
 // Manuelle Starts auf /versand zählen mit, werden aber nicht aufgehalten.
 // Tabelle: migrations/0044_versand_takt.sql.
 
