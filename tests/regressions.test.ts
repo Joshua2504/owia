@@ -89,8 +89,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0042_kennzeichen_box.sql')
-  assert.equal(rows.length, 42)
+  assert.equal(rows.at(-1)?.filename, '0043_kennzeichen_bestaetigt.sql')
+  assert.equal(rows.length, 43)
 })
 
 test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
@@ -1063,7 +1063,8 @@ test('submitDraft: Hinderungsgründe sperren, vollständiger Entwurf wird einger
   const id = await report()
   await pool.execute(
     `UPDATE reports SET status='entwurf', tattag=DATE_SUB(CURDATE(), INTERVAL 3 DAY), tatzeit_von='10:00:00',
-       tatort='Kurpark 1, 63628 Bad Soden-Salmünster', verstoss_art=? WHERE id=?`, [VERSTOSS_ARTEN[0], id])
+       tatort='Kurpark 1, 63628 Bad Soden-Salmünster', verstoss_art=?,
+       kennzeichen_bestaetigt=CONCAT(COALESCE(kennzeichen_land,'D'),'|',kennzeichen) WHERE id=?`, [VERSTOSS_ARTEN[0], id])
   let row = (await query('SELECT * FROM reports WHERE id=?', [id]))[0]
   // Ungeprüftes Foto ⇒ nicht einreichbar, Status bleibt Entwurf.
   await pool.execute(

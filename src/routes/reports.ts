@@ -21,7 +21,7 @@ export {
   enqueuePdf,
 } from './reports/shared'
 export type { ReportImage } from './reports/shared'
-export { submitDraft, submitProblems, drittProblem } from './reports/submit'
+export { submitDraft, submitProblems, drittProblem, kennzeichenBestaetigt } from './reports/submit'
 export type { SubmitOutcome } from './reports/submit'
 export { moveImages } from './reports/images'
 

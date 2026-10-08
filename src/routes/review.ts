@@ -9,7 +9,7 @@ import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap } from '../services/portalFfm'
 import { dritteFunde, parseAnalyse, parseKennzeichenBox, erkannteKennzeichenBox } from '../services/dritte'
-import { submitProblems, mostUsedVerstoesse, VERSTOSS_SPERREN } from './reports'
+import { submitProblems, kennzeichenBestaetigt, mostUsedVerstoesse, VERSTOSS_SPERREN } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
 
 // Prüf-Modus: alle offenen Entwürfe nacheinander durchgehen – Fotos prüfen und
@@ -134,6 +134,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
       fields: {
         kennzeichen: report.kennzeichen || '',
         kennzeichen_land: report.kennzeichen_land || 'D',
+        kennzeichen_bestaetigt: kennzeichenBestaetigt(report),
         fahrzeug_marke: report.fahrzeug_marke || '',
         tattag: report.tattag_iso || '',
         tattag_bis: report.tattag_bis_iso || '',

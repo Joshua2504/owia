@@ -1228,3 +1228,8 @@ body:has(.review-actions) .back-to-top { bottom: 5rem; }
 .pe-kz-variante { padding-right: 1.4rem; background-position: right .3rem center; }
 .photo-edit-marks .pe-kz-box { width: 26rem; }
 .pe-kz-verstoss .list-group { z-index: 1090; }
+
+/* Kennzeichen „geprüft" (photo-edit.js kzOkSync). */
+.pe-kz-ok-wrap { cursor: pointer; font-size: .75rem; font-weight: 600; padding: 0 .4rem; border: 2px solid #0dcaf0; background: #fff; color: #198754; }
+.pe-kz-ok-wrap.is-open { color: #b35c00; background: #fff3cd; }
+.photo-edit-marks .pe-kz-box > .input-group { width: 17rem; }

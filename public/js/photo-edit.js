@@ -99,6 +99,7 @@
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
       '<div class="input-group flex-nowrap"><select id="pe-land" data-native class="form-select photo-edit-details" style="flex:0 0 3.6rem;width:3.6rem;padding-left:.45rem;padding-right:1.3rem;background-position:right .3rem center" data-detail="kennzeichen_land" aria-label="Länderkennzeichen" title="Land des Kennzeichens" hidden><option value="D">D</option></select>' +
       '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>' +
+      '<label class="form-check small mt-1 mb-0 pe-kz-ok-row" hidden><input type="checkbox" class="form-check-input pe-kz-ok"> <span class="form-check-label">geprüft</span></label>' +
       '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
       '<div class="pe-field photo-edit-details" hidden><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
@@ -243,6 +244,7 @@
       savePlate().then(updateUi, function () {})
     })
     plateInput().addEventListener('input', function () {
+      if (state) { state.kzOk = false; kzOkSync() }
       if (kzInEl) kzInEl.value = plateInput().value
       updateUi()
     })
@@ -373,6 +375,9 @@
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
     dlg.querySelector('[data-variante]').addEventListener('change', function (e) {
       saveDetail({ verstoss_variante: e.target.value })
+    })
+    dlg.addEventListener('change', function (e) {
+      if (e.target.classList && e.target.classList.contains('pe-kz-ok')) kzOkSetzen(e.target.checked)
     })
     dlg.querySelector('[data-act=adr-ok]').addEventListener('click', function () {
       var v = state && state.adrVorschlag
@@ -1039,6 +1044,8 @@
       .then(function (d) {
         if (state !== s || seq !== s.statusSeq || !d || d.gone) return
         s.report = d
+        s.kzOk = !!(d.fields && d.fields.kennzeichen_bestaetigt)
+        kzOkSync()
         // Verstoß-Auswahl: Sperrliste der Stadt dieser Anzeige (Frankfurt-Portal).
         verstossHidden().parentNode.dataset.city = (d.fields && d.fields.city) || ''
         fillDetails(s)
@@ -1150,6 +1157,7 @@
       .then(function () { if (state === s) loadStatus(s) })
   }
   function renderVerstossExtras(s) {
+    setTimeout(function () { if (kzInEl && state === s) kzMehrSync() }, 0)
     var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') }
     var sel = dlg.querySelector('[data-variante]')
     var opts = (s.report && s.report.varianten) || []
@@ -1400,6 +1408,11 @@
     kzInEl.setAttribute('autocapitalize', 'characters')
     kzInEl.setAttribute('aria-label', 'Kennzeichen')
     grp.appendChild(kzInEl)
+    var okLab = document.createElement('label')
+    okLab.className = 'input-group-text pe-kz-ok-wrap'
+    okLab.title = 'Kennzeichen geprüft'
+    okLab.innerHTML = '<input type="checkbox" class="form-check-input m-0 pe-kz-ok" aria-label="Kennzeichen geprüft"><span class="ms-1">geprüft</span>'
+    grp.appendChild(okLab)
     // Zweite Zeile: Fahrzeug (Typ, Marke, Modell, Farbe) – Spiegel der Felder
     // in der Seitenleiste, gespeichert wird über deren change-Handler.
     var mehr = document.createElement('div')
@@ -1472,6 +1485,7 @@
     kzBoxEl.appendChild(varEl)
     kzMirrors.push({ src: varSrc, el: varEl, variante: true })
     kzInEl.addEventListener('input', function () {
+      if (state) { state.kzOk = false; kzOkSync() }
       plateInput().value = kzInEl.value
       updateUi()
     })
@@ -1484,6 +1498,25 @@
     kzInEl.placeholder = state.detected || 'Kennzeichen'
     kzInEl.classList.toggle('is-invalid', !normPlate(cur))
     kzInEl.classList.toggle('is-mismatch', !!state.detected && !!normPlate(cur) && compact(state.detected) !== compact(cur))
+  }
+  // Kennzeichen „geprüft" (Pflicht vor dem Einreichen; gilt nur für den
+  // bestätigten Stand – jede Änderung am Kennzeichen hebt es auf, s. submit.ts).
+  function kzOkSync() {
+    var s = state
+    var on = !!(s && s.kzOk)
+    dlg.querySelectorAll('.pe-kz-ok').forEach(function (c) { c.checked = on })
+    var row = dlg.querySelector('.pe-kz-ok-row')
+    row.hidden = !(s && s.report)
+    row.classList.toggle('text-warning', !on)
+    dlg.querySelectorAll('.pe-kz-ok-wrap').forEach(function (w) { w.classList.toggle('is-open', !on) })
+  }
+  function kzOkSetzen(on) {
+    var s = state
+    if (!s || !s.report) return
+    if (on && !normPlate(plateInput().value)) { kzOkSync(); return plateInput().focus() }
+    s.kzOk = on
+    kzOkSync()
+    savePlate().then(function () { if (state === s) saveDetail({ kennzeichen_bestaetigt: on }) }, function () { s.kzOk = false; kzOkSync() })
   }
   function kzPflicht(s) {
     return !!(s && s.plate != null && s.az)

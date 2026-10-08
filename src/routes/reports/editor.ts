@@ -262,6 +262,13 @@ export default async function editorRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: `Diesen Tatbestand bietet das Online-Portal der Stadt ${getCity(city).name} nicht an – bitte einen anderen Verstoß wählen.` })
       }
     }
+    // Kennzeichen bestätigt (Foto-Dialog): Stand von Land + Kennzeichen merken –
+    // als letzte Zuweisung, damit sie die neuen Werte desselben PATCH sieht.
+    if (typeof body.kennzeichen_bestaetigt === 'boolean') {
+      sets.push(body.kennzeichen_bestaetigt
+        ? "kennzeichen_bestaetigt=IF(kennzeichen IS NULL OR kennzeichen='', NULL, CONCAT(COALESCE(kennzeichen_land,'D'),'|',kennzeichen))"
+        : 'kennzeichen_bestaetigt=NULL')
+    }
     if (!sets.length) return reply.status(400).send({ error: 'Keine Änderung übermittelt.' })
     const [result] = await pool.execute<mysql.ResultSetHeader>(
       `UPDATE reports SET ${sets.join(', ')}

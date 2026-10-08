@@ -231,6 +231,11 @@ export async function submitDraft(
  *  „einreichbar" und der Submit lehnt trotzdem ab. Seiteneffekt wie beim
  *  Submit: Weicht die aus dem Tatort ermittelte Stadt ab, wird sie
  *  festgeschrieben (report.city wird mit aktualisiert). */
+/** Passt die Bestätigung (Häkchen „geprüft") zum aktuellen Kennzeichen? */
+export function kennzeichenBestaetigt(report: mysql.RowDataPacket): boolean {
+  return !!report.kennzeichen && report.kennzeichen_bestaetigt === `${report.kennzeichen_land || 'D'}|${report.kennzeichen}`
+}
+
 export async function submitProblems(
   report: mysql.RowDataPacket,
   userId: number
@@ -244,6 +249,9 @@ export async function submitProblems(
     !report.verstoss_art && 'Verstoß',
   ].filter(Boolean)
   if (missing.length) problems.push({ kind: 'fields', message: `Es fehlt: ${missing.join(', ')}.` })
+  if (report.kennzeichen && !kennzeichenBestaetigt(report)) {
+    problems.push({ kind: 'kennzeichen', message: 'Bitte das Kennzeichen prüfen und als geprüft bestätigen.' })
+  }
   if (isVerjaehrt(report)) problems.push({ kind: 'verjaehrt', message: 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.' })
   const unchecked = await countUncheckedImages(report.id)
   if (unchecked) problems.push({ kind: 'photos', message: uncheckedMessage(unchecked) })
