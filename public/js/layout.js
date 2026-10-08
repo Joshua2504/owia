@@ -74,4 +74,25 @@
     if (!el) return
     if (!confirm(el.dataset.confirm)) e.preventDefault()
   })
+  // Sticky-Header: Höhe als --owia-nav-h, damit andere sticky-Elemente
+  // darunter ankleben. "Nach oben"-Button erscheint nach etwas Scrollen.
+  ;(function () {
+    var nav = document.getElementById('site-nav')
+    if (nav) {
+      var setH = function () { document.documentElement.style.setProperty('--owia-nav-h', nav.offsetHeight + 'px') }
+      setH()
+      window.addEventListener('resize', setH)
+      nav.addEventListener('shown.bs.collapse', setH)
+      nav.addEventListener('hidden.bs.collapse', setH)
+    }
+    var btn = document.getElementById('back-to-top')
+    if (!btn) return
+    var update = function () { btn.hidden = window.scrollY < 400 }
+    window.addEventListener('scroll', update, { passive: true })
+    update()
+    btn.addEventListener('click', function () {
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
+    })
+  })()
 })()

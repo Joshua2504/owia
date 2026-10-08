@@ -739,7 +739,7 @@ html.has-editor-dialog { overflow: hidden; }
   margin-bottom: 1rem;
 }
 .editor-embed .editor-head { display: none; } /* Titel steht im Modal-Kopf */
-.editor-queue { top: 0.5rem; z-index: 1030; }
+.editor-queue { top: calc(var(--owia-nav-h, 0px) + 0.5rem); z-index: 1019; }
 .editor-section { margin-bottom: 1rem; }
 .editor-section-head {
   display: flex;
@@ -1126,7 +1126,7 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 .versand-item { cursor: pointer; }
 .versand-item.active-run { box-shadow: inset 4px 0 0 var(--bs-primary); background: var(--bs-tertiary-bg); }
 .versand-item.is-done { opacity: 0.55; }
-.versand-screen { position: relative; background: #f1f3f5; border: 1px solid var(--bs-border-color); border-radius: 0.375rem; overflow: hidden; outline: none; }
+.versand-screen { position: relative; background: var(--bs-tertiary-bg); border: 1px solid var(--bs-border-color); border-radius: 0.375rem; overflow: hidden; outline: none; }
 .versand-screen:focus-visible { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
 .versand-screen img { display: block; width: 100%; height: auto; cursor: crosshair; user-select: none; }
 .versand-screen-empty { padding: 4rem 1rem; text-align: center; }
@@ -1139,3 +1139,24 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 
 /* Foto-Dialog: Datenschutz-Warnung (fremde Kennzeichen/Gesichter) */
 .photo-edit-tile.has-dritte { border-color: #ffc107; }
+
+/* Sticky-Header: Anker-Sprünge nicht unter der Navbar verstecken. */
+html { scroll-padding-top: calc(var(--owia-nav-h, 0px) + 0.5rem); }
+
+/* "Nach oben"-Button (layout.js blendet ihn nach 400 px Scrollen ein). */
+.back-to-top {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1040;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.25rem;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.back-to-top[hidden] { display: none; }
+body:has(.editor-actions) .back-to-top,
+body:has(.review-actions) .back-to-top { bottom: 5rem; }

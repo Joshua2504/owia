@@ -39,7 +39,7 @@
 <% const _embed = !!locals.embed %>
 <body class="<%= _embed ? 'is-embed' : '' %>"<%= isAdmin ? ' data-admin' : '' %>>
   <% if (!_embed) { %>
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top" id="site-nav">
     <div class="<%= locals.wide ? 'container-fluid px-3 px-xl-4' : 'container' %>">
       <a class="navbar-brand fw-bold" href="/">🚗 OWiA-Anzeiger</a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
@@ -132,6 +132,7 @@
       <a href="/statistik" class="text-muted">Statistik</a>
     </div>
   </footer>
+  <button type="button" id="back-to-top" class="btn btn-dark back-to-top" aria-label="Nach oben" title="Nach oben" hidden>↑</button>
   <% } %>
 
   <%# layout.js: Service Worker, Flash, Cookie-Hinweis, Theme-Umschalter und

@@ -965,7 +965,7 @@
     if (!s || s.plate == null) return
     var run = window.photoEditorRun
     dlg.querySelector('.photo-edit-run-label').textContent = (run && run.label ? run.label() + ' · ' : '') + s.az
-    box.querySelector('[data-act=skip]').parentNode.hidden = !run
+    box.querySelector('[data-act=skip]').hidden = !run
     var probs = dlg.querySelector('.photo-edit-problems')
     var btn = box.querySelector('[data-act=submit]')
     var ready = readyToSubmit()
@@ -1045,6 +1045,7 @@
   function trashReport() {
     var s = state
     if (!s || s.busy) return
+    if (!window.photoEditorRun && !confirm('Anzeige ' + s.az + ' in den Papierkorb verschieben? (30 Tage wiederherstellbar)')) return
     s.busy = true
     fetch('/anzeige/' + encodeURIComponent(s.az) + '/discard', { method: 'POST', headers: { Accept: 'application/json' } })
       .then(function (r) {
@@ -1388,6 +1389,7 @@
 
   function close() {
     var az = state && state.az
+    setUrl(null)
     dlg.querySelector('.photo-edit-move-menu').hidden = true
     dlg.close()
     document.documentElement.classList.remove('has-editor-dialog')
@@ -1562,6 +1564,7 @@
     }
     renderStrip()
     updateMoveLabel()
+    setUrl(state)
     canvas.width = 1
     canvas.height = 1
     msg('Foto wird geladen …')
@@ -1603,7 +1606,37 @@
     else if (window.submitPreview) window.submitPreview.open(row.getAttribute('data-az'))
   })
 
+  // Geöffnetes Foto in der Adresszeile (?anzeige=AZ&foto=N): Neuladen oder
+  // ein geteilter Link öffnet denselben Dialog wieder (s. openFromUrl).
+  function setUrl(s) {
+    if (!window.history || !history.replaceState) return
+    var u = new URL(location.href)
+    if (s && s.az) {
+      u.searchParams.set('anzeige', s.az)
+      u.searchParams.set('foto', String(s.pos || 1))
+    } else {
+      u.searchParams.delete('anzeige')
+      u.searchParams.delete('foto')
+    }
+    if (u.href !== location.href) history.replaceState(history.state, '', u.href)
+  }
+
+  function openFromUrl() {
+    var q = new URLSearchParams(location.search)
+    var az = q.get('anzeige')
+    if (!az || (dlg && dlg.open)) return false
+    var row = document.querySelector('[data-az="' + az.replace(/[^\w-]/g, '') + '"]')
+    var all = row ? row.querySelectorAll('[data-photo-edit]') : []
+    if (!all.length) return false
+    var n = Math.max(1, parseInt(q.get('foto'), 10) || 1)
+    openThumb(all[Math.min(n, all.length) - 1])
+    return true
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openFromUrl)
+  else setTimeout(openFromUrl, 0)
+
   window.photoEditor = {
+    openFromUrl: openFromUrl,
     open: open,
     openThumb: openThumb,
     close: function () { if (dlg && dlg.open) close() },

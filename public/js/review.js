@@ -24,7 +24,7 @@
   var init = JSON.parse(dataEl.textContent)
   if (!init.queue.length) return
 
-  var SKIP_KEY = 'owia-review-skip:' + location.search
+  var SKIP_KEY = 'owia-review-skip:' + location.search.replace(/[?&](anzeige|foto)=[^&]*/g, '').replace(/^&/, '?')
   var AUTO_KEY = 'owia-review-autophoto'
   function store(kind, key, val) {
     try {
