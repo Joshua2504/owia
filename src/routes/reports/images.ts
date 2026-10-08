@@ -12,7 +12,7 @@ import { queueTatortFill } from '../../services/tatortFill'
 import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage } from '../../services/images'
 import { processReportImage, processReportImageDerivatives, loadThumbnail, withIntakeUploadLock } from '../../services/intakeImageProcessing'
 import { createDraft, reportDir, UPLOAD_DIR } from '../../services/drafts'
-import { alprEnabled } from '../../services/alpr'
+import { alprEnabled, recognizePlate } from '../../services/alpr'
 import { queuePlateAnalysis, queueAnalyseOnly, plateCropName, bestPlateForReport, prefillReportPlate } from '../../services/plateAnalysis'
 import { photoSha256, findExistingPhoto } from '../../services/photoDedup'
 import { parseKennzeichenBox } from '../../services/dritte'
@@ -252,6 +252,79 @@ export default async function imageRoutes(app: FastifyInstance) {
       queueAnalyseOnly(userId, old.report_id, Number(imageId), filename, prepared.mimetype)
     }
 
+    return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` } })
+  })
+
+  // Original wiederherstellen (Foto-Dialog „⟲ Original"): verwirft alle
+  // eingebackenen Bearbeitungen – Schwärzungen (auch die automatischen aus
+  // services/dritteSchwaerzen.ts), Zuschnitt, Drehen –, damit sich eine falsche
+  // Schwärzung korrigieren lässt. Danach ist das Foto wieder ungeprüft und die
+  // Datenschutz-Analyse frisch: Fremde Funde sperren das Einreichen wie beim
+  // Erst-Upload, bis sie im Dialog geschwärzt oder freigegeben sind.
+  app.post('/anzeige/:az/images/:imageId/original', { preHandler: requireAuth }, async (request, reply) => {
+    const { az, imageId } = request.params as { az: string; imageId: string }
+    const userId = request.session.userId as number
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT ri.filename, ri.mimetype, ri.original_filename, ri.original_mimetype, ri.detected_plate, r.id AS report_id
+         FROM report_images ri JOIN reports r ON r.id = ri.report_id
+        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf' AND r.versand_status IS NULL`,
+      [Number(imageId), az, userId]
+    )
+    const old = rows[0]
+    if (!old) return reply.status(409).send({ error: 'Nur Fotos von Entwürfen lassen sich zurücksetzen.' })
+    if (!old.original_filename || old.filename === old.original_filename) {
+      return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` }, unveraendert: true })
+    }
+
+    const dir = reportDir(userId, old.report_id)
+    let buffer: Buffer
+    try {
+      buffer = await fs.readFile(path.join(dir, old.original_filename))
+    } catch {
+      return reply.status(410).send({ error: 'Das Original dieses Fotos ist nicht mehr vorhanden.' })
+    }
+    // JPG/PNG: das Original ist selbst die nutzbare Fassung (wie nach dem
+    // Upload). HEIC: neu konvertieren – das Original bleibt unangetastet.
+    let filename: string = old.original_filename
+    let mimetype: string = old.original_mimetype || old.mimetype
+    let prepared: PreparedImage
+    try {
+      prepared = await prepareImage(buffer, old.original_filename, old.original_mimetype || '')
+    } catch {
+      return reply.status(422).send({ error: 'Das Original lässt sich nicht lesen.' })
+    }
+    if (prepared.converted) {
+      filename = await writeReplacementImage(dir, prepared)
+      mimetype = prepared.mimetype
+    }
+
+    const [res] = await pool.execute<mysql.ResultSetHeader>(
+      `UPDATE report_images SET filename=?, mimetype=?, analyse_json=NULL, dritte_ok=0,
+              kennzeichen_box=NULL, kennzeichen_keins=0, geprueft_at=NULL
+        WHERE id=? AND filename=?`,
+      [filename, mimetype, Number(imageId), old.filename]
+    )
+    if (!res.affectedRows) {
+      if (filename !== old.original_filename) await fs.rm(path.join(dir, filename), { force: true }).catch(() => {})
+      return reply.status(409).send({ error: 'Das Foto wurde gerade geändert – bitte erneut versuchen.' })
+    }
+    // Kennzeichen-Ausschnitt (aus der Erkennung des Originals) mitnehmen, dann
+    // die bearbeitete Fassung samt Ableitungen wegräumen.
+    if (old.detected_plate !== null) {
+      await fs.rename(path.join(dir, plateCropName(old.filename)), path.join(dir, plateCropName(filename))).catch(() => {})
+    }
+    await fs.rm(path.join(dir, old.filename), { force: true }).catch(() => {})
+    await removeDerivedFiles(dir, old.filename)
+    queueDerivatives(dir, filename, mimetype)
+
+    // Analyse direkt hier statt in der Queue: Der Dialog zeigt die fremden
+    // Funde gleich nach dem Zurücksetzen als Schwärzungs-Vorschlag an.
+    const result = alprEnabled() ? await recognizePlate(path.join(dir, filename), mimetype).catch(() => null) : null
+    if (result?.analyse) {
+      await pool.execute('UPDATE report_images SET analyse_json=? WHERE id=? AND filename=?', [JSON.stringify(result.analyse), Number(imageId), filename])
+    } else {
+      queueAnalyseOnly(userId, old.report_id, Number(imageId), filename, mimetype)
+    }
     return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` } })
   })
 

@@ -1173,3 +1173,46 @@ test('Foto duplizieren kopiert Datei und Zeile, Kopie steht ungeprüft am Ende',
     assert.equal(await fsp.readFile(path.join(dir, neu.filename), 'utf8'), 'JPEGDATA')
   } finally { await app.close() }
 })
+
+test('Original wiederherstellen verwirft die bearbeitete Fassung, nur bei Entwürfen', async () => {
+  const fsp = await import('node:fs/promises')
+  const jpeg = (await import('jpeg-js')).default
+  const { reportDir } = await import('../src/services/drafts')
+  const id = await report()
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
+  const dir = reportDir(userId, id)
+  await fsp.mkdir(dir, { recursive: true })
+  const bild = jpeg.encode({ data: Buffer.alloc(4 * 4 * 4, 200), width: 4, height: 4 }, 90).data
+  await fsp.writeFile(path.join(dir, 'bild-orig.jpg'), bild)
+  await fsp.writeFile(path.join(dir, 'bild-schwarz.jpg'), bild)
+  await fsp.writeFile(path.join(dir, 'bild-schwarz.jpg.thumb.jpg'), 'T')
+  const [ins] = await pool.execute<mysql.ResultSetHeader>(
+    `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype, sort_order, geprueft_at, dritte_ok, analyse_json, kennzeichen_box)
+     VALUES (?, 'bild-schwarz.jpg', 'image/jpeg', 'bild-orig.jpg', 'image/jpeg', 1, NOW(), 1, '{"w":4,"h":4,"plates":[],"faces":[]}', '[0.1,0.1,0.2,0.2]')`, [id])
+  const app = Fastify()
+  app.addHook('preHandler', async request => {
+    request.session = { userId, userEmail: 'orig@example.invalid' } as typeof request.session
+  })
+  await app.register(reportsRoutes)
+  try {
+    const res = await app.inject({ method: 'POST', url: `/anzeige/${az}/images/${ins.insertId}/original` })
+    assert.equal(res.statusCode, 200, res.body)
+    const row = (await query('SELECT * FROM report_images WHERE id=?', [ins.insertId]))[0]
+    assert.equal(row.filename, 'bild-orig.jpg')
+    assert.equal(row.geprueft_at, null)
+    assert.equal(row.dritte_ok, 0)
+    assert.equal(row.kennzeichen_box, null)
+    await assert.rejects(fsp.access(path.join(dir, 'bild-schwarz.jpg')))
+    await assert.rejects(fsp.access(path.join(dir, 'bild-schwarz.jpg.thumb.jpg')))
+    await fsp.access(path.join(dir, 'bild-orig.jpg'))
+    // Nichts mehr zu tun: unverändert, Original bleibt.
+    const nochmal = await app.inject({ method: 'POST', url: `/anzeige/${az}/images/${ins.insertId}/original` })
+    assert.equal(nochmal.json().unveraendert, true)
+    // Eingereichte Anzeigen bleiben unangetastet.
+    await pool.execute("UPDATE report_images SET filename='bild-x.jpg' WHERE id=?", [ins.insertId])
+    await pool.execute("UPDATE reports SET status='eingereicht' WHERE id=?", [id])
+    const gesperrt = await app.inject({ method: 'POST', url: `/anzeige/${az}/images/${ins.insertId}/original` })
+    assert.equal(gesperrt.statusCode, 409)
+  } finally { await app.close() }
+})

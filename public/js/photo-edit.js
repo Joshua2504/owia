@@ -82,6 +82,7 @@
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="crop-reset" title="Zuschnitt aufheben" hidden>⤢ Ganzes Foto</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="rotate" title="Um 90° drehen">⟳ Drehen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="undo" disabled>↩︎ Rückgängig</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-warning" data-act="original" title="Gespeicherte Bearbeitungen verwerfen (auch automatische Schwärzungen) und das unbearbeitete Original laden" hidden>⟲ Original</button>' +
       '</div></div>' +
       '</div>' +
       // Seitenleiste mit den Angaben der Anzeige (nur bei Entwürfen). Helles
@@ -236,6 +237,7 @@
     window.addEventListener('resize', function () { if (dlg.open && state && state.base) renderMarks() })
     dlg.querySelector('[data-act=rotate]').addEventListener('click', rotate)
     dlg.querySelector('[data-act=undo]').addEventListener('click', undo)
+    dlg.querySelector('[data-act=original]').addEventListener('click', restoreOriginal)
     dlg.querySelector('[data-act=cancel]').addEventListener('click', cancel)
     dlg.querySelector('[data-act=save]').addEventListener('click', save)
     dlg.querySelector('[data-act=delete]').addEventListener('click', remove)
@@ -927,6 +929,7 @@
       b.classList.toggle('active', b.dataset.tool === state.tool)
     })
     dlg.querySelector('[data-act=undo]').disabled = !state.history.length
+    syncOriginal()
     var saveBtn = dlg.querySelector('[data-act=save]')
     saveBtn.disabled = !state.base || !!state.busy
     if (!state.busy) saveBtn.textContent = '✓ Bestätigen'
@@ -1193,6 +1196,7 @@
         renderRolle(s)
         kzInit(s)
         syncMap(s)
+        syncOriginal()
         updateRun()
       })
   }
@@ -2067,6 +2071,51 @@
         throw e
       })
   }
+  // „⟲ Original": Rückgängig kennt nur die Schritte seit dem Öffnen – eine
+  // gespeicherte Fassung (eigene oder die automatische Schwärzung,
+  // services/dritteSchwaerzen.ts) lässt sich nur über den Server zurücksetzen
+  // (POST …/original). Danach ist das Foto ungeprüft, die Analyse des
+  // Originals liefert die Schwärzungs-Vorschläge neu.
+  function syncOriginal() {
+    var b = dlg.querySelector('[data-act=original]')
+    var info = currentImage(state)
+    b.hidden = state.plate == null || !(state.gespeichert || (info && info.bearbeitet))
+    b.disabled = !!state.busy
+  }
+  function restoreOriginal() {
+    var s = state
+    if (!s || s.busy) return
+    if (!confirm('Alle gespeicherten Bearbeitungen dieses Fotos verwerfen – Schwärzungen (auch automatische), Zuschnitt, Drehen – und das unbearbeitete Original wiederherstellen?\n\nDanach bitte neu schwärzen und das Foto erneut bestätigen.')) return
+    // Ausstehendes Auto-Speichern verwerfen – es würde die alte Fassung zurückschreiben.
+    clearTimeout(s.saveTimer)
+    s.saveTimer = null
+    s.dirty = false
+    s.kzGeaendert = false
+    s.busy = true
+    updateUi()
+    msg('Original wird wiederhergestellt …')
+    ;(s.saveChain || Promise.resolve())
+      .catch(function () {})
+      .then(function () { return fetch(s.put + '/original', { method: 'POST', headers: { Accept: 'application/json' } }) })
+      .then(function (r) {
+        return r.json().catch(function () { return {} }).then(function (d) {
+          if (!r.ok || r.redirected) throw new Error(d.error || 'Original konnte nicht wiederhergestellt werden.')
+        })
+      })
+      .then(function () {
+        fassung[s.put] = Date.now()
+        if (s.thumb) s.thumb.setAttribute('data-geprueft', '0')
+        s.busy = false
+        if (state !== s) return
+        if (s.thumb) openThumb(s.thumb)
+        else close()
+      }, function (err) {
+        s.busy = false
+        if (state === s) { msg(''); updateUi() }
+        alert(err.message)
+      })
+  }
+
   function undo() {
     var s = state.history.pop()
     if (!s) return

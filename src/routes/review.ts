@@ -121,7 +121,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
     }
     const problems = await submitProblems(report, userId)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, filename, detected_plate, analyse_json, dritte_ok, geprueft_at, gps_lat, kennzeichen_box, kennzeichen_keins,
+      `SELECT id, filename, original_filename, detected_plate, analyse_json, dritte_ok, geprueft_at, gps_lat, kennzeichen_box, kennzeichen_keins,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i') AS captured
          FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
@@ -184,6 +184,8 @@ export default async function reviewRoutes(app: FastifyInstance) {
           // analysierten Fassung, Größe in groesse) – photo-edit.js schwärzt sie.
           dritte: i.dritte_ok ? [] : dritteFunde(i.analyse_json, report.kennzeichen),
           dritteOk: !!i.dritte_ok,
+          // Eingebackene Bearbeitung (Schwärzung, Zuschnitt …) – „⟲ Original“ im Dialog.
+          bearbeitet: !!i.original_filename && i.filename !== i.original_filename,
           groesse: (() => { const a = parseAnalyse(i.analyse_json); return a ? { w: a.w, h: a.h } : null })(),
           ok: i.geprueft_at !== null,
           // Kennzeichen-Markierung (Anteile 0..1): gespeichert, sonst Vorschlag
