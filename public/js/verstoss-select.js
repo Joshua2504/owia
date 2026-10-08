@@ -32,6 +32,54 @@
       .replace(/ß/g, 'ss')
   }
 
+  // Verkehrszeichen vor jedem Eintrag, der „Zeichen NNN" nennt. Die SVGs liegen
+  // unter /public/zeichen/<Nummer>.svg (Quellen: public/zeichen/QUELLEN.txt).
+  const ZEICHEN = new Set(('201 205 206 215 224 229 237 238 239 240 241 242.1 244.1 244.2 245 250 251 253 255 ' +
+    '257-50 257-54 257-55 257-56 257-57 257-58 260 262 263 264 265 266 267 270.1 270.2 283 286 290.1 290.2 ' +
+    '295 296 297 298 299 306 314 314.1 314.2 315 325.1 325.2 328 340').split(' '))
+  const zeichenCache = new Map()
+  // „Zeichen 240/241", „Zeichen 290.1, 290.2", „Zeichen 257-<50/54/55>" → Nummern.
+  function zeichenAus(text) {
+    let z = zeichenCache.get(text)
+    if (z) return z
+    z = []
+    const re = /Zeichen\s+(\d{3}(?:\.\d)?(?:-\d{2})?(?:\s*(?:\/|,)\s*\d{2,3}(?:\.\d)?)*)/g
+    let m
+    while ((m = re.exec(String(text).replace(/[<>]/g, '')))) {
+      let prefix = ''
+      for (let n of m[1].split(/\s*(?:\/|,)\s*/)) {
+        if (n.indexOf('-') !== -1) prefix = n.split('-')[0] + '-'
+        else if (prefix && n.length === 2) n = prefix + n
+        if (ZEICHEN.has(n) && z.indexOf(n) === -1) z.push(n)
+      }
+    }
+    zeichenCache.set(text, z)
+    return z
+  }
+  // Text + Zeichen als Inhalt eines Listeneintrags.
+  function fillItem(el, text) {
+    const z = zeichenAus(text)
+    if (!z.length) {
+      el.textContent = text
+      return
+    }
+    el.classList.add('verstoss-item')
+    const icons = document.createElement('span')
+    icons.className = 'verstoss-zeichen'
+    for (const n of z) {
+      const img = document.createElement('img')
+      img.src = '/public/zeichen/' + n + '.svg'
+      img.alt = 'Zeichen ' + n
+      img.title = 'Zeichen ' + n
+      img.loading = 'lazy'
+      img.decoding = 'async'
+      icons.appendChild(img)
+    }
+    const span = document.createElement('span')
+    span.textContent = text
+    el.append(icons, span)
+  }
+
   // Normalisierter Katalog einmal pro Datenobjekt – in der Liste teilen sich
   // hunderte Felder denselben Katalog.
   const prepared = new WeakMap()
@@ -173,7 +221,7 @@
         d.className = 'list-group-item disabled small py-2 text-muted verstoss-gesperrt'
         d.setAttribute('aria-disabled', 'true')
         d.title = gesperrtText(sp)
-        d.textContent = text
+        fillItem(d, text)
         d.addEventListener('mousedown', (e) => e.preventDefault()) // Fokus behalten
         menu.appendChild(d)
         return
@@ -182,7 +230,8 @@
       btn.type = 'button'
       const isSel = text === committed()
       btn.className = 'list-group-item list-group-item-action small py-2' + (isSel ? ' active' : '')
-      btn.textContent = text
+      btn.dataset.text = text
+      fillItem(btn, text)
       btn.addEventListener('mousedown', (e) => {
         e.preventDefault() // vor dem blur wählen
         choose(text)
@@ -301,7 +350,7 @@
         const b = buttons[active >= 0 ? active : 0]
         if (b) {
           e.preventDefault()
-          choose(b.textContent)
+          choose(b.dataset.text)
         }
       } else if (e.key === 'Escape') {
         close()

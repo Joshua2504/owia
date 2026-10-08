@@ -1,0 +1,56 @@
+Verkehrszeichen nach StVO (Anlagen 1–3), als SVG von Wikimedia Commons.
+Amtliche Werke (§ 5 UrhG), gemeinfrei. Verwendet in der Verstoß-Auswahl
+(public/js/verstoss-select.js). Dateiname = Zeichennummer.
+
+201.svg  https://commons.wikimedia.org/wiki/File:Zeichen_201-50_–_Andreaskreuz_-_Dem_Schienenverkehr_Vorrang_gewähren!_StVO_1992.svg
+205.svg  https://commons.wikimedia.org/wiki/File:Zeichen_205_-_Vorfahrt_gewähren!_StVO_1970.svg
+206.svg  https://commons.wikimedia.org/wiki/File:Zeichen_206_-_Halt!_Vorfahrt_gewähren!_StVO_2017.svg
+215.svg  https://commons.wikimedia.org/wiki/File:Zeichen_215_-_Kreisverkehr,_StVO_2000.svg
+224.svg  https://commons.wikimedia.org/wiki/File:Zeichen_224_-_Haltestelle,_StVO_2017.svg
+229.svg  https://commons.wikimedia.org/wiki/File:Zeichen_229_-_Taxenstand,_StVO_1994.svg
+237.svg  https://commons.wikimedia.org/wiki/File:Zeichen_237_-_Sonderweg_Radfahrer,_StVO_1992.svg
+238.svg  https://commons.wikimedia.org/wiki/File:Zeichen_238_-_Sonderweg_Reiter,_StVO_1992.svg
+239.svg  https://commons.wikimedia.org/wiki/File:Zeichen_239_-_Sonderweg_Fußgänger,_StVO_1992.svg
+240.svg  https://commons.wikimedia.org/wiki/File:Zeichen_240_-_Gemeinsamer_Fuß-_und_Radweg,_StVO_1992.svg
+241.svg  https://commons.wikimedia.org/wiki/File:Zeichen_241-30_-_getrennter_Rad-_und_Fußweg,_StVO_1992.svg
+242.1.svg  https://commons.wikimedia.org/wiki/File:Zeichen_242.1_-_Beginn_einer_Fußgängerzone,_StVO_2009.svg
+244.1.svg  https://commons.wikimedia.org/wiki/File:Zeichen_244.1_-_Beginn_einer_Fahrradstraße,_StVO_2013.svg
+244.2.svg  https://commons.wikimedia.org/wiki/File:Zeichen_244.2_-_Ende_einer_Fahrradstraße,_StVO_2013.svg
+245.svg  https://commons.wikimedia.org/wiki/File:Zeichen_245_-_Bussonderfahrstreifen,_StVO_2013.svg
+250.svg  https://commons.wikimedia.org/wiki/File:Zeichen_250_-_Verbot_für_Fahrzeuge_aller_Art,_StVO_1992.svg
+251.svg  https://commons.wikimedia.org/wiki/File:Zeichen_251_-_Verbot_für_Kraftwagen_und_sonstige_mehrspurige_Kraftfahrzeuge,_StVO_1992.svg
+253.svg  https://commons.wikimedia.org/wiki/File:Zeichen_253_-_Verbot_für_Kraftfahrzeuge_mit_einem_zulässigen_Gesamtgewicht,_StVO_1992.svg
+255.svg  https://commons.wikimedia.org/wiki/File:Zeichen_255_-_Verbot_für_Krafträder,_auch_mit_Beiwagen,_Kleinkrafträder_und_Mofas,_StVO_1992.svg
+257-50.svg  https://commons.wikimedia.org/wiki/File:Zeichen_257-50_-_Verbot_für_Mofas,_StVO_2017.svg
+257-54.svg  https://commons.wikimedia.org/wiki/File:Zeichen_257-54_-_Verbot_für_Kraftomnibusse,_StVO_2017.svg
+257-55.svg  https://commons.wikimedia.org/wiki/File:Zeichen_257-55_-_Verbot_für_Personenkraftwagen,_StVO_2017.svg
+257-56.svg  https://commons.wikimedia.org/wiki/File:Zeichen_257-56_-_Verbot_für_Personenkraftwagen_mit_Anhänger,_StVO_2017.svg
+257-57.svg  https://commons.wikimedia.org/wiki/File:Zeichen_257-57_-_Verbot_für_Lastkraftwagen_mit_Anhänger,_StVO_2017.svg
+257-58.svg  https://commons.wikimedia.org/wiki/File:Zeichen_257-58_-_Verbot_für_Kraftfahrzeuge_und_Züge,_die_nicht_schneller_als_25_km-h_fahren_können_oder_dürfen,_StVO_2017.svg
+260.svg  https://commons.wikimedia.org/wiki/File:Zeichen_260_-_Verbot_für_Krafträder_und_Mofas_und_sonstige_mehrspurige_Kraftfahrzeuge,_StVO_1992.svg
+262.svg  https://commons.wikimedia.org/wiki/File:Zeichen_262_-_Verbot_für_Fahrzeuge_deren_tatsächliches_Gewicht_eine_gewisse_Grenze_überschreitet_(600x600);_StVO_1992.svg
+263.svg  https://commons.wikimedia.org/wiki/File:Zeichen_263_-_Verbot_für_Fahrzeuge_über_angegebene_tatsächliche_Achslast,_StVO_1992.svg
+264.svg  https://commons.wikimedia.org/wiki/File:Zeichen_264_-_Verbot_für_Fahrzeuge_über_angegebene_Breite_einschließlich_Ladung,_StVO_1992.svg
+265.svg  https://commons.wikimedia.org/wiki/File:Zeichen_265_-_Verbot_für_Fahrzeuge,_deren_tatsächliche_Höhe_einschließlich_Ladung_eine_bestimmte_Grenze_überschreitet_(600x600);_StVO_1992.svg
+266.svg  https://commons.wikimedia.org/wiki/File:Zeichen_266_-_Verbot_für_Fahrzeuge_und_Züge_über_angegebene_Länge_einschließlich_Ladung,_StVO_1992.svg
+267.svg  https://commons.wikimedia.org/wiki/File:Zeichen_267_-_Verbot_der_Einfahrt,_StVO_1970.svg
+270.1.svg  https://commons.wikimedia.org/wiki/File:Zeichen_270.1_-_Beginn_eines_Verkehrsverbots_zur_Verminderung_schädlicher_Luftverunreinigungen_in_einer_Zone._I,_StVO_2007.svg
+270.2.svg  https://commons.wikimedia.org/wiki/File:Zeichen_270.2_-_Ende_eines_Verkehrsverbots_zur_Verminderung_schädlicher_Luftverunreinigungen_in_einer_Zone,_StVO_2007.svg
+283.svg  https://commons.wikimedia.org/wiki/File:Zeichen_283_-_Absolutes_Haltverbot,_StVO_2017.svg
+286.svg  https://commons.wikimedia.org/wiki/File:Zeichen_286_-_Eingeschränktes_Halteverbot,_StVO_1970.svg
+290.1.svg  https://commons.wikimedia.org/wiki/File:Zeichen_290.1_-_Beginn_eines_eingeschränkten_Haltverbotes_für_eine_Zone,_StVO_2009.svg
+290.2.svg  https://commons.wikimedia.org/wiki/File:Zeichen_290.2_-_Ende_eines_eingeschränkten_Haltverbotes_für_eine_Zone,_StVO_2009.svg
+295.svg  https://commons.wikimedia.org/wiki/File:Zeichen_295_-_Fahrstreifenbegrenzung_und_Fahrbahnbegrenzung,_StVO_1970.svg
+296.svg  https://commons.wikimedia.org/wiki/File:Zeichen_296_-_Einseitige_Fahrstreifenbegrenzung,_StVO_1970.svg
+297.svg  https://commons.wikimedia.org/wiki/File:Zeichen_297_-_Richtungspfeile,_StVO_1970.svg
+298.svg  https://commons.wikimedia.org/wiki/File:Zeichen_298_-_Sperrflächen,_StVO_1970.svg
+299.svg  https://commons.wikimedia.org/wiki/File:Zeichen_299_-_Grenzmarkierung_für_Halt-_und_Parkverbote,_StVO_1992.svg
+306.svg  https://commons.wikimedia.org/wiki/File:Zeichen_306_-_Vorfahrtstraße,_StVO_1970.svg
+314.svg  https://commons.wikimedia.org/wiki/File:Zeichen_314_-_Parken,_StVO_2017.svg
+314.1.svg  https://commons.wikimedia.org/wiki/File:Zeichen_314.1_-_Beginn_einer_Parkraumbewirtschaftungszone,_StVO_2009.svg
+314.2.svg  https://commons.wikimedia.org/wiki/File:Zeichen_314.2_-_Ende_einer_Parkraumbewirtschaftungszone,_StVO_2009.svg
+315.svg  https://commons.wikimedia.org/wiki/File:Zeichen_315-55_-_Parken_halb_auf_Gehwegen_in_Fahrtrichtung_rechts,_StVO_2013.svg
+325.1.svg  https://commons.wikimedia.org/wiki/File:Zeichen_325.1_-_Beginn_eines_verkehrsberuhigten_Bereichs,_StVO_2009.svg
+325.2.svg  https://commons.wikimedia.org/wiki/File:Zeichen_325.2_-_Ende_eines_verkehrsberuhigten_Bereichs,_StVO_2009.svg
+328.svg  https://commons.wikimedia.org/wiki/File:Zeichen_328_-_Nothalte-_und_Pannenbucht,_StVO_2006.svg
+340.svg  https://commons.wikimedia.org/wiki/File:Zeichen_340_–_Leitlinie,_StVO_1970.svg
