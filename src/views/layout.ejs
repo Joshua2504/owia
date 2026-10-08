@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0<%= locals.bare ? ', viewport-fit=cover' : '' %>">
   <%# Theme vor dem ersten Rendern (kein Aufblitzen) – deshalb synchron und als
       erstes; common.js liefert window.OWIA für alle Seiten-Skripte, auch für
       die, die Views ohne defer mitten im Body laden. Keine Inline-Scripts:
@@ -26,8 +26,8 @@
     <meta name="twitter:card" content="summary">
   <% } %>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
-  <%# PWA: installierbar mit Start auf dem Foto-Import (App-Icon → 2 Taps bis
-      zur Kamera). iOS liest das Manifest-Icon nicht → apple-touch-icon. %>
+  <%# PWA: installierbar mit Start direkt in der Kamera (/kamera, kamera.js).
+      iOS liest das Manifest-Icon nicht → apple-touch-icon. %>
   <link rel="manifest" href="/public/manifest.webmanifest">
   <meta name="theme-color" content="#212529">
   <link rel="apple-touch-icon" href="/public/icons/icon-180.png">
@@ -36,8 +36,10 @@
 </head>
 <%# embed: Seite läuft im Editor-Modal der Anzeigen-Liste (report-modal.js) –
     ohne Navigation, Footer und Cookie-Hinweis (die zeigt die umgebende Seite). %>
-<% const _embed = !!locals.embed %>
-<body class="<%= _embed ? 'is-embed' : '' %>"<%= isAdmin ? ' data-admin' : '' %><%= currentUser ? ' data-user' : '' %>>
+<%# bare: Vollbild-Seiten wie die Kamera (/kamera) – ebenfalls ohne Navigation. %>
+<% const _bare = !!locals.bare %>
+<% const _embed = !!locals.embed || _bare %>
+<body class="<%= _bare ? 'is-embed is-bare' : (_embed ? 'is-embed' : '') %>"<%= isAdmin ? ' data-admin' : '' %><%= currentUser ? ' data-user' : '' %>>
   <% if (!_embed) { %>
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top" id="site-nav">
     <div class="<%= locals.wide ? 'container-fluid px-3 px-xl-4' : 'container' %>">
@@ -52,6 +54,9 @@
               <form method="post" action="/anzeige/neu" class="m-0">
                 <button type="submit" class="btn btn-link nav-link p-0">+ Neue Anzeige</button>
               </form>
+            </li>
+            <li class="nav-item d-lg-none">
+              <a class="nav-link" href="/kamera">📷 Kamera</a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="/anzeigen">Meine Anzeigen</a>
@@ -96,7 +101,7 @@
   <% } %>
 
   <%# wide: Listen-Seiten nutzen die volle Bildschirmbreite (große Tabellen). %>
-  <main class="<%= _embed ? 'container-fluid py-3' : (locals.wide ? 'container-fluid px-3 px-xl-4 py-4' : 'container py-4') %>">
+  <main class="<%= _bare ? 'bare-main' : _embed ? 'container-fluid py-3' : (locals.wide ? 'container-fluid px-3 px-xl-4 py-4' : 'container py-4') %>">
     <% if (flash) { %>
       <div id="flash-message" class="alert alert-<%= flash.type === 'success' ? 'success' : 'danger' %> alert-dismissible fade show" role="alert">
         <%= flash.message %>
@@ -132,6 +137,8 @@
       <a href="/statistik" class="text-muted">Statistik</a>
     </div>
   </footer>
+  <%# Handy: Kamera immer einen Daumen entfernt (unten links, „Nach oben" sitzt rechts). %>
+  <% if (currentUser) { %><a href="/kamera" class="kamera-fab d-lg-none" aria-label="Kamera öffnen" title="Kamera">📷</a><% } %>
   <button type="button" id="back-to-top" class="btn btn-dark back-to-top" aria-label="Nach oben" title="Nach oben" hidden>↑</button>
   <% } %>
 

@@ -1,0 +1,88 @@
+<%
+// Kamera-Modus (routes/kamera.ts, public/js/kamera.js): Vollbild ohne
+// Navigation (bare). Zwei Ansichten: Aufnahme und „Entwurf angelegt" (mit
+// optionalem Sticker-Scan). Die Kamera läuft in beiden weiter – derselbe
+// Stream liest im zweiten Schritt den QR-Code des Stickers.
+%>
+<div class="kam" id="kamera" data-bs-theme="dark" data-max="<%= maxImages %>">
+  <section class="kam-shoot" data-screen="shoot">
+    <video class="kam-video" data-video playsinline muted autoplay></video>
+    <div class="kam-blitz-fx" data-fx></div>
+
+    <div class="kam-top">
+      <button type="button" class="kam-pill" data-act="close">← Anzeigen</button>
+      <button type="button" class="kam-pill kam-uploads" data-uploads hidden></button>
+      <button type="button" class="kam-pill kam-flash" data-act="flash" aria-pressed="false" hidden>⚡ Aus</button>
+    </div>
+
+    <div class="kam-msg" data-msg hidden>
+      <p data-msg-text>Kamera wird gestartet …</p>
+      <div class="d-flex flex-column gap-2">
+        <button type="button" class="btn btn-light btn-lg" data-act="start">Kamera starten</button>
+        <button type="button" class="btn btn-outline-light" data-act="pick">Fotos auswählen</button>
+      </div>
+    </div>
+
+    <div class="kam-bottom">
+      <div class="kam-hint" data-hint>Verstoß fotografieren – am besten Übersicht, dann Kennzeichen nah.</div>
+      <div class="kam-strip" data-strip></div>
+      <div class="kam-controls">
+        <button type="button" class="kam-round kam-gallery" data-act="pick" aria-label="Fotos aus der Galerie">🖼</button>
+        <button type="button" class="kam-shutter" data-act="shoot" aria-label="Foto aufnehmen"></button>
+        <button type="button" class="kam-done" data-act="done" disabled>Fertig <span class="kam-count" data-count>0</span></button>
+      </div>
+    </div>
+    <input type="file" accept="image/*" multiple hidden data-gallery>
+  </section>
+
+  <section class="kam-result" data-screen="result" hidden>
+    <div class="kam-result-inner">
+      <div class="kam-ok">
+        <div class="kam-ok-icon" aria-hidden="true">✓</div>
+        <div>
+          <div class="fs-5 fw-semibold">Entwurf angelegt</div>
+          <div class="text-secondary"><span data-r-az>…</span> · <span data-r-fotos></span></div>
+        </div>
+      </div>
+      <div class="kam-r-thumbs" data-r-thumbs></div>
+      <div class="kam-r-upload small" data-r-upload role="status"></div>
+
+      <div class="kam-sticker" data-sticker>
+        <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+          <div class="fw-semibold">QR-Sticker verknüpfen <span class="text-secondary fw-normal">(optional)</span></div>
+        </div>
+        <div class="kam-scan" data-scan>
+          <video class="kam-scan-video" data-scan-video playsinline muted autoplay></video>
+          <div class="kam-scan-frame" aria-hidden="true"></div>
+        </div>
+        <div class="small mt-2" data-scan-status role="status">QR-Code des Stickers ins Bild halten …</div>
+        <form class="d-flex gap-2 mt-2" data-code-form autocomplete="off">
+          <input class="form-control" name="code" placeholder="oder Code eintippen, z. B. 7KQ2-XM9P"
+                 maxlength="12" autocapitalize="characters" spellcheck="false" inputmode="text">
+          <button type="submit" class="btn btn-outline-light">Verknüpfen</button>
+        </form>
+        <div class="kam-sticker-ok" data-sticker-ok hidden></div>
+      </div>
+
+      <div class="kam-r-actions">
+        <button type="button" class="btn btn-primary btn-lg w-100" data-act="next">📷 Nächster Verstoß</button>
+        <a class="btn btn-outline-light btn-lg w-100 disabled" data-act="complete" href="#" aria-disabled="true">✏️ Daten vervollständigen &amp; senden</a>
+        <div class="d-flex justify-content-between">
+          <a class="btn btn-link link-secondary px-0" href="/anzeigen">Meine Anzeigen</a>
+          <button type="button" class="btn btn-link link-danger px-0" data-act="discard">Entwurf verwerfen</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="kam-preview" data-preview hidden>
+    <img alt="Foto-Vorschau" data-preview-img>
+    <div class="kam-preview-bar">
+      <button type="button" class="btn btn-light btn-lg" data-act="keep">Behalten</button>
+      <button type="button" class="btn btn-danger btn-lg" data-act="remove">🗑 Löschen</button>
+    </div>
+  </div>
+</div>
+
+<script src="/public/js/qr-decode.js" defer></script>
+<script src="/public/js/kamera.js" defer></script>

@@ -10,6 +10,21 @@
     navigator.serviceWorker.register('/sw.js').catch(function () {})
   }
 
+  // Installierte PWA: Start ist die Kamera (manifest start_url /kamera). Wer
+  // die App noch mit dem alten Start /import installiert hat, landet beim
+  // ersten Öffnen trotzdem dort – Browser übernehmen ein geändertes
+  // start_url nicht zuverlässig (iOS nie). Nur beim allerersten Seitenaufruf
+  // der App-Sitzung, danach bleibt /import normal erreichbar.
+  ;(function () {
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone
+    if (!standalone || !document.body || !document.body.hasAttribute('data-user')) return
+    try {
+      if (sessionStorage.getItem('owia-app-start')) return
+      sessionStorage.setItem('owia-app-start', '1')
+    } catch (_) { return }
+    if (location.pathname === '/import' && !location.search && !document.referrer) location.replace('/kamera')
+  })()
+
   // Flash-Message: eigener Schließen-Handler, damit das X auch ohne geladenes
   // Bootstrap-JS funktioniert; Erfolgsmeldungen blenden sich selbst aus.
   ;(function () {

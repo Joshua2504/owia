@@ -621,6 +621,8 @@
       (skipped.length ? ', ' + skipped.length + ' übersprungen' : '') + '.</p>' +
       '<div class="d-flex flex-wrap justify-content-center gap-2">'
     if (skipped.length) html += '<button type="button" class="btn btn-primary" data-act="again">Übersprungene nochmal ansehen</button>'
+    // Aus dem Kamera-Modus (/pruefen?az=…&von=kamera): gleich weiter fotografieren.
+    if (init.zurueck === '/kamera') html += '<a class="btn btn-primary btn-lg" href="/kamera">📷 Nächster Verstoß</a>'
     html += '<a class="btn btn-outline-secondary" href="/anzeigen">Zu meinen Anzeigen</a></div></div></div>'
     root.innerHTML = html
   }

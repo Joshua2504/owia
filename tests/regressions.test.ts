@@ -529,6 +529,62 @@ test('Überlappende Importpakete speichern ein identisches Foto genau einmal', a
   } finally { await app.close() }
 })
 
+test('Kamera-Modus: Entwurf, Fotos mit Handy-Metadaten, Tatzeit, Sticker und Verwerfen', async () => {
+  const kameraRoutes = (await import('../src/routes/kamera')).default
+  const jpeg = (await import('jpeg-js')).default
+  const [u] = await pool.execute<mysql.ResultSetHeader>("INSERT INTO users(email) VALUES ('kamera@example.invalid')")
+  const owner = u.insertId
+  const app = Fastify()
+  const multipart = (await import('@fastify/multipart')).default
+  await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024, files: 10 } })
+  app.addHook('preHandler', async request => { request.session = { userId: owner } as typeof request.session })
+  await app.register(kameraRoutes)
+  const boundary = 'owia-kamera-boundary'
+  const foto = (grau: number, felder: Record<string, string>) => Buffer.concat([
+    ...Object.entries(felder).map(([k, v]) => Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`)),
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="bild"; filename="kamera.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`),
+    jpeg.encode({ data: Buffer.alloc(16 * 16 * 4, grau), width: 16, height: 16 }, 80).data,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ])
+  const upload = (az: string, payload: Buffer) => app.inject({
+    method: 'POST', url: `/kamera/${az}/foto`, headers: { 'content-type': `multipart/form-data; boundary=${boundary}` }, payload,
+  })
+  try {
+    const az = (await app.inject({ method: 'POST', url: '/kamera/entwurf' })).json().az
+    assert.match(az, /^OWiA-\d{6}$/)
+    const r1 = await upload(az, foto(90, { aufgenommen: '2026-10-07 23:58:10', lat: '50.1109', lon: '8.6821', genauigkeit: '12' }))
+    assert.equal(r1.statusCode, 200)
+    // Ungenauer Standort (Funkzelle) wird verworfen, die Zeit bleibt.
+    const r2 = await upload(az, foto(140, { aufgenommen: '2026-10-08 00:01:30', lat: '50.2', lon: '8.7', genauigkeit: '900' }))
+    assert.equal(r2.statusCode, 200)
+    const doppelt = await upload(az, foto(90, {}))
+    assert.equal(doppelt.statusCode, 409)
+    assert.equal(doppelt.json().doppelt, true)
+    const bilder = await query('SELECT DATE_FORMAT(captured_at, "%Y-%m-%d %H:%i:%s") t, gps_lat, gps_lon FROM report_images ri JOIN reports r ON r.id = ri.report_id WHERE r.aktenzeichen = ? ORDER BY ri.sort_order', [az])
+    assert.deepEqual(bilder.map(b => b.t), ['2026-10-07 23:58:10', '2026-10-08 00:01:30'])
+    assert.equal(Number(bilder[0].gps_lat), 50.1109)
+    assert.equal(bilder[1].gps_lat, null)
+
+    assert.equal((await app.inject({ method: 'POST', url: `/kamera/${az}/fertig` })).json().fotos, 2)
+    const zeit = (await query(`SELECT DATE_FORMAT(tattag, '%Y-%m-%d') tag, DATE_FORMAT(tattag_bis, '%Y-%m-%d') bis,
+      TIME_FORMAT(tatzeit_von, '%H:%i') von, TIME_FORMAT(tatzeit_bis, '%H:%i') zeit_bis FROM reports WHERE aktenzeichen = ?`, [az]))[0]
+    assert.deepEqual({ ...zeit }, { tag: '2026-10-07', bis: '2026-10-08', von: '23:58', zeit_bis: '00:01' })
+
+    const batch = await createBatch(owner, parseLayout({ vorlage: '70x37' }) as StickerLayout, 1)
+    assert.ok('batchId' in batch)
+    const [code] = await batchCodes(batch.batchId)
+    assert.equal((await app.inject({ method: 'POST', url: `/kamera/${az}/sticker`, payload: { code: 'abc' } })).statusCode, 400)
+    const linked = await app.inject({ method: 'POST', url: `/kamera/${az}/sticker`, payload: { code: code.toLowerCase() } })
+    assert.equal(linked.statusCode, 200)
+    assert.equal(linked.json().code, `${code.slice(0, 4)}-${code.slice(4)}`)
+    assert.equal((await app.inject({ method: 'POST', url: `/kamera/${az}/sticker`, payload: { code } })).statusCode, 409)
+
+    await app.inject({ method: 'POST', url: `/kamera/${az}/verwerfen` })
+    assert.equal((await query('SELECT status FROM reports WHERE aktenzeichen = ?', [az]))[0].status, 'papierkorb')
+    assert.equal((await upload(az, foto(200, {}))).statusCode, 404)
+  } finally { await app.close() }
+})
+
 test('Inline-Bearbeitung ändert nur übergebene Felder, nur Katalog-Verstöße und nur Entwürfe', async () => {
   const id = await report()
   await pool.execute("UPDATE reports SET status='entwurf', tatort='Teststraße 1', fahrzeug_marke='VW', kennzeichen_land='NL' WHERE id=?", [id])

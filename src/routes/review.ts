@@ -23,7 +23,12 @@ import { fillTatortFromPhotos } from '../services/tatortFill'
 export default async function reviewRoutes(app: FastifyInstance) {
   app.get('/pruefen', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
-    const nurBereit = (request.query as { nur?: string }).nur === 'bereit'
+    const query = request.query as { nur?: string; az?: string; von?: string }
+    const nurBereit = query.nur === 'bereit'
+    // ?az=…: nur dieser eine Entwurf (Kamera-Modus → „Vervollständigen & senden").
+    const nurAz = typeof query.az === 'string' && query.az ? query.az : null
+    // Aus der Kamera gekommen: am Ende/„Beenden" zurück zur Kamera.
+    const zurueck = query.von === 'kamera' ? '/kamera' : '/anzeigen'
     // Älteste Tat zuerst: die sind der Verjährung am nächsten. Ohne Tattag ans
     // Ende (meist Fotos ohne EXIF – brauchen ohnehin mehr Handarbeit).
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -35,11 +40,15 @@ export default async function reviewRoutes(app: FastifyInstance) {
     // Verjährte Entwürfe lassen sich nicht mehr einreichen – nur zählen, damit
     // sie nicht stillschweigend verschwinden (Aufräumen geht über die Liste).
     const offen = rows.filter((r) => !isVerjaehrt(r))
-    const queue = offen.filter((r) => !nurBereit || r.bereit_at).map((r) => r.aktenzeichen as string)
+    const queue = offen
+      .filter((r) => (nurAz ? r.aktenzeichen === nurAz : !nurBereit || r.bereit_at))
+      .map((r) => r.aktenzeichen as string)
     return reply.view('/reports/pruefen.ejs', viewData(request, {
       title: 'Prüf-Modus',
       queue,
       nurBereit,
+      nurAz,
+      zurueck,
       countAlle: offen.length,
       countBereit: offen.filter((r) => r.bereit_at).length,
       countVerjaehrt: rows.length - offen.length,

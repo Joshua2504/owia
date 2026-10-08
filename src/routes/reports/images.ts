@@ -39,7 +39,7 @@ async function removeImageFiles(
 /** Bild zum Entwurf auf Platte + in der DB speichern; gibt die neue Bild-ID zurück.
  *  HEIC-Konvertierung und EXIF-Lesen (aus dem Original – die Konvertierung
  *  entfernt die Metadaten) laufen im Worker-Thread. */
-async function saveImageToReport(
+export async function saveImageToReport(
   userId: number,
   reportId: number,
   upload: { buffer: Buffer; filename: string; mimetype: string },
