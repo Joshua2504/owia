@@ -7,6 +7,17 @@
 const FRIST_MONATE = 3
 
 import { CITIES } from '../config/cities'
+import { detectCityByLabel } from './districts'
+
+/** Stadt der Anzeige für die Frist: aus der PLZ des Tatorts (die city-Spalte
+ *  von Entwürfen steht oft noch auf dem Standard „frankfurt", z. B. bei Hamburg
+ *  oder Mainz); ohne PLZ die gespeicherte Stadt. null = keine Sonderfrist. */
+function fristStadt(r: TatDaten): string | null {
+  const det = detectCityByLabel(typeof r.tatort === 'string' ? r.tatort : null)
+  if (det.status === 'unlocked') return det.city.id
+  if (det.status === 'locked') return null
+  return typeof r.city === 'string' ? r.city : null
+}
 
 /** Frist für die Stadt der Anzeige: Verjährung (3 Monate) oder die kürzere
  *  Annahmefrist der Stadt (Frankfurt/Wiesbaden-Portal: 2 Monate). */
@@ -35,7 +46,7 @@ function toDay(d: DateLike): Date | null {
 export function verjaehrtAb(r: TatDaten): Date | null {
   const tat = toDay(r.tattag_bis as DateLike) || toDay(r.tattag as DateLike)
   if (!tat) return null
-  const ab = new Date(tat.getFullYear(), tat.getMonth() + fristMonate(r.city), tat.getDate())
+  const ab = new Date(tat.getFullYear(), tat.getMonth() + fristMonate(fristStadt(r)), tat.getDate())
   // Fehlt der entsprechende Tag (30.11. + 3 Monate), endet die Frist mit dem
   // Monatsletzten (§ 188 Abs. 3 BGB) – verjährt also ab dem 1. des Folgemonats.
   if (ab.getDate() !== tat.getDate()) ab.setDate(1)
@@ -50,9 +61,10 @@ export type VerjaehrungStatus = {
 
 export function verjaehrung(r: TatDaten, now = new Date()): VerjaehrungStatus {
   const ab = verjaehrtAb(r)
-  const monate = fristMonate(r.city)
+  const stadt = fristStadt(r)
+  const monate = fristMonate(stadt)
   const text = monate < FRIST_MONATE
-    ? `Die Tat liegt mehr als ${monate === 2 ? 'zwei' : monate} Monate zurück – ${CITIES[r.city as string]?.name ?? 'die Stadt'} nimmt sie nicht mehr an.`
+    ? `Die Tat liegt mehr als ${monate === 2 ? 'zwei' : monate} Monate zurück – ${(stadt && CITIES[stadt]?.name) ?? 'die Stadt'} nimmt sie nicht mehr an.`
     : 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.'
   if (!ab) return { verjaehrt: false, bald: false, ab: null, restTage: null, monate, text }
   const heute = new Date(now.getFullYear(), now.getMonth(), now.getDate())

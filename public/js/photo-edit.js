@@ -361,7 +361,7 @@
       var f = e.target.getAttribute && e.target.getAttribute('data-detail')
       if (!f) return
       var v = e.target.type === 'checkbox' ? (e.target.checked ? '1' : '0') : e.target.value.trim()
-      if (f === 'kennzeichen_land' && kzLandEl && e.target !== kzLandEl) kzLandEl.value = v
+      if (f === 'kennzeichen_land' && kzLandEl && e.target !== kzLandEl) { kzLandEl.value = v; landCombosSync() }
       if (f === 'behinderung') {
         dlg.querySelector('[data-detail=behinderung_text]').hidden = v !== '1'
         if (v === '1') setTimeout(function () { dlg.querySelector('[data-detail=behinderung_text]').focus() }, 0)
@@ -407,7 +407,8 @@
       // D zuerst, dann nach Ländername (wie geliefert); data-name für die
       // ausgeklappte Ansicht „PL – Polen" (landLang).
       land.innerHTML = Object.keys(laender).map(function (k) { return '<option value="' + k + '" title="' + laender[k] + '" data-name="' + laender[k] + '">' + k + '</option>' }).join('')
-      landLang(land)
+      landCombo(land)
+      landCombosSync()
       if (state && state.report) land.value = state.report.fields.kennzeichen_land || 'D'
       dlg.querySelector('#pe-marken').innerHTML = (c.marken || []).map(function (m) { return '<option value="' + m + '">' }).join('')
       dlg.querySelector('#pe-farben').innerHTML = (c.farben || []).map(function (m) { return '<option value="' + m + '">' }).join('')
@@ -859,6 +860,7 @@
     var landCode = f.kennzeichen_land || 'D'
     if (![].some.call(landSel.options, function (o) { return o.value === landCode })) landSel.add(new Option(landCode, landCode))
     landSel.value = landCode
+    landCombosSync()
     var typSel = box.querySelector('[data-detail=fahrzeug_typ]')
     if (!typSel.options.length) typSel.innerHTML = '<option>PKW</option>'
     typSel.value = f.fahrzeug_typ || 'PKW'
@@ -1354,6 +1356,88 @@
     return dlg.querySelector('#pe-land')
   }
   // Land-Auswahl am Foto spiegelt #pe-land (Optionen + Wert).
+  // Durchsuchbare Land-Auswahl: das <select> bleibt (unsichtbar) Wertträger
+  // und Speicherweg (change), sichtbar ist ein schmales Textfeld mit Liste
+  // „PL – Polen", gefiltert nach Kürzel oder Name; Enter nimmt den ersten Treffer.
+  var landCombos = []
+  function landCombo(sel) {
+    if (sel._combo) return sel._combo
+    var input = document.createElement('input')
+    input.type = 'text'
+    input.className = 'form-control pe-land-input' + (sel.className.indexOf('pe-kz-land') !== -1 ? ' pe-kz-land' : '')
+    input.setAttribute('aria-label', 'Länderkennzeichen')
+    input.autocomplete = 'off'
+    input.spellcheck = false
+    if (sel.getAttribute('style')) input.setAttribute('style', sel.getAttribute('style') + ';background-image:none;padding-right:.45rem')
+    var menu = document.createElement('div')
+    menu.className = 'list-group shadow pe-land-menu'
+    menu.hidden = true
+    sel.style.display = 'none'
+    sel.parentNode.insertBefore(input, sel.nextSibling)
+    dlg.appendChild(menu)
+    var treffer = []
+    var aktiv = 0
+    function eintraege() {
+      return [].map.call(sel.options, function (o) { return { code: o.value, name: o.dataset.name || o.title || '' } })
+    }
+    function sync() {
+      if (document.activeElement !== input) input.value = sel.value
+      input.hidden = sel.hidden
+    }
+    function render() {
+      var q = input.value.trim().toLowerCase()
+      var alle = eintraege()
+      treffer = !q ? alle : alle.filter(function (e) { return e.code.toLowerCase().indexOf(q) === 0 })
+        .concat(alle.filter(function (e) { return e.code.toLowerCase().indexOf(q) !== 0 && e.name.toLowerCase().indexOf(q) !== -1 }))
+      aktiv = 0
+      menu.replaceChildren()
+      treffer.forEach(function (e, i) {
+        var b = el('button', 'list-group-item list-group-item-action py-1 px-2 small' + (i === 0 ? ' active' : ''), e.code + ' – ' + e.name)
+        b.type = 'button'
+        b.addEventListener('mousedown', function (ev) { ev.preventDefault(); waehle(e.code) })
+        menu.appendChild(b)
+      })
+      var r = input.getBoundingClientRect()
+      menu.style.left = r.left + 'px'
+      var unten = window.innerHeight - r.bottom
+      if (unten > 220 || unten > r.top) { menu.style.top = r.bottom + 'px'; menu.style.bottom = 'auto'; menu.style.maxHeight = Math.max(120, unten - 16) + 'px' }
+      else { menu.style.top = 'auto'; menu.style.bottom = (window.innerHeight - r.top) + 'px'; menu.style.maxHeight = (r.top - 16) + 'px' }
+      menu.hidden = !treffer.length
+    }
+    function markiere(i) {
+      var bs = menu.children
+      if (!bs.length) return
+      aktiv = (i + bs.length) % bs.length
+      ;[].forEach.call(bs, function (b, j) { b.classList.toggle('active', j === aktiv) })
+      bs[aktiv].scrollIntoView({ block: 'nearest' })
+    }
+    function waehle(code) {
+      menu.hidden = true
+      var alt = sel.value
+      sel.value = code
+      input.value = code
+      if (alt !== code) sel.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    input.addEventListener('focus', function () { input.select(); render() })
+    input.addEventListener('input', render)
+    input.addEventListener('blur', function () { menu.hidden = true; input.value = sel.value })
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); markiere(aktiv + 1) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); markiere(aktiv - 1) }
+      else if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); input.blur() }
+      else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation() }
+        if (treffer[aktiv] && !menu.hidden) waehle(treffer[aktiv].code)
+      }
+    })
+    sel._combo = { sync: sync }
+    landCombos.push(sel._combo)
+    sync()
+    return sel._combo
+  }
+  function landCombosSync() {
+    landCombos.forEach(function (c) { c.sync() })
+  }
   // Land-Auswahl: zugeklappt nur das Kürzel (schmales Feld), aufgeklappt
   // „PL – Polen" – sonst findet man das Land in der Liste nicht.
   function landLang(sel) {
@@ -1375,11 +1459,11 @@
     var src = landSel()
     if (kzLandEl.options.length !== src.options.length) {
       kzLandEl.innerHTML = src.innerHTML
-      ;[].forEach.call(kzLandEl.options, function (o) { o.textContent = o.value })
-      landLang(kzLandEl)
+      landCombo(kzLandEl)
     }
     if (document.activeElement !== kzLandEl) kzLandEl.value = src.value
     kzLandEl.hidden = src.hidden
+    landCombosSync()
   }
   function kzInput() {
     if (kzInEl) return kzInEl

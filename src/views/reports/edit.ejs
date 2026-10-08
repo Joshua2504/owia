@@ -175,7 +175,7 @@ const embedQ = embed ? '&embed=1' : ''
           <%# Verjährung (3 Monate, services/verjaehrung.ts). report-form.js
               (initVerjaehrung) rechnet bei Datumsänderung im Browser nach und
               sperrt dann „Einreichen"; der Server prüft beim Submit erneut. %>
-          <% const _vj = verjaehrung({ tattag: r.tattag || today, tattag_bis: r.tattag_bis, city: r.city }) %>
+          <% const _vj = verjaehrung({ tattag: r.tattag || today, tattag_bis: r.tattag_bis, city: r.city, tatort: r.tatort }) %>
           <div class="col-12" id="verjaehrung-hint" data-monate="<%= _vj.monate %>" data-text="<%= _vj.text %>" <%= _vj.verjaehrt || _vj.bald ? '' : 'hidden' %>>
             <div class="alert <%= _vj.verjaehrt ? 'alert-danger' : 'alert-warning' %> py-2 px-3 small mb-0" data-verjaehrung-text>
               <% if (_vj.verjaehrt) { %>
