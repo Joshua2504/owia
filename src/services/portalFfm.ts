@@ -362,7 +362,19 @@ export function berlinHeute(): string {
 }
 
 /** Was dem Portal-Versand fehlt (Prüfliste vor dem Einreichen); `null` = passt. */
+/** ekom21 (Frankfurt, Wiesbaden) nimmt nur Taten der letzten zwei Monate an –
+ *  ältere lassen sich im Formular nicht absenden. */
+export function zweiMonateProblem(r: Record<string, any>, stadt: string): string | null {
+  const tag = isoOf(r.tattag)
+  if (!tag) return null
+  const grenze = new Date(berlinHeute())
+  grenze.setMonth(grenze.getMonth() - 2)
+  return tag < grenze.toISOString().slice(0, 10) ? `${stadt} nimmt nur Taten der letzten zwei Monate an.` : null
+}
+
 export function portalProblem(r: Record<string, any>): string | null {
+  const frist = zweiMonateProblem(r, 'Frankfurt')
+  if (frist) return frist
   // Tatbestände ohne Portal-Eintrag sind bewusst nicht versendbar (Nutzer-
   // entscheidung 10/2026 – kein Ausweichen auf Mail mit PDF).
   if (r.verstoss_art && !imPortal(r.verstoss_art)) {

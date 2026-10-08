@@ -95,7 +95,8 @@
       // Kennzeichen + Marke nebeneinander – die Leiste soll ohne Scrollen passen.
       '<div class="pe-row">' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
-      '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false">' +
+      '<div class="input-group"><select id="pe-land" class="form-select photo-edit-details flex-grow-0 w-auto" data-detail="kennzeichen_land" aria-label="Länderkennzeichen" title="Land des Kennzeichens" hidden><option value="D">D</option></select>' +
+      '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>' +
       '<button type="button" class="btn btn-sm btn-outline-warning mt-1" data-act="plate-suggest" hidden></button></div>' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
       '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. Volkswagen" list="pe-marken"></div>' +
@@ -365,6 +366,10 @@
       var typ = dlg.querySelector('#pe-typ')
       typ.innerHTML = (c.fahrzeugTypen || ['PKW']).map(function (t) { return '<option>' + t + '</option>' }).join('')
       if (state && state.report) typ.value = state.report.fields.fahrzeug_typ || 'PKW'
+      var land = dlg.querySelector('#pe-land')
+      var laender = c.laender || { D: 'Deutschland' }
+      land.innerHTML = Object.keys(laender).map(function (k) { return '<option value="' + k + '" title="' + laender[k] + '">' + k + '</option>' }).join('')
+      if (state && state.report) land.value = state.report.fields.kennzeichen_land || 'D'
       dlg.querySelector('#pe-marken').innerHTML = (c.marken || []).map(function (m) { return '<option value="' + m + '">' }).join('')
       dlg.querySelector('#pe-farben').innerHTML = (c.farben || []).map(function (m) { return '<option value="' + m + '">' }).join('')
     }).catch(function () {})
@@ -722,6 +727,10 @@
     box.querySelector('[data-detail=tatzeit_von]').value = f.tatzeit_von || ''
     box.querySelector('[data-detail=tatzeit_bis]').value = f.tatzeit_bis || ''
     box.querySelector('[data-detail=fahrzeug_verlassen]').checked = !!f.fahrzeug_verlassen
+    var landSel = box.querySelector('[data-detail=kennzeichen_land]')
+    var landCode = f.kennzeichen_land || 'D'
+    if (![].some.call(landSel.options, function (o) { return o.value === landCode })) landSel.add(new Option(landCode, landCode))
+    landSel.value = landCode
     var typSel = box.querySelector('[data-detail=fahrzeug_typ]')
     if (!typSel.options.length) typSel.innerHTML = '<option>PKW</option>'
     typSel.value = f.fahrzeug_typ || 'PKW'

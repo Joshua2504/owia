@@ -133,6 +133,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
       problems,
       fields: {
         kennzeichen: report.kennzeichen || '',
+        kennzeichen_land: report.kennzeichen_land || 'D',
         fahrzeug_marke: report.fahrzeug_marke || '',
         tattag: report.tattag_iso || '',
         tattag_bis: report.tattag_bis_iso || '',

@@ -5,7 +5,7 @@ import mysql from 'mysql2/promise'
 import { pool } from '../../db/connection'
 import { requireAuth, viewData, setFlash } from '../../middleware/auth'
 import { VERSTOSS_ARTEN } from '../../config/verstoss'
-import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN } from '../../config/fahrzeug'
+import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, KENNZEICHEN_LAENDER } from '../../config/fahrzeug'
 import { deleteDraft, trashDrafts, restoreDrafts, purgeTrash, PAPIERKORB_TAGE } from '../../services/drafts'
 import { previewBulkEdit, applyBulkEdit, BulkEditInputError } from '../../services/bulkEdit'
 import { loadReportByAktenzeichen, FORMULAR_HILFEN, VERSTOSS_SPERREN, mostUsedVerstoesse, enqueuePdf } from './shared'
@@ -22,6 +22,7 @@ export default async function bulkRoutes(app: FastifyInstance) {
     fahrzeugTypen: FAHRZEUG_TYPEN,
     marken: FAHRZEUG_MARKEN,
     farben: FAHRZEUG_FARBEN,
+    laender: KENNZEICHEN_LAENDER,
   }))
   app.post('/anzeigen/sammelbearbeitung/vorschau', { preHandler: requireAuth }, async (request, reply) => {
     try {

@@ -10,7 +10,7 @@
 import mysql from 'mysql2/promise'
 import { portalAnrede } from '../config/person'
 import { fahrzeugTyp, portalMarke, KENNZEICHEN_LAENDER } from '../config/fahrzeug'
-import { verstossText, portalTatzeit, ddmmyyyy, isoOf, PortalDatenFehler, berlinHeute, verstossVarianten } from './portalFfm'
+import { verstossText, portalTatzeit, ddmmyyyy, PortalDatenFehler, verstossVarianten, zweiMonateProblem } from './portalFfm'
 
 type Ziel = { gruppe: string; satz: string[] }
 
@@ -70,13 +70,8 @@ export function wiTatbestand(label: string | null | undefined, variante?: string
 }
 
 export function wiProblem(r: Record<string, any>): string | null {
-  // Wiesbaden nimmt nur Taten der letzten zwei Monate an.
-  const tag = isoOf(r.tattag)
-  if (tag) {
-    const grenze = new Date(berlinHeute())
-    grenze.setMonth(grenze.getMonth() - 2)
-    if (tag < grenze.toISOString().slice(0, 10)) return 'Wiesbaden nimmt nur Taten der letzten zwei Monate an.'
-  }
+  const frist = zweiMonateProblem(r, 'Wiesbaden')
+  if (frist) return frist
   if (r.kennzeichen_land && !KENNZEICHEN_LAENDER[String(r.kennzeichen_land).toUpperCase()]) {
     return `Das Länderkennzeichen „${r.kennzeichen_land}" kennt das Portal der Stadt nicht.`
   }

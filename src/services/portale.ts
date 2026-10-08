@@ -2,7 +2,7 @@
 // Adapter kennt die Regeln seines Formulars; der Portal-Dienst (docker/portal)
 // wählt das passende Profil über payload.portal.
 //
-//   ekom21-ffm  Frankfurt  – services/portalFfm.ts (Tatbestand-Baum, Varianten Pflicht)
+//   ekom21-ffm  Frankfurt  – services/portalFfm.ts (Tatbestand-Baum, Varianten Pflicht, 2-Monats-Frist)
 //   ekom21-wi   Wiesbaden  – services/portalWi.ts  (eine Ebene, „Sonstiges", 2-Monats-Frist)
 //   civento-mz  Mainz      – services/portalMz.ts  (Art × Rubrik + Freitext, Telefon Pflicht)
 

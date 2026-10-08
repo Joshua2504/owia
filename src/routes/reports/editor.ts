@@ -14,7 +14,7 @@ import { STICKER_LOESEN_MINUTEN, formatCode } from '../../services/stickers'
 import { cityEmail, detectCityByLabel } from '../../services/districts'
 import { reverseGeocode } from '../../services/geocode'
 import { VERSTOSS_ARTEN } from '../../config/verstoss'
-import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, DEFAULT_FAHRZEUG_TYP } from '../../config/fahrzeug'
+import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, DEFAULT_FAHRZEUG_TYP, KENNZEICHEN_LAENDER } from '../../config/fahrzeug'
 import { imageVersion } from '../../services/images'
 import { createDraft, trashDrafts } from '../../services/drafts'
 import { replyAttachmentPath } from '../../services/mailInbox'
@@ -151,6 +151,14 @@ export default async function editorRoutes(app: FastifyInstance) {
       out.kennzeichen = normalizePlate(body.kennzeichen)
       sets.push('kennzeichen=?')
       values.push(out.kennzeichen)
+    }
+    // Länderkennzeichen (Foto-Dialog): nur Kürzel, die die Portale kennen.
+    if (typeof body.kennzeichen_land === 'string') {
+      const land = body.kennzeichen_land.toUpperCase().replace(/[^A-Z]/g, '') || 'D'
+      if (!KENNZEICHEN_LAENDER[land]) return reply.status(400).send({ error: 'Unbekanntes Länderkennzeichen.' })
+      out.kennzeichen_land = land
+      sets.push('kennzeichen_land=?')
+      values.push(land)
     }
     if (typeof body.fahrzeug_marke === 'string') {
       out.fahrzeug_marke = body.fahrzeug_marke.trim().slice(0, 100) || null
