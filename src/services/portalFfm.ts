@@ -254,14 +254,11 @@ export function portalTatbestand(label: string | null | undefined, variante?: st
   return { gruppe: regel.gruppe, pfad, rettung: regel.rettung?.(text) ?? false, parken: pfad.some(istParken) }
 }
 
-/** Sagt der Verstoß schon „Parken"? Dann ist „Fahrzeug war verlassen"
- *  überflüssig (§ 12 Abs. 2 StVO) und der Foto-Dialog blendet die Frage aus.
- *  Frankfurt: nach dem Portal-Pfad (der kennt Schutzstreifen nur als
- *  „Halten"), sonst nach dem Katalogtext („Sie parkten …"). */
-export function verlassenSchonGesagt(label: string | null | undefined, variante: string | null | undefined, ffmPortal: boolean): boolean {
-  if (!label) return false
-  if (ffmPortal) return !!portalTatbestand(label, variante)?.parken
-  return /\bparkten\b/.test(verstossText(label))
+/** Legt der Frankfurter Portal-Pfad schon „Parken" fest? Dann ist „Fahrzeug
+ *  war verlassen" überflüssig (§ 12 Abs. 2 StVO) und der Foto-Dialog blendet
+ *  die Frage aus. Schutzstreifen kennt das Portal nur als „Halten". */
+export function verlassenSchonGesagt(label: string | null | undefined, variante: string | null | undefined): boolean {
+  return !!label && !!portalTatbestand(label, variante)?.parken
 }
 
 // ---------------------------------------------------------------------------

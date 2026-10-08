@@ -136,8 +136,8 @@ export default async function reviewRoutes(app: FastifyInstance) {
       varianten: verstossVarianten(report.verstoss_art).map((x) => x.value),
       langparker: (tatDauerMinuten(report) ?? 0) > 60 ? langparkerVariante(report.verstoss_art) : null,
       recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
-      // „Fahrzeug war verlassen" nur fragen, wenn der Verstoß nicht schon „Parken" sagt.
-      verlassenFrage: !verlassenSchonGesagt(report.verstoss_art, report.verstoss_variante, city.portal === 'ekom21-ffm'),
+      // Frankfurt-Portal: „Fahrzeug war verlassen" nur fragen, wenn der Tatbestand nicht schon „Parken" sagt.
+      verlassenFrage: city.portal !== 'ekom21-ffm' || !verlassenSchonGesagt(report.verstoss_art, report.verstoss_variante),
       verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
       hasGps: imgs.some((i) => i.gps_lat !== null),
       // Kartenmitte ohne Tatort (Foto-Dialog, photo-edit.js): Stadtmitte.
