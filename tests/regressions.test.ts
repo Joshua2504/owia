@@ -9,12 +9,12 @@ import formbody from '@fastify/formbody'
 import ejs from 'ejs'
 import { verjaehrung } from '../src/services/verjaehrung'
 import { aggregiere } from '../src/services/statistik'
-import { regelsatzEuro } from '../src/config/verstoss'
+import { regelsatzEuro, VERSTOESSE } from '../src/config/verstoss'
 import { portalTatbestand, verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoles, portalProblem, buildPortalPayload, portalTatzeit, tatortText } from '../src/services/portalFfm'
 import { portalMarke, fahrzeugBeschreibung } from '../src/config/fahrzeug'
 import { wiTatbestand, wiProblem, buildWiPayload } from '../src/services/portalWi'
 import { buildMzPayload, tatortTeile, mzProblem, mzFotos } from '../src/services/portalMz'
-import { portalFuer } from '../src/services/portale'
+import { portalFuer, verstossGesperrt, verstossSperren } from '../src/services/portale'
 import { getCityByName } from '../src/config/cities'
 import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
@@ -521,6 +521,14 @@ test('Inline-Bearbeitung ändert nur übergebene Felder, nur Katalog-Verstöße 
     assert.deepEqual([row.kennzeichen, row.tatort, row.fahrzeug_marke, row.kennzeichen_land], ['123 ABC', 'Teststraße 1', 'VW', 'NL'])
     const bad = await app.inject({ method: 'PATCH', url: `/anzeige/${az}/felder`, payload: { verstoss_art: 'Erfunden' } })
     assert.equal(bad.statusCode, 400)
+    // Frankfurt: Tatbestände ohne Eintrag im Online-Portal sind nicht waehlbar.
+    const ohnePortal = '112456 – Sie hielten/parkten nicht Platz sparend.'
+    await pool.execute("UPDATE reports SET city='frankfurt' WHERE id=?", [id])
+    const gesperrt = await app.inject({ method: 'PATCH', url: `/anzeige/${az}/felder`, payload: { verstoss_art: ohnePortal } })
+    assert.equal(gesperrt.statusCode, 400)
+    assert.match(gesperrt.json().error, /Online-Portal/)
+    const anderswo = await app.inject({ method: 'PATCH', url: `/anzeige/${az}/felder`, payload: { verstoss_art: ohnePortal, city: 'wiesbaden' } })
+    assert.equal(anderswo.statusCode, 200)
     // Autosave des Editors ohne Länderfeld lässt das gespeicherte Land stehen.
     await app.inject({ method: 'PATCH', url: `/anzeige/${az}`, payload: { kennzeichen: 'NL-12-AB', tatort: 'Teststraße 1' } })
     assert.equal((await query('SELECT kennzeichen_land FROM reports WHERE id=?', [id]))[0].kennzeichen_land, 'NL')
@@ -727,17 +735,65 @@ test('Frankfurt-Portal: Tatbestand-Pfade, Varianten und Langparker', () => {
   assert.equal(portalProblem({ verstoss_art: kreuzung, verstoss_variante: 'Kreuzung', kennzeichen_land: 'D' }), null)
 })
 
+test('Frankfurt-Portal: jeder waehlbare Verstoß führt im Portal-Baum zu einem Eintrag', async () => {
+  // tests/fixtures/ekom21-ffm-baum.json: alle Pfade des Online-Formulars (Stand
+  // 10/2026, durchgespielt mit /root/owia/work/ekom21-frankfurt/dfs.js).
+  const baum = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures/ekom21-ffm-baum.json'), 'utf8')) as Record<string, string[][]>
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase()
+  const passt = (opt: string, c: string) => norm(opt).startsWith(norm(c))
+  // Spielt den Pfad wie choosePathElement (docker/portal/lib.mjs) durch.
+  const fehler = (gruppe: string, pfad: { pick?: string[]; ask?: string[]; optional?: boolean }[]) => {
+    let blaetter = baum[gruppe] ?? []
+    let tiefe = 0
+    for (const el of pfad) {
+      const opts = [...new Set(blaetter.filter((p) => p.length > tiefe).map((p) => p[tiefe]))]
+      const cands = el.pick ?? el.ask ?? []
+      const treffer = el.pick
+        ? cands.map((c) => opts.find((o) => passt(o, c))).find(Boolean)
+        : (() => { const f = opts.filter((o) => cands.some((c) => passt(o, c))); return f.length === 1 ? f[0] : undefined })()
+      if (!treffer) {
+        if (el.optional) continue
+        return `keine Option für ${cands.join(' / ')} (da: ${opts.join(' / ')})`
+      }
+      blaetter = blaetter.filter((p) => p[tiefe] === treffer)
+      tiefe++
+    }
+    return blaetter.some((p) => p.length === tiefe) ? null : 'Pfad endet vor einem Eintrag'
+  }
+  const probleme: string[] = []
+  let waehlbar = 0
+  for (const x of VERSTOESSE) {
+    const label = `${x.tbnr} – ${x.text}`
+    if (verstossGesperrt('frankfurt', label)) continue
+    waehlbar++
+    const vs = verstossVarianten(label)
+    for (const v of vs.length ? vs.map((y) => y.value) : [null]) {
+      const tb = portalTatbestand(label, v)!
+      const f = fehler(tb.gruppe, tb.pfad)
+      if (f) probleme.push(`${x.tbnr} [${v ?? '-'}]: ${f}`)
+    }
+  }
+  assert.deepEqual(probleme, [])
+  assert.ok(waehlbar >= 180, `nur ${waehlbar} waehlbar`)
+  // Halten gibt es im Portal nicht überall: absolutes Haltverbot nur „Parken".
+  assert.equal(verstossGesperrt('frankfurt', '141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), true)
+  assert.equal(verstossGesperrt('frankfurt', '141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).'), false)
+  // Andere Städte sperren nichts.
+  assert.equal(verstossGesperrt('wiesbaden', '141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), false)
+  const sp = verstossSperren(VERSTOESSE.map((x) => `${x.tbnr} – ${x.text}`))
+  assert.deepEqual(Object.keys(sp.gesperrt), ['frankfurt'])
+  assert.equal(sp.gesperrt.frankfurt.idx.length, VERSTOESSE.length - waehlbar)
+})
+
 test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
   assert.equal(portalMarke('VW'), 'Volkswagen')
   assert.equal(portalMarke('Mercedes'), 'Mercedes-Benz')
   assert.equal(portalMarke('vw golf'), 'Volkswagen')
   assert.equal(portalMarke('Lada'), null)
   assert.equal(fahrzeugBeschreibung({ fahrzeug_marke: 'VW', fahrzeug_modell: 'Golf', fahrzeug_farbe: 'schwarz' }), 'VW Golf, schwarz')
-  const roles = photoRoles([{ id: 1, detected_plate: null }, { id: 2, detected_plate: 'F AB 1' }, { id: 3, detected_plate: null }])
-  assert.deepEqual([roles.uebersicht.map((i) => i.id), roles.fahrzeug.map((i) => i.id)], [[1, 3], [2]])
-  // Von Hand gesetzte Rollen haben Vorrang vor der Kennzeichenerkennung.
-  const manual = photoRoles([{ id: 1, detected_plate: 'X', portal_rolle: 'uebersicht' }, { id: 2, detected_plate: null, portal_rolle: 'fahrzeug' }, { id: 3, detected_plate: 'Y' }])
-  assert.deepEqual([manual.uebersicht.map((i) => i.id), manual.fahrzeug.map((i) => i.id)], [[1], [2, 3]])
+  // Die Reihenfolge entscheidet: Foto 1 = Übersicht, der Rest (≤ 5) = Fahrzeug.
+  const roles = photoRoles([1, 2, 3, 4, 5, 6, 7])
+  assert.deepEqual([roles.uebersicht, roles.fahrzeug], [[1], [2, 3, 4, 5, 6]])
   const one = photoRoles([{ id: 7, detected_plate: null }])
   assert.deepEqual([one.uebersicht.map((i) => i.id), one.fahrzeug.map((i) => i.id)], [[7], [7]])
   const p = buildPortalPayload(

@@ -8,7 +8,7 @@ import { VERSTOSS_ARTEN } from '../../config/verstoss'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN } from '../../config/fahrzeug'
 import { deleteDraft, trashDrafts, restoreDrafts, purgeTrash, PAPIERKORB_TAGE } from '../../services/drafts'
 import { previewBulkEdit, applyBulkEdit, BulkEditInputError } from '../../services/bulkEdit'
-import { loadReportByAktenzeichen, FORMULAR_HILFEN, mostUsedVerstoesse, enqueuePdf } from './shared'
+import { loadReportByAktenzeichen, FORMULAR_HILFEN, VERSTOSS_SPERREN, mostUsedVerstoesse, enqueuePdf } from './shared'
 import { moveImages } from './images'
 
 export default async function bulkRoutes(app: FastifyInstance) {
@@ -18,6 +18,7 @@ export default async function bulkRoutes(app: FastifyInstance) {
     offenses: VERSTOSS_ARTEN,
     frequent: await mostUsedVerstoesse(),
     ...FORMULAR_HILFEN,
+    ...VERSTOSS_SPERREN,
     fahrzeugTypen: FAHRZEUG_TYPEN,
     marken: FAHRZEUG_MARKEN,
     farben: FAHRZEUG_FARBEN,

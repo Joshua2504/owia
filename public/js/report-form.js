@@ -1682,6 +1682,9 @@
         recenter()
       }
       updateHint()
+      // Verstoß-Auswahl: Sperrliste der neuen Stadt (Frankfurt-Portal).
+      const vs = document.querySelector('[data-verstoss-select]')
+      if (vs) vs.dataset.city = select.value
     })
 
     async function handleLocation(e) {

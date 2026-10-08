@@ -19,7 +19,8 @@ import { imageVersion } from '../../services/images'
 import { createDraft, trashDrafts } from '../../services/drafts'
 import { replyAttachmentPath } from '../../services/mailInbox'
 import { MailService } from '../../services/mail'
-import { loadReportByAktenzeichen, loadQueueContext, FORMULAR_HILFEN, strukturFelder, persistFields, normalizePlate, isComplete, mostUsedVerstoesse, isProfileComplete, enqueuePdf, istDatum, istUhrzeit } from './shared'
+import { verstossGesperrt } from '../../services/portale'
+import { loadReportByAktenzeichen, loadQueueContext, FORMULAR_HILFEN, VERSTOSS_SPERREN, strukturFelder, persistFields, normalizePlate, isComplete, mostUsedVerstoesse, isProfileComplete, enqueuePdf, istDatum, istUhrzeit } from './shared'
 
 export default async function editorRoutes(app: FastifyInstance) {
   // Eigene, noch nicht versendete Anzeigen (Entwürfe) mit Koordinaten – für die
@@ -105,6 +106,7 @@ export default async function editorRoutes(app: FastifyInstance) {
       embed: (request.query as { embed?: string }).embed === '1',
       verstossAlle: VERSTOSS_ARTEN,
       verstossHaeufig: await mostUsedVerstoesse(),
+      verstossSperren: VERSTOSS_SPERREN,
       formularHilfen: FORMULAR_HILFEN,
       fahrzeugTypen: FAHRZEUG_TYPEN,
       fahrzeugMarken: FAHRZEUG_MARKEN,
@@ -239,6 +241,18 @@ export default async function editorRoutes(app: FastifyInstance) {
       out[k] = val
       sets.push(`${k}=?`)
       values.push(val)
+    }
+    if (out.verstoss_art) {
+      // Verstöße, die das Online-Portal der Stadt nicht kennt (Frankfurt), sind
+      // nicht wählbar – sonst bliebe die Anzeige unversendbar liegen.
+      let city = out.city
+      if (city === undefined) {
+        const [[row]] = await pool.execute<mysql.RowDataPacket[]>('SELECT city FROM reports WHERE aktenzeichen=? AND user_id=?', [az, userId])
+        city = row?.city ?? null
+      }
+      if (verstossGesperrt(city, out.verstoss_art)) {
+        return reply.status(400).send({ error: `Diesen Tatbestand bietet das Online-Portal der Stadt ${getCity(city).name} nicht an – bitte einen anderen Verstoß wählen.` })
+      }
     }
     if (!sets.length) return reply.status(400).send({ error: 'Keine Änderung übermittelt.' })
     const [result] = await pool.execute<mysql.ResultSetHeader>(
@@ -421,6 +435,7 @@ export default async function editorRoutes(app: FastifyInstance) {
         // ejs.renderFile kennt den defaultContext von @fastify/view (server.ts)
         // nicht – Helfer, die report-row.ejs nutzt, hier explizit mitgeben.
         verjaehrung,
+        verstossGesperrt,
         fahrzeugTypen: FAHRZEUG_TYPEN,
         queueId: Number.isInteger(queueParam) && queueParam > 0 ? queueParam : null,
       }

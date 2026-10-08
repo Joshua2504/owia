@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
+import { verstossGesperrt } from './portale'
 
 // Kurzlebige, signierte Vorschau: Änderungen nach der Vorschau werden nicht
 // überschrieben. Ein Neustart macht offene Vorschauen bewusst ungültig.
@@ -22,7 +23,7 @@ export async function previewBulkEdit(userId: number, body: Record<string, unkno
   if (offenseMode === 'keep' && leftMode === 'keep') throw new BulkEditInputError('Bitte mindestens eine Änderung wählen.')
   const azList = [...new Set(body.az as string[])]
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-    `SELECT aktenzeichen, kennzeichen, tatort, status, versand_status, verstoss_art, fahrzeug_verlassen FROM reports WHERE user_id=? AND aktenzeichen IN (${azList.map(() => '?').join(',')})`,
+    `SELECT aktenzeichen, kennzeichen, tatort, city, status, versand_status, verstoss_art, fahrzeug_verlassen FROM reports WHERE user_id=? AND aktenzeichen IN (${azList.map(() => '?').join(',')})`,
     [userId, ...azList]
   )
   const changes: Change[] = []
@@ -31,11 +32,15 @@ export async function previewBulkEdit(userId: number, body: Record<string, unkno
     if (!row || row.status !== 'entwurf' || row.versand_status !== null) return { az, reason: 'Nicht bearbeitbar oder nicht gefunden.' }
     const offense = row.verstoss_art as string | null
     const left = row.fahrzeug_verlassen === null ? null : Number(row.fahrzeug_verlassen)
-    const nextOffense = offenseMode === 'keep' || (body.overwrite !== true && !!offense) ? offense : offenseMode === 'clear' ? null : body.offense as string
+    let nextOffense = offenseMode === 'keep' || (body.overwrite !== true && !!offense) ? offense : offenseMode === 'clear' ? null : body.offense as string
+    // Wie PATCH /felder: Verstöße ohne Eintrag im Online-Portal der Stadt
+    // (Frankfurt) nicht setzen – der Verstoß bleibt dann, wie er ist.
+    const gesperrt = nextOffense !== offense && verstossGesperrt(row.city, nextOffense)
+    if (gesperrt) nextOffense = offense
     const nextLeft = leftMode === 'keep' ? left : leftMode === 'yes' ? 1 : 0
     const change = { az, offense, left, nextOffense, nextLeft }
     if (offense !== nextOffense || left !== nextLeft) changes.push(change)
-    return { ...change, plate: row.kennzeichen, place: row.tatort, reason: offense === nextOffense && left === nextLeft ? 'Unverändert.' : '' }
+    return { ...change, plate: row.kennzeichen, place: row.tatort, reason: offense === nextOffense && left === nextLeft ? (gesperrt ? 'Unverändert – diesen Tatbestand bietet das Online-Portal der Stadt nicht an.' : 'Unverändert.') : '' }
   })
   const payload = Buffer.from(JSON.stringify({ userId, expires: Date.now() + 10 * 60_000, changes } satisfies Preview)).toString('base64url')
   const signature = crypto.createHmac('sha256', previewKey).update(payload).digest('base64url')

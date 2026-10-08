@@ -44,6 +44,7 @@ import { MySQLSessionStore } from './db/session-store'
 import { pool } from './db/connection'
 import { purgeTrash } from './services/drafts'
 import { fillMissingTatorte } from './services/tatortFill'
+import { verstossGesperrt } from './services/portale'
 
 // trustProxy: hinter Caddy sonst falsches Protokoll (secure-Cookies) und
 // Docker-interne IPs statt Client-IPs in Logs und Rate-Limits. Nur Loopback
@@ -178,7 +179,7 @@ async function main() {
     // isAdmin ist Standard-false, damit das Layout es immer referenzieren kann,
     // auch bei (seltenen) Views, die ohne viewData gerendert werden.
     // Fahrzeuglisten: Auswahl/Vorschläge der Inline-Felder in report-row.ejs.
-    defaultContext: { isAdmin: false, verjaehrung, fahrzeugTypen: FAHRZEUG_TYPEN, fahrzeugMarken: FAHRZEUG_MARKEN, fahrzeugFarben: FAHRZEUG_FARBEN },
+    defaultContext: { isAdmin: false, verjaehrung, verstossGesperrt, fahrzeugTypen: FAHRZEUG_TYPEN, fahrzeugMarken: FAHRZEUG_MARKEN, fahrzeugFarben: FAHRZEUG_FARBEN },
   })
 
   // Flash-Cookie nach dem Ausliefern einer HTML-Seite löschen (die Seite hat

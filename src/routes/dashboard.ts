@@ -38,7 +38,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const orderBy = `${s.empty ? s.empty + ', ' : ''}${s.expr.replace(/\{dir\}/g, sort.dir === 'asc' ? 'ASC' : 'DESC')}, created_at DESC`
     const [reports] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tattag, tattag_bis, tatzeit_von, tatzeit_bis,
-              tatort, tatort_lat, tatort_lon, verstoss_art, status, bereit_at, created_at,
+              tatort, tatort_lat, tatort_lon, verstoss_art, status, bereit_at, created_at, city,
               fahrzeug_marke, fahrzeug_typ, fahrzeug_modell, fahrzeug_farbe, verstoss_variante,
               beschreibung, fahrzeug_verlassen, behinderung, behinderung_text,
               (SELECT DATE_FORMAT(MIN(pt.captured_at), '%Y-%m-%d %H:%i') FROM report_images pt WHERE pt.report_id = reports.id) AS photo_time_min,

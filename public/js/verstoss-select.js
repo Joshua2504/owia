@@ -10,6 +10,13 @@
 //     <script type="application/json" data-verstoss-data>{ haeufig:[], alle:[] }</script>
 //   </div>
 //
+// Gesperrte Tatbestände: data.gesperrt = { <cityId>: { name, idx: [Index in alle] } }
+// listet je Stadt mit Online-Portal, was dieses Portal nicht kennt (Frankfurt,
+// services/portale.ts). Welche Stadt gilt, steht in data-city am Wurzelelement
+// (fehlt es: data.standardStadt) und darf sich jederzeit ändern. Gesperrte
+// Einträge erscheinen ausgegraut am Ende der Liste und lassen sich nicht wählen;
+// ein bereits gespeicherter gesperrter Wert wird rot markiert.
+//
 // Ohne eingebettete Daten (Anzeigen-Liste, ein Feld pro Zeile) initialisiert
 // report-inline.js die Felder selbst: window.verstossSelect.init(root, data).
 // Das Suchfeld darf dort ein <textarea> sein (lange Tatbestände umbrechen).
@@ -33,7 +40,11 @@
     if (!p) {
       const alle = Array.isArray(data.alle) ? data.alle : []
       const haeufig = Array.isArray(data.haeufig) ? data.haeufig : []
-      p = { alle, haeufig, haeufigSet: new Set(haeufig), normAlle: alle.map((t) => ({ text: t, n: norm(t) })) }
+      const gesperrt = {}
+      for (const [city, g] of Object.entries(data.gesperrt || {})) {
+        gesperrt[city] = { name: g.name, set: new Set((g.idx || []).map((i) => alle[i]).filter(Boolean)) }
+      }
+      p = { alle, haeufig, haeufigSet: new Set(haeufig), normAlle: alle.map((t) => ({ text: t, n: norm(t) })), gesperrt }
       prepared.set(data, p)
     }
     return p
@@ -55,7 +66,48 @@
       }
     }
     root.dataset.verstossReady = '1'
-    const { alle, haeufig, haeufigSet, normAlle } = prepare(data)
+    const { alle, haeufig, haeufigSet, normAlle, gesperrt } = prepare(data)
+
+    // Sperrliste der aktuell gewählten Stadt (null = alles wählbar).
+    function sperre() {
+      return gesperrt[root.dataset.city || data.standardStadt || ''] || null
+    }
+    function gesperrtText(sp) {
+      return 'Diesen Tatbestand bietet das Online-Portal ' + (sp.name ? 'der Stadt ' + sp.name + ' ' : '') +
+        'nicht an – die Anzeige wäre nicht versendbar.'
+    }
+    let feedback = null
+    // Gespeicherten Wert prüfen: gesperrt → rot + Hinweis unter dem Feld.
+    function mark() {
+      const sp = sperre()
+      const bad = !!(sp && hidden.value && sp.set.has(hidden.value))
+      if (bad) {
+        input.classList.add('is-invalid')
+        input.dataset.gesperrt = '1'
+        input.title = gesperrtText(sp)
+        if (!feedback) {
+          feedback = document.createElement('div')
+          feedback.className = 'invalid-feedback'
+          input.insertAdjacentElement('afterend', feedback)
+        }
+        feedback.textContent = gesperrtText(sp) + ' Bitte einen anderen Verstoß wählen.'
+      } else if (input.dataset.gesperrt) {
+        delete input.dataset.gesperrt
+        input.classList.remove('is-invalid')
+        input.title = hidden.value
+        if (feedback) feedback.textContent = ''
+      }
+    }
+    // Wählbare Einträge zuerst, gesperrte hinten (mit eigener Überschrift).
+    function teile(list) {
+      const sp = sperre()
+      if (!sp) return { ok: list, nein: [] }
+      return { ok: list.filter((t) => !sp.set.has(t)), nein: list.filter((t) => sp.set.has(t)) }
+    }
+    function gesperrtHeader() {
+      const sp = sperre()
+      return 'Nicht im Online-Portal' + (sp && sp.name ? ' ' + sp.name : '') + ' – nicht wählbar'
+    }
 
     const menu = document.createElement('div')
     menu.className = 'list-group shadow-sm'
@@ -73,7 +125,7 @@
     let browseRest = []
 
     function appendBrowseBatch() {
-      browseRest.splice(0, BROWSE_BATCH).forEach(addItem)
+      browseRest.splice(0, BROWSE_BATCH).forEach((x) => (typeof x === 'string' ? addItem(x) : addHeader(x.header)))
     }
 
     function committed() {
@@ -101,6 +153,7 @@
       // Autosave (report-form.js) hört auf input/change des versteckten Feldes.
       hidden.dispatchEvent(new Event('input', { bubbles: true }))
       hidden.dispatchEvent(new Event('change', { bubbles: true }))
+      mark()
       close()
       input.focus()
     }
@@ -113,6 +166,18 @@
     }
 
     function addItem(text) {
+      const sp = sperre()
+      if (sp && sp.set.has(text)) {
+        // Sichtbar (damit niemand vergeblich sucht), aber nicht wählbar.
+        const d = document.createElement('div')
+        d.className = 'list-group-item disabled small py-2 text-muted verstoss-gesperrt'
+        d.setAttribute('aria-disabled', 'true')
+        d.title = gesperrtText(sp)
+        d.textContent = text
+        d.addEventListener('mousedown', (e) => e.preventDefault()) // Fokus behalten
+        menu.appendChild(d)
+        return
+      }
       const btn = document.createElement('button')
       btn.type = 'button'
       const isSel = text === committed()
@@ -144,30 +209,38 @@
         // Ohne Suche: Häufige oben als Schnellzugriff, darunter der komplette
         // Katalog zum Durchscrollen. Große Liste inkrementell rendern (erste
         // Charge jetzt, Rest beim Scrollen) – sonst ruckelt das Öffnen kurz.
-        if (haeufig.length) {
+        const h = teile(haeufig)
+        if (h.ok.length) {
           addHeader('Häufig verwendet')
-          haeufig.forEach(addItem)
+          h.ok.forEach(addItem)
         }
         addHeader('Alle Tatbestände')
-        browseRest = alle.filter((t) => !haeufigSet.has(t))
+        const rest = teile(alle.filter((t) => !haeufigSet.has(t)))
+        browseRest = rest.ok.slice()
+        const nein = h.nein.concat(rest.nein)
+        if (nein.length) browseRest.push({ header: gesperrtHeader() }, ...nein)
         appendBrowseBatch()
       } else {
         const tokens = norm(q).split(/\s+/).filter(Boolean)
         const matches = (n) => tokens.every((t) => n.indexOf(t) !== -1)
         // Auch beim Suchen stehen die häufig genutzten Treffer oben (in ihrer
         // Häufigkeits-Reihenfolge), darunter die übrigen aus dem Katalog.
-        const top = haeufig.filter((t) => matches(norm(t)))
-        const hits = []
+        const top0 = teile(haeufig.filter((t) => matches(norm(t))))
+        const top = top0.ok
+        const hits0 = []
         let capped = false
         for (const item of normAlle) {
           if (haeufigSet.has(item.text) || !matches(item.n)) continue
-          if (hits.length >= MAX_RESULTS) {
+          if (hits0.length >= MAX_RESULTS) {
             capped = true
             break
           }
-          hits.push(item.text)
+          hits0.push(item.text)
         }
-        if (!top.length && !hits.length) {
+        const t1 = teile(hits0)
+        const hits = t1.ok
+        const nein = top0.nein.concat(t1.nein)
+        if (!top.length && !hits.length && !nein.length) {
           const none = document.createElement('div')
           none.className = 'list-group-item disabled py-2 small text-muted'
           none.textContent = 'Keine Treffer für „' + q + '"'
@@ -180,6 +253,10 @@
           if (hits.length) {
             addHeader((top.length ? 'Weitere Treffer' : 'Treffer') + (capped ? ' (Top ' + MAX_RESULTS + ' – bitte eingrenzen)' : ''))
             hits.forEach(addItem)
+          }
+          if (nein.length) {
+            addHeader(gesperrtHeader())
+            nein.forEach(addItem)
           }
         }
       }
@@ -234,8 +311,21 @@
       setTimeout(() => {
         close()
         input.value = committed()
+        mark()
       }, 150)
     )
+    // Stadt gewechselt (Ordnungsamt-Auswahl) → Sperrliste neu anwenden.
+    new MutationObserver(() => {
+      mark()
+      if (menu.style.display !== 'none') render()
+    }).observe(root, { attributes: true, attributeFilter: ['data-city'] })
+    root.verstossMark = mark
+    mark()
+  }
+
+  /** Nach programmatischem Setzen des Werts (hidden.value = …) neu prüfen. */
+  function check(root) {
+    if (root && root.verstossMark) root.verstossMark()
   }
 
   function initAll() {
@@ -243,5 +333,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAll)
   else initAll()
-  window.verstossSelect = { init: initOne }
+  window.verstossSelect = { init: initOne, check: check }
 })()

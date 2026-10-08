@@ -248,13 +248,13 @@ const embedQ = embed ? '&embed=1' : ''
             <!-- Durchsuchbare Auswahl (public/js/verstoss-select.js): sichtbares
                  Suchfeld + verstecktes Feld „verstoss_art" (der gespeicherte Wert).
                  Häufige Verstöße stehen oben, darunter der ganze Tatbestandskatalog. -->
-            <div data-verstoss-select class="position-relative">
+            <div data-verstoss-select class="position-relative" data-city="<%= r.city || '' %>">
               <input type="hidden" name="verstoss_art" value="<%= r.verstoss_art || '' %>">
               <input type="text" id="verstoss-input" class="form-control" data-verstoss-input
                      autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
                      placeholder="Verstoß suchen (z. B. Gehweg, Radweg) oder aus der Liste wählen …"
                      value="<%= r.verstoss_art || '' %>">
-              <script type="application/json" data-verstoss-data><%- JSON.stringify({ haeufig: verstossHaeufig, alle: verstossAlle }).replace(/</g, '\\u003c') %></script>
+              <script type="application/json" data-verstoss-data><%- JSON.stringify({ haeufig: verstossHaeufig, alle: verstossAlle, ...verstossSperren }).replace(/</g, '\\u003c') %></script>
             </div>
             <%# Konkretisierung, wo der Katalog Alternativen offen lässt (Kreuzung/
                 Einmündung …) und Hinweis auf „länger als 1 Stunde" – das Frankfurter

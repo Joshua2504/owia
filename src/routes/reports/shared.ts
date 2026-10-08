@@ -12,6 +12,7 @@ import { getCity, CITIES, hasPdfForm } from '../../config/cities'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../../config/verstoss'
 import { FAHRZEUG_TYPEN } from '../../config/fahrzeug'
 import { ALLE_VARIANTEN, formularHilfen } from '../../services/portalFfm'
+import { verstossSperren } from '../../services/portale'
 import { cachedMailVariant } from '../../services/pixelate'
 import { processReportImageDerivatives } from '../../services/intakeImageProcessing'
 import { UPLOAD_DIR, PDF_DIR } from '../../services/drafts'
@@ -100,6 +101,10 @@ export async function loadQueueContext(
 /** Varianten („Kreuzung/Einmündung") und „länger als 1 Stunde"-Gegenstücke je
  *  Verstoß – für Editor und Foto-Dialog (services/portalFfm.ts). */
 export const FORMULAR_HILFEN = formularHilfen(VERSTOSS_ARTEN)
+
+/** Je Stadt die im Online-Portal nicht wählbaren Verstöße (Indizes in
+ *  VERSTOSS_ARTEN) – für jede Verstoß-Auswahl (verstoss-select.js). */
+export const VERSTOSS_SPERREN = verstossSperren(VERSTOSS_ARTEN)
 
 /** Fahrzeugtyp/-farbe/-modell und Tatbestand-Variante (Migration 0039) aus
  *  einem Request-Body – nur die übergebenen Felder, damit ältere Clients ohne

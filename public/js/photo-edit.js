@@ -856,6 +856,8 @@
       .then(function (d) {
         if (state !== s || seq !== s.statusSeq || !d || d.gone) return
         s.report = d
+        // Verstoß-Auswahl: Sperrliste der Stadt dieser Anzeige (Frankfurt-Portal).
+        verstossHidden().parentNode.dataset.city = (d.fields && d.fields.city) || ''
         fillDetails(s)
         renderVerstossExtras(s)
         renderRolle(s)
@@ -1545,6 +1547,7 @@
     var verstoss = plate != null && opts.verstoss != null && window.verstossSelect ? String(opts.verstoss) : null
     verstossHidden().value = verstoss || ''
     verstossInput().value = verstoss || ''
+    if (window.verstossSelect) window.verstossSelect.check(verstossHidden().parentNode)
     verstossHidden().closest('.pe-field').hidden = verstoss == null
     var tatort = plate != null && opts.tatort != null ? String(opts.tatort).replace(/\s+/g, ' ').trim() : null
     tatortInput().value = tatort || ''

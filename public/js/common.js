@@ -62,8 +62,8 @@
   // report-bulk.js fragen ihn unabhängig voneinander an. Nach einem
   // Fehlschlag (z.B. während eines App-Neustarts) wird der Cache geleert,
   // damit der nächste Versuch erneut lädt.
-  // Ergebnis: { alle, haeufig, fahrzeugTypen, marken, farben } – alle/haeufig
-  // ist das Format, das verstoss-select.js erwartet.
+  // Ergebnis: { alle, haeufig, gesperrt, standardStadt, fahrzeugTypen, marken,
+  // farben } – alle/haeufig/gesperrt ist das Format, das verstoss-select.js erwartet.
   var catalog = null
   function loadCatalog() {
     if (!catalog) {
@@ -72,6 +72,8 @@
           return {
             alle: d.offenses || [],
             haeufig: d.frequent || [],
+            gesperrt: d.gesperrt || {},
+            standardStadt: d.standardStadt,
             fahrzeugTypen: d.fahrzeugTypen,
             marken: d.marken,
             farben: d.farben,

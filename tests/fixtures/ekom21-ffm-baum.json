@@ -1,0 +1,295 @@
+{
+ "Radweg/Radfahrstreifen": [
+  [
+   "Halten",
+   "auf einem Radweg (Zeichen 237)."
+  ],
+  [
+   "Halten",
+   "auf einem gemeinsamen Geh- und Radweg (Zeichen 240)."
+  ],
+  [
+   "Halten",
+   "auf einem getrennten Geh- und Radweg (Zeichen 241)."
+  ],
+  [
+   "Halten",
+   "auf einer Fahrradstraße (Zeichen 244.1)."
+  ],
+  [
+   "Halten",
+   "verbotswidrig auf einem Schutzstreifen für den Radverkehr (Zeichen 340)."
+  ],
+  [
+   "Parken",
+   "auf einem Radweg (Zeichen 237)."
+  ],
+  [
+   "Parken",
+   "auf einem gemeinsamen Geh- und Radweg (Zeichen 240)."
+  ],
+  [
+   "Parken",
+   "auf einem getrennten Geh- und Radweg (Zeichen 241)."
+  ],
+  [
+   "Parken",
+   "auf einer Fahrradstraße (Zeichen 244.1)."
+  ],
+  [
+   "Parken länger als 1 Stunde",
+   "auf einem Radweg (Zeichen 237)."
+  ],
+  [
+   "Parken länger als 1 Stunde",
+   "auf einem gemeinsamen Geh- und Radweg (Zeichen 240)."
+  ],
+  [
+   "Parken länger als 1 Stunde",
+   "auf einem getrennten Geh- und Radweg (Zeichen 241)."
+  ],
+  [
+   "Parken länger als 1 Stunde",
+   "auf einer Fahrradstraße (Zeichen 244.1)."
+  ]
+ ],
+ "Gehweg/Fußgängerüberweg/Fußgängerfurt": [
+  [
+   "Halten",
+   "verbotswidrig auf dem Gehweg."
+  ],
+  [
+   "Halten",
+   "auf dem Fußgängerüberweg."
+  ],
+  [
+   "Parken",
+   "verbotswidrig auf dem Gehweg."
+  ],
+  [
+   "Parken",
+   "auf einem Gehweg entgegen der durch Zeichen 315 vorgeschriebenen Aufstellungsart."
+  ],
+  [
+   "Parken",
+   "auf dem Gehweg (Zeichen 239), der durch dieses Zeichen gesperrt war."
+  ],
+  [
+   "Parken",
+   "auf einem gemeinsamen Geh- und Radweg (Zeichen 240)."
+  ],
+  [
+   "Parken",
+   "auf einem getrennten Geh- und Radweg (Zeichen 241)."
+  ],
+  [
+   "Parken",
+   "im Bereich einer Fußgängerzone (Zeichen 242.1), der durch dieses Zeichen gesperrt war."
+  ],
+  [
+   "Parken",
+   "auf dem Fußgängerüberweg."
+  ],
+  [
+   "Parken",
+   "Abstand von weniger als 5 Metern vor einem Fußgängerüberweg."
+  ],
+  [
+   "Parken",
+   "auf einer Fußgängerfurt (Eine Fußgängerfurt ist eine durch Markierungen fast ausschließlich an Ampelanlagen gekennzeichnete Fläche auf der Straße)."
+  ],
+  [
+   "Parken länger als 1 Stunde verbotswidrig auf dem Gehweg"
+  ]
+ ],
+ "Haltverbot/gesperrter Bereich/Sonderparkplätze": [
+  [
+   "im Haltverbot.",
+   "unzulässig im eingeschränkten Haltverbot (Zeichen 286).",
+   "Parken"
+  ],
+  [
+   "im Haltverbot.",
+   "unzulässig im eingeschränkten Haltverbot (Zeichen 286).",
+   "Parken länger als 1 Stunde"
+  ],
+  [
+   "im Haltverbot.",
+   "im absoluten Haltverbot (Zeichen 283).",
+   "Parken"
+  ],
+  [
+   "im Haltverbot.",
+   "im absoluten Haltverbot (Zeichen 283).",
+   "Parken länger als 1 Stunde"
+  ],
+  [
+   "im Haltverbot.",
+   "im eingeschränkten Haltverbot für eine Zone (Zeichen 290).",
+   "Parken"
+  ],
+  [
+   "im Haltverbot.",
+   "im eingeschränkten Haltverbot für eine Zone (Zeichen 290).",
+   "Parken länger als 1 Stunde"
+  ],
+  [
+   "in einem gesperrten Verkehrsbereich.",
+   "der durch Zeichen 250 gesperrt war."
+  ],
+  [
+   "in einem gesperrten Verkehrsbereich.",
+   "der durch Zeichen 251 gesperrt war."
+  ],
+  [
+   "in einem gesperrten Verkehrsbereich.",
+   "der durch Zeichen 253 gesperrt war."
+  ],
+  [
+   "in einem gesperrten Verkehrsbereich.",
+   "der durch Zeichen 255 gesperrt war."
+  ],
+  [
+   "in einem gesperrten Verkehrsbereich.",
+   "der durch Zeichen 260 gesperrt war."
+  ],
+  [
+   "auf einem Sonderparkplatz für Bewohner.",
+   "bei Zeichen 314 mit Zusatzzeichen. Ein besonderer Parkausweis lag nicht gut lesbar aus."
+  ],
+  [
+   "auf einem Sonderparkplatz für Bewohner.",
+   "bei Zeichen 315 mit Zusatzzeichen. Ein besonderer Parkausweis lag nicht gut lesbar aus."
+  ],
+  [
+   "auf einem Sonderparkplatz für Bewohner.",
+   "(Zeichen 286) mit Zusatzzeichen für \"Bewohner mit besonderem Parkausweis\". Ein besonderer Parkausweis lag nicht gut lesbar aus."
+  ],
+  [
+   "auf einem Sonderparkplatz für Bewohner.",
+   "(Zeichen 290) mit Zusatzzeichen für \"Bewohner mit besonderem Parkausweis\". Ein besonderer Parkausweis lag nicht gut lesbar aus."
+  ],
+  [
+   "auf einem Sonderparkplatz für Carsharing.",
+   "unberechtigt auf einem Parkplatz bei Zeichen 314 mit Zusatzzeichen."
+  ],
+  [
+   "auf einem Sonderparkplatz für Carsharing.",
+   "unberechtigt auf einem Parkplatz bei Zeichen 315 mit Zusatzzeichen."
+  ],
+  [
+   "auf einem Sonderparkplatz für Elektrofahrzeuge.",
+   "unberechtigt auf einem Parkplatz bei Zeichen 314 mit Zusatzzeichen."
+  ],
+  [
+   "auf einem Sonderparkplatz für Elektrofahrzeuge.",
+   "unberechtigt auf einem Parkplatz bei Zeichen 315 mit Zusatzzeichen."
+  ],
+  [
+   "auf einem Sonderparkplatz für Schwerbehinderte.",
+   "unberechtigt auf einem Parkplatz bei Zeichen 314 mit Zusatzzeichen."
+  ],
+  [
+   "auf einem Sonderparkplatz für Schwerbehinderte.",
+   "unberechtigt auf einem Parkplatz bei Zeichen 315 mit Zusatzzeichen."
+  ],
+  [
+   "auf einem Parkplatz (Zeichen 314), obwohl dies durch folgenden Zusatzzeichen für Sie verboten war.",
+   "nur PKW"
+  ],
+  [
+   "auf einem Parkplatz (Zeichen 314), obwohl dies durch folgenden Zusatzzeichen für Sie verboten war.",
+   "nur Wohmobile"
+  ],
+  [
+   "auf einem Parkplatz (Zeichen 314), obwohl dies durch folgenden Zusatzzeichen für Sie verboten war.",
+   "nur LKW"
+  ]
+ ],
+ "Einbahnstraße/linke Fahrbahnseite/linker Seitenstreifen": [
+  [
+   "in der Einbahnstraße entgegen der Fahrtrichtung"
+  ],
+  [
+   "verbotswidrig auf der linken Fahrbahnseite"
+  ],
+  [
+   "verbotswidrig auf dem linken Seitenstreifen"
+  ]
+ ],
+ "Grünstreifen/Verkehrsinsel/Sperrfläche/Grenzmarkierung/verkehrsberuhigter Bereich": [
+  [
+   "dem Grünstreifen."
+  ],
+  [
+   "einer Verkehrsinsel."
+  ],
+  [
+   "benutzten die Sperrfläche (Zeichen 298) zum Parken."
+  ],
+  [
+   "innerhalb einer Grenzmarkierung (Zeichen 299) für ein Haltverbot."
+  ],
+  [
+   "in einem verkehrsberuhigten Bereich (Zeichen 325) verbotswidrig außerhalb der zum Parken gekennzeichneten Flächen."
+  ]
+ ],
+ "Feuerwehrzufahrt": [
+  [
+   "Das Fahrzeug parkte vor oder in einer amtlich gekennzeichneten Feuerwehrzufahrt."
+  ]
+ ],
+ "Taxi/Haltestellen/zweite Reihe": [
+  [
+   "Halten",
+   "auf einem Sonderparkplatz für Taxen."
+  ],
+  [
+   "Halten",
+   "auf einem Busfahrstreifen."
+  ],
+  [
+   "Halten",
+   "in der zweiten Reihe."
+  ],
+  [
+   "Parken",
+   "auf einem Sonderparkplatz für Taxen."
+  ],
+  [
+   "Parken",
+   "im Bereich einer Haltestelle."
+  ],
+  [
+   "Parken",
+   "auf einem Busfahrstreifen."
+  ],
+  [
+   "Parken",
+   "in der zweiten Reihe."
+  ]
+ ],
+ "Bordsteinabsenkung/Grundstückszufahrten/Kreuzungen und Einmündungen": [
+  [
+   "im Bereich einer Bordsteinabsenkung."
+  ],
+  [
+   "im Bereich einer Grundstückszufahrt."
+  ],
+  [
+   "gegenüber der Grundstückszufahrt auf Straßen unter 5 Meter Breite."
+  ],
+  [
+   "weniger als 5 Meter VOR der Kreuzung."
+  ],
+  [
+   "weniger als 5 Meter VOR einer Einmündung."
+  ],
+  [
+   "weniger als 5 Meter HINTER der Kreuzung."
+  ],
+  [
+   "weniger als 5 Meter HINTER der Einmündung."
+  ]
+ ]
+}

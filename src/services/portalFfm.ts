@@ -12,7 +12,10 @@
 //   { pick: [a, b] }  erste vorhandene Option wählen (Rangfolge)
 //   { ask: [a, b] }   eindeutig nur mit Variante, sonst fragt der Lauf live
 //   optional          fehlt die Frage im Portal, überspringen
-// Stand des Portal-Baums: 10/2026 (alle 8 Rubriken durchgespielt).
+// Stand des Portal-Baums: 10/2026 (alle 8 Rubriken durchgespielt). Der Baum
+// liegt als tests/fixtures/ekom21-ffm-baum.json bei; ein Regressionstest spielt
+// jeden wählbaren Verstoß darin durch. Was keine Regel trifft, ist für Frankfurt
+// gesperrt (Verstoß-Auswahl, PATCH /felder, Sammelbearbeitung, Einreichen).
 
 import mysql from 'mysql2/promise'
 import { tbnrAusLabel, VERSTOESSE } from '../config/verstoss'
@@ -53,6 +56,9 @@ interface Regel {
   pfad: (aktion: PathEl) => PathEl[]
   varianten?: Variante[]
   rettung?: (text: string) => boolean
+  /** Das Portal kennt an dieser Stelle nur „Parken" – „Sie hielten …" hat
+   *  keinen Eintrag (der Verstoß ist dann nicht versendbar). */
+  nurParken?: boolean
 }
 
 const v = (value: string, portal: string): Variante => ({ value, portal })
@@ -65,7 +71,12 @@ export function aktionAus(text: string): PathEl {
   return { pick: ['Parken'] }
 }
 
-// Reihenfolge zählt: spezifische Regeln vor allgemeinen.
+/** In der Rubrik Gehweg gibt es „Parken länger als 1 Stunde" nur für „verbotswidrig
+ *  auf dem Gehweg"; alle anderen Stellen hängen unter „Parken". */
+const ohneLang = (a: PathEl): PathEl => (a.pick?.[0] === 'Parken länger als 1 Stunde' ? { pick: ['Parken'] } : a)
+
+// Reihenfolge zählt: spezifische Regeln vor allgemeinen. Die erste passende
+// Regel entscheidet – auch wenn sie den Verstoß ausschließt (nurParken).
 const REGELN: Regel[] = [
   // --- Radweg -----------------------------------------------------------------
   { re: /Radweg\/Radfahrstreifen \(Zeichen 237\)/, gruppe: RUBRIK.radweg, pfad: (a) => [a, { pick: ['auf einem Radweg (Zeichen 237)'] }] },
@@ -85,7 +96,8 @@ const REGELN: Regel[] = [
   {
     re: /durch Zeichen 239\/240\/241\/242\.1 gesperrt/,
     gruppe: RUBRIK.gehweg,
-    pfad: (a) => [a, { ask: ['auf dem Gehweg (Zeichen 239)', 'auf einem gemeinsamen Geh- und Radweg (Zeichen 240)', 'auf einem getrennten Geh- und Radweg (Zeichen 241)', 'im Bereich einer Fußgängerzone (Zeichen 242.1)'] }],
+    nurParken: true,
+    pfad: (a) => [ohneLang(a), { ask: ['auf dem Gehweg (Zeichen 239)', 'auf einem gemeinsamen Geh- und Radweg (Zeichen 240)', 'auf einem getrennten Geh- und Radweg (Zeichen 241)', 'im Bereich einer Fußgängerzone (Zeichen 242.1)'] }],
     varianten: [
       v('Gehweg (Zeichen 239)', 'auf dem Gehweg (Zeichen 239)'),
       v('gemeinsamer Geh- und Radweg (Zeichen 240)', 'auf einem gemeinsamen Geh- und Radweg (Zeichen 240)'),
@@ -93,24 +105,30 @@ const REGELN: Regel[] = [
       v('Fußgängerzone (Zeichen 242.1)', 'im Bereich einer Fußgängerzone (Zeichen 242.1)'),
     ],
   },
-  { re: /Gehwegparken \(Zeichen 315\)/, gruppe: RUBRIK.gehweg, pfad: (a) => [a, { pick: ['auf einem Gehweg entgegen der durch Zeichen 315'] }] },
-  { re: /Fußgängerfurt/, gruppe: RUBRIK.gehweg, pfad: () => [{ pick: ['Parken'] }, { pick: ['auf einer Fußgängerfurt'] }] },
-  { re: /weniger als 5 Metern vor einem Fußgängerüberweg/, gruppe: RUBRIK.gehweg, pfad: (a) => [a, { pick: ['Abstand von weniger als 5 Metern vor einem Fußgängerüberweg'] }] },
-  { re: /Fußgängerüberweg/, gruppe: RUBRIK.gehweg, pfad: (a) => [a, { pick: ['auf dem Fußgängerüberweg'] }] },
+  { re: /Gehwegparken \(Zeichen 315\)|Gehweg entgegen der durch Zeichen 315 vorgeschriebenen Aufstellungsart/, gruppe: RUBRIK.gehweg, pfad: (a) => [ohneLang(a), { pick: ['auf einem Gehweg entgegen der durch Zeichen 315'] }] },
+  { re: /Fußgängerfurt/, gruppe: RUBRIK.gehweg, nurParken: true, pfad: () => [{ pick: ['Parken'] }, { pick: ['auf einer Fußgängerfurt'] }] },
+  { re: /weniger als 5 Metern vor einem Fußgängerüberweg/, gruppe: RUBRIK.gehweg, nurParken: true, pfad: (a) => [ohneLang(a), { pick: ['Abstand von weniger als 5 Metern vor einem Fußgängerüberweg'] }] },
+  { re: /Fußgängerüberweg/, gruppe: RUBRIK.gehweg, pfad: (a) => [ohneLang(a), { pick: ['auf dem Fußgängerüberweg'] }] },
   // „Parken länger als 1 Stunde" ist im Portal schon die vollständige Option
   // („… verbotswidrig auf dem Gehweg"), daher die Stelle optional.
   { re: /(verbotswidrig )?auf dem Gehweg\b(?!,)/, gruppe: RUBRIK.gehweg, pfad: (a) => [a, { pick: ['verbotswidrig auf dem Gehweg'], optional: true }] },
 
   // --- Haltverbot / gesperrt / Sonderparkplätze ------------------------------
   {
+    re: /Sonderparkplatz für Bewohner \(Zeichen 314\/315\)/,
+    gruppe: RUBRIK.haltverbot,
+    pfad: () => [{ pick: ['auf einem Sonderparkplatz für Bewohner'] }, { ask: ['bei Zeichen 314 mit Zusatzzeichen', 'bei Zeichen 315 mit Zusatzzeichen'] }],
+    varianten: [v('Parkplatz (Zeichen 314)', 'bei Zeichen 314 mit Zusatzzeichen'), v('Parken auf Gehwegen (Zeichen 315)', 'bei Zeichen 315 mit Zusatzzeichen')],
+  },
+  {
     re: /Bewohner mit Parkausweis frei/,
     gruppe: RUBRIK.haltverbot,
     pfad: () => [{ pick: ['auf einem Sonderparkplatz für Bewohner'] }, { ask: ['(Zeichen 286) mit Zusatzzeichen', '(Zeichen 290) mit Zusatzzeichen'] }],
     varianten: [v('eingeschränktes Haltverbot (Zeichen 286)', '(Zeichen 286) mit Zusatzzeichen'), v('Zonenhaltverbot (Zeichen 290)', '(Zeichen 290) mit Zusatzzeichen')],
   },
-  { re: /absoluten Haltverbot \(Zeichen 283\)/, gruppe: RUBRIK.haltverbot, pfad: (a) => [{ pick: ['im Haltverbot'] }, { pick: ['im absoluten Haltverbot (Zeichen 283)'] }, a] },
-  { re: /eingeschränkten Haltverbot \(Zeichen 286\)/, gruppe: RUBRIK.haltverbot, pfad: (a) => [{ pick: ['im Haltverbot'] }, { pick: ['unzulässig im eingeschränkten Haltverbot (Zeichen 286)'] }, a] },
-  { re: /Haltverbot für eine Zone/, gruppe: RUBRIK.haltverbot, pfad: (a) => [{ pick: ['im Haltverbot'] }, { pick: ['im eingeschränkten Haltverbot für eine Zone (Zeichen 290)'] }, a] },
+  { re: /absoluten Haltverbot \(Zeichen 283\)/, gruppe: RUBRIK.haltverbot, nurParken: true, pfad: (a) => [{ pick: ['im Haltverbot'] }, { pick: ['im absoluten Haltverbot (Zeichen 283)'] }, a] },
+  { re: /eingeschränkten Haltverbot \(Zeichen 286\)/, gruppe: RUBRIK.haltverbot, nurParken: true, pfad: (a) => [{ pick: ['im Haltverbot'] }, { pick: ['unzulässig im eingeschränkten Haltverbot (Zeichen 286)'] }, a] },
+  { re: /Haltverbot für eine Zone/, gruppe: RUBRIK.haltverbot, nurParken: true, pfad: (a) => [{ pick: ['im Haltverbot'] }, { pick: ['im eingeschränkten Haltverbot für eine Zone (Zeichen 290)'] }, a] },
   {
     re: /durch Zeichen 250\/251\/253\/255\/260 gesperrt/,
     gruppe: RUBRIK.haltverbot,
@@ -153,7 +171,7 @@ const REGELN: Regel[] = [
 
   // --- Feuerwehr --------------------------------------------------------------
   // Das Portal kennt nur „parkte"; Halten in der Feuerwehrzufahrt hat keinen
-  // Eintrag (fällt unten durch → Tatbestand live wählen oder per Mail).
+  // Eintrag (fällt unten durch → in Frankfurt nicht wählbar).
   {
     re: /parkten (verbotswidrig )?(vor oder in einer amtlich gekennzeichneten Feuerwehrzufahrt|im Bereich einer Feuerwehranfahrtszone\/einer Feuerwehrzufahrt)/,
     gruppe: RUBRIK.feuerwehr,
@@ -163,8 +181,8 @@ const REGELN: Regel[] = [
 
   // --- Taxi / Haltestelle / Bus / zweite Reihe -------------------------------
   { re: /Taxenstandes/, gruppe: RUBRIK.taxi, pfad: (a) => [a, { pick: ['auf einem Sonderparkplatz für Taxen'] }] },
-  { re: /Haltestellenschild \(Zeichen 224\)/, gruppe: RUBRIK.taxi, pfad: () => [{ pick: ['Parken'] }, { pick: ['im Bereich einer Haltestelle'] }] },
-  { re: /^Sie (hielten|parkten) auf einem Bussonderfahrstreifen \(Zeichen 245\)/, gruppe: RUBRIK.taxi, pfad: (a) => [a, { pick: ['auf einem Busfahrstreifen'] }] },
+  { re: /Haltestellenschild \(Zeichen 224\)/, gruppe: RUBRIK.taxi, nurParken: true, pfad: () => [{ pick: ['Parken'] }, { pick: ['im Bereich einer Haltestelle'] }] },
+  { re: /^Sie (hielten|parkten)( länger als 3 Stunden)? auf einem Bussonderfahrstreifen \(Zeichen 245\)/, gruppe: RUBRIK.taxi, pfad: (a) => [a, { pick: ['auf einem Busfahrstreifen'] }] },
   { re: /in der zweiten Reihe/, gruppe: RUBRIK.taxi, pfad: (a) => [a, { pick: ['in der zweiten Reihe'] }] },
 
   // --- Bordstein / Zufahrten / Kreuzungen ------------------------------------
@@ -196,7 +214,9 @@ export function verstossText(label: string): string {
 function regelFuer(label: string | null | undefined): Regel | null {
   if (!label) return null
   const text = verstossText(label)
-  return REGELN.find((r) => r.re.test(text)) ?? null
+  const regel = REGELN.find((r) => r.re.test(text))
+  if (!regel || (regel.nurParken && /^Sie hielten\b/.test(text))) return null
+  return regel
 }
 
 /** Varianten, zwischen denen der Nutzer für diesen Verstoß wählen muss (leer = keine). */
@@ -391,47 +411,19 @@ export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacke
   }
 }
 
-export type FotoRolle = 'uebersicht' | 'fahrzeug'
-const istRolle = (v: unknown): v is FotoRolle => v === 'uebersicht' || v === 'fahrzeug'
-
 /** Fotos aufteilen: das Portal will getrennt Übersichtsfotos (Verstoß samt
  *  Beschilderung) und Fahrzeugfotos (Kennzeichen lesbar), je 1–5.
- *  Von Hand gesetzte Rollen (report_images.portal_rolle) gelten immer; sonst
- *  gilt ein Foto mit erkanntem Kennzeichen als Fahrzeugfoto, der Rest als
- *  Übersicht. Bleibt eine Seite leer, wird mit automatisch zugeordneten Fotos
- *  aufgefüllt, notfalls dasselbe Foto in beiden Feldern. */
-export function photoRoles<T extends Record<string, any>>(imgs: T[]): { uebersicht: T[]; fahrzeug: T[] } {
-  const manuell = (i: T) => istRolle(i.portal_rolle)
-  let fahrzeug = imgs.filter((i) => (manuell(i) ? i.portal_rolle === 'fahrzeug' : !!i.detected_plate))
-  let uebersicht = imgs.filter((i) => !fahrzeug.includes(i))
-  if (!fahrzeug.length && uebersicht.length > 1) {
-    const x = [...uebersicht].reverse().find((i) => !manuell(i))
-    if (x) {
-      fahrzeug = [x]
-      uebersicht = uebersicht.filter((i) => i !== x)
-    }
-  }
-  if (!uebersicht.length && fahrzeug.length > 1) {
-    // Alle Fotos zeigen das Kennzeichen: das mit dem kleinsten Schild im Bild
-    // (plate_flaeche, services/dritte.ts) ist am ehesten die Übersicht.
-    const autos = fahrzeug.filter((i) => !manuell(i))
-    const mitFlaeche = autos.filter((i) => typeof i.plate_flaeche === 'number')
-    const x = mitFlaeche.length
-      ? mitFlaeche.reduce((a, b) => (b.plate_flaeche < a.plate_flaeche ? b : a))
-      : autos[0]
-    if (x) {
-      uebersicht = [x]
-      fahrzeug = fahrzeug.filter((i) => i !== x)
-    }
-  }
-  if (!fahrzeug.length) fahrzeug = uebersicht.slice(0, 1)
-  if (!uebersicht.length) uebersicht = fahrzeug.slice(0, 1)
-  return { uebersicht: uebersicht.slice(0, 5), fahrzeug: fahrzeug.slice(0, 5) }
+ *  Die Reihenfolge entscheidet (sort_order, im Foto-Dialog per Ziehen bzw.
+ *  ‹ › änderbar): Foto 1 ist die Übersicht, alle weiteren sind Fahrzeugfotos.
+ *  Ein einzelnes Foto geht in beide Felder. */
+export function photoRoles<T>(imgs: T[]): { uebersicht: T[]; fahrzeug: T[] } {
+  if (imgs.length < 2) return { uebersicht: imgs.slice(), fahrzeug: imgs.slice() }
+  return { uebersicht: imgs.slice(0, 1), fahrzeug: imgs.slice(1, 6) }
 }
 
 /** Je Foto die Rolle, mit der es tatsächlich hochginge (für die Anzeige im
  *  Foto-Dialog): auch 'beide' (einziges Foto) und 'keine' (mehr als 5). */
-export function photoRoleMap<T extends Record<string, any>>(imgs: T[]): Map<T, 'uebersicht' | 'fahrzeug' | 'beide' | 'keine'> {
+export function photoRoleMap<T>(imgs: T[]): Map<T, 'uebersicht' | 'fahrzeug' | 'beide' | 'keine'> {
   const r = photoRoles(imgs)
   return new Map(imgs.map((i) => {
     const u = r.uebersicht.includes(i)

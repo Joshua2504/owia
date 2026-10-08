@@ -8,8 +8,8 @@ import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap } from '../services/portalFfm'
-import { dritteFunde, kennzeichenFlaeche, parseAnalyse } from '../services/dritte'
-import { submitProblems, mostUsedVerstoesse } from './reports'
+import { dritteFunde, parseAnalyse } from '../services/dritte'
+import { submitProblems, mostUsedVerstoesse, VERSTOSS_SPERREN } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
 
 // Prüf-Modus: alle offenen Entwürfe nacheinander durchgehen – Fotos prüfen und
@@ -43,7 +43,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
       countAlle: offen.length,
       countBereit: offen.filter((r) => r.bereit_at).length,
       countVerjaehrt: rows.length - offen.length,
-      verstoss: { haeufig: await mostUsedVerstoesse(), alle: VERSTOSS_ARTEN },
+      verstoss: { haeufig: await mostUsedVerstoesse(), alle: VERSTOSS_ARTEN, ...VERSTOSS_SPERREN },
       // Ordnungsamt-Auswahl + Kartenmitte ohne Tatort (wie edit.ejs).
       cities: unlockedCities().map((c) => ({
         id: c.id, name: c.name, ordnungsamt: c.ordnungsamt, email: cityEmail(c) || '', lat: c.geo.mapLat, lon: c.geo.mapLon,
@@ -112,13 +112,12 @@ export default async function reviewRoutes(app: FastifyInstance) {
     }
     const problems = await submitProblems(report, userId)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, filename, detected_plate, portal_rolle, analyse_json, dritte_ok, geprueft_at, gps_lat,
+      `SELECT id, filename, detected_plate, analyse_json, dritte_ok, geprueft_at, gps_lat,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i') AS captured
          FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
     )
     const city = getCity(report.city)
-    for (const i of imgs) i.plate_flaeche = kennzeichenFlaeche(i.analyse_json, report.kennzeichen)
     const rollen = photoRoleMap(imgs)
     const vj = verjaehrung(report)
     // Zeitspanne der Fotos (EXIF) für „Uhrzeit aus Fotos" – als Strings, nie
@@ -170,7 +169,6 @@ export default async function reviewRoutes(app: FastifyInstance) {
         return {
           id: Number(i.id),
           rolle: rollen.get(i) ?? 'keine',
-          rolleManuell: i.portal_rolle === 'uebersicht' || i.portal_rolle === 'fahrzeug',
           // Datenschutz: fremde Kennzeichen/Gesichter (Boxen in Bildpixeln der
           // analysierten Fassung, Größe in groesse) – photo-edit.js schwärzt sie.
           dritte: i.dritte_ok ? [] : dritteFunde(i.analyse_json, report.kennzeichen),

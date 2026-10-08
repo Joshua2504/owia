@@ -15,6 +15,7 @@ export {
   strukturFelder,
   normalizePlate,
   mostUsedVerstoesse,
+  VERSTOSS_SPERREN,
   isProfileComplete,
   regeneratePdf,
   enqueuePdf,

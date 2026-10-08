@@ -199,11 +199,14 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
     <% if (_isDraft) { %>
       <%# Durchsuchbare Auswahl wie im Editor; der Katalog wird erst beim
           ersten Fokus geladen (report-inline.js → verstoss-select.js). %>
-      <div class="position-relative inline-verstoss" data-inline-verstoss>
+      <div class="position-relative inline-verstoss" data-inline-verstoss data-city="<%= r.city || '' %>">
         <input type="hidden" data-inline-field="verstoss_art" value="<%= r.verstoss_art || '' %>">
-        <textarea class="form-control form-control-sm inline-input" data-verstoss-input rows="2"
-                  autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
-                  placeholder="Verstoß wählen …" title="<%= r.verstoss_art || '' %>"
+        <%# Gesperrt = Tatbestand gibt es im Online-Portal der Stadt nicht (Frankfurt);
+            verstoss-select.js hält die Markierung danach aktuell. %>
+        <% const _vGesperrt = verstossGesperrt(r.city, r.verstoss_art) %>
+        <textarea class="form-control form-control-sm inline-input<%= _vGesperrt ? ' is-invalid' : '' %>" data-verstoss-input rows="2"
+                  autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"<%- _vGesperrt ? ' data-gesperrt="1"' : '' %>
+                  placeholder="Verstoß wählen …" title="<%= _vGesperrt ? 'Diesen Tatbestand bietet das Online-Portal der Stadt nicht an – bitte einen anderen Verstoß wählen.' : (r.verstoss_art || '') %>"
                   aria-label="Verstoß von <%= r.aktenzeichen %>"><%= r.verstoss_art || '' %></textarea>
       </div>
       <div class="inline-flags">

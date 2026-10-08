@@ -373,7 +373,7 @@
       '</select>' +
       '<div class="small text-muted mt-1" data-recipient>An: ' + esc(d.recipient.ordnungsamt) + (d.recipient.email ? ' (' + esc(d.recipient.email) + ')' : '') + '</div>' +
       '</div>' +
-      '<div class="review-wide position-relative" data-verstoss-root><label class="form-label small mb-1" for="rv-verstoss">Verstoß</label>' +
+      '<div class="review-wide position-relative" data-verstoss-root data-city="' + esc(f.city) + '"><label class="form-label small mb-1" for="rv-verstoss">Verstoß</label>' +
       '<input type="hidden" data-f="verstoss_art" data-inline-field="verstoss_art" value="' + esc(f.verstoss_art) + '">' +
       '<textarea id="rv-verstoss" rows="2" class="form-control' + (f.verstoss_art ? '' : ' is-invalid') + '" data-verstoss-input placeholder="Verstoß suchen …">' + esc(f.verstoss_art) + '</textarea>' +
       '</div>' +
@@ -444,6 +444,8 @@
         sel.value = d.fields.city
         sel.dataset.saved = d.fields.city
       }
+      var vr = root.querySelector('[data-verstoss-root]')
+      if (vr && d.fields.city) vr.dataset.city = d.fields.city
       var rec = root.querySelector('[data-recipient]')
       if (rec) rec.textContent = 'An: ' + d.recipient.ordnungsamt + (d.recipient.email ? ' (' + d.recipient.email + ')' : '')
     })

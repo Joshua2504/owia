@@ -7,7 +7,7 @@
 //   civento-mz  Mainz      – services/portalMz.ts  (Art × Rubrik + Freitext, Telefon Pflicht)
 
 import mysql from 'mysql2/promise'
-import { getCity } from '../config/cities'
+import { CITIES, DEFAULT_CITY_ID, getCity } from '../config/cities'
 import { buildPortalPayload, imPortal, portalProblem, photoRoles, erstAbMorgen, verstossVarianten } from './portalFfm'
 import { buildWiPayload, wiProblem } from './portalWi'
 import { buildMzPayload, mzProblem, mzFotos } from './portalMz'
@@ -76,4 +76,22 @@ export function portalFuer(cityId: string | null | undefined): PortalAdapter | n
 /** Taten von heute erst ab morgen (nur Portale ohne heuteErlaubt). */
 export function erstMorgen(adapter: PortalAdapter, report: Record<string, any>): boolean {
   return !adapter.heuteErlaubt && erstAbMorgen(report)
+}
+
+/** Darf dieser Verstoß für die Stadt nicht gewählt werden (Portal kennt ihn nicht)? */
+export function verstossGesperrt(cityId: string | null | undefined, verstossArt: string | null | undefined): boolean {
+  const adapter = portalFuer(cityId)
+  return !!adapter && !!verstossArt && !adapter.versendbar(verstossArt)
+}
+
+/** Für die Verstoß-Auswahl (public/js/verstoss-select.js): je Stadt mit Portal
+ *  die Indizes der Katalogeinträge, die dort nicht wählbar sind. Indizes statt
+ *  Texte, damit die eingebettete Liste klein bleibt. */
+export function verstossSperren(labels: string[]): { gesperrt: Record<string, { name: string; idx: number[] }>; standardStadt: string } {
+  const gesperrt: Record<string, { name: string; idx: number[] }> = {}
+  for (const c of Object.values(CITIES)) {
+    const idx = labels.flatMap((l, i) => (verstossGesperrt(c.id, l) ? [i] : []))
+    if (idx.length) gesperrt[c.id] = { name: c.name, idx }
+  }
+  return { gesperrt, standardStadt: DEFAULT_CITY_ID }
 }
