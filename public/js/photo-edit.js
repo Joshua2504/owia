@@ -1069,7 +1069,7 @@
   // Marker ziehen → Adresse per Reverse-Geocoding → Tatort + genau diese
   // Koordinaten speichern. Leaflet wird bei Bedarf nachgeladen (nicht jede
   // Listenseite bindet es ein).
-  var MAP_ZOOM = 19 // höchste Stufe des Tileservers (maxZoom unten)
+  var MAP_ZOOM = 17 // zwei Stufen unter dem Maximum (19) – Umgebung erkennbar
   var map = null
   var marker = null
   var mapAz = null
