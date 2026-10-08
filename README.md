@@ -175,6 +175,8 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
   ein Adapter (`src/services/portale.ts` → `portalFfm.ts`, `portalWi.ts`,
   `portalMz.ts`) und ein Formular-Profil im Dienst (`docker/portal/ekom21.mjs`,
   `mainz.mjs`, Bausteine in `lib.mjs`); Ablauf/Zustände: `src/services/portalDispatch.ts`.
+  Lücken im Frankfurter Formular (fehlende Tatbestände/Stufen):
+  [docs/FRANKFURT-NOTIZEN.md](docs/FRANKFURT-NOTIZEN.md).
 - Städte **ohne** `portal` und **mit** `pdfForm` bekommen das amtliche Formular
   als PDF-Anhang, Städte **ohne** beides eine strukturierte E-Mail mit
   Beweisfotos + Tatort-Karte.

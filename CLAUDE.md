@@ -83,6 +83,8 @@ in Requests: `registerJob` + `enqueueJob` statt `await`.
    `services/portalDispatch.ts` → Container `portal`, Playwright,
    `docker/portal/ekom21.mjs`). Mapping Katalog → Portal-Auswahlbaum und
    Pflichtangaben (Variante, Fahrzeugtyp, Hausnummer): `services/portalFfm.ts`.
+   Was im Frankfurter Formular fehlt/abweicht: `docs/FRANKFURT-NOTIZEN.md`
+   (bei neuen Funden dort ergänzen).
    Trockenläufe gegen das echte Portal sind ok (bis zur Zusammenfassung,
    dann abbrechen) – nie mit echten Fotos Dritter testen, nie absenden.
 5. Amts-Antworten: `services/mailInbox.ts` pollt per IMAP, ordnet über
