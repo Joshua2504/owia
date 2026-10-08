@@ -16,9 +16,9 @@ Backup und Referenzstand.
 ```
 NODE_ENV=production            # sonst: /dev/inbound-mail offen, Cookie ohne Secure-Flag
 SESSION_SECRET=<openssl rand -hex 32>   # App verweigert Start mit Platzhalter
-APP_URL=https://owia.treudler.net       # muss https sein (App verweigert Start sonst)
+APP_URL=https://owia.net       # muss https sein (App verweigert Start sonst)
 COMPOSE_PROFILES=production    # startet Caddy (HTTPS)
-APP_DOMAIN=owia.treudler.net
+APP_DOMAIN=owia.net
 ACME_EMAIL=<mail für Let's Encrypt>
 
 TSX_WATCH=                     # leer = kein Hot-Reload-Watcher in Produktion

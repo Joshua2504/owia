@@ -205,7 +205,7 @@ export const PdfService = {
       }
     }
 
-    // Vermerk oben rechts auf dem Formular: ausgefüllt über owia.treudler.net
+    // Vermerk oben rechts auf dem Formular: ausgefüllt über owia.net
     // plus unser Aktenzeichen (zur Zuordnung bei Rückfragen). Nach dem Flatten
     // gezeichnet, damit der Text sicher über dem Formular liegt.
     try {
@@ -215,7 +215,7 @@ export const PdfService = {
       const size = 8
       const edge = 24
       const lines = [
-        'Ausgefüllt mit owia.treudler.net.',
+        'Ausgefüllt mit owia.net.',
         `Aktenzeichen: ${report.aktenzeichen || ''}`,
       ]
       let y = height - edge

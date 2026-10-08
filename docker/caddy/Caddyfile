@@ -13,6 +13,18 @@
 	reverse_proxy owia-app-1:3000
 }
 
+# Alte Domain (bis 10/2026) und www: dauerhaft auf die neue Domain umleiten,
+# Pfad + Query bleiben erhalten (alte QR-Sticker funktionieren weiter).
+owia.treudler.net, www.{$APP_DOMAIN} {
+	redir https://{$APP_DOMAIN}{uri} 308
+}
+dev.owia.treudler.net {
+	redir https://dev.{$APP_DOMAIN}{uri} 308
+}
+dev-mail.owia.treudler.net {
+	redir https://dev-mail.{$APP_DOMAIN}{uri} 308
+}
+
 # Dev-Instanz (Stack unter /root/owia/owia-codebase).
 # Basic Auth ist Pflicht: NODE_ENV=development öffnet /dev/inbound-mail,
 # und im Dev-Mailpit sind die Magic-Login-Links für jeden lesbar.

@@ -14,8 +14,8 @@ Es gibt zwei Instanzen, beide als Docker-Compose-Stacks auf derselben Maschine:
 |---|---|---|
 | Verzeichnis | `/root/owia/owia-codebase` (dieses Repo) | `/root/owia/owia` (Deploy-Ziel, kein Git) |
 | Compose-Projekt | `ffm-owianzeiger` (in `.env` gepinnt!) | `owia` (aus Verzeichnisname) |
-| URL | https://dev.owia.treudler.net (Basic Auth `dev`, Passwort: `/root/.owia-dev-basicauth`) | https://owia.treudler.net (Live-Traffic!) |
-| Mail | Mailpit: https://dev-mail.owia.treudler.net | echter SMTP + IMAP |
+| URL | https://dev.owia.net (Basic Auth `dev`, Passwort: `/root/.owia-dev-basicauth`) | https://owia.net (Live-Traffic!) |
+| Mail | Mailpit: https://dev-mail.owia.net | echter SMTP + IMAP |
 | Lokale Ports | App 127.0.0.1:3001, Mailpit 8026 | App 127.0.0.1:3000, Mailpit 8025 |
 
 - **Entwickelt wird nur hier.** Die App läuft mit `tsx watch` — Änderungen unter
