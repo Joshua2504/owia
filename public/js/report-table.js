@@ -247,4 +247,48 @@
     row.classList.add('table-warning')
     setTimeout(function () { row.classList.remove('table-warning') }, 1500)
   })
+
+  // Versand-Stand eingereichter Anzeigen (report-row.ejs, data-versand-live):
+  // „Versand in mm:ss" zählt sekündlich herunter; danach „Versand läuft", und
+  // die Zeile wird alle 15 s neu geladen, bis sie „Versendet" (oder wieder
+  // einen neuen Termin) zeigt.
+  var versandEnde = {}
+  function versandTick() {
+    var jetzt = Date.now()
+    document.querySelectorAll('[data-versand-in]').forEach(function (el) {
+      var az = el.closest('tr') && el.closest('tr').getAttribute('data-az')
+      if (!az) return
+      if (!versandEnde[az]) versandEnde[az] = jetzt + Number(el.getAttribute('data-versand-in')) * 1000
+      var rest = Math.max(0, Math.round((versandEnde[az] - jetzt) / 1000))
+      if (rest > 0) {
+        el.querySelector('[data-versand-uhr]').textContent =
+          String(Math.floor(rest / 60)).padStart(2, '0') + ':' + String(rest % 60).padStart(2, '0')
+      } else {
+        el.removeAttribute('data-versand-in')
+        el.className = 'badge rounded-pill text-bg-primary'
+        el.textContent = '📤 Versand läuft'
+        delete versandEnde[az]
+      }
+    })
+  }
+  async function versandNachladen() {
+    var rows = document.querySelectorAll('tr[data-az] [data-versand-live]:not([data-versand-in])')
+    for (var i = 0; i < rows.length; i++) {
+      var old = rows[i].closest('tr')
+      try {
+        var res = await fetch('/anzeige/' + old.getAttribute('data-az') + '/listenzeile')
+        if (!res.ok || res.redirected) continue
+        var tbody = document.createElement('tbody')
+        tbody.innerHTML = await res.text()
+        var row = tbody.querySelector('tr')
+        if (!row || !old.isConnected) continue
+        row.hidden = old.hidden
+        old.replaceWith(row)
+        document.dispatchEvent(new Event('reports:updated'))
+      } catch (_) { /* nächster Versuch in 15 s */ }
+    }
+  }
+  // Immer aktiv: auch frisch eingereichte Zeilen (nachgeladen) zählen mit.
+  setInterval(versandTick, 1000)
+  setInterval(function () { if (!document.hidden) versandNachladen() }, 15000)
 })()

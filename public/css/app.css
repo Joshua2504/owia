@@ -1007,46 +1007,6 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 .status-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .status-chips .btn { border-radius: 999px; }
 
-/* Prüf-Modus (/pruefen, public/js/review.js): eine Karte pro Entwurf, schmal
-   zentriert, Aktionsknöpfe unten am Bildschirmrand (Daumen-Reichweite). */
-.review-top, .review-root { max-width: 760px; margin-left: auto; margin-right: auto; }
-.review-top { margin-bottom: 1rem; }
-.review-progress { height: 4px; border-radius: 2px; background: var(--bs-secondary-bg); overflow: hidden; }
-.review-progress-bar { height: 100%; width: 0; background: var(--bs-success); transition: width 0.3s; }
-.review-photos {
-  display: flex; gap: 0.5rem; overflow-x: auto; scroll-snap-type: x mandatory;
-  padding-bottom: 0.5rem; margin-bottom: 0.5rem;
-}
-.review-photo { position: relative; flex: 0 0 auto; scroll-snap-align: start; }
-.review-photo img {
-  display: block; height: 150px; width: auto; max-width: 260px; object-fit: cover;
-  border-radius: 0.4rem; border: 2px solid var(--bs-border-color); cursor: pointer;
-  background: var(--bs-secondary-bg);
-}
-.review-photo.is-ungeprueft img { border-color: #ffc107; }
-.review-photo .thumb-check { right: 5px; bottom: 5px; min-width: 22px; height: 22px; line-height: 22px; font-size: 13px; border-radius: 11px; }
-.review-photo.is-ungeprueft .thumb-check { background: #ffc107; color: #000; }
-.review-photo.is-geprueft .thumb-check { background: #198754; color: #fff; }
-.review-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; }
-/* min-width 0: date/time-Felder haben eine große Eigenbreite und schöben das
-   Grid sonst über den Kartenrand (Handy). */
-.review-fields > *, .review-time > * { min-width: 0; }
-.review-fields .review-wide, .review-fields .review-time { grid-column: 1 / -1; }
-.review-time { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr); gap: 0.5rem; }
-@media (max-width: 575.98px) { .review-time { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
-.review-plate .plate-field { font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
-.review-fields .is-saving { border-color: var(--bs-warning-border-subtle); background-color: var(--bs-warning-bg-subtle); }
-@media (max-width: 575.98px) {
-  .review-fields { grid-template-columns: minmax(0, 1fr); }
-  .review-photo img { height: 120px; }
-}
-.review-actions {
-  position: sticky; bottom: 0; z-index: 5; display: flex; gap: 0.5rem;
-  margin: 0.75rem -0.25rem 0; padding: 0.6rem 0.25rem calc(0.6rem + env(safe-area-inset-bottom));
-  background: var(--bs-body-bg); border-top: 1px solid var(--bs-border-color);
-}
-.review-actions .btn { padding-top: 0.6rem; padding-bottom: 0.6rem; }
-
 @media (max-width: 575.98px) {
   /* Handy: Kopf darf umbrechen (Status + Knöpfe passten nicht in eine Zeile und
      schoben den Dialog seitlich aus dem Bild). */
@@ -1055,7 +1015,6 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
   .photo-edit-hint { display: none; }
   .photo-edit-hint.text-warning { display: block; text-align: center; }
 }
-.review-map { height: 260px; }
 /* Reihenfolge im Kachel-Streifen (photo-edit.js): Nummer, Pfeile an der aktuellen Kachel, Drop-Ziel. */
 .photo-edit-tile-no {
   position: absolute; left: 4px; top: 4px; min-width: 18px; height: 18px; padding: 0 4px;
@@ -1192,8 +1151,7 @@ html { scroll-padding-top: calc(var(--owia-nav-h, 0px) + 0.5rem); }
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .back-to-top[hidden] { display: none; }
-body:has(.editor-actions) .back-to-top,
-body:has(.review-actions) .back-to-top { bottom: 5rem; }
+body:has(.editor-actions) .back-to-top { bottom: 5rem; }
 
 /* Öffentliche Übersichtskarte (overview-map.js): alle Fotos einer Anzeige im
    Popup und beim Hovern. Pixelbilder blockig hochskalieren. */
@@ -1262,7 +1220,6 @@ body:has(.review-actions) .back-to-top { bottom: 5rem; }
 }
 .kamera-fab:active { transform: scale(.94); }
 body:has(.editor-actions) .kamera-fab,
-body:has(.review-actions) .kamera-fab,
 body:has(.bulk-action-bar:not(.d-none)) .kamera-fab,
 body:has(.photo-pick-bar) .kamera-fab,
 body:has(.versand-mini:not([hidden])) .kamera-fab,
@@ -1395,3 +1352,108 @@ body.is-bare { overflow: hidden; overscroll-behavior: none; background: #000; }
 @media (prefers-reduced-motion: reduce) { .owia-confirm[open] { animation: none; } }
 .owia-confirm-text { white-space: pre-line; }
 .owia-confirm-icon.is-danger { background: var(--bs-danger-bg-subtle); color: var(--bs-danger-text-emphasis); font-weight: 700; }
+
+/* ---------------------------------------------------------------------------
+   Kompakte Anzeigen-Liste (Tabellenansicht ab md): höchstens zwei Zeilen je
+   Anzeige. Fotos in einer waagrecht scrollbaren Reihe, Fahrzeug in einer
+   Zeile, Hilfsknöpfe (Kennzeichen-Vorschlag, Zeit/Tatort aus Fotos) als
+   Icons neben dem Feld, Verstoß einzeilig mit den Häkchen darunter.
+   --------------------------------------------------------------------------- */
+.inline-line { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.inline-line > .inline-input { flex: 1 1 auto; min-width: 0; }
+.inline-line > .plate-suggest { flex: none; white-space: nowrap; font-size: 0.75rem; text-decoration: none; }
+.inline-icon-btn {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 0.1rem;
+  line-height: 1;
+  font-size: 0.95rem;
+  cursor: pointer;
+  opacity: 0.8;
+}
+.inline-icon-btn:hover { opacity: 1; }
+.inline-flags { align-items: center; }
+.inline-flags > .inline-input { flex: 1 1 8rem; min-width: 0; margin: 0; width: auto; }
+
+@media (min-width: 768px) {
+  .report-table > tbody > tr > td { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+  .report-table .report-photos {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 56px;
+    overflow-x: auto;
+    scrollbar-width: thin; /* mehr Fotos als Platz: waagrecht scrollen */
+  }
+  .report-table .report-thumb { width: 56px; height: 42px; }
+  .report-table .report-photos-more { height: 42px; }
+  .report-table .inline-vehicle { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 0; }
+  .report-table .inline-input { padding-top: 0.1rem; padding-bottom: 0.1rem; }
+  .report-table .inline-times { margin-top: 0; }
+  .report-table textarea.inline-input { min-height: 0; max-height: calc(2.6em + 0.2rem + 2px); }
+  .report-table textarea.inline-input:focus { max-height: 6rem; }
+  .report-table textarea.inline-one:not(:focus) { height: calc(1.3em + 0.2rem + 2px); max-height: calc(1.3em + 0.2rem + 2px); }
+  .report-table .inline-flags { flex-wrap: nowrap; gap: 0 0.5rem; margin-top: 0; white-space: nowrap; overflow: hidden; }
+  .report-table .cell-status { line-height: 1.6; }
+  .report-table .cell-status .badge { white-space: nowrap; }
+  /* Schmalere feste Spalten → mehr Platz für Kennzeichen, Tatort und Verstoß. */
+  .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 2.5rem; }
+  .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 11.75rem; }
+  .report-table th:nth-child(3), .report-table td:nth-child(3) { width: 7.75rem; }
+  .report-table th:nth-child(4), .report-table td:nth-child(4) { width: 15%; }
+  .report-table th:nth-child(5), .report-table td:nth-child(5) { width: 11.5rem; }
+  .report-table th:nth-child(6), .report-table td:nth-child(6) { width: 12%; }
+  .report-table th:nth-child(8), .report-table td:nth-child(8) { width: 8.25rem; }
+  .report-table th:nth-child(9), .report-table td:nth-child(9) { width: 9.25rem; }
+  .report-table .cell-actions .btn { white-space: nowrap; }
+  .report-table .cell-actions .badge { font-size: 0.7em; }
+  .report-table .inline-vehicle { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 3.4rem minmax(0, 1fr); }
+}
+
+/* Handy: eingereichte/versendete Anzeigen als kompakte Karte (Grid):
+     AZ ············ Status
+     Fotos  Kennzeichen  Tatzeit
+     Verstoß ······· Tatort
+   Details öffnet das Aktenzeichen. */
+@media (max-width: 767.98px) {
+  .report-table > tbody > tr:not([data-status="entwurf"]):not([data-status="bereit"]) {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    grid-template-areas: "az status status" "photos plate time" "offense offense place";
+    gap: 0.3rem 0.6rem;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    margin: 0.5rem 0.75rem;
+  }
+  .report-table > tbody > tr:not([data-status="entwurf"]):not([data-status="bereit"]) > td { min-width: 0; padding: 0; }
+  /* Ein Foto als Vorschau reicht hier; alle Fotos auf der Detailseite. */
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .thumb-wrap ~ .thumb-wrap,
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .report-photos-more { display: none; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-select,
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-actions,
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-label,
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-offense .cell-sub { display: none; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-az { grid-area: az; overflow: visible; white-space: nowrap; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-status { grid-area: status; justify-self: end; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-photos { grid-area: photos; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-plate { grid-area: plate; display: block; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-time { grid-area: time; text-align: right; font-size: 0.875rem; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-offense { grid-area: offense; font-size: 0.8125rem; display: block; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-place { grid-area: place; font-size: 0.8125rem; display: block; max-width: 9.5rem; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .report-photos {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 48px;
+  }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .report-photos .report-thumb { width: 48px; height: 36px; aspect-ratio: auto; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .report-photos-more { height: 36px; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-plate .mt-1 { margin-top: 0 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-place .clamp-2,
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-offense .clamp-2,
+  .report-table tr:not([data-status="entwurf"]):not([data-status="bereit"]) .cell-offense .text-truncate:not(.cell-sub) {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

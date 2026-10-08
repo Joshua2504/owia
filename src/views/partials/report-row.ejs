@@ -76,13 +76,8 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
     <%# Verjährte Entwürfe lassen sich nicht mehr einreichen – also auch nicht prüfen. %>
     <% const _verjaehrt = _isDraft && verjaehrung(r).verjaehrt %>
     <% const _unchecked = _isDraft && !_verjaehrt ? _imgs.filter((i) => !i.ok).length : 0 %>
-    <% if (_unchecked) { %>
-      <button type="button" class="btn btn-link p-0 small photos-unchecked" data-review-photos>
-        🔍 <%= _unchecked %> von <%= _imgs.length %> Foto<%= _imgs.length === 1 ? '' : 's' %> prüfen
-      </button>
-    <% } else if (_isDraft && !_verjaehrt && _imgs.length) { %>
-      <div class="small text-success photos-checked">✓ Fotos geprüft</div>
-    <% } %>
+    <%# Kompakt (max. zwei Zeilen je Anzeige): der Prüfstand steckt in den
+        Kachel-Rändern (gelb = ungeprüft) und im „Prüfen"-Knopf (Zähler). %>
   </td>
   <td class="cell-az text-nowrap">
     <a href="/anzeige/<%= r.aktenzeichen %><%= _isDraft ? '/bearbeiten' + _queue : '' %>" class="az-link"
@@ -91,10 +86,21 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
   <td class="cell-plate <%= _isDraft || r.kennzeichen || r.fahrzeug_marke || r.fahrzeug_modell || r.fahrzeug_farbe ? '' : 'cell-empty' %>">
     <% if (_isDraft) { %>
       <span class="cell-label">Kennzeichen / Fahrzeug</span>
+      <%# Von der Kennzeichen-Erkennung gelesene Kennzeichen der Fotos, die noch
+          nicht im Feld stehen: Klick übernimmt (report-inline.js). Als Chip neben
+          dem Feld, damit die Zeile zweizeilig bleibt. %>
+      <% const _norm = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '') %>
+      <% const _plates = String(r.detected_plates || '').split('|').filter((p) => p && _norm(p) !== _norm(r.kennzeichen)).slice(0, 2) %>
+      <div class="inline-line">
       <input type="text" class="form-control form-control-sm inline-input plate-field" data-inline-field="kennzeichen"
              value="<%= r.kennzeichen || '' %>" placeholder="Kennzeichen" maxlength="20"
              autocomplete="off" spellcheck="false" autocapitalize="characters"
              aria-label="Kennzeichen von <%= r.aktenzeichen %>">
+      <% for (const p of _plates) { %>
+        <button type="button" class="btn btn-link p-0 small plate-suggest" data-plate-suggest="<%= p %>"
+                title="Aus den Fotos erkannt: <%= p %> – Klick übernimmt">🚗 <%= p %></button>
+      <% } %>
+      </div>
       <%# Fahrzeug wie im Editor getrennt (Migration 0039): Marke, Modell, Typ, Farbe. %>
       <div class="inline-vehicle">
         <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="fahrzeug_marke"
@@ -111,14 +117,6 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
                value="<%= r.fahrzeug_farbe || '' %>" placeholder="Farbe" maxlength="40" list="fz-farben"
                autocomplete="off" aria-label="Fahrzeugfarbe von <%= r.aktenzeichen %>">
       </div>
-      <%# Von der Kennzeichen-Erkennung gelesene Kennzeichen der Fotos, die noch
-          nicht im Feld stehen: Klick übernimmt (report-inline.js). %>
-      <% const _norm = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9ÄÖÜ]/g, '') %>
-      <% const _plates = String(r.detected_plates || '').split('|').filter((p) => p && _norm(p) !== _norm(r.kennzeichen)).slice(0, 3) %>
-      <% for (const p of _plates) { %>
-        <button type="button" class="btn btn-link p-0 d-block small plate-suggest" data-plate-suggest="<%= p %>"
-                title="Aus den Fotos erkannt – übernehmen">🚗 <%= p %> übernehmen</button>
-      <% } %>
     <% } else { %>
       <% if (r.kennzeichen) { %>
         <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>
@@ -137,8 +135,15 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
     <span class="cell-label">Tatzeit</span>
     <% if (_isDraft) { %>
       <%# Tattag + Uhrzeit von/bis direkt bearbeiten (report-inline.js). %>
+      <div class="inline-line">
       <input type="date" class="form-control form-control-sm inline-input" data-inline-field="tattag"
              value="<%= _isoDate(r.tattag) %>" aria-label="Tattag von <%= r.aktenzeichen %>">
+      <%# Fotos haben eine andere Aufnahmezeit als eingetragen: per Klick übernehmen (report-inline.js). %>
+      <% if (r.photo_time_min && r.photo_time_min !== _ts) { %>
+        <button type="button" class="inline-icon-btn" data-time-from-photos
+                title="Zeit aus Fotos übernehmen (aufgenommen ab <%= r.photo_time_min %>)" aria-label="Zeit aus Fotos übernehmen">🕒</button>
+      <% } %>
+      </div>
       <div class="inline-times">
         <input type="time" class="form-control form-control-sm inline-input" data-inline-field="tatzeit_von"
                value="<%= _hhmm(r.tatzeit_von) %>" aria-label="Uhrzeit von">
@@ -146,11 +151,6 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
         <input type="time" class="form-control form-control-sm inline-input" data-inline-field="tatzeit_bis"
                value="<%= _hhmm(r.tatzeit_bis) %>" aria-label="Uhrzeit bis">
       </div>
-      <%# Fotos haben eine andere Aufnahmezeit als eingetragen: per Klick übernehmen (report-inline.js). %>
-      <% if (r.photo_time_min && r.photo_time_min !== _ts) { %>
-        <button type="button" class="btn btn-link p-0 d-block small tatort-from-photos" data-time-from-photos
-                title="Fotos aufgenommen ab <%= r.photo_time_min %>">🕒 Zeit aus Fotos übernehmen</button>
-      <% } %>
     <% } else { %>
     <%= _fmtDate(r.tattag) || '—' %><% if (r.tattag_bis && _fmtDate(r.tattag_bis) !== _fmtDate(r.tattag)) { %> – <%= _fmtDate(r.tattag_bis) %><% } %>
     <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
@@ -179,15 +179,15 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       <% } else { %>
         <span class="clamp-2" title="<%= r.tatort || '' %>"><%= r.tatort || '' %></span>
       <% } %>
+      <%# Fehlender Tatort, aber Fotos mit GPS: per Klick übernehmen (report-inline.js). %>
+      <% if (!r.tatort && _isDraft && Number(r.photo_gps_count) > 0) { %>
+        <button type="button" class="inline-icon-btn" data-tatort-from-photos title="Tatort aus Foto-GPS übernehmen" aria-label="Tatort aus Fotos übernehmen">📍</button>
+      <% } %>
       <% if (_hasCoords) { %>
         <button type="button" class="map-peek" data-map-peek data-lat="<%= _lat %>" data-lon="<%= _lon %>"
                 title="Karte anzeigen" aria-label="Tatort auf der Karte anzeigen">🗺️</button>
       <% } %>
     </div>
-    <%# Fehlender Tatort, aber Fotos mit GPS: per Klick übernehmen (report-inline.js). %>
-    <% if (!r.tatort && _isDraft && Number(r.photo_gps_count) > 0) { %>
-      <button type="button" class="btn btn-link p-0 d-block small tatort-from-photos" data-tatort-from-photos>📍 aus Fotos übernehmen</button>
-    <% } %>
   </td>
   <%
   // Weitere Details kompakt darunter (nur befüllte Felder).
@@ -207,20 +207,20 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
         <%# Gesperrt = Tatbestand gibt es im Online-Portal der Stadt nicht (Frankfurt);
             verstoss-select.js hält die Markierung danach aktuell. %>
         <% const _vGesperrt = verstossGesperrt(r.city, r.verstoss_art) %>
-        <textarea class="form-control form-control-sm inline-input<%= _vGesperrt ? ' is-invalid' : '' %>" data-verstoss-input rows="2"
+        <textarea class="form-control form-control-sm inline-input inline-one<%= _vGesperrt ? ' is-invalid' : '' %>" data-verstoss-input rows="1"
                   autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"<%- _vGesperrt ? ' data-gesperrt="1"' : '' %>
                   placeholder="Verstoß wählen …" title="<%= _vGesperrt ? 'Diesen Tatbestand bietet das Online-Portal der Stadt nicht an – bitte einen anderen Verstoß wählen.' : (r.verstoss_art || '') %>"
                   aria-label="Verstoß von <%= r.aktenzeichen %>"><%= r.verstoss_art || '' %></textarea>
       </div>
       <div class="inline-flags">
-        <label><input type="checkbox" class="form-check-input" data-inline-field="fahrzeug_verlassen" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>> Fahrzeug verlassen</label>
+        <label title="Fahrzeug war verlassen (kein Fahrer in der Nähe)"><input type="checkbox" class="form-check-input" data-inline-field="fahrzeug_verlassen" <%= r.fahrzeug_verlassen === 1 ? 'checked' : '' %>> Verlassen</label>
         <label><input type="checkbox" class="form-check-input" data-inline-field="behinderung" <%= r.behinderung === 1 ? 'checked' : '' %>> Behinderung</label>
+        <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="behinderung_text"
+               value="<%= r.behinderung_text || '' %>" placeholder="Wer wurde wie behindert?" maxlength="2000"
+               <%= r.behinderung === 1 ? '' : 'hidden' %> aria-label="Behinderung beschreiben">
       </div>
-      <input type="text" class="form-control form-control-sm inline-input inline-sub" data-inline-field="behinderung_text"
-             value="<%= r.behinderung_text || '' %>" placeholder="Wer wurde wie behindert?" maxlength="2000"
-             <%= r.behinderung === 1 ? '' : 'hidden' %> aria-label="Behinderung beschreiben">
     <% } else { %>
-      <div class="clamp-2" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '' %></div>
+      <div class="<%= extras.length ? 'text-truncate' : 'clamp-2' %>" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '' %></div>
     <% } %>
     <% if (extras.length) { %>
       <div class="cell-sub text-muted small text-truncate" title="<%= extras.join(' · ') %>"><%= extras.join(' · ') %></div>
@@ -243,7 +243,19 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
         <span class="badge rounded-pill text-bg-light border" title="<%= _vj.monate < 3 ? 'Annahmefrist der Stadt endet' : 'Verjährt' %> in <%= _vj.restTage %> Tag<%= _vj.restTage === 1 ? '' : 'en' %>">⏳ noch <%= _vj.restTage %> T.</span>
       <% } %>
     <% } else { %>
-      <span class="badge rounded-pill text-bg-info">Eingereicht</span>
+      <%# Eingereicht: wo steht der Versand? versand_warte = wartender/laufender
+          Versand-Job (services/versandWarte.ts), der Versand-Takt lässt ihn oft
+          Minuten warten. Countdown + Nachladen der Zeile: report-table.js. %>
+      <% const _w = r.versand_warte %>
+      <% if (r.versand_status || (_w && (_w.laeuft || !_w.sek))) { %>
+        <span class="badge rounded-pill text-bg-primary" data-versand-live title="Die Anzeige wird gerade ans Ordnungsamt übermittelt.">📤 Versand läuft</span>
+      <% } else if (_w && _w.sek) { %>
+        <% const _mm = Math.floor(_w.sek / 60), _ss = _w.sek % 60 %>
+        <span class="badge rounded-pill text-bg-info" data-versand-live data-versand-in="<%= _w.sek %>"
+              title="Die Anzeigen werden nacheinander im Abstand verschickt.">⏱ Versand in <span data-versand-uhr><%= String(_mm).padStart(2, '0') %>:<%= String(_ss).padStart(2, '0') %></span></span>
+      <% } else { %>
+        <span class="badge rounded-pill text-bg-info" title="Eingereicht – wird geprüft und dann ans Ordnungsamt verschickt.">Eingereicht</span>
+      <% } %>
     <% } %>
     <% if (typeof isDuplicate !== 'undefined' && isDuplicate) { %>
       <span class="badge rounded-pill text-bg-warning border border-dark-subtle" title="Gleiches Kennzeichen im selben Zeitraum – siehe Hinweis oben">⚠️ Doppelt?</span>
@@ -263,7 +275,7 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
         <%# Prüfen: öffnet den Prüf-Dialog (photo-edit.js) auf dem ersten ungeprüften
             Foto – Fotos schwärzen, Angaben kontrollieren, dort einreichen. Ohne
             Fotos fällt der Klick auf die Einreichen-Vorschau (report-submit.js) zurück. %>
-        <% if (!_verjaehrt) { %><button type="button" class="btn btn-sm btn-success" data-review-photos title="Fotos prüfen, Angaben kontrollieren und einreichen">Prüfen</button><% } %>
+        <% if (!_verjaehrt) { %><button type="button" class="btn btn-sm btn-success" data-review-photos title="<%= _unchecked ? _unchecked + ' von ' + _imgs.length + ' Fotos ungeprüft – ' : '' %>Fotos prüfen, Angaben kontrollieren und einreichen">Prüfen<% if (_unchecked) { %> <span class="badge text-bg-warning"><%= _unchecked %></span><% } %></button><% } %>
         <a href="/anzeige/<%= r.aktenzeichen %>/bearbeiten<%= _queue %>" class="btn btn-sm btn-outline-primary" data-edit-modal title="Bearbeiten (Prüf-Dialog)">✏️</a>
         <%# Löschen verschiebt in den Papierkorb (wiederherstellbar). %>
         <form method="post" action="/anzeige/<%= r.aktenzeichen %>/discard" class="m-0">

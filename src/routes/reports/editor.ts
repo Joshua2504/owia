@@ -1,6 +1,7 @@
 // Anzeigen-Editor und Detailseite: Entwurf anlegen/bearbeiten/speichern,
 // Autosave und Inline-Felder, Tatzeit/Tatort aus Fotos, Listenzeile, Detail-
 // ansicht mit Nachrichtenverlauf ans Ordnungsamt und Anhang-Download.
+import { versandWartezeiten } from '../../services/versandWarte'
 import { isVerjaehrt, verjaehrung } from '../../services/verjaehrung'
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
@@ -391,7 +392,7 @@ export default async function editorRoutes(app: FastifyInstance) {
     // lässt sich dort 30 Tage lang wiederherstellen.
     await trashDrafts(userId, [reportId])
 
-    // Prüf-Modus (review.js) verwirft per fetch und lädt selbst den nächsten.
+    // Foto-Dialog (photo-edit.js) verwirft per fetch.
     if (String(request.headers.accept || '').includes('application/json')) return reply.send({ ok: true })
     setFlash(reply, 'success', 'Entwurf in den Papierkorb verschoben.')
     // Import-Entwürfe zurück zur Batch-Übersicht, sonst zur Anzeigenliste.
@@ -445,6 +446,7 @@ export default async function editorRoutes(app: FastifyInstance) {
           // Früheste Aufnahmezeit (Strings sortieren chronologisch, s. Konvention Foto-Zeitstempel).
           photo_time_min: images.map((i) => i.captured).filter(Boolean).sort()[0] || null,
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
+          versand_warte: report.status === 'eingereicht' ? (await versandWartezeiten([report.id])).get(report.id) || null : null,
         },
         imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename), ok: i.geprueft_at !== null, plate: i.detected_plate || null })),
         // ejs.renderFile kennt den defaultContext von @fastify/view (server.ts)

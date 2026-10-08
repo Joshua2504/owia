@@ -4,6 +4,7 @@ import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
 import { imageVersion } from '../services/images'
 import { findDuplicateGroups } from '../services/duplicates'
+import { versandWartezeiten } from '../services/versandWarte'
 
 // Sortierbare Spalten der Anzeigen-Liste → SQL. Leere Werte stehen in beiden
 // Richtungen unten (erster ORDER-BY-Teil, '' = Spalte ist nie leer), danach das eigentliche Kriterium;
@@ -38,7 +39,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     const orderBy = `${s.empty ? s.empty + ', ' : ''}${s.expr.replace(/\{dir\}/g, sort.dir === 'asc' ? 'ASC' : 'DESC')}, created_at DESC`
     const [reports] = await pool.execute<mysql.RowDataPacket[]>(
       `SELECT id, aktenzeichen, kennzeichen, kennzeichen_land, tattag, tattag_bis, tatzeit_von, tatzeit_bis,
-              tatort, tatort_lat, tatort_lon, verstoss_art, status, bereit_at, created_at, city,
+              tatort, tatort_lat, tatort_lon, verstoss_art, status, versand_status, bereit_at, created_at, city,
               fahrzeug_marke, fahrzeug_typ, fahrzeug_modell, fahrzeug_farbe, verstoss_variante,
               beschreibung, fahrzeug_verlassen, behinderung, behinderung_text,
               (SELECT DATE_FORMAT(MIN(pt.captured_at), '%Y-%m-%d %H:%i') FROM report_images pt WHERE pt.report_id = reports.id) AS photo_time_min,
@@ -65,6 +66,10 @@ export default async function dashboardRoutes(app: FastifyInstance) {
       ;(imagesByReport[img.report_id] ??= []).push({ id: img.id, v: imageVersion(img.filename), ok: img.geprueft_at !== null, plate: img.detected_plate || null, zeit: img.zeit || null })
     }
 
+    // Eingereichte Anzeigen: Countdown bis zum Versand (report-row.ejs).
+    const warte = await versandWartezeiten(reports.filter((r) => r.status === 'eingereicht').map((r) => Number(r.id)))
+    for (const r of reports) r.versand_warte = warte.get(Number(r.id)) || null
+
     const [[trash]] = await pool.execute<mysql.RowDataPacket[]>(
       "SELECT COUNT(*) AS c FROM reports WHERE user_id = ? AND status = 'papierkorb'",
       [userId]
@@ -72,8 +77,6 @@ export default async function dashboardRoutes(app: FastifyInstance) {
 
     return reply.view('/dashboard/index.ejs', viewData(request, {
       trashCount: Number(trash.c),
-      // Knopf „Prüfen" (Prüf-Modus, routes/review.ts) – grob, ohne Verjährungsfilter.
-      draftCount: reports.filter((r) => r.status === 'entwurf').length,
       title: 'Meine Anzeigen',
       wide: true, // Tabelle über die volle Breite (layout.ejs)
       sort, // aktive Sortierung für die Spaltenköpfe (report-table.ejs)
