@@ -96,6 +96,10 @@
       '<div class="photo-edit-problems small"></div>' +
       '</div>' +
       '<div class="photo-edit-fields">' +
+      // Zwei Spalten (Fahrzeug/Verstoß/Zeit | Ort/Behinderung): bei breiter
+      // Leiste nebeneinander (fitSide + Container-Query in app.css), sonst
+      // untereinander.
+      '<div class="pe-col">' +
       // Kennzeichen, Typ, Marke nebeneinander – die Leiste soll ohne Scrollen passen.
       '<div class="pe-row pe-row-kfz">' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
@@ -151,6 +155,8 @@
       '<div class="small text-muted mt-1" data-ffm-zeit hidden></div>' +
       '</div>' +
       '</div>' +
+      '</div>' +
+      '<div class="pe-col">' +
       '<div class="pe-field photo-edit-tatort"><label class="form-label" for="photo-edit-tatort-input">Tatort</label>' +
       '<div class="d-flex gap-1">' +
       '<input type="text" id="photo-edit-tatort-input" class="form-control" data-geo-scope="unlocked" data-fill="full" data-ac-local' +
@@ -186,6 +192,7 @@
         'Fußgänger mussten auf die Straße ausweichen.', 'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.']
         .map(function (t) { return '<option value="' + t + '">' }).join('') +
       '</datalist></div>' +
+      '</div>' +
       '</div>' +
       '</div>' +
       '<div class="photo-edit-actions">' +
@@ -242,7 +249,7 @@
       kzSetzen(null, !state.kzKeins)
       if (!state.kzKeins) setTool('plate')
     })
-    window.addEventListener('resize', function () { if (dlg.open && state && state.base) renderMarks() })
+    window.addEventListener('resize', function () { if (dlg.open && state && state.base) { fitSide(); renderMarks() } })
     dlg.querySelector('[data-act=rotate]').addEventListener('click', rotate)
     dlg.querySelector('[data-act=heller]').addEventListener('click', function () { helligkeit(0.75) })
     dlg.querySelector('[data-act=dunkler]').addEventListener('click', function () { helligkeit(1 / 0.75) })
@@ -976,6 +983,7 @@
     dlg.querySelector('[data-act=crop-reset]').hidden = !state.crop
     var pbox = dlg.querySelector('.photo-edit-plate')
     pbox.hidden = state.plate == null
+    fitSide()
     if (state.plate != null) {
       var cur = plateInput().value
       var sug = dlg.querySelector('[data-act=plate-suggest]')
@@ -1925,6 +1933,40 @@
 
   // Knöpfe direkt an den Bereichen: ✕ an jeder Schwärzung, ⬛/✓ an jedem
   // offenen Datenschutz-Vorschlag. Liegen als HTML über dem Canvas.
+  // Seitenleiste nimmt sich den Platz, den das Foto links und rechts nicht
+  // braucht (Hochkant-Fotos lassen sonst breite schwarze Ränder). Ab
+  // SIDE_ZWEI px stehen die Felder in zwei Spalten (Container-Query in
+  // app.css), dann passt die Leiste ohne Scrollen – dafür darf das Foto bis
+  // zu 15 % schmaler werden. SIDE_MAX lässt den Werkzeugen unter dem Foto
+  // auf üblichen Bildschirmen eine Zeile.
+  // Nur Desktop – auf dem Handy liegt die Leiste unter dem Foto.
+  var SIDE_MIN = 460, SIDE_ZWEI = 760, SIDE_MAX = 880
+  var sideWide = window.matchMedia('(min-width: 768px)')
+  var sideKey = ''
+  function fitSide() {
+    var side = dlg.querySelector('.photo-edit-side')
+    if (!state || !state.base || side.hidden || !sideWide.matches) {
+      side.style.flexBasis = ''
+      sideKey = ''
+      return
+    }
+    var wrap = canvas.parentNode
+    var body = dlg.querySelector('.photo-edit-body')
+    var key = state.base.width + 'x' + state.base.height + '@' + body.clientWidth + 'x' + body.clientHeight
+    if (key === sideKey) return
+    sideKey = key
+    var strip = dlg.querySelector('.photo-edit-strip')
+    var cs = getComputedStyle(wrap.parentNode)
+    var avail = body.clientWidth - (strip.hidden ? 0 : strip.offsetWidth) - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+    var fotoW = Math.min(avail, wrap.clientHeight * state.base.width / state.base.height)
+    var w = avail - fotoW - 8
+    if (w < SIDE_ZWEI && avail - SIDE_ZWEI - 8 >= fotoW * 0.85) w = SIDE_ZWEI
+    w = Math.round(Math.max(SIDE_MIN, Math.min(SIDE_MAX, w)))
+    if (side.style.flexBasis === w + 'px') return
+    side.style.flexBasis = w + 'px'
+    if (map) map.invalidateSize()
+  }
+
   function renderMarks() {
     var box = dlg.querySelector('.photo-edit-marks')
     var kzIn = kzInput()
@@ -2008,6 +2050,7 @@
       if (kzBoxEl) kzBoxEl.hidden = true
       return
     }
+    fitSide()
     var boxen = vorschlagBoxen(state)
     var lw = Math.max(2, canvas.width / 300) / zoom.z
     ctx.save()

@@ -1061,8 +1061,9 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 
 /* Seitenleiste des Foto-Dialogs (photo-edit.js): Angaben der Anzeige rechts
    neben dem Foto, Aktionen unten; auf dem Handy unter dem Foto. */
+/* Breite setzt photo-edit.js fitSide() (460–880 px, je nach Fotoformat). */
 .photo-edit-side {
-  flex: 0 0 460px; display: flex; flex-direction: column; min-height: 0;
+  flex: 0 0 460px; display: flex; flex-direction: column; min-height: 0; container-type: inline-size;
   background: var(--bs-body-bg); color: var(--bs-body-color); border-left: 1px solid #333;
 }
 .photo-edit-side[hidden] { display: none; }
@@ -1102,6 +1103,19 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 }
 .photo-edit-map { height: 170px; }
 .photo-edit-map[hidden] { display: none; }
+/* Spalten der Seitenleiste (photo-edit.js): schmal untereinander, ab 760 px
+   nebeneinander – unter SIDE_ZWEI (760) in fitSide(), Rand abgezogen. */
+.pe-col { display: flex; flex-direction: column; gap: 0.55rem; }
+@container (min-width: 740px) {
+  .photo-edit-fields { flex-direction: row; align-items: flex-start; gap: 1.25rem; }
+  .pe-col { flex: 1 1 0; min-width: 0; }
+  /* Spalte ist schmaler als die einspaltige Leiste: Kennzeichen geht vor. */
+  .pe-row-kfz { grid-template-columns: minmax(0, 1.55fr) minmax(0, 0.85fr) minmax(0, 0.85fr); }
+  .photo-edit-map { height: 240px; }
+  .photo-edit-actions { flex-direction: row; flex-wrap: wrap; align-items: stretch; }
+  .photo-edit-actions > * { flex: 1 1 0; }
+  .photo-edit-actions > .d-flex > .btn { padding-top: 0.55rem; padding-bottom: 0.55rem; }
+}
 /* „Verschieben" im Foto-Dialog: Zielauswahl + Häkchen an den Kacheln. */
 .photo-edit-move-menu {
   position: fixed; z-index: 20; width: min(380px, calc(100vw - 16px)); max-height: 70vh; overflow-y: auto;
