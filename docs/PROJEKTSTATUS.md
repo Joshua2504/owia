@@ -6,6 +6,40 @@ Stand: 06.10.2026. Geprüfte Entwicklungsbasis: Branch `main`, Commit `cf60f1b` 
 > umgesetzte Stand einschließlich Tests und Dev-Start steht in
 > [FEHLERBEHEBUNG-2026-10-06.md](FEHLERBEHEBUNG-2026-10-06.md).
 
+## Nachtrag 08.10.2026 – Härtungsrunde
+
+Seit dem 06.10. kamen dazu: Portal-Versand für Frankfurt, Wiesbaden und Mainz
+(`/versand`, Container `portal`), Hintergrund-Jobs (`jobs`), Datenschutz-Prüfung
+der Fotos (Gesichter/fremde Kennzeichen), QR-Sticker, Prüf-Modus `/pruefen`,
+öffentliche Statistik. Am 08.10. wurde eine Review-Liste abgearbeitet:
+
+- Sicherheit: `npm audit` von 14 Lücken (1 kritisch) auf 0 (Fastify 5,
+  nodemailer 10, @fastify/static 10); CSP ohne `unsafe-inline` für Scripts;
+  Fetch-Metadata-Schutz gegen Cross-Site-POSTs; Logout per POST; Magic-Link
+  erst per POST verbraucht; `trustProxy` eingeschränkt; Node läuft als `node`;
+  App-Container ohne DB-Root-Passwort; Speichergrenzen für alle Dienste.
+- Datenschutz: öffentliche Koordinaten auf ~100 m gerundet; Bildtyp aus
+  Bytes; Intake-Rohdateien nie als HTML ausgeliefert; Posteingang wertet
+  `Authentication-Results` aus.
+- Robustheit: öffentliches Pixelbild im Worker und beim Versand vorberechnet
+  (kein CPU-DoS); Job-Zeitlimit und Stale-Erkennung; `/health` mit Warnungen;
+  Fehlerhandler reicht 4xx durch; Autosave validiert; Foto-Verschieben
+  kopiert→DB→löscht; Bildlimit unter Nutzer-Sperre; Nachprüfung der Fotos
+  nach dem Einreichen; Portal-Läufe idempotent; Bildmaße vor dem Dekodieren
+  geprüft, Worker mit Speichergrenze; Startseiten-Kennzahlen gecacht.
+- Wartbarkeit: Frontend-Helfer in `public/js/common.js`; `console.*` →
+  App-Logger; `routes/reports.ts` in Module aufgeteilt; 6 neue Regressionstests.
+
+**Nicht umgesetzt (bewusst dem Betreiber überlassen):** Sammel-Einreichen
+aller vollständigen Entwürfe und eine serverseitige Versand-Automatik für die
+Portal-Warteschlange – beides setzt Anzeigen gegenüber einer Behörde in
+Bewegung und wurde in dieser Sitzung nicht automatisiert. Ebenso stehen
+Prod-Deploy und Dev-Rebuild (Fastify 5 braucht `docker compose up -d --build`)
+noch aus.
+
+Fachlicher Stand Prod am 08.10.: 341 Entwürfe, davon 60 mit Verjährung in
+5–14 Tagen (alle vollständig geprüft), 139 ohne Verstoß, 395 ungeprüfte Fotos.
+
 ## Einschätzung
 
 OWiA ist eine bereits betriebene Web-Anwendung mit umfangreichem Funktionsumfang. Die Kernstrecke von Foto-Upload über Entwurf und Admin-Prüfung bis zum Versand und Antwortverlauf ist implementiert. Die nächsten Arbeiten sollten vor allem Versandzuverlässigkeit, reproduzierbare Tests und Betriebsabsicherung verbessern.

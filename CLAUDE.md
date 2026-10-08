@@ -22,6 +22,11 @@ Es gibt zwei Instanzen, beide als Docker-Compose-Stacks auf derselben Maschine:
   `src/`, `public/`, `migrations/` greifen sofort ohne Rebuild (Bind-Mounts).
   Änderungen an `docker-compose.yml`, `docker/` oder `package.json` brauchen
   `docker compose up -d --build`.
+- Die App läuft im Container als `node` (UID 1000): `data/uploads` und
+  `data/pdfs` müssen auf dem Host UID 1000 gehören (`deploy.sh` macht das
+  chown; in Dev einmalig von Hand). Der App-Container bekommt **nicht** die
+  ganze `.env`, sondern nur die in `docker-compose.yml` unter `environment:`
+  gelisteten Variablen – neue `process.env.X` dort eintragen.
 - **Deploy nach Prod:** `./deploy.sh` (rsync + force-recreate + Health-Check).
   Vorher committen. `git push` deployt NICHT mehr — GitHub ist nur Backup
   (Remote-Redirect: Repo heißt dort inzwischen `Joshua2504/owia`).
@@ -85,8 +90,8 @@ in Requests: `registerJob` + `enqueueJob` statt `await`.
 
 **DB/Migrationen:** `src/db/schema.sql` gilt nur für frische Volumes. Jede
 Schemaänderung ist eine neue Datei `migrations/NNNN_snake_case.sql`
-(fortlaufend; höchste vorhandene Nummer vor jeder Änderung prüfen,
-Stand nach Fehlerbehebung 06.10.2026: 0032, nächste freie Nummer 0033), idempotent formulieren
+(fortlaufend; höchste vorhandene Nummer vor jeder Änderung prüfen –
+`ls migrations | tail -1`; Stand 08.10.2026: 0041, nächste freie Nummer 0042), idempotent formulieren
 (`IF [NOT] EXISTS`) — der Runner (`src/db/migrate.ts`) hat KEINE Transaktion,
 ein Fehler beim Boot ist eine bewusste Container-Restart-Schleife. Nichts mehr
 in `src/db/init.ts` ergänzen (Legacy).
@@ -94,7 +99,26 @@ in `src/db/init.ts` ergänzen (Legacy).
 **Views/Frontend:** EJS serverseitig (`src/views/`, Layout `layout.ejs`,
 Handler übergeben immer `viewData(request, {...})` aus `src/middleware/auth.ts`).
 Frontend ist buildloses Browser-JS in `public/js/`, Libraries lokal gevendort
-in `public/vendor/` — kein CDN, die CSP erzwingt das.
+in `public/vendor/` — kein CDN, die CSP erzwingt das. **Keine Inline-Scripts
+und keine `on*=`-Attribute** (CSP `script-src 'self'` seit 08.10.2026): Logik
+in Dateien unter `public/js/`, Serverwerte per `data-*` oder
+`<script type="application/json">`, Rückfragen per `data-confirm` (Handler in
+`layout.js`). Gemeinsame Helfer (`escapeHtml`, `debounce`, `fetchJson`,
+`loadCatalog`, `normalizePlate`) liegen in `public/js/common.js` als `window.OWIA`.
+
+**Sicherheitsringe (server.ts):** Session-Cookie `sameSite=lax` **plus**
+Fetch-Metadata-Prüfung (`Sec-Fetch-Site` ≠ cross-site für POST/PUT/PATCH/
+DELETE) statt CSRF-Token; Abmelden nur per POST; `trustProxy` nur für
+Loopback/private Netze; Fehlerhandler reicht 4xx mit Status durch (JSON bei
+`Accept: application/json`), nur 5xx werden als `error` geloggt. `/health`
+meldet `warnungen` (Job-Runner, mit `?voll=1` auch Portal/ALPR), bleibt aber
+200, solange die DB antwortet.
+
+**Bilder:** Typ wird aus den Bytes bestimmt (`sniffImageType`), nicht aus dem
+Client-Mimetype; `decode()` lehnt Bilder über 80 MP anhand des Headers ab.
+Alle Dekodierung läuft im Bild-Worker (`intakeImageProcessing.ts`, auch das
+öffentliche Pixelbild via `loadPixelated`/`prewarmPublicImages`), nie im
+Request. Dateien werden beim Verschieben kopiert → DB → Quelle gelöscht.
 
 ## Konventionen
 

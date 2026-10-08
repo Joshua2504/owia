@@ -66,7 +66,10 @@ sollen. Der obige Frankfurt-Wert ist nur ein Beispiel.
 
 ## Smoke-Test nach jedem Deploy
 
-1. `curl -s https://<domain>/health` → `{"ok":true}`
+1. `curl -s https://<domain>/health` → `{"ok":true,"jobs":{…},"warnungen":[]}` –
+   `warnungen` muss leer sein (sonst: Job-Runner steht, alte Jobs warten oder
+   Fehlschläge in der letzten Stunde). `…/health?voll=1` pingt zusätzlich
+   Portal- und ALPR-Dienst.
 2. `docker compose logs app --tail 20` → keine Fehler, „Posteingang: IMAP-Polling aktiv"
 3. Login per Magic-Link funktioniert (Mail kommt an!)
 4. Eine Test-Anzeige einreichen → Admin-Mail kommt, unter `/admin/anzeigen` sichtbar
@@ -103,3 +106,23 @@ GitHub-Actions-Fallback enthält derzeit keinen entsprechenden Healthcheck.
   Code bearbeitet werden: der alte Code kennt `versand_status` nicht.
 
 Zustände und Wiederaufnahme: [docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md).
+
+## Härtung vom 08.10.2026 – was beim nächsten Deploy zu beachten ist
+
+- **Voll-Rebuild nötig** (`docker compose up -d --build`, >7 min, als
+  Hintergrund-Task): `package.json` (Fastify 5, Plugins, nodemailer 10 –
+  `npm audit`: 0 Lücken), `docker/node/Dockerfile` (läuft als `node`),
+  `docker/portal/server.mjs` (idempotente Lauf-IDs), `docker-compose.yml`.
+- **Rechte:** `chown -R 1000:1000 data/pdfs data/uploads` im Deploy-Ziel –
+  `deploy.sh` macht das jetzt selbst. Ohne chown meldet der Start
+  „Datenverzeichnis nicht beschreibbar“ und Uploads/PDFs scheitern.
+- **Env:** Der App-Container bekommt nur noch die in `docker-compose.yml`
+  gelisteten Variablen (kein `env_file`). Alle bisherigen Prod-Werte sind
+  abgedeckt; `DB_ROOT_PASSWORD`/`ACME_EMAIL` sieht die App nicht mehr.
+  `REPLY_TRUSTED_DOMAINS` hat jetzt alle fünf Städte als Default.
+- **Speichergrenzen:** app 2 GB, db 1,5 GB, photon 1,5 GB, tileserver 2 GB
+  (alpr 2 GB, portal 1,5 GB wie bisher). Summe liegt unter den 8 GB des Hosts.
+- **Verhalten:** Abmelden ist POST; Magic-Link zeigt erst eine
+  Bestätigungsseite; Cross-Site-POSTs werden mit 403 abgewiesen; CSP ohne
+  `unsafe-inline` für Scripts; öffentliche Karten-Koordinaten auf 3
+  Nachkommastellen gerundet; Sticker-Scans zählen keine Bots/Link-Vorschauen.
