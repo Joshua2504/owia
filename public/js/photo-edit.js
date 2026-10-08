@@ -103,7 +103,7 @@
       '<div class="pe-field" data-dritte-row hidden>' +
       '<div class="alert alert-warning py-1 px-2 small mb-1" data-dritte-text></div>' +
       '<div class="d-flex gap-1">' +
-      '<button type="button" class="btn btn-sm btn-dark" data-act="dritte-schwaerzen" title="Schwarze Balken über die erkannten Stellen legen – danach Bestätigen speichert">⬛ Erkannte schwärzen</button>' +
+      '<button type="button" class="btn btn-sm btn-dark" data-act="dritte-schwaerzen" title="Die gestrichelt markierten Stellen schwärzen – danach Bestätigen speichert">⬛ Schwärzung übernehmen</button>' +
       '<button type="button" class="btn btn-sm btn-outline-secondary" data-act="dritte-ok" title="Fehlalarm oder nicht identifizierbar">Unbedenklich</button>' +
       '</div></div>' +
       '<div class="pe-field" data-rolle-row hidden><span class="form-label">Dieses Foto im Portal</span>' +
@@ -916,33 +916,43 @@
     row.querySelector('[data-dritte-text]').textContent = '⚠ Daten Dritter erkannt: ' + [
       k.length ? (k.length === 1 ? 'weiteres Kennzeichen ' : k.length + ' weitere Kennzeichen ') + k.map(function (f) { return f.text }).join(', ') : '',
       g ? (g === 1 ? 'ein Gesicht' : g + ' Gesichter') : '',
-    ].filter(Boolean).join(' und ') + '. Ohne Schwärzen kein Versand.'
+    ].filter(Boolean).join(' und ') + '. Vorschlag ist gestrichelt markiert – ohne Schwärzen kein Versand.'
+    if (s && s.base) redraw()
   }
-  // Erkannte Stellen schwärzen: Boxen aus der Analyse (Bildpixel der
-  // gespeicherten Fassung) aufs Canvas umrechnen, etwas Rand zugeben.
-  function dritteSchwaerzen() {
-    var s = state
+  // Schwärzungs-Vorschlag: Boxen aus der Analyse (Bildpixel der gespeicherten
+  // Fassung) aufs Canvas umrechnen, etwas Rand zugeben. Liefert einen Text
+  // statt Boxen, wenn die Analyse nicht mehr zum Canvas passt.
+  function vorschlagBoxen(s) {
     var info = currentImage(s)
-    if (!s || !s.base || !info || !info.dritte || !info.dritte.length || !info.groesse) return
-    if (s.geometrie) {
-      alert('Das Foto wurde gedreht oder zugeschnitten – bitte erst „Rückgängig" oder von Hand schwärzen.')
-      return
-    }
+    if (!s || !s.base || !info || !info.dritte || !info.dritte.length || !info.groesse) return []
+    if (s.geometrie) return 'Das Foto wurde gedreht oder zugeschnitten – bitte erst „Rückgängig" oder von Hand schwärzen.'
     var sx = canvas.width / info.groesse.w
     var sy = canvas.height / info.groesse.h
-    if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.05) {
-      alert('Die Bildausrichtung passt nicht zur Analyse – bitte von Hand schwärzen.')
-      return
-    }
-    snapshot()
-    info.dritte.forEach(function (f) {
+    if (Math.abs(sx - sy) / Math.max(sx, sy) > 0.05) return 'Die Bildausrichtung passt nicht zur Analyse – bitte von Hand schwärzen.'
+    return info.dritte.map(function (f) {
       var b = f.bbox
       var pw = (b[2] - b[0]) * 0.12
       var ph = (b[3] - b[1]) * 0.15
       var x = Math.max(0, (b[0] - pw) * sx)
       var y = Math.max(0, (b[1] - ph) * sy)
-      s.redactions.push({ x: x, y: y, w: Math.min(canvas.width - x, (b[2] - b[0] + 2 * pw) * sx), h: Math.min(canvas.height - y, (b[3] - b[1] + 2 * ph) * sy), type: 'black' })
+      return { x: x, y: y, w: Math.min(canvas.width - x, (b[2] - b[0] + 2 * pw) * sx), h: Math.min(canvas.height - y, (b[3] - b[1] + 2 * ph) * sy) }
     })
+  }
+  // Schon von einer Schwärzung/Verpixelung abgedeckt (2 px Toleranz)?
+  function abgedeckt(b) {
+    return state.redactions.some(function (r) {
+      return r.x <= b.x + 2 && r.y <= b.y + 2 && r.x + r.w >= b.x + b.w - 2 && r.y + r.h >= b.y + b.h - 2
+    })
+  }
+  // Vorschlag übernehmen: die noch offenen Boxen schwärzen.
+  function dritteSchwaerzen() {
+    var s = state
+    var boxen = vorschlagBoxen(s)
+    if (typeof boxen === 'string') return alert(boxen)
+    boxen = boxen.filter(function (b) { return !abgedeckt(b) })
+    if (!boxen.length) return
+    snapshot()
+    boxen.forEach(function (b) { s.redactions.push({ x: b.x, y: b.y, w: b.w, h: b.h, type: 'black' }) })
     redraw()
     updateUi()
     msg('Erkannte Stellen geschwärzt – prüfen und mit „Bestätigen" speichern.')
@@ -1119,7 +1129,9 @@
     ctx.restore()
   }
 
-  function redraw() {
+  // ohneVorschau: für Export/Einbacken – der gestrichelte Schwärzungs-
+  // Vorschlag darf nie ins gespeicherte Bild geraten.
+  function redraw(ohneVorschau) {
     canvas.width = state.base.width
     canvas.height = state.base.height
     ctx.drawImage(state.base, 0, 0)
@@ -1130,6 +1142,21 @@
         ctx.fillRect(r.x, r.y, r.w, r.h)
       }
     })
+    if (ohneVorschau) return
+    var boxen = vorschlagBoxen(state)
+    if (typeof boxen === 'string') return
+    var lw = Math.max(2, canvas.width / 300)
+    ctx.save()
+    ctx.lineWidth = lw
+    ctx.setLineDash([lw * 4, lw * 3])
+    boxen.forEach(function (b) {
+      if (abgedeckt(b)) return
+      ctx.fillStyle = 'rgba(255,193,7,0.25)'
+      ctx.fillRect(b.x, b.y, b.w, b.h)
+      ctx.strokeStyle = '#ffc107'
+      ctx.strokeRect(b.x, b.y, b.w, b.h)
+    })
+    ctx.restore()
   }
 
   // Schnappschuss vor jeder Änderung (Rotieren/Zuschneiden erzeugen neue
@@ -1150,6 +1177,7 @@
 
   // Markierungen ins Bild einbacken, damit Rotieren/Zuschneiden sie mitnehmen.
   function flatten() {
+    redraw(true)
     var c = document.createElement('canvas')
     c.width = canvas.width
     c.height = canvas.height
@@ -1445,7 +1473,7 @@
     s.busy = true
     btn.textContent = s.dirty ? 'Speichert …' : 'Bestätigt …'
     updateUi()
-    redraw() // keine Zeichen-Vorschau im Export
+    redraw(true) // keine Zeichen-/Schwärzungs-Vorschau im Export
     var upload = !s.dirty
       ? Promise.resolve()
       : new Promise(function (resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.9) }).then(function (blob) {
