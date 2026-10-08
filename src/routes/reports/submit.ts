@@ -267,6 +267,10 @@ export async function submitProblems(
       report.city = gate.cityId
     }
   }
+  // Das Frankfurter Portal verlangt die Marke als Pflichtauswahl.
+  if (getCity(report.city).portal === 'ekom21-ffm' && !String(report.fahrzeug_marke || '').trim()) {
+    problems.push({ kind: 'fields', message: 'Es fehlt: Marke.' })
+  }
   if (report.verstoss_art) {
     const p = await portalProblemFuer(report, report.city, userId)
     // Abgelaufene Annahmefrist meldet schon „verjaehrt" (gleicher Grund).
