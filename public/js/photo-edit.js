@@ -97,6 +97,14 @@
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
       '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. Volkswagen" list="pe-marken"></div>' +
       '</div>' +
+      // Frankfurter Portal: Foto als Übersichts- oder Fahrzeugfoto hochladen
+      // (PATCH /anzeige/:az/images/:id/rolle; „Auto" = nach erkanntem Kennzeichen).
+      '<div class="pe-field" data-rolle-row hidden><span class="form-label">Dieses Foto im Portal</span>' +
+      '<div class="btn-group btn-group-sm w-100" role="group" aria-label="Rolle dieses Fotos im Portal">' +
+      '<button type="button" class="btn btn-outline-primary" data-rolle="uebersicht" title="Zeigt den Verstoß samt Beschilderung">Übersicht</button>' +
+      '<button type="button" class="btn btn-outline-primary" data-rolle="fahrzeug" title="Kennzeichen und Fahrzeugtyp gut erkennbar">Fahrzeug</button>' +
+      '<button type="button" class="btn btn-outline-secondary" data-rolle="" title="Automatisch: mit erkanntem Kennzeichen = Fahrzeug">Auto</button>' +
+      '</div><div class="small text-muted mt-1" data-rolle-info></div></div>' +
       '<div class="pe-field"><label class="form-label">Verstoß</label>' +
       '<div class="photo-edit-verstoss position-relative">' +
       '<input type="hidden">' +
@@ -285,6 +293,19 @@
     dlg.querySelector('[data-act=skip]').addEventListener('click', function () { runDone('skipped') })
     dlg.querySelector('[data-act=trash-report]').addEventListener('click', trashReport)
     markeInput().addEventListener('change', function () { savePlate().catch(function () {}) })
+    dlg.querySelector('[data-rolle-row]').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-rolle]')
+      var s = state
+      if (!b || !s || !s.put) return
+      fetch(s.put + '/rolle', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ rolle: b.getAttribute('data-rolle') }),
+      })
+        .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
+        .then(function () { loadStatus(s) })
+        .catch(function (err) { alert(err.message) })
+    })
     dlg.querySelector('[data-variante]').addEventListener('change', function (e) {
       saveDetail({ verstoss_variante: e.target.value })
     })
@@ -548,6 +569,7 @@
         }, 0)
       }
     })
+    renderRolle(state)
   }
 
   // Foto von Position from nach to verschieben: POST …/images/reorder, dann
@@ -825,12 +847,37 @@
         s.report = d
         fillDetails(s)
         renderVerstossExtras(s)
+        renderRolle(s)
         syncMap(s)
         updateRun()
       })
   }
   // Variante + Langparker-Hinweis passend zum aktuellen Verstoß (bei jedem
   // Status-Laden, denn der Verstoß kann sich im Dialog ändern).
+  // Rolle des aktuellen Fotos + Kennzeichnung Ü/F an allen Kacheln.
+  var ROLLEN = { uebersicht: 'Übersichtsfoto', fahrzeug: 'Fahrzeugfoto', beide: 'Übersichts- und Fahrzeugfoto (einziges Foto)', keine: 'nicht dabei (mehr als 5 Fotos dieser Art)' }
+  var KURZ = { uebersicht: 'Ü', fahrzeug: 'F', beide: 'Ü+F', keine: '–' }
+  function renderRolle(s) {
+    var row = dlg.querySelector('[data-rolle-row]')
+    var imgs = (s && s.report && s.report.portal && s.report.images) || null
+    var info = imgs && imgs.filter(function (i) { return i.put === s.put })[0]
+    row.hidden = !info
+    dlg.querySelectorAll('.photo-edit-tile').forEach(function (tile) {
+      var t = (s && s.thumbs || [])[Number(tile.getAttribute('data-strip-index'))]
+      var im = imgs && t && imgs.filter(function (i) { return i.put === t.getAttribute('data-photo-edit') })[0]
+      var badge = tile.querySelector('.photo-edit-tile-rolle')
+      if (!im) { if (badge) badge.remove(); return }
+      if (!badge) { badge = document.createElement('span'); badge.className = 'photo-edit-tile-rolle'; tile.appendChild(badge) }
+      badge.textContent = KURZ[im.rolle] || ''
+      badge.title = ROLLEN[im.rolle] + (im.rolleManuell ? '' : ' (automatisch)')
+    })
+    if (!info) return
+    row.querySelectorAll('[data-rolle]').forEach(function (b) {
+      var r = b.getAttribute('data-rolle')
+      b.classList.toggle('active', info.rolleManuell ? r === (info.rolle === 'beide' ? '' : info.rolle) : r === '')
+    })
+    row.querySelector('[data-rolle-info]').textContent = 'Geht hoch als ' + ROLLEN[info.rolle] + (info.rolleManuell ? '.' : ' (automatisch).')
+  }
   function renderVerstossExtras(s) {
     var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') }
     var sel = dlg.querySelector('[data-variante]')

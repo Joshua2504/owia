@@ -117,7 +117,7 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
     const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
     const payload = buildPortalPayload(report, users[0])
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT id, filename, mimetype, detected_plate FROM report_images WHERE report_id=? ORDER BY sort_order, id',
+      'SELECT id, filename, mimetype, detected_plate, portal_rolle FROM report_images WHERE report_id=? ORDER BY sort_order, id',
       [reportId]
     )
     if (!imgs.length) throw new PortalError('Die Anzeige hat keine Fotos.')

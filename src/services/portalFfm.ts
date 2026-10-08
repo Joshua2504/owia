@@ -340,25 +340,47 @@ export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacke
   }
 }
 
-/** Fotos aufteilen: das Portal will getrennt ein Übersichtsfoto (Verstoß samt
- *  Beschilderung) und ein Fahrzeugfoto (Kennzeichen lesbar), je höchstens 5.
- *  Fotos mit erkanntem Kennzeichen gelten als Fahrzeugfotos, die übrigen als
- *  Übersicht. Fehlt eine Seite, wird aufgefüllt: das erste Foto ist Übersicht,
- *  das mit dem deutlichsten Kennzeichen Fahrzeug. */
-export function photoRoles<T extends Record<string, any>>(
-  imgs: T[]
-): { uebersicht: T[]; fahrzeug: T[] } {
-  let fahrzeug = imgs.filter((i) => i.detected_plate)
-  let uebersicht = imgs.filter((i) => !i.detected_plate)
-  if (!fahrzeug.length && uebersicht.length > 1) fahrzeug = [uebersicht.pop()!]
+export type FotoRolle = 'uebersicht' | 'fahrzeug'
+const istRolle = (v: unknown): v is FotoRolle => v === 'uebersicht' || v === 'fahrzeug'
+
+/** Fotos aufteilen: das Portal will getrennt Übersichtsfotos (Verstoß samt
+ *  Beschilderung) und Fahrzeugfotos (Kennzeichen lesbar), je 1–5.
+ *  Von Hand gesetzte Rollen (report_images.portal_rolle) gelten immer; sonst
+ *  gilt ein Foto mit erkanntem Kennzeichen als Fahrzeugfoto, der Rest als
+ *  Übersicht. Bleibt eine Seite leer, wird mit automatisch zugeordneten Fotos
+ *  aufgefüllt, notfalls dasselbe Foto in beiden Feldern. */
+export function photoRoles<T extends Record<string, any>>(imgs: T[]): { uebersicht: T[]; fahrzeug: T[] } {
+  const manuell = (i: T) => istRolle(i.portal_rolle)
+  let fahrzeug = imgs.filter((i) => (manuell(i) ? i.portal_rolle === 'fahrzeug' : !!i.detected_plate))
+  let uebersicht = imgs.filter((i) => !fahrzeug.includes(i))
+  if (!fahrzeug.length && uebersicht.length > 1) {
+    const x = [...uebersicht].reverse().find((i) => !manuell(i))
+    if (x) {
+      fahrzeug = [x]
+      uebersicht = uebersicht.filter((i) => i !== x)
+    }
+  }
   if (!uebersicht.length && fahrzeug.length > 1) {
-    const best = [...fahrzeug].sort((a, b) => Number(b.plate_confidence || 0) - Number(a.plate_confidence || 0))[0]
-    uebersicht = fahrzeug.filter((i) => i !== best)
-    fahrzeug = [best]
+    const x = fahrzeug.find((i) => !manuell(i))
+    if (x) {
+      uebersicht = [x]
+      fahrzeug = fahrzeug.filter((i) => i !== x)
+    }
   }
   if (!fahrzeug.length) fahrzeug = uebersicht.slice(0, 1)
   if (!uebersicht.length) uebersicht = fahrzeug.slice(0, 1)
   return { uebersicht: uebersicht.slice(0, 5), fahrzeug: fahrzeug.slice(0, 5) }
+}
+
+/** Je Foto die Rolle, mit der es tatsächlich hochginge (für die Anzeige im
+ *  Foto-Dialog): auch 'beide' (einziges Foto) und 'keine' (mehr als 5). */
+export function photoRoleMap<T extends Record<string, any>>(imgs: T[]): Map<T, 'uebersicht' | 'fahrzeug' | 'beide' | 'keine'> {
+  const r = photoRoles(imgs)
+  return new Map(imgs.map((i) => {
+    const u = r.uebersicht.includes(i)
+    const f = r.fahrzeug.includes(i)
+    return [i, u && f ? 'beide' : u ? 'uebersicht' : f ? 'fahrzeug' : 'keine'] as const
+  }))
 }
 
 /** Für die Formulare (Editor, Foto-Dialog): Varianten und „länger als 1 Stunde"-

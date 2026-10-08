@@ -84,8 +84,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0039_portal_felder.sql')
-  assert.equal(rows.length, 39)
+  assert.equal(rows.at(-1)?.filename, '0040_foto_rolle.sql')
+  assert.equal(rows.length, 40)
 })
 
 test('Löschen verschiebt Entwürfe in den Papierkorb, Wiederherstellen und Ablauf funktionieren', async () => {
@@ -708,6 +708,9 @@ test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
   assert.equal(fahrzeugBeschreibung({ fahrzeug_marke: 'VW', fahrzeug_modell: 'Golf', fahrzeug_farbe: 'schwarz' }), 'VW Golf, schwarz')
   const roles = photoRoles([{ id: 1, detected_plate: null }, { id: 2, detected_plate: 'F AB 1' }, { id: 3, detected_plate: null }])
   assert.deepEqual([roles.uebersicht.map((i) => i.id), roles.fahrzeug.map((i) => i.id)], [[1, 3], [2]])
+  // Von Hand gesetzte Rollen haben Vorrang vor der Kennzeichenerkennung.
+  const manual = photoRoles([{ id: 1, detected_plate: 'X', portal_rolle: 'uebersicht' }, { id: 2, detected_plate: null, portal_rolle: 'fahrzeug' }, { id: 3, detected_plate: 'Y' }])
+  assert.deepEqual([manual.uebersicht.map((i) => i.id), manual.fahrzeug.map((i) => i.id)], [[1], [2, 3]])
   const one = photoRoles([{ id: 7, detected_plate: null }])
   assert.deepEqual([one.uebersicht.map((i) => i.id), one.fahrzeug.map((i) => i.id)], [[7], [7]])
   const p = buildPortalPayload(

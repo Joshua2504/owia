@@ -7,7 +7,7 @@ import { cityEmail } from '../services/districts'
 import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
-import { verstossVarianten, langparkerVariante, tatDauerMinuten } from '../services/portalFfm'
+import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap } from '../services/portalFfm'
 import { submitProblems, mostUsedVerstoesse } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
 
@@ -111,12 +111,13 @@ export default async function reviewRoutes(app: FastifyInstance) {
     }
     const problems = await submitProblems(report, userId)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, filename, detected_plate, geprueft_at, gps_lat,
+      `SELECT id, filename, detected_plate, portal_rolle, geprueft_at, gps_lat,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i') AS captured
          FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
     )
     const city = getCity(report.city)
+    const rollen = photoRoleMap(imgs)
     const vj = verjaehrung(report)
     // Zeitspanne der Fotos (EXIF) für „Uhrzeit aus Fotos" – als Strings, nie
     // über ein JS-Date (Zeitzonen, s. CLAUDE.md).
@@ -160,10 +161,14 @@ export default async function reviewRoutes(app: FastifyInstance) {
       // Kartenmitte ohne Tatort (Foto-Dialog, photo-edit.js): Stadtmitte.
       mapCenter: { lat: city.geo.mapLat, lon: city.geo.mapLon },
       photoTimes,
+      // Portal-Städte (Frankfurt): Fotos gehen als Übersicht/Fahrzeug getrennt hoch.
+      portal: !!city.portal,
       images: imgs.map((i) => {
         const v = imageVersion(i.filename)
         return {
           id: Number(i.id),
+          rolle: rollen.get(i) ?? 'keine',
+          rolleManuell: i.portal_rolle === 'uebersicht' || i.portal_rolle === 'fahrzeug',
           ok: i.geprueft_at !== null,
           detected: i.detected_plate || null,
           thumb: `/anzeige/${az}/image/${i.id}/thumb.jpg?v=${v}`,

@@ -71,6 +71,10 @@ nicht anbietet). Ablauf unter `/versand` (nur Admins):
    Zusammenfassung (PDF) und Screenshots als Anhängen.
 4. Abbrechen vor dem Absenden löst die Sperre, die Anzeige bleibt eingereicht.
 
+Fotos gehen getrennt als Übersichts- und Fahrzeugfoto hoch (je 1–5). Automatisch
+gilt ein Foto mit erkanntem Kennzeichen als Fahrzeugfoto; im Foto-Dialog lässt
+sich das je Foto festlegen (`report_images.portal_rolle`, Kachel-Kennung Ü/F).
+
 **Unklarer Ausgang** (Fehler nach dem Absenden, Portal-Dienst neu gestartet):
 Die Anzeige bleibt mit „Ergebnis unklar" in der Liste. Bestätigungsmail der
 Stadt im Postfach des Nutzers prüfen, dann „Wurde versendet" (mit Vorgangs-ID)
