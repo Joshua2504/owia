@@ -100,7 +100,7 @@
       // Leiste nebeneinander (fitSide + Container-Query in app.css), sonst
       // untereinander.
       '<div class="pe-col">' +
-      // Kennzeichen, Typ, Marke nebeneinander – die Leiste soll ohne Scrollen passen.
+      // Kennzeichen allein in der ersten Zeile.
       '<div class="pe-row pe-row-kfz">' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-plate-input">Kennzeichen</label>' +
       '<button type="button" class="btn btn-sm btn-outline-warning mb-1" style="display:block" data-act="plate-suggest" hidden></button>' +
@@ -108,6 +108,9 @@
       '<input type="text" id="photo-edit-plate-input" class="form-control plate-field" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>' +
       '<label class="form-check small mt-1 mb-0 pe-kz-ok-row" hidden><input type="checkbox" class="form-check-input pe-kz-ok"> <span class="form-check-label">geprüft</span></label>' +
       '</div>' +
+      '</div>' +
+      // Typ und Marke in eigener Zeile unter dem Kennzeichen.
+      '<div class="pe-row">' +
       '<div class="pe-field photo-edit-details" hidden><label class="form-label" for="pe-typ">Typ</label><select id="pe-typ" class="form-select" data-detail="fahrzeug_typ"></select></div>' +
       '<div class="pe-field"><label class="form-label" for="photo-edit-marke-input">Marke</label>' +
       '<input type="text" id="photo-edit-marke-input" class="form-control photo-edit-marke" maxlength="100" autocomplete="off" placeholder="z. B. Volkswagen" list="pe-marken"></div>' +
