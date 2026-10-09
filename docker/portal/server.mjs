@@ -149,12 +149,12 @@ function pushFrame(run) {
   }
 }
 // Live-Kanal (GET /live/video): EIN ffmpeg läuft rund um die Uhr und kodiert
-// mit festen 25 fps das Bild des aktuellen Laufs (sonst das zuletzt gesehene
+// mit festen VIDEO_FPS das Bild des aktuellen Laufs (sonst das zuletzt gesehene
 // bzw. ein leeres Bild) zu H.264 als fragmentiertes MP4. Neue Zuschauer
 // bekommen sofort Init-Segment + die Fragmente seit dem letzten Keyframe, das
 // Bild steht also ohne Anlaufzeit. Stehende Bilder kosten fast nichts, daher
 // nur alle 10 s ein Keyframe.
-const VIDEO_FPS = 25
+const VIDEO_FPS = 5 // Kompromiss Flüssigkeit vs. Dauerlast (25 fps ≈ 22 % eines Kerns)
 const VIDEO_W = VIEWPORT.width
 const VIDEO_H = VIEWPORT.height
 const live = { ff: null, init: null, gop: [], watchers: new Set(), lastFrame: null, idle: null, timer: null }
