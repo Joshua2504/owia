@@ -178,7 +178,6 @@ h2, .h2 { font-size: calc(1.3rem + 0.6vw); }
 .site-nav .nav-link.active { color: var(--owia-accent); background: rgba(var(--owia-accent-rgb), .1); }
 .site-nav .navbar-toggler { border: 0; padding: .35rem .5rem; }
 .site-nav .navbar-toggler:focus { box-shadow: 0 0 0 .2rem rgba(var(--owia-accent-rgb), .25); }
-[data-bs-theme="dark"] .site-nav .navbar-toggler-icon { filter: invert(1) grayscale(1) brightness(1.6); }
 .site-nav-email { max-width: 16rem; }
 .site-nav-avatar {
   display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 50%;
@@ -190,7 +189,9 @@ h2, .h2 { font-size: calc(1.3rem + 0.6vw); }
   .site-nav .nav-link { padding: .6rem .75rem !important; }
   .site-nav .site-nav-cta { margin: .35rem 0; }
   .site-nav .site-nav-cta .btn { width: 100%; }
-  .site-nav .dropdown-menu { box-shadow: none; border: 0; padding-left: .5rem; background: transparent; }
+  /* Nur das Admin-Menü im aufgeklappten Hamburger-Menü flach darstellen –
+     das Konto-Menü oben rechts bleibt ein schwebendes Dropdown. */
+  .site-nav .navbar-collapse .dropdown-menu { box-shadow: none; border: 0; padding-left: .5rem; background: transparent; }
 }
 
 /* Footer */
