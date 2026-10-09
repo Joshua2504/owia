@@ -65,6 +65,35 @@ async function startseitenKennzahlen() {
   return statsCache
 }
 
+/** App-Home (Startseite eingeloggt): eigene Zähler je Status + die letzten
+ *  Anzeigen mit erstem Foto. „Bereit" ist eine Markierung am Entwurf
+ *  (bereit_at), der Papierkorb zählt nicht mit. */
+async function meineUebersicht(userId: number) {
+  const [[z], [letzte]] = await Promise.all([
+    pool.query<mysql.RowDataPacket[]>(
+      `SELECT SUM(status='entwurf' AND bereit_at IS NULL) AS entwurf,
+              SUM(status='entwurf' AND bereit_at IS NOT NULL) AS bereit,
+              SUM(status='eingereicht') AS eingereicht,
+              SUM(status='versendet') AS versendet
+         FROM reports WHERE user_id = ?`,
+      [userId]
+    ),
+    pool.query<mysql.RowDataPacket[]>(
+      `SELECT r.aktenzeichen, r.status, r.bereit_at, r.kennzeichen, r.verstoss_art, r.tatort, r.tattag,
+              (SELECT ri.id FROM report_images ri WHERE ri.report_id = r.id ORDER BY ri.sort_order, ri.id LIMIT 1) AS foto_id
+         FROM reports r
+        WHERE r.user_id = ? AND r.status IN ('entwurf', 'eingereicht', 'versendet')
+        ORDER BY r.id DESC LIMIT 5`,
+      [userId]
+    ),
+  ])
+  const n = (v: unknown) => Number(v) || 0
+  return {
+    zaehler: { entwurf: n(z[0]?.entwurf), bereit: n(z[0]?.bereit), eingereicht: n(z[0]?.eingereicht), versendet: n(z[0]?.versendet) },
+    letzte,
+  }
+}
+
 export default async function publicRoutes(app: FastifyInstance) {
   // Öffentliche Startseite mit der Übersichtskarte.
   app.get('/', async (request, reply) => {
@@ -94,6 +123,7 @@ export default async function publicRoutes(app: FastifyInstance) {
       },
       cities: unlockedCities(),
       huPlaketten: huPlaketten(),
+      meine: request.session.userId ? await meineUebersicht(request.session.userId) : null,
     }))
   })
 

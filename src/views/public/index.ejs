@@ -1,5 +1,11 @@
 <div class="row justify-content-center">
   <div class="col-lg-10">
+    <%# Eingeloggt: App-Home statt Werbe-Hero; Feuerwehr-Hinweis, Ablauf,
+        Automatik, Städte/Newsletter und FAQ (SEO) nur für Besucher. %>
+    <% const _home = locals.meine %>
+    <% if (_home) { %>
+      <%- include('../partials/app-home', { meine: _home }) %>
+    <% } else { %>
     <!-- Hero: eine Aussage, ein Button -->
     <div class="hero text-center mb-4">
       <span class="hero-kicker">Kostenlos · Datenschutzfreundlich · Direkt ans Ordnungsamt</span>
@@ -21,7 +27,9 @@
         </a>
       <% } %>
     </div>
+    <% } %>
 
+    <% if (!_home) { %>
     <!-- Akute Behinderung gehört ans Telefon, nicht in eine Anzeige → Landingpage /falschparker-melden-frankfurt -->
     <div class="card shadow-sm mb-5"><div class="card-body d-flex flex-column flex-md-row align-items-md-center gap-3">
       <div class="flex-grow-1">
@@ -99,6 +107,7 @@
         </div>
       </div>
     </section>
+    <% } %>
 
     <!-- Öffentliche Kennzahlen (aggregiert, anonym) + Karte -->
     <% const stats = locals.stats || {} %>
@@ -132,6 +141,7 @@
       </p>
     </section>
 
+    <% if (!_home) { %>
     <!-- Unterstützte Städte + Newsletter-Anmeldung für neue Städte/PLZ -->
     <section class="mb-5" id="newsletter">
       <h2 class="h4 mb-3 text-center">Unterstützte Städte</h2>
@@ -180,9 +190,11 @@
         </div>
       </div>
     </section>
+    <% } %>
 
     <%- include('../partials/hu-plaketten') %>
 
+    <% if (!_home) { %>
     <!-- FAQ: beantwortet die häufigsten Suchanfragen (auch als FAQPage-Schema unten) -->
     <%
     const faq = [
@@ -246,6 +258,7 @@
         },
       ],
     }).replace(/</g, '\\u003c') %></script>
+    <% } %>
   </div>
 </div>
 

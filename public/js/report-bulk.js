@@ -77,6 +77,12 @@
       var old = localStorage.getItem('owia.reportStatusFilter')
       savedStatus = old ? [old] : []
     }
+    // ?status=entwurf,bereit (Zähler auf dem App-Home) geht vor und wird gemerkt.
+    var fromUrl = new URLSearchParams(location.search).get('status')
+    if (fromUrl !== null) {
+      savedStatus = fromUrl ? fromUrl.split(',') : []
+      localStorage.setItem(STATUS_KEY, JSON.stringify(savedStatus))
+    }
     statusBoxes().forEach(function (b) { b.checked = savedStatus.indexOf(b.value) !== -1 })
   } catch (_) {}
   status.addEventListener('change', function () {

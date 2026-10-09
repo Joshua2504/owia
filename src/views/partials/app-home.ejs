@@ -1,0 +1,74 @@
+<%
+// App-Home: Startseite für Eingeloggte (statt Werbe-Hero/FAQ, public/index.ejs).
+// Erwartet meine = { zaehler, letzte } aus meineUebersicht() (routes/public.ts).
+// Entwürfe öffnen direkt den Foto-Prüfdialog der Liste (?anzeige=…&foto=1),
+// ohne Fotos den Editor; alles andere die Detailseite.
+const _z = meine.zaehler
+const _vorname = String(currentUser.name || '').trim().split(/\s+/)[0]
+const _link = (r) => r.status !== 'entwurf' ? `/anzeige/${r.aktenzeichen}`
+  : r.foto_id ? `/anzeigen?anzeige=${encodeURIComponent(r.aktenzeichen)}&foto=1` : `/anzeige/${r.aktenzeichen}/bearbeiten`
+%>
+<section class="app-home">
+  <header class="app-home-greet">
+    <div class="text-body-secondary"><%= _vorname ? `Hallo ${_vorname}` : 'Hallo' %> 👋</div>
+    <h1 class="h3 mb-0">Was möchtest du melden?</h1>
+  </header>
+
+  <a href="/kamera" class="app-action app-action-primary">
+    <span class="app-action-icon" aria-hidden="true">📷</span>
+    <span class="app-action-text"><strong>Falschparker fotografieren</strong><small>Kamera öffnen – Kennzeichen, Ort und Zeit füllen sich selbst</small></span>
+    <span class="app-action-chev" aria-hidden="true">›</span>
+  </a>
+  <div class="app-actions-2">
+    <a href="/import" class="app-action">
+      <span class="app-action-icon" aria-hidden="true">🖼️</span>
+      <span class="app-action-text"><strong>Fotos importieren</strong><small>aus der Galerie, auch viele</small></span>
+    </a>
+    <form method="post" action="/anzeige/neu" class="m-0">
+      <button type="submit" class="app-action w-100">
+        <span class="app-action-icon" aria-hidden="true">✏️</span>
+        <span class="app-action-text"><strong>Leere Anzeige</strong><small>alles von Hand eingeben</small></span>
+      </button>
+    </form>
+  </div>
+
+  <div class="app-section-head">
+    <h2>Deine Anzeigen</h2>
+    <a href="/anzeigen?status=">Alle</a>
+  </div>
+  <div class="app-stats">
+    <% for (const [key, label, status] of [['entwurf', 'Entwürfe', 'entwurf'], ['bereit', 'Bereit', 'bereit'], ['eingereicht', 'Eingereicht', 'eingereicht'], ['versendet', 'Versendet', 'versendet']]) { %>
+      <a href="/anzeigen?status=<%= status %>" class="app-stat app-stat-<%= key %>">
+        <span class="app-stat-n"><%= h.zahl(_z[key]) %></span>
+        <span class="app-stat-l"><%= label %></span>
+      </a>
+    <% } %>
+  </div>
+
+  <% if (meine.letzte.length) { %>
+    <ul class="app-list">
+      <% for (const r of meine.letzte) { %>
+        <li>
+          <a href="<%= _link(r) %>" class="app-list-item">
+            <% if (r.foto_id) { %>
+              <img src="/anzeige/<%= r.aktenzeichen %>/image/<%= r.foto_id %>/thumb.jpg" alt="" class="app-list-thumb" loading="lazy" decoding="async">
+            <% } else { %>
+              <span class="app-list-thumb app-list-thumb-empty" aria-hidden="true">📷</span>
+            <% } %>
+            <span class="app-list-main">
+              <span class="app-list-top">
+                <% if (r.kennzeichen) { %><%- h.plate(r.kennzeichen) %><% } else { %><span class="text-body-secondary">Kennzeichen fehlt</span><% } %>
+                <% if (r.status === 'entwurf' && r.bereit_at) { %><span class="badge text-bg-primary">✔ Bereit</span><% } else { %><%- h.statusBadge(r.status) %><% } %>
+              </span>
+              <span class="app-list-sub"><%= r.verstoss_art || 'Verstoß noch nicht gewählt' %></span>
+              <span class="app-list-sub"><%= h.fmtDate(r.tattag, '') %><%= r.tattag && r.tatort ? ' · ' : '' %><%= r.tatort || '' %></span>
+            </span>
+            <span class="app-action-chev" aria-hidden="true">›</span>
+          </a>
+        </li>
+      <% } %>
+    </ul>
+  <% } else { %>
+    <p class="app-empty">Noch keine Anzeigen – fotografiere deinen ersten Falschparker.</p>
+  <% } %>
+</section>
