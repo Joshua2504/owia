@@ -169,7 +169,7 @@
     this.frameTimer = null
     this.videoFails = 0
     this.streamFails = 0
-    if (!this.openVideo()) this.openStream()
+    if (!this.liveVideo) this.openStream()
     this.poll()
   }
 
@@ -285,11 +285,12 @@
     if (wasActive && optNext.checked && (st === 'done' || st === 'failed')) setTimeout(function () { startNext(self) }, 1500)
   }
 
-  // Live-Video: H.264 als fragmentiertes MP4 (/versand/:id/video) über
-  // MediaSource. Der Player bleibt an der Live-Kante (springt vor, wenn er mehr
-  // als ½ s zurückliegt) und wirft alte Puffer weg. Gibt es (noch) keinen Lauf,
-  // nach 1 s neu versuchen; ist der Lauf vorbei oder klappt Video gar nicht,
-  // übernimmt das <img> (MJPEG bzw. letztes Bild).
+  // Live-Video: dauerhafter H.264-Kanal des Portal-Browsers als fragmentiertes
+  // MP4 (/versand/live/video) über MediaSource – läuft ab dem Seitenaufruf,
+  // unabhängig vom einzelnen Lauf, und steht daher sofort. Der Player bleibt an
+  // der Live-Kante (springt vor, wenn er mehr als ½ s zurückliegt) und wirft
+  // alte Puffer weg. Bricht die Verbindung ab, nach 1 s neu verbinden; klappt
+  // Video gar nicht, übernimmt das <img> (MJPEG bzw. Einzelbilder je Lauf).
   var VIDEO_TYPE = 'video/mp4; codecs="avc1.42C028"'
   var MS = window.MediaSource || window.ManagedMediaSource
   var videoOk = !!(MS && MS.isTypeSupported && MS.isTypeSupported(VIDEO_TYPE))
@@ -300,28 +301,30 @@
     if (this.videoUrl) { URL.revokeObjectURL(this.videoUrl); this.videoUrl = null }
   }
 
+  Slot.prototype.useImage = function () {
+    this.liveVideo = false
+    this.video.hidden = true
+    if (this.current) this.openStream()
+  }
+
   Slot.prototype.openVideo = function () {
     var self = this
-    if (!videoOk || !this.current) return false
-    var id = this.current.id
+    if (!videoOk) return this.useImage()
     var v = this.video
     this.stopVideo()
     var gen = { ctrl: new AbortController() }
     this.vid = gen
     var ms = new MS()
-    var alive = function () { return self.vid === gen && self.current && self.current.id === id }
+    var alive = function () { return self.vid === gen }
     var failed = false
-    var fail = function (gotData) {
+    var got = false
+    var fail = function () {
       if (failed || !alive()) return
       failed = true
       self.stopVideo()
-      if (gotData) self.videoFails = 0
-      var active = !self.state || ACTIVE.indexOf(self.state) >= 0
-      if (active && ++self.videoFails <= 15) {
-        self.videoRetry = setTimeout(function () { if (self.current && self.current.id === id) self.openVideo() }, 1000)
-      } else {
-        self.openStream()
-      }
+      if (got) self.videoFails = 0
+      if (!videoOk || ++self.videoFails > 10) { videoOk = false; return self.useImage() }
+      self.videoRetry = setTimeout(function () { self.openVideo() }, 1000)
     }
     this.videoUrl = URL.createObjectURL(ms)
     v.src = this.videoUrl
@@ -330,12 +333,11 @@
       var sb
       try { sb = ms.addSourceBuffer(VIDEO_TYPE) } catch (e) { videoOk = false; return fail() }
       var queue = []
-      var got = false
       var pump = function () {
         if (!alive() || sb.updating || !queue.length) return
         var buf = queue.length === 1 ? queue[0] : concat(queue)
         queue = []
-        try { sb.appendBuffer(buf) } catch (e) { fail(got) }
+        try { sb.appendBuffer(buf) } catch (e) { fail() }
       }
       sb.addEventListener('updateend', function () {
         if (!alive()) return
@@ -348,13 +350,13 @@
         }
         pump()
       })
-      fetch('/versand/' + id + '/video?n=' + Date.now(), { cache: 'no-store', signal: gen.ctrl.signal })
+      fetch('/versand/live/video?n=' + Date.now(), { cache: 'no-store', signal: gen.ctrl.signal })
         .then(function (r) {
           if (r.status !== 200 || !r.body) return fail()
           var reader = r.body.getReader()
           var read = function () {
             return reader.read().then(function (x) {
-              if (x.done) return fail(got)
+              if (x.done) return fail()
               got = true
               queue.push(x.value)
               pump()
@@ -363,17 +365,21 @@
           }
           return read()
         })
-        .catch(function () { fail(got) })
+        .catch(function () { fail() })
     })
     // Kann der Browser das Video gar nicht laden (z. B. Richtlinie), auf MJPEG.
     v.onerror = function () { if (alive()) { videoOk = false; fail() } }
     v.onplaying = function () {
       if (!alive()) return
-      v.hidden = false
+      self.liveVideo = true
+      clearTimeout(self.streamRetry)
+      if (self.frameTimer) { clearInterval(self.frameTimer); self.frameTimer = null }
+      self.img.onerror = self.img.onload = null
+      self.img.removeAttribute('src')
       self.img.hidden = true
+      v.hidden = false
       self.empty.hidden = true
     }
-    return true
   }
 
   function concat(parts) {
@@ -436,6 +442,7 @@
   }
 
   var slots = Array.prototype.slice.call(root.querySelectorAll('[data-slot]')).map(function (el, i) { return new Slot(el, i + 1) })
+  slots[0].openVideo()
 
   function markActive() {
     var shown = slots.map(function (s) { return s.current && s.current.id })

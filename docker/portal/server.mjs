@@ -4,7 +4,7 @@
 // „Absenden" (POST /runs/:id/submit) und liefert Vorgangs-ID + Zusammenfassung.
 //
 // Live-Ansicht: Chromium streamt per CDP-Screencast JPEG-Frames; die App holt
-// sie als H.264-Video (GET /runs/:id/video), MJPEG (…/stream) bzw. als
+// den Live-Kanal als H.264-Video (GET /live/video), MJPEG (…/stream) bzw. als
 // Einzelbild (…/frame). Klicks/Tastatur aus der
 // Live-Ansicht kommen über POST /runs/:id/input zurück – damit kann der Nutzer
 // eingreifen, wenn der Lauf pausiert (state 'needs_input').
@@ -69,7 +69,6 @@ function createRun(payload, files, dir) {
     frame: null,
     frameNo: 0,
     watchers: new Set(), // offene MJPEG-Streams (GET /runs/:id/stream)
-    videos: new Set(), // offene H.264-Streams (GET /runs/:id/video)
     summary: null,
     result: null,
     error: null,
@@ -149,43 +148,147 @@ function pushFrame(run) {
     else w.timer = setTimeout(() => sendTo(run, w), wait)
   }
 }
-// Live-Video: je Zuschauer ein ffmpeg, das das jeweils neueste Screencast-Bild
-// mit festen 25 fps zu H.264 kodiert (fragmentiertes MP4, im Browser per
-// MediaSource abgespielt). Ein fast stehendes Formular kostet so nur wenige
-// kbit/s; Bewegung bleibt flüssig. Ein eigener Encoder je Zuschauer, damit jeder
-// mit Init-Segment und Keyframe beginnt (es schauen höchstens 1–2 zu).
+// Live-Kanal (GET /live/video): EIN ffmpeg läuft rund um die Uhr und kodiert
+// mit festen 25 fps das Bild des aktuellen Laufs (sonst das zuletzt gesehene
+// bzw. ein leeres Bild) zu H.264 als fragmentiertes MP4. Neue Zuschauer
+// bekommen sofort Init-Segment + die Fragmente seit dem letzten Keyframe, das
+// Bild steht also ohne Anlaufzeit. Stehende Bilder kosten fast nichts, daher
+// nur alle 10 s ein Keyframe.
 const VIDEO_FPS = 25
-function startVideo(run, req, res) {
+const VIDEO_W = VIEWPORT.width
+const VIDEO_H = VIEWPORT.height
+const live = { ff: null, init: null, gop: [], watchers: new Set(), lastFrame: null, idle: null, timer: null }
+
+function liveFrame() {
+  let best = null
+  for (const r of runs.values()) {
+    if (!r.frame) continue
+    if (ACTIVE.has(r.state)) return (live.lastFrame = r.frame)
+    if (!best || r.updatedAt > best.updatedAt) best = r
+  }
+  return best?.frame || live.lastFrame || live.idle
+}
+
+// Keyframe-Erkennung im moof: sample_flags (Bit 0x10000 = kein Sync-Sample)
+// aus trun (first_sample_flags bzw. erstes Sample) oder tfhd-Default.
+function isKeyFragment(moof) {
+  let flags = null
+  let def = null
+  const walk = (buf, start, end) => {
+    for (let o = start; o + 8 <= end; ) {
+      const size = buf.readUInt32BE(o)
+      const type = buf.toString('latin1', o + 4, o + 8)
+      if (size < 8) return
+      if (type === 'traf') walk(buf, o + 8, o + size)
+      else if (type === 'tfhd') {
+        const f = buf.readUInt32BE(o + 8) & 0xffffff
+        let p = o + 16
+        if (f & 0x1) p += 8
+        if (f & 0x2) p += 4
+        if (f & 0x8) p += 4
+        if (f & 0x10) p += 4
+        if (f & 0x20) def = buf.readUInt32BE(p)
+      } else if (type === 'trun' && flags === null) {
+        const f = buf.readUInt32BE(o + 8) & 0xffffff
+        let p = o + 16
+        if (f & 0x1) p += 4
+        if (f & 0x4) flags = buf.readUInt32BE(p)
+        else if (f & 0x400) {
+          if (f & 0x100) p += 4
+          if (f & 0x200) p += 4
+          flags = buf.readUInt32BE(p)
+        }
+      }
+      o += size
+    }
+  }
+  walk(moof, 8, moof.length)
+  const sf = flags ?? def
+  return sf === null ? false : !(sf & 0x10000)
+}
+
+function liveSend(w, chunk) {
+  // Kommt ein Zuschauer nicht hinterher, bis zum nächsten Keyframe aussetzen
+  // (einzelne Fragmente auszulassen würde das Bild zerstören).
+  if (w.res.writableNeedDrain) { w.waitKey = true; return }
+  w.res.write(chunk)
+}
+
+function startLiveEncoder() {
   const ff = spawn('ffmpeg', [
     '-loglevel', 'error', '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', String(VIDEO_FPS), '-i', 'pipe:0',
-    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+    '-vf', `scale=${VIDEO_W}:${VIDEO_H}:force_original_aspect_ratio=decrease,pad=${VIDEO_W}:${VIDEO_H},format=yuv420p`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-profile:v', 'baseline', '-level', '4.0',
-    '-crf', '26', '-maxrate', '1500k', '-bufsize', '750k', '-g', String(VIDEO_FPS * 2), '-threads', '2',
+    '-crf', '26', '-maxrate', '1500k', '-bufsize', '750k', '-g', String(VIDEO_FPS * 10), '-threads', '2',
     '-f', 'mp4', '-movflags', 'empty_moov+default_base_moof+frag_keyframe', '-frag_duration', '40000', 'pipe:1',
   ], { stdio: ['pipe', 'pipe', 'inherit'] })
-  const v = { ff, timer: null }
-  const stop = () => {
-    clearInterval(v.timer)
-    run.videos.delete(v)
-    ff.stdin.destroy()
-    ff.kill('SIGKILL')
-  }
-  v.stop = stop
-  res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' })
-  ff.stdout.pipe(res)
-  ff.on('exit', () => { clearInterval(v.timer); run.videos.delete(v); res.end() })
+  live.ff = ff
+  live.init = null
+  live.gop = []
+  let buf = Buffer.alloc(0)
+  let head = []
+  let moof = null
+  ff.stdout.on('data', (d) => {
+    buf = buf.length ? Buffer.concat([buf, d]) : d
+    while (buf.length >= 8) {
+      const size = buf.readUInt32BE(0)
+      if (size < 8 || buf.length < size) break
+      const box = buf.subarray(0, size)
+      const type = box.toString('latin1', 4, 8)
+      buf = buf.subarray(size)
+      if (!live.init) {
+        head.push(box)
+        if (type === 'moov') { live.init = Buffer.concat(head); head = [] }
+      } else if (type === 'moof') moof = box
+      else if (type === 'mdat' && moof) {
+        const frag = Buffer.concat([moof, box])
+        const key = isKeyFragment(moof)
+        moof = null
+        if (key) live.gop = [frag]
+        else if (live.gop.length) live.gop.push(frag)
+        for (const w of live.watchers) {
+          if (w.waitKey && !key) continue
+          w.waitKey = false
+          liveSend(w, frag)
+        }
+      }
+    }
+  })
   ff.stdin.on('error', () => {})
-  req.on('close', stop)
-  v.timer = setInterval(() => {
-    // Staut sich der Encoder, lieber ein Bild auslassen.
-    if (run.frame && !ff.stdin.writableNeedDrain) ff.stdin.write(run.frame)
+  ff.on('exit', () => {
+    clearInterval(live.timer)
+    live.ff = null
+    for (const w of live.watchers) w.res.end()
+    live.watchers.clear()
+    if (!shuttingDown) setTimeout(startLiveEncoder, 1000)
+  })
+  clearInterval(live.timer)
+  live.timer = setInterval(() => {
+    const f = liveFrame()
+    if (f && !ff.stdin.writableNeedDrain) ff.stdin.write(f)
   }, 1000 / VIDEO_FPS)
-  run.videos.add(v)
+}
+
+// Leeres Startbild, solange es noch keinen Lauf gab.
+function makeIdleFrame() {
+  const ff = spawn('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', `color=c=0xf8f9fa:s=${VIDEO_W}x${VIDEO_H}`, '-frames:v', '1', '-f', 'mjpeg', 'pipe:1'])
+  const parts = []
+  ff.stdout.on('data', (d) => parts.push(d))
+  ff.on('exit', () => { live.idle = Buffer.concat(parts); startLiveEncoder() })
+}
+makeIdleFrame()
+
+function liveWatch(req, res) {
+  if (!live.ff || !live.init) return send(res, 503, { error: 'Video startet gerade.' })
+  res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' })
+  res.write(live.init)
+  for (const f of live.gop) res.write(f)
+  const w = { res, waitKey: !live.gop.length }
+  live.watchers.add(w)
+  req.on('close', () => live.watchers.delete(w))
 }
 
 function endWatchers(run) {
-  for (const v of run.videos) { clearInterval(v.timer); v.ff.stdin.end() }
-  run.videos.clear()
   for (const w of run.watchers) {
     clearTimeout(w.timer)
     if (run.frame) writePart(w.res, run.frame)
@@ -392,6 +495,8 @@ async function handle(req, res) {
     return send(res, 201, publicRun(run))
   }
 
+  if (req.method === 'GET' && url.pathname === '/live/video') return liveWatch(req, res)
+
   if (parts[0] !== 'runs' || !parts[1]) return send(res, 404, { error: 'unbekannt' })
   const run = runs.get(parts[1])
   if (!run) return send(res, 404, { error: 'Lauf unbekannt' })
@@ -403,11 +508,6 @@ async function handle(req, res) {
     if (!run.frame) return send(res, 204, '')
     res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'X-Frame-No': String(run.frameNo) })
     return res.end(run.frame)
-  }
-
-  if (req.method === 'GET' && action === 'video') {
-    if (run.finishedAt || !run.frame) return send(res, 204, '')
-    return startVideo(run, req, res)
   }
 
   if (req.method === 'GET' && action === 'stream') {
@@ -479,6 +579,7 @@ http
 
 process.on('SIGTERM', async () => {
   shuttingDown = true
+  live.ff?.kill('SIGKILL')
   await browser?.close().catch(() => {})
   process.exit(0)
 })

@@ -3,7 +3,7 @@
 // live (H.264-Video, Rückfall MJPEG bzw. Einzelbilder). Eingriffe (Klick/Tippen ins Live-Bild) gehen an
 // den Dienst durch. Logik und DB-Zustände: services/portalDispatch.ts.
 import { Readable } from 'node:stream'
-import { FastifyInstance } from 'fastify'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { requireAdmin, requireAuth, viewData } from '../middleware/auth'
@@ -199,23 +199,26 @@ export default async function portalRoutes(app: FastifyInstance) {
     return reply.type('image/jpeg').send(Buffer.from(await res.arrayBuffer()))
   })
 
-  // Live-Bild als Stream durchreichen: /video = H.264 (fragmentiertes MP4,
-  // im Browser per MediaSource), /stream = MJPEG (Rückfall). Läuft bis zum Ende
-  // des Laufs bzw. bis der Browser die Verbindung schließt.
-  for (const art of ['video', 'stream'] as const) {
-    app.get(`/versand/:id/${art}`, { preHandler: requireAdmin, config: { rateLimit: false } }, async (request, reply) => {
-      const runId = await currentRunId(reportIdOf(request))
-      if (!runId) return reply.status(204).send()
-      const ctrl = new AbortController()
-      request.raw.on('close', () => ctrl.abort())
-      const res = await fetch(`${PORTAL_URL}/runs/${encodeURIComponent(runId)}/${art}`, { signal: ctrl.signal }).catch(() => null)
-      if (!res || res.status !== 200 || !res.body) return reply.status(204).send()
-      reply.header('Cache-Control', 'no-store')
-      reply.header('X-Accel-Buffering', 'no')
-      reply.type(res.headers.get('content-type') || 'application/octet-stream')
-      return reply.send(Readable.fromWeb(res.body as any).on('error', () => {}))
-    })
+  // Live-Bild als Stream durchreichen, bis der Browser die Verbindung schließt:
+  // /versand/live/video = dauerhafter H.264-Kanal (fragmentiertes MP4, im
+  // Browser per MediaSource), /versand/:id/stream = MJPEG des Laufs (Rückfall).
+  async function pipeStream(request: FastifyRequest, reply: FastifyReply, path: string) {
+    const ctrl = new AbortController()
+    request.raw.on('close', () => ctrl.abort())
+    const res = await fetch(PORTAL_URL + path, { signal: ctrl.signal }).catch(() => null)
+    if (!res || res.status !== 200 || !res.body) return reply.status(204).send()
+    reply.header('Cache-Control', 'no-store')
+    reply.header('X-Accel-Buffering', 'no')
+    reply.type(res.headers.get('content-type') || 'application/octet-stream')
+    return reply.send(Readable.fromWeb(res.body as any).on('error', () => {}))
   }
+  app.get('/versand/live/video', { preHandler: requireAdmin, config: { rateLimit: false } }, (request, reply) =>
+    pipeStream(request, reply, '/live/video'))
+  app.get('/versand/:id/stream', { preHandler: requireAdmin, config: { rateLimit: false } }, async (request, reply) => {
+    const runId = await currentRunId(reportIdOf(request))
+    if (!runId) return reply.status(204).send()
+    return pipeStream(request, reply, `/runs/${encodeURIComponent(runId)}/stream`)
+  })
 
   app.post('/versand/:id/input', { preHandler: requireAdmin, config: { rateLimit: false } }, async (request, reply) => {
     const runId = await currentRunId(reportIdOf(request))
