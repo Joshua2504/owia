@@ -1,0 +1,135 @@
+<%
+  // Seitenaufrufe & Wege (GET /admin/aufrufe). Daten: services/aufrufe.ts –
+  // anonyme Tageszähler je (Seite, vorige Seite), keine Besucher/Sitzungen.
+  const zahl = h.zahl
+  const datum = (d) => { const [y, m, t] = d.split('-'); return `${t}.${m}.${y}` }
+  const quelle = (v) => v === 'direkt' ? 'direkt (Lesezeichen, App, eingetippt)'
+    : v.startsWith('extern:') ? v.slice(7) : v
+  const link = (pfad) => `/admin/aufrufe?tage=${a.tage}&seite=${encodeURIComponent(pfad)}`
+  const maxTag = Math.max(1, ...a.proTag.map((t) => t.anzahl))
+  const balken = (rows) => Math.max(1, ...rows.map((r) => r.anzahl))
+%>
+<div class="mx-auto page-wide">
+  <div class="page-head">
+    <h2>Aufrufe</h2>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Zeitraum">
+      <% zeitraeume.forEach((t) => { %>
+        <a class="btn <%= t === a.tage ? 'btn-primary' : 'btn-outline-secondary' %>"
+           href="/admin/aufrufe?tage=<%= t %><%= a.detail ? '&seite=' + encodeURIComponent(a.detail.seite) : '' %>"><%= t %> Tage</a>
+      <% }) %>
+    </div>
+  </div>
+  <p class="text-muted small">
+    Gezählt werden nur Seitennavigationen im Browser, als Tageszähler je Seite und vorheriger Seite –
+    ohne Cookie, IP, Gerät oder Nutzerkonto. Ein Weg ist immer nur ein Schritt (Seite → nächste Seite),
+    Besucher und Sitzungen gibt es bewusst nicht.
+  </p>
+
+  <div class="row g-2 mb-4 text-center">
+    <% [
+      [zahl(a.gesamt), `Seitenaufrufe in ${a.tage} Tagen`],
+      [zahl(Math.round(a.gesamt / a.tage)), 'pro Tag im Schnitt'],
+      [zahl(a.quellen.reduce((s, z) => s + z.anzahl, 0)), 'Einstiege (direkt/extern)'],
+      [zahl(a.extern), 'von anderen Websites'],
+    ].forEach(([v, l]) => { %>
+      <div class="col-6 col-md-3"><div class="stat-tile px-1">
+        <div class="stat-tile-value"><%= v %></div>
+        <div class="stat-tile-label"><%= l %></div>
+      </div></div>
+    <% }) %>
+  </div>
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h3 class="h6 mb-3">Seitenaufrufe pro Tag <span class="text-muted fw-normal">(max. <%= zahl(maxTag) %>)</span></h3>
+    <div class="aufrufe-tage<%= a.tage > 90 ? ' aufrufe-tage-dicht' : '' %>">
+      <% a.proTag.forEach((t) => { %>
+        <div class="aufrufe-tag" title="<%= datum(t.tag) %>: <%= zahl(t.anzahl) %>">
+          <div class="aufrufe-tag-bar" style="height: <%= (t.anzahl / maxTag * 100).toFixed(1) %>%"></div>
+        </div>
+      <% }) %>
+    </div>
+    <div class="d-flex justify-content-between small text-muted mt-1">
+      <span><%= datum(a.proTag[0].tag) %></span><span>heute</span>
+    </div>
+  </div></div>
+
+  <% if (a.detail) { const d = a.detail; %>
+    <div class="card shadow-sm mb-4 border-primary"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+        <h3 class="h6 mb-0"><code><%= d.seite %></code> – <%= zahl(d.gesamt) %> Aufrufe</h3>
+        <a class="btn btn-sm btn-outline-secondary" href="/admin/aufrufe?tage=<%= a.tage %>">Schließen</a>
+      </div>
+      <div class="row g-4">
+        <% [['Kommt von', d.woher, true], ['Geht weiter zu', d.wohin, false]].forEach(([titel, rows, istVon]) => { const m = balken(rows) %>
+          <div class="col-md-6">
+            <div class="small fw-semibold mb-2"><%= titel %></div>
+            <% if (!rows.length) { %><div class="text-muted small">–</div><% } %>
+            <% rows.forEach((r) => { %>
+              <div class="aufrufe-zeile">
+                <div class="text-truncate small">
+                  <% if (r.name.startsWith('/')) { %><a href="<%= link(r.name) %>"><code><%= r.name %></code></a><% } else { %><%= quelle(r.name) %><% } %>
+                </div>
+                <div class="bar-track bar-track-sm"><div class="bar" style="width: <%= (r.anzahl / m * 100).toFixed(1) %>%"></div></div>
+                <div class="small text-end"><%= zahl(r.anzahl) %></div>
+              </div>
+            <% }) %>
+          </div>
+        <% }) %>
+      </div>
+    </div></div>
+  <% } %>
+
+  <div class="row g-4">
+    <div class="col-lg-6">
+      <div class="card shadow-sm h-100"><div class="card-body">
+        <h3 class="h6 mb-3">Seiten <span class="text-muted fw-normal small">– Klick zeigt Herkunft und nächste Schritte</span></h3>
+        <% if (!a.seiten.length) { %><div class="text-muted small">Noch keine Aufrufe.</div><% } %>
+        <% const ms = balken(a.seiten); a.seiten.forEach((r) => { %>
+          <div class="aufrufe-zeile">
+            <div class="text-truncate small"><a href="<%= link(r.name) %>"><code><%= r.name %></code></a></div>
+            <div class="bar-track bar-track-sm"><div class="bar" style="width: <%= (r.anzahl / ms * 100).toFixed(1) %>%"></div></div>
+            <div class="small text-end"><%= zahl(r.anzahl) %></div>
+          </div>
+        <% }) %>
+      </div></div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card shadow-sm mb-4"><div class="card-body">
+        <h3 class="h6 mb-3">Herkunft der Einstiege</h3>
+        <% if (!a.quellen.length) { %><div class="text-muted small">–</div><% } %>
+        <% const mq = balken(a.quellen); a.quellen.forEach((r) => { %>
+          <div class="aufrufe-zeile">
+            <div class="text-truncate small"><%= quelle(r.name) %></div>
+            <div class="bar-track bar-track-sm"><div class="bar" style="width: <%= (r.anzahl / mq * 100).toFixed(1) %>%"></div></div>
+            <div class="small text-end"><%= zahl(r.anzahl) %></div>
+          </div>
+        <% }) %>
+      </div></div>
+      <div class="card shadow-sm"><div class="card-body">
+        <h3 class="h6 mb-3">Einstiegsseiten</h3>
+        <% if (!a.einstiege.length) { %><div class="text-muted small">–</div><% } %>
+        <% const me = balken(a.einstiege); a.einstiege.forEach((r) => { %>
+          <div class="aufrufe-zeile">
+            <div class="text-truncate small"><a href="<%= link(r.name) %>"><code><%= r.name %></code></a></div>
+            <div class="bar-track bar-track-sm"><div class="bar" style="width: <%= (r.anzahl / me * 100).toFixed(1) %>%"></div></div>
+            <div class="small text-end"><%= zahl(r.anzahl) %></div>
+          </div>
+        <% }) %>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mt-4"><div class="card-body">
+    <h3 class="h6 mb-3">Häufigste Wege <span class="text-muted fw-normal small">– ohne Neuladen derselben Seite</span></h3>
+    <% if (!a.wege.length) { %><div class="text-muted small">Noch keine Wege.</div><% } %>
+    <% const mw = balken(a.wege); a.wege.forEach((w) => { %>
+      <div class="aufrufe-zeile aufrufe-weg">
+        <div class="text-truncate small">
+          <a href="<%= link(w.von) %>"><code><%= w.von %></code></a> → <a href="<%= link(w.pfad) %>"><code><%= w.pfad %></code></a>
+        </div>
+        <div class="bar-track bar-track-sm"><div class="bar" style="width: <%= (w.anzahl / mw * 100).toFixed(1) %>%"></div></div>
+        <div class="small text-end"><%= zahl(w.anzahl) %></div>
+      </div>
+    <% }) %>
+  </div></div>
+</div>

@@ -50,6 +50,8 @@ import { pool } from './db/connection'
 import { purgeTrash, PDF_DIR, UPLOAD_DIR } from './services/drafts'
 import { fillMissingTatorte } from './services/tatortFill'
 import { verstossGesperrt } from './services/portale'
+import { zaehleAufruf } from './services/aufrufe'
+import aufrufeRoutes from './routes/aufrufe'
 
 // trustProxy: hinter Caddy sonst falsches Protokoll (secure-Cookies) und
 // Docker-interne IPs statt Client-IPs in Logs und Rate-Limits. Nur Loopback
@@ -116,7 +118,14 @@ async function main() {
         frameAncestors: ["'self'"], // PDF-Vorschau im eigenen iframe erlaubt, Clickjacking von außen nicht
       },
     },
+    // same-origin statt helmets no-referrer: fremde Seiten bekommen weiterhin
+    // nichts, eigene Seiten sehen die vorige Seite – Grundlage der Wege-Zählung
+    // (services/aufrufe.ts).
+    referrerPolicy: { policy: 'same-origin' },
   })
+
+  // Seitenaufrufe & Wege zählen (anonyme Tageszähler, services/aufrufe.ts).
+  app.addHook('onResponse', async (request, reply) => zaehleAufruf(app, request, reply))
 
   // Rate-Limits: global nur als grober Missbrauchs-Deckel. Bild-, Kachel- und
   // Asset-Requests summieren sich beim normalen Blättern schnell (eine Listen-
@@ -226,6 +235,7 @@ async function main() {
   await app.register(logosRoutes)
   await app.register(stickerTestRoutes)
   await app.register(adminRoutes)
+  await app.register(aufrufeRoutes)
   await app.register(portalRoutes)
 
   // Antworten des Ordnungsamts aus dem Versand-Postfach abrufen (IMAP).

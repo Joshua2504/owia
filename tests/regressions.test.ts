@@ -38,6 +38,7 @@ import { PDFDocument } from 'pdf-lib'
 import stickerRoutes from '../src/routes/sticker'
 import stickerTestRoutes from '../src/routes/stickerTest'
 import { viewHelpers } from '../src/views/helpers'
+import { zaehleAufruf, ladeAufrufe } from '../src/services/aufrufe'
 import {
   createBatch, linkCode, unlinkCode, voidOpenCodes, normalizeCode, parseLayout, renderBatchPdf,
   batchCodes, StickerLayout,
@@ -93,8 +94,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0048_sticker_entwurf_favoriten.sql')
-  assert.equal(rows.length, 48)
+  assert.equal(rows.at(-1)?.filename, '0049_seitenaufrufe.sql')
+  assert.equal(rows.length, 49)
 })
 
 test('Versand-Takt: höchstens ein Versand je VERSAND_ABSTAND_SEK, Freigabe gibt den Platz zurück', async () => {
@@ -1350,5 +1351,51 @@ test('Original wiederherstellen verwirft die bearbeitete Fassung, nur bei Entwü
     await pool.execute("UPDATE reports SET status='eingereicht' WHERE id=?", [id])
     const gesperrt = await app.inject({ method: 'POST', url: `/anzeige/${az}/images/${ins.insertId}/original` })
     assert.equal(gesperrt.statusCode, 409)
+  } finally { await app.close() }
+})
+
+test('Aufrufe: nur Navigationen, Routen-Muster statt URL, Herkunft ohne Personenbezug', async () => {
+  const app = Fastify()
+  app.addHook('onResponse', async (request, reply) => zaehleAufruf(app, request, reply))
+  const html = (_req: unknown, reply: import('fastify').FastifyReply) => reply.type('text/html').send('<p>ok</p>')
+  app.get('/', html)
+  app.get('/anzeige/:az', html)
+  app.get('/login', html)
+  app.get('/daten', async () => ({ ok: true }))
+  const nav = { 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate', host: 'owia.test' }
+  const holen = (url: string, headers: Record<string, string> = {}) =>
+    app.inject({ method: 'GET', url, headers: { ...nav, ...headers } })
+  try {
+    await pool.execute('DELETE FROM seitenaufrufe')
+    await holen('/')                                                        // direkt
+    await holen('/', { referer: 'https://www.google.com/search?q=owia' })   // extern, nur Host
+    await holen('/anzeige/OWiA-000042?x=1', { referer: 'https://owia.test/' })
+    await holen('/anzeige/OWiA-000043', { referer: 'https://owia.test/' })
+    await holen('/login', { referer: 'https://owia.test/anzeige/OWiA-000042' })
+    // Nicht gezählt: fetch, iframe, Prefetch, JSON, 404, Bot ohne Fetch-Metadata.
+    await holen('/', { 'sec-fetch-mode': 'cors', 'sec-fetch-dest': 'empty' })
+    await holen('/', { 'sec-fetch-dest': 'iframe' })
+    await holen('/', { 'sec-purpose': 'prefetch' })
+    await holen('/daten')
+    await holen('/gibt-es-nicht')
+    await app.inject({ method: 'GET', url: '/' })
+    await new Promise((r) => setTimeout(r, 100)) // Zählung ist fire-and-forget
+    const rows = await query('SELECT pfad, von, anzahl FROM seitenaufrufe ORDER BY pfad, von')
+    assert.deepEqual(rows.map((r) => [r.pfad, r.von, Number(r.anzahl)]), [
+      ['/', 'direkt', 1],
+      ['/', 'extern:google.com', 1],
+      ['/anzeige/:az', '/', 2],
+      ['/login', '/anzeige/:az', 1],
+    ])
+    const a = await ladeAufrufe(7, '/anzeige/:az')
+    assert.equal(a.gesamt, 5)
+    assert.equal(a.proTag.length, 7)
+    assert.equal(a.proTag.at(-1)?.anzahl, 5)
+    assert.deepEqual(a.wege.map((w) => [w.von, w.pfad, w.anzahl]), [['/', '/anzeige/:az', 2], ['/anzeige/:az', '/login', 1]])
+    assert.equal(a.extern, 1)
+    assert.deepEqual(a.detail?.wohin, [{ name: '/login', anzahl: 1 }])
+    const seite = await ejs.renderFile(path.join(process.cwd(), 'src/views/admin/aufrufe.ejs'), { a, zeitraeume: [7, 30], h: viewHelpers })
+    assert.match(seite, /google\.com/)
+    assert.doesNotMatch(seite, /OWiA-0000/)
   } finally { await app.close() }
 })

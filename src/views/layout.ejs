@@ -50,7 +50,7 @@
     const _act = (...prefixes) => prefixes.some((p) => _path === p || _path.startsWith(p + '/')) ? ' active' : ''
     const _adminLinks = [
       ['/admin/anzeigen', 'Prüfung'], ['/versand', 'Versand'], ['/admin/newsletter', 'Newsletter'],
-      ['/admin/benutzer', 'Benutzer'], ['/admin/analyse', 'Analyse'],
+      ['/admin/benutzer', 'Benutzer'], ['/admin/analyse', 'Analyse'], ['/admin/aufrufe', 'Aufrufe'],
     ]
     const _adminActive = _adminLinks.some(([href]) => _act(href))
   %>
