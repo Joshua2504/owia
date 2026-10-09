@@ -71,6 +71,15 @@
     } else if (d.verjaehrung) {
       box.appendChild(text('div', 'alert alert-info py-2 small', 'Achtung: Frist endet in ' + d.verjaehrung.restTage + ' Tag(en).'))
     }
+    // Vorgaben des Amts (z. B. Hamburg: nur JPG, Anschrift im Mailtext).
+    if (d.hinweise && d.hinweise.length) {
+      var info = text('div', 'alert alert-info py-2 small')
+      info.appendChild(text('strong', '', 'Hinweise für ' + d.recipient.ordnungsamt + ':'))
+      var hl = text('ul', 'mb-0 ps-3')
+      d.hinweise.forEach(function (h) { hl.appendChild(text('li', '', h)) })
+      info.appendChild(hl)
+      box.appendChild(info)
+    }
     var f = d.fields
     var zeit = [f.tattag, f.tattag_bis ? '– ' + f.tattag_bis : null].filter(Boolean).join(' ') +
       (f.tatzeit_von ? ', ' + f.tatzeit_von + (f.tatzeit_bis && f.tatzeit_bis !== f.tatzeit_von ? ' – ' + f.tatzeit_bis : '') + ' Uhr' : '')
@@ -112,6 +121,10 @@
       frame.title = 'PDF-Vorschau'
       frame.src = d.pdfUrl
       pdf.appendChild(frame)
+    } else if (d.mail) {
+      pdf.appendChild(renderMail(d))
+    } else if (d.versandweg === 'portal') {
+      pdf.appendChild(text('div', 'submit-nopdf', 'Die Anzeige wird über das Online-Formular der Stadt übermittelt – ohne PDF und ohne E-Mail.'))
     } else {
       pdf.appendChild(text('div', 'submit-nopdf', 'Für dieses Ordnungsamt gibt es kein PDF-Formular – die Anzeige geht als E-Mail mit Fotos raus.'))
     }
@@ -119,12 +132,36 @@
     dlg.querySelector('[data-msg]').textContent = d.canSubmit ? 'Nach dem Einreichen prüft ein Admin und versendet an das Ordnungsamt.' : ''
   }
 
+  function groesse(bytes) {
+    return bytes >= 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB'
+  }
+
+  // Vorschau der Anzeige-Mail (Städte ohne PDF-Formular und ohne Portal).
+  function renderMail(d) {
+    var wrap = text('div', 'submit-mail')
+    var head = text('dl', 'submit-fields submit-mail-head')
+    ;[['An', d.recipient.email || '—'], ['Betreff', d.mail.subject]].forEach(function (r) {
+      head.appendChild(text('dt', '', r[0]))
+      head.appendChild(text('dd', '', r[1]))
+    })
+    wrap.appendChild(head)
+    wrap.appendChild(text('pre', 'submit-mail-text', d.mail.text))
+    var att = d.mail.attachments || []
+    var sum = att.reduce(function (n, a) { return n + a.bytes }, 0)
+    wrap.appendChild(text('div', 'small fw-semibold mb-1', 'Anhänge (' + att.length + (att.length ? ', zusammen ' + groesse(sum) : '') + ')'))
+    var ul = text('ul', 'submit-mail-att small mb-0')
+    att.forEach(function (a) { ul.appendChild(text('li', '', a.filename + ' · ' + groesse(a.bytes))) })
+    if (!att.length) ul.appendChild(text('li', 'text-muted', 'keine'))
+    wrap.appendChild(ul)
+    return wrap
+  }
+
   function open(az, opts) {
     if (!dlg) build()
     current = az
     onSubmitted = (opts && opts.onSubmitted) || null
     dlg.querySelector('h2').textContent = 'Anzeige ' + az + ' einreichen'
-    dlg.querySelector('.submit-data').replaceChildren(text('div', 'text-muted', 'Vorschau und PDF werden erstellt …'))
+    dlg.querySelector('.submit-data').replaceChildren(text('div', 'text-muted', 'Vorschau wird erstellt …'))
     dlg.querySelector('.submit-pdf').replaceChildren()
     dlg.querySelectorAll('[data-go]').forEach(function (b) { b.disabled = true })
     dlg.querySelector('[data-msg]').textContent = ''

@@ -1058,6 +1058,12 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
   .submit-data { overflow: visible; margin-bottom: 1rem; }
 }
 .submit-pdf:has(.submit-nopdf) { min-height: 0; }
+/* Mail-Vorschau statt PDF (Städte ohne Formular, z. B. Hamburg). */
+.submit-pdf:has(.submit-mail) { min-height: 0; }
+.submit-mail { border: 1px solid var(--bs-border-color); border-radius: 0.5rem; padding: 0.75rem 1rem; background: var(--bs-tertiary-bg); }
+.submit-mail-head { margin-bottom: 0.5rem; }
+.submit-mail-text { white-space: pre-wrap; word-break: break-word; font-size: 0.8125rem; background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); border-radius: 0.375rem; padding: 0.75rem; max-height: 55vh; overflow: auto; }
+.submit-mail-att { padding-left: 1.1rem; }
 
 /* Seitenleiste des Foto-Dialogs (photo-edit.js): Angaben der Anzeige rechts
    neben dem Foto, Aktionen unten; auf dem Handy unter dem Foto. */

@@ -40,6 +40,20 @@ export interface CityGeo {
   mapLon: number
 }
 
+/** Vorgaben eines Amts für die rohe Anzeige-Mail (nur Städte ohne PDF/Portal). */
+export interface MailRegeln {
+  /** Anhänge nur als JPG (Fotos werden notfalls umkodiert). */
+  nurJpg?: boolean
+  /** Keine Tatort-Karte anhängen (das Amt nimmt außer Fotos keine Anhänge an). */
+  ohneKarte?: boolean
+  /** Obergrenze aller Anhänge zusammen; Fotos werden bis dahin verkleinert. */
+  maxAnhangBytes?: number
+  /** Ladungsfähige Anschrift der anzeigenden Person in den Mailtext. */
+  anschriftImText?: boolean
+  /** Hinweise für die Einreichen-Vorschau. */
+  hinweise?: string[]
+}
+
 export interface City {
   id: string
   /** Anzeigename der Stadt, z.B. "Frankfurt am Main". */
@@ -59,6 +73,8 @@ export interface City {
   /** Weitere Ortsnamen aus districts.csv, die zu dieser Stadt gehören
    *  (Wiesbaden: „Mainz-Kastel", „Mainz-Kostheim" – rechtsrheinisch, aber Wiesbaden). */
   aliases?: string[]
+  /** Vorgaben für den Mailversand (services/mail.ts, Einreichen-Vorschau). */
+  mail?: MailRegeln
   geo: CityGeo
 }
 
@@ -179,6 +195,38 @@ export const CITIES: Record<string, City> = {
       // Mainz Hauptbahnhof – Default-Kartenmittelpunkt im Formular.
       mapLat: 50.0012,
       mapLon: 8.2588,
+    },
+  },
+  // Hamburg: Bußgeldstelle der Behörde für Inneres und Sport. Versand per Mail
+  // (hamburg.de „Anzeigen von Privatpersonen"): Sachverhalt im Mailtext, als
+  // Anhang NUR Beweisfotos im JPG-Format, keine Sammelanzeigen; ladungsfähige
+  // Anschrift ist Pflicht. 10 MB gesamt laut ADFC Hamburg. Das Online-Formular
+  // im Serviceportal (max. 3 Fotos) nutzen wir bewusst nicht.
+  hamburg: {
+    id: 'hamburg',
+    name: 'Hamburg',
+    ordnungsamt: 'Bußgeldstelle Hamburg (Behörde für Inneres und Sport)',
+    mail: {
+      nurJpg: true,
+      ohneKarte: true,
+      maxAnhangBytes: 10 * 1024 * 1024,
+      anschriftImText: true,
+      hinweise: [
+        'Hamburg nimmt als Anhang nur Beweisfotos im JPG-Format an – die Tatort-Karte geht nicht mit, große Fotos werden auf zusammen höchstens 10 MB verkleinert.',
+        'Deine Anschrift steht im Mailtext (Hamburg verlangt eine ladungsfähige Anschrift). Betroffene können sie über eine Akteneinsicht sehen.',
+        'Eine Rückmeldung zum Ausgang des Verfahrens gibt die Bußgeldstelle in der Regel nicht.',
+      ],
+    },
+    geo: {
+      scope: 'hh',
+      // Festland-Stadtgebiet (Neuwerk liegt weit draußen in der Elbmündung).
+      bbox: '9.73,53.39,10.33,53.74',
+      cityMatch: 'hamburg',
+      biasLat: 53.5503,
+      biasLon: 9.9925,
+      // Hamburg Hauptbahnhof – Default-Kartenmittelpunkt im Formular.
+      mapLat: 53.5527,
+      mapLon: 10.0067,
     },
   },
 }

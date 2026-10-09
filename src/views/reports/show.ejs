@@ -267,8 +267,17 @@ const versandLabel = {
     <% } else if (!hasForm) { %>
       <div class="alert alert-info">
         Diese Anzeige wird als E-Mail an das <strong><%= city.ordnungsamt %></strong>
-        versendet – für <%= city.name %> gibt es kein amtliches PDF-Formular. Die
-        Beweisfotos und (soweit vorhanden) eine Tatort-Karte liegen der E-Mail bei.
+        versendet – für <%= city.name %> gibt es kein amtliches PDF-Formular.
+        <% if (city.mail && city.mail.ohneKarte) { %>
+          Der E-Mail liegen nur die Beweisfotos (JPG) bei.
+        <% } else { %>
+          Die Beweisfotos und (soweit vorhanden) eine Tatort-Karte liegen der E-Mail bei.
+        <% } %>
+        <% if (city.mail && city.mail.hinweise && city.mail.hinweise.length) { %>
+          <ul class="mb-0 mt-2 small">
+            <% city.mail.hinweise.forEach(function (h) { %><li><%= h %></li><% }) %>
+          </ul>
+        <% } %>
       </div>
     <% } else { %>
       <p class="text-muted">Die PDF-Vorschau erscheint, sobald der Entwurf gespeichert wurde.</p>

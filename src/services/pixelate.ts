@@ -284,6 +284,21 @@ export function mailVariant(
 }
 
 /**
+ * Beweisfoto erzwungen als JPEG mit höchstens maxPx Kantenlänge – für Ämter mit
+ * „nur JPG" bzw. Größenobergrenze aller Anhänge (Hamburg, config/cities.ts).
+ * Anders als mailVariant() wird immer neu kodiert. Wirft bei nicht dekodierbaren
+ * Bildern.
+ */
+export function jpegFassung(buffer: Buffer, mimetype: string, orientation: number, maxPx: number, quality: number): Buffer {
+  const src = decode(buffer, mimetype)
+  const scale = Math.min(1, maxPx / Math.max(src.width, src.height))
+  const outW = Math.max(1, Math.round(src.width * scale))
+  const outH = Math.max(1, Math.round(src.height * scale))
+  const oriented = applyOrientation({ data: downsample(src, outW, outH), width: outW, height: outH }, orientation)
+  return Buffer.from(jpeg.encode({ data: oriented.data, width: oriented.width, height: oriented.height }, quality).data)
+}
+
+/**
  * Versandfassung mit Datei-Cache ("bild-x.jpg.mail.jpg"): einmal berechnet,
  * danach direkt von Platte. Fällt aufs Original zurück, wenn das Bild nicht
  * dekodierbar ist (dann ohne Cache – besser groß versenden als gar nicht).

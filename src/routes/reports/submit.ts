@@ -18,6 +18,7 @@ import { PDF_DIR } from '../../services/drafts'
 import { isAdminEmail } from '../../config/admin'
 import { enqueueJob } from '../../services/jobs'
 import { enqueuePortalStart } from '../../services/portalDispatch'
+import { previewReportMail } from '../../services/mail'
 import { loadReportByAktenzeichen, isProfileComplete, regeneratePdf, enqueuePdf, countUncheckedImages, uncheckedMessage } from './shared'
 
 export default async function submitRoutes(app: FastifyInstance) {
@@ -66,6 +67,16 @@ export default async function submitRoutes(app: FastifyInstance) {
       'SELECT id, filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
+    // Mail-Städte (weder PDF noch Portal): den echten Mailtext samt Anhängen
+    // zeigen, damit der Nutzer sieht, was beim Amt ankommt.
+    let mail: Awaited<ReturnType<typeof previewReportMail>> | null = null
+    if (!hasPdfForm(city) && !city.portal) {
+      const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id = ?', [userId])
+      if (users[0]) {
+        mail = await previewReportMail(report, users[0])
+        if (mail.problem) problems.push({ kind: 'mail', message: mail.problem })
+      }
+    }
     const fmtDate = (d: unknown) => (d ? new Date(d as string).toLocaleDateString('de-DE') : null)
     const hhmm = (t: unknown) => (t ? String(t).slice(0, 5) : null)
     const vj = verjaehrung(report)
@@ -90,6 +101,9 @@ export default async function submitRoutes(app: FastifyInstance) {
         behinderung_text: report.behinderung_text,
       },
       recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
+      versandweg: city.portal ? 'portal' : hasPdfForm(city) ? 'pdf' : 'mail',
+      hinweise: city.mail?.hinweise || [],
+      mail: mail && { subject: mail.subject, text: mail.text, attachments: mail.attachments },
       verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
       pdfUrl: hasPdfForm(city) && fresh[0]?.pdf_filename ? `/anzeige/${az}/pdf?inline=1&t=${Date.now()}` : null,
       images: imgs.map((i) => ({

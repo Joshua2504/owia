@@ -5,7 +5,7 @@ import mysql from 'mysql2/promise'
 import { getCity, hasPdfForm } from '../config/cities'
 import { pool } from '../db/connection'
 import { reportDir } from './drafts'
-import { cachedMailVariant } from './pixelate'
+import { cachedMailVariant, jpegFassung, readOrientation } from './pixelate'
 import { renderTatortMap } from './staticmap'
 import { recipientEmailForReport } from './districts'
 import type { PreparedReportMail } from './reportDispatch'
@@ -77,10 +77,17 @@ export function buildReportMail(
 
   // Städte mit amtlichem Formular bekommen das PDF im Anhang; Städte ohne Formular
   // erhalten eine rohe E-Mail, der Beweisfotos und eine Tatort-Karte beiliegen.
-  const withForm = hasPdfForm(getCity(report.city))
+  const city = getCity(report.city)
+  const withForm = hasPdfForm(city)
   const anhangHinweis = withForm
     ? 'Das ausgefüllte Formular finden Sie im Anhang.'
-    : 'Die Beweisfotos und – soweit ermittelbar – eine Tatort-Karte finden Sie im Anhang.'
+    : city.mail?.ohneKarte
+      ? 'Die Beweisfotos finden Sie im Anhang.'
+      : 'Die Beweisfotos und – soweit ermittelbar – eine Tatort-Karte finden Sie im Anhang.'
+  // Ladungsfähige Anschrift unter den Namen (Hamburg verlangt sie im Mailtext).
+  const anschrift = city.mail?.anschriftImText
+    ? [strasseMitNummer(user), [user.plz, user.ort].filter(Boolean).join(' ')].filter(Boolean)
+    : []
 
   const text = [
     'Sehr geehrte Damen und Herren,',
@@ -112,6 +119,7 @@ export function buildReportMail(
     '',
     'Mit freundlichen Grüßen',
     [user.vorname, user.nachname].filter(Boolean).join(' ') || user.email,
+    ...anschrift,
   ]
     .filter((line) => line !== undefined)
     .join('\n')
@@ -126,11 +134,18 @@ export function buildReportMail(
  */
 type Attachment = { filename: string; content?: Buffer; path?: string; contentType?: string }
 
+// Stufen zum Verkleinern, wenn die Fotos die Obergrenze eines Amts sprengen
+// (Kantenlänge px, JPEG-Qualität). 1100 px reichen für Kennzeichen noch sicher.
+const SCHRUMPF_STUFEN: [number, number][] = [[1800, 76], [1400, 72], [1100, 70], [900, 65]]
+
 async function buildEvidenceAttachments(
   report: mysql.RowDataPacket,
   user: mysql.RowDataPacket
 ): Promise<{ attachments: Attachment[]; photoLines: string[] }> {
+  const regeln = getCity(report.city).mail || {}
   const attachments: Attachment[] = []
+  // Versandfassungen merken, falls die Fotos für die Größengrenze kleiner müssen.
+  const quellen: { basis: Buffer; mimetype: string; attachment: Attachment }[] = []
   // Je Beweisfoto eine Zeile "Beweisfoto-N.jpg – aufgenommen: …" für den Mailtext.
   const photoLines: string[] = []
 
@@ -145,15 +160,18 @@ async function buildEvidenceAttachments(
     try {
       // Versandfassung statt Original: Behörden-Postfächer haben Größenlimits
       // (~15 MB); das Original auf Platte bleibt erhalten.
-      const { buffer, type } = await cachedMailVariant(dir, img.filename, img.mimetype)
+      let { buffer, type } = await cachedMailVariant(dir, img.filename, img.mimetype)
+      if (regeln.nurJpg && type !== 'image/jpeg') {
+        const original = await fs.readFile(path.join(dir, img.filename))
+        buffer = jpegFassung(original, img.mimetype, await readOrientation(original), 2200, 80)
+        type = 'image/jpeg'
+      }
       n++
       const ext = type === 'image/png' ? 'png' : 'jpg'
       const name = `Beweisfoto-${n}.${ext}`
-      attachments.push({
-        filename: name,
-        content: buffer,
-        contentType: type,
-      })
+      const attachment = { filename: name, content: buffer, contentType: type }
+      attachments.push(attachment)
+      quellen.push({ basis: buffer, mimetype: type, attachment })
       photoLines.push(
         img.captured_at ? `${name} – aufgenommen: ${img.captured_at} Uhr` : `${name} – Aufnahmezeit unbekannt`
       )
@@ -162,8 +180,10 @@ async function buildEvidenceAttachments(
     }
   }
 
+  if (regeln.maxAnhangBytes) await fotosEinpassen(quellen, regeln.maxAnhangBytes)
+
   // Tatort-Karte mit Marker (wie die Kartenseite im PDF), sofern Koordinaten da sind.
-  if (report.tatort_lat != null && report.tatort_lon != null) {
+  if (!regeln.ohneKarte && report.tatort_lat != null && report.tatort_lon != null) {
     try {
       const mapPng = await renderTatortMap(Number(report.tatort_lat), Number(report.tatort_lon))
       if (mapPng) {
@@ -179,6 +199,58 @@ async function buildEvidenceAttachments(
   }
 
   return { attachments, photoLines }
+}
+
+/** Fotos stufenweise kleiner kodieren, bis alle zusammen unter die Grenze des
+ *  Amts passen. Die Grenze gilt für die Mail, Base64 bläht um 4/3 auf – daher
+ *  zählt hier nur drei Viertel davon. Passt es auch mit der kleinsten Stufe
+ *  nicht, bricht der Versand ab (besser als eine Mail, die zurückkommt). */
+async function fotosEinpassen(
+  quellen: { basis: Buffer; mimetype: string; attachment: Attachment }[],
+  maxBytes: number
+): Promise<void> {
+  const budget = Math.floor(maxBytes * 0.75)
+  const summe = () => quellen.reduce((n, q) => n + (q.attachment.content?.length || 0), 0)
+  if (summe() <= budget) return
+  // Ausgangspunkt ist die Versandfassung (≤ 2200 px) statt des Originals –
+  // spart das Dekodieren der 12-MP-Handyfotos in jeder Stufe.
+  // Dateigröße wächst etwa mit der Pixelzahl: Stufen überspringen, die nach
+  // dieser Schätzung sicher noch zu groß wären (spart je Stufe einen Durchgang).
+  const zielPx = 2200 * Math.sqrt(budget / summe())
+  const start = SCHRUMPF_STUFEN.findIndex(([px]) => px <= zielPx * 1.1)
+  for (const [px, q] of SCHRUMPF_STUFEN.slice(start === -1 ? SCHRUMPF_STUFEN.length - 1 : start)) {
+    for (const quelle of quellen) {
+      try {
+        const kleiner = jpegFassung(quelle.basis, quelle.mimetype, await readOrientation(quelle.basis), px, q)
+        if (kleiner.length < (quelle.attachment.content?.length || Infinity)) {
+          quelle.attachment.content = kleiner
+          quelle.attachment.contentType = 'image/jpeg'
+        }
+      } catch {
+        /* nicht dekodierbar – bleibt wie es ist */
+      }
+    }
+    if (summe() <= budget) return
+  }
+  const mb = (maxBytes / 1024 / 1024).toFixed(0)
+  throw new Error(`Die Beweisfotos sind auch verkleinert zu groß für die Grenze des Amts (${mb} MB) – bitte Fotos aussortieren.`)
+}
+
+/** Was die Anzeige-Mail enthalten wird – für die Einreichen-Vorschau (nur
+ *  Städte ohne PDF-Formular und ohne Portal). Erzeugt dieselben Anhänge wie der
+ *  Versand, damit Größe und Dateinamen stimmen. */
+export async function previewReportMail(
+  report: mysql.RowDataPacket,
+  user: mysql.RowDataPacket
+): Promise<{ subject: string; text: string; attachments: { filename: string; bytes: number }[]; problem?: string }> {
+  try {
+    const { attachments, photoLines } = await buildEvidenceAttachments(report, user)
+    const { subject, text } = buildReportMail(report, user, photoLines)
+    return { subject, text, attachments: attachments.map((a) => ({ filename: a.filename, bytes: a.content?.length || 0 })) }
+  } catch (err) {
+    const { subject, text } = buildReportMail(report, user)
+    return { subject, text, attachments: [], problem: (err as Error).message }
+  }
 }
 
 export const MailService = {
@@ -529,7 +601,7 @@ export const MailService = {
       zeile('Stadt/Amt', `${city.name} – ${city.ordnungsamt}`),
       zeile(
         'Versandart',
-        hasPdfForm(city) ? 'amtliches PDF-Formular im Anhang' : 'rohe E-Mail mit Fotos + Karte'
+        hasPdfForm(city) ? 'amtliches PDF-Formular im Anhang' : city.mail?.ohneKarte ? 'rohe E-Mail mit Fotos (ohne Karte)' : 'rohe E-Mail mit Fotos + Karte'
       ),
       zeile('Empfänger', recipientEmailForReport(report) || 'nicht ermittelbar (!)'),
       zeile('Fotos', fotos === null ? undefined : fotos === 0 ? '0 (!)' : fotos),
