@@ -168,14 +168,12 @@
     dlg.querySelector('[data-msg]').className = 'small text-muted me-auto'
     dlg.showModal()
     document.documentElement.classList.add('has-editor-dialog')
-    fetch('/anzeige/' + encodeURIComponent(az) + '/einreichen-vorschau', { method: 'POST', headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
-      .then(function (res) {
-        if (current !== az) return
-        if (!res.ok) throw new Error(res.d.error || 'Vorschau fehlgeschlagen.')
-        render(res.d)
+    OWIA.fetchJson('/anzeige/' + encodeURIComponent(az) + '/einreichen-vorschau', { method: 'POST', fallback: 'Vorschau fehlgeschlagen.' })
+      .then(function (d) {
+        if (current === az) render(d)
       })
       .catch(function (err) {
+        if (current !== az) return // inzwischen andere Anzeige geöffnet
         dlg.querySelector('.submit-data').replaceChildren(text('div', 'alert alert-danger', err.message || 'Vorschau fehlgeschlagen.'))
       })
   }
@@ -191,14 +189,12 @@
     dlg.querySelectorAll('[data-go]').forEach(function (b) { b.disabled = true })
     go.textContent = sofort ? 'Wird versendet …' : 'Wird eingereicht …'
     var az = current
-    fetch('/anzeige/' + encodeURIComponent(az) + '/submit' + (sofort ? '?sofort=1' : ''), { method: 'POST', headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { return { ok: r.ok, d: d } }) })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.d.error || 'Einreichen fehlgeschlagen.')
+    OWIA.fetchJson('/anzeige/' + encodeURIComponent(az) + '/submit' + (sofort ? '?sofort=1' : ''), { method: 'POST', fallback: 'Einreichen fehlgeschlagen.' })
+      .then(function (d) {
         close()
         if (onSubmitted) return onSubmitted(az, sofort)
         // Portal-Stadt (Frankfurt): Versand läuft live auf /versand.
-        if (res.d.portal) { window.location.href = res.d.portal; return }
+        if (d.portal) { window.location.href = d.portal; return }
         if (window.reportTableRefresh) return window.reportTableRefresh(az)
       })
       .catch(function (err) {

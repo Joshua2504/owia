@@ -73,9 +73,7 @@
 
   function moveDragged(moved, body) {
     return window.OWIA.fetchJson('/anzeige/' + moved.az + '/images/' + moved.imageId + '/move', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      json: body,
       fallback: 'Verschieben fehlgeschlagen.',
     })
       .then(function (d) {
@@ -106,23 +104,36 @@
     document.dispatchEvent(new Event('reports:updated'))
   }
 
+  // Serverseitig gerenderte Zeile (report-row.ejs) als <tr> holen. null = 404
+  // (Entwurf gelöscht); wirft bei anderen Fehlern, Weiterleitung (abgelaufene
+  // Sitzung → Login-HTML) oder einer Antwort ohne Zeile. queue reicht die
+  // Review-Queue des Imports weiter (data-queue am Drop-Ziel).
+  function fetchRow(az, queue) {
+    return fetch('/anzeige/' + az + '/listenzeile' + (queue ? '?queue=' + queue : ''))
+      .then(function (r) {
+        if (r.status === 404) return null
+        if (!r.ok || r.redirected) throw new Error('Liste konnte nicht aktualisiert werden.')
+        return r.text().then(function (html) {
+          var tbody = document.createElement('tbody')
+          tbody.innerHTML = html
+          var row = tbody.querySelector('tr')
+          if (!row) throw new Error('Liste konnte nicht aktualisiert werden.')
+          return row
+        })
+      })
+  }
+  function currentQueue() {
+    var drop = document.getElementById('drop-new-draft')
+    return drop && drop.getAttribute('data-queue')
+  }
+
   // Neue Anzeige: fertig gerenderte Zeile vom Server holen und direkt unter der
   // Quell-Zeile einfügen (das verschobene Foto ist darin bereits enthalten).
   function insertNewDraftRow(moved, targetAz) {
     var source = document.querySelector('[data-drop-az="' + moved.az + '"]')
-    var dropNew = document.getElementById('drop-new-draft')
-    var queue = dropNew && dropNew.getAttribute('data-queue')
-    return fetch('/anzeige/' + targetAz + '/listenzeile' + (queue ? '?queue=' + queue : ''))
-      .then(function (r) {
-        if (!r.ok) throw new Error()
-        return r.text()
-      })
-      .then(function (html) {
-        if (!source || source.tagName !== 'TR') { location.reload(); return }
-        var tbody = document.createElement('tbody')
-        tbody.innerHTML = html
-        var row = tbody.querySelector('tr')
-        if (!row) { location.reload(); return }
+    return fetchRow(targetAz, currentQueue())
+      .then(function (row) {
+        if (!row || !source || source.tagName !== 'TR') { location.reload(); return }
         source.parentNode.insertBefore(row, source.nextSibling)
         if (moved.el) (moved.el.closest('.thumb-wrap') || moved.el).remove() // Foto hängt jetzt in der neuen Zeile
         bindRow(row)
@@ -213,20 +224,13 @@
   window.reportTableRefresh = async function (az) {
     var old = document.querySelector('[data-drop-az="' + az + '"]')
     if (!old) return
-    var drop = document.getElementById('drop-new-draft')
-    var queue = drop && drop.getAttribute('data-queue')
-    var response = await fetch('/anzeige/' + az + '/listenzeile' + (queue ? '?queue=' + queue : ''))
-    if (response.status === 404) {
+    var row = await fetchRow(az, currentQueue())
+    if (!row) {
       // Entwurf wurde gelöscht (z.B. im Editor-Modal verworfen).
       old.remove()
       document.dispatchEvent(new Event('reports:updated'))
       return
     }
-    if (!response.ok || response.redirected) throw new Error('Liste konnte nicht aktualisiert werden.')
-    var tbody = document.createElement('tbody')
-    tbody.innerHTML = await response.text()
-    var row = tbody.querySelector('tr')
-    if (!row) throw new Error('Liste konnte nicht aktualisiert werden.')
     // Auswahl-Häkchen über die Aktualisierung retten.
     var wasChecked = old.querySelector('.bulk-select:checked')
     old.replaceWith(row)
@@ -261,8 +265,7 @@
       if (!versandEnde[az]) versandEnde[az] = jetzt + Number(el.getAttribute('data-versand-in')) * 1000
       var rest = Math.max(0, Math.round((versandEnde[az] - jetzt) / 1000))
       if (rest > 0) {
-        el.querySelector('[data-versand-uhr]').textContent =
-          String(Math.floor(rest / 60)).padStart(2, '0') + ':' + String(rest % 60).padStart(2, '0')
+        el.querySelector('[data-versand-uhr]').textContent = OWIA.mmss(rest, true)
       } else {
         el.removeAttribute('data-versand-in')
         el.className = 'badge rounded-pill text-bg-primary'
@@ -276,11 +279,7 @@
     for (var i = 0; i < rows.length; i++) {
       var old = rows[i].closest('tr')
       try {
-        var res = await fetch('/anzeige/' + old.getAttribute('data-az') + '/listenzeile')
-        if (!res.ok || res.redirected) continue
-        var tbody = document.createElement('tbody')
-        tbody.innerHTML = await res.text()
-        var row = tbody.querySelector('tr')
+        var row = await fetchRow(old.getAttribute('data-az'))
         if (!row || !old.isConnected) continue
         row.hidden = old.hidden
         old.replaceWith(row)

@@ -109,8 +109,12 @@ in `public/vendor/` — kein CDN, die CSP erzwingt das. **Keine Inline-Scripts
 und keine `on*=`-Attribute** (CSP `script-src 'self'` seit 08.10.2026): Logik
 in Dateien unter `public/js/`, Serverwerte per `data-*` oder
 `<script type="application/json">`, Rückfragen per `data-confirm` (Handler in
-`layout.js`). Gemeinsame Helfer (`escapeHtml`, `debounce`, `fetchJson`,
-`loadCatalog`, `normalizePlate`) liegen in `public/js/common.js` als `window.OWIA`.
+`layout.js`). Gemeinsame Helfer (`escapeHtml`, `debounce`, `fetchJson`/`tryJson`
+statt eigener fetch-Ketten, `reverseGeocode`, `loadCatalog`, `normalizePlate`,
+Datums-/Countdown-Formatierung) liegen in `public/js/common.js` als `window.OWIA`;
+Leaflet-Helfer (Kacheln, Icons, Stadtgrenzen, `loadLeaflet`) in
+`public/js/map-common.js` als `OWIA.map` – von jeder View einzubinden, die
+Karten-Skripte lädt.
 
 **Sicherheitsringe (server.ts):** Session-Cookie `sameSite=lax` **plus**
 Fetch-Metadata-Prüfung (`Sec-Fetch-Site` ≠ cross-site für POST/PUT/PATCH/

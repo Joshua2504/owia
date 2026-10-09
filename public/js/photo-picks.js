@@ -64,13 +64,7 @@
       for (var az of Object.keys(groups)) {
         if (az === targetAz) continue // liegt schon dort
         var body = targetAz ? { imageIds: groups[az], targetAz: targetAz } : { imageIds: groups[az], newDraft: true }
-        var res = await fetch('/anzeige/' + encodeURIComponent(az) + '/images/move', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify(body),
-        })
-        var data = await res.json().catch(function () { return {} })
-        if (!res.ok) throw new Error(data.error || 'Verschieben fehlgeschlagen.')
+        var data = await OWIA.fetchJson('/anzeige/' + encodeURIComponent(az) + '/images/move', { json: body, fallback: 'Verschieben fehlgeschlagen.' })
         targetAz = data.targetAz
       }
       location.reload()

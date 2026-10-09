@@ -166,7 +166,7 @@ export async function persistFields(
   // Entwurf bei 0/0 (Golf von Guinea) und zog die Übersichtskarte auf die halbe
   // Weltkugel auf. Exakt 0 ist deshalb ungültig (die App deckt nur deutsche
   // Städte ab), ebenso Werte außerhalb des Wertebereichs. Gleiche Regel in
-  // public/js/report-map.js und public/js/overview-map.js.
+  // public/js/map-common.js (OWIA.map.coord).
   const coord = (raw: string | undefined, max: number): number | null => {
     const s = (raw || '').trim()
     if (!s) return null

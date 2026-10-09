@@ -697,8 +697,7 @@
     if (!Object.keys(body).length) return Promise.resolve()
     return window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      json: body,
       fallback: 'Kennzeichen konnte nicht gespeichert werden.',
     })
       .then(function (d) {
@@ -856,12 +855,7 @@
     msg('Foto wird kopiert …')
     updateUi()
     flushSave(s).then(function () {
-      return fetch(s.put + '/duplizieren', { method: 'POST', headers: { Accept: 'application/json' } })
-    }).then(function (r) {
-      return r.json().catch(function () { return {} }).then(function (d) {
-        if (!r.ok || r.redirected) throw new Error(d.error || 'Kopieren fehlgeschlagen.')
-        return d
-      })
+      return window.OWIA.fetchJson(s.put + '/duplizieren', { method: 'POST', fallback: 'Kopieren fehlgeschlagen.' })
     }).then(function (d) {
       return Promise.resolve(window.reportTableRefresh ? window.reportTableRefresh(s.az) : null).then(function () {
         var row = rowOf(s.az)
@@ -902,14 +896,9 @@
         msg('Fotos werden hochgeladen …')
         updateUi()
         flushSave(s2).catch(function () {}).then(function () {
-          return fetch('/anzeige/' + encodeURIComponent(s2.az) + '/images', { method: 'POST', body: fd, headers: { Accept: 'application/json' } })
-        }).then(function (r) {
-          return r.json().catch(function () { return {} }).then(function (d) {
-            if (!r.ok || r.redirected) throw new Error(d.error || 'Hochladen fehlgeschlagen.')
-            if (d.errors && d.errors.length) OWIA.alert(d.errors.join('\n'))
-            return d
-          })
+          return window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s2.az) + '/images', { method: 'POST', body: fd, fallback: 'Hochladen fehlgeschlagen.' })
         }).then(function (d) {
+          if (d.errors && d.errors.length) OWIA.alert(d.errors.join('\n'))
           var neu = (d.images || []).map(function (i) { return '/anzeige/' + s2.az + '/images/' + i.id })
           return Promise.resolve(window.reportTableRefresh ? window.reportTableRefresh(s2.az) : null).then(function () {
             var row = rowOf(s2.az)
@@ -941,13 +930,8 @@
     var idOf = function (t) { return Number(String(t.getAttribute('data-photo-edit')).split('/').pop()) }
     s.thumbs = list
     renderStrip()
-    fetch('/anzeige/' + encodeURIComponent(s.az) + '/images/reorder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ order: list.map(idOf) }),
-    })
-      .then(function (r) {
-        if (!r.ok || r.redirected) throw new Error()
+    window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s.az) + '/images/reorder', { json: { order: list.map(idOf) } })
+      .then(function () {
         return window.reportTableRefresh ? window.reportTableRefresh(s.az) : null
       })
       .then(function () {
@@ -1125,12 +1109,7 @@
     var s = state
     if (!s) return
     detailsChanged[s.az] = true
-    fetch('/anzeige/' + encodeURIComponent(s.az) + '/felder', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
-    })
-      .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
+    window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s.az) + '/felder', { method: 'PATCH', json: body, fallback: 'Speichern fehlgeschlagen.' })
       .then(function () { loadStatus(s) })
       .catch(function (err) { OWIA.alert(err.message) })
   }
@@ -1150,46 +1129,19 @@
   var map = null
   var marker = null
   var mapAz = null
-  var leafletLoading = null
-  function loadLeaflet() {
-    if (window.L) return Promise.resolve()
-    if (!leafletLoading) {
-      leafletLoading = new Promise(function (resolve, reject) {
-        var css = document.createElement('link')
-        css.rel = 'stylesheet'
-        css.href = '/public/vendor/leaflet.css'
-        document.head.appendChild(css)
-        var js = document.createElement('script')
-        js.src = '/public/vendor/leaflet.js'
-        js.onload = resolve
-        js.onerror = function () { leafletLoading = null; reject() }
-        document.head.appendChild(js)
-      })
-    }
-    return leafletLoading
-  }
-  // 0/0 und Unsinn sind keine Position (gleiche Regel wie report-map.js).
+  // 0/0, leer und Unsinn sind keine Position (map-common.js, wie report-map.js).
   function validCoord(v) {
-    return typeof v === 'number' && isFinite(v) && v !== 0
-  }
-  function photoIcon(url) {
-    return L.divIcon({
-      className: 'photo-marker',
-      html: '<img src="' + encodeURI(url) + '" alt="" style="width:30px;height:30px;object-fit:cover;border-radius:6px;border:2px solid #0d6efd;box-shadow:0 1px 4px rgba(0,0,0,.45)">',
-      iconSize: [30, 30],
-      iconAnchor: [15, 15],
-    })
+    return window.OWIA.map.coord(v) !== null
   }
   function syncMap(s) {
     var el = dlg.querySelector('.photo-edit-map')
     if (!s.report || s.tatort == null) return
-    loadLeaflet().then(function () {
+    window.OWIA.map.loadLeaflet().then(function () {
       if (state !== s) return
       if (!map) {
-        var base = '/public/vendor/leaflet/images/'
-        L.Icon.Default.mergeOptions({ iconRetinaUrl: base + 'marker-icon-2x.png', iconUrl: base + 'marker-icon.png', shadowUrl: base + 'marker-shadow.png' })
+        window.OWIA.map.fixDefaultIcon() // Leaflet evtl. schon von der Seite geladen (Dashboard)
         map = L.map(el, { zoomControl: true })
-        L.tileLayer('/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '<a href="https://basemap.de" target="_blank" rel="noopener">© basemap.de / BKG</a>' }).addTo(map)
+        window.OWIA.map.tileLayer().addTo(map)
         // Ohne Tatort setzt ein Klick in die Karte den Marker.
         map.on('click', function (e) {
           if (marker || !state) return
@@ -1221,7 +1173,7 @@
     var first = state.report && state.report.images && state.report.images[0]
     if (marker) marker.setLatLng([lat, lon])
     else {
-      marker = L.marker([lat, lon], first ? { draggable: true, icon: photoIcon(first.thumb) } : { draggable: true }).addTo(map)
+      marker = L.marker([lat, lon], first ? { draggable: true, icon: window.OWIA.map.photoIcon(first.thumb, { size: 30, radius: 6, border: '#0d6efd' }) } : { draggable: true }).addTo(map)
       marker.on('dragend', markerMoved)
     }
     if (recenter) map.setView([lat, lon], MAP_ZOOM)
@@ -1230,12 +1182,11 @@
     var s = state
     var p = marker.getLatLng()
     var coords = { tatort_lat: Number(p.lat.toFixed(6)), tatort_lon: Number(p.lng.toFixed(6)) }
-    fetch('/api/geo/reverse?lat=' + p.lat + '&lon=' + p.lng, { headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null })
+    window.OWIA.reverseGeocode(p.lat, p.lng)
       .catch(function () { return null })
-      .then(function (data) {
+      .then(function (result) {
         if (state !== s) return
-        var label = data && data.result && data.result.label
+        var label = result && result.label
         // Position immer speichern (mit unveränderter Adresse); eine andere
         // Adresse nur nach Bestätigung (adrVorschlag).
         chosenCoords = coords
@@ -1255,9 +1206,7 @@
   function loadStatus(s) {
     if (!s || s.plate == null) return
     var seq = (s.statusSeq = (s.statusSeq || 0) + 1)
-    fetch('/pruefen/' + encodeURIComponent(s.az) + '/daten', { headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.ok && !r.redirected ? r.json() : null })
-      .catch(function () { return null })
+    window.OWIA.tryJson('/pruefen/' + encodeURIComponent(s.az) + '/daten')
       .then(function (d) {
         if (state !== s || seq !== s.statusSeq || !d || d.gone) return
         s.report = d
@@ -1367,17 +1316,12 @@
     else dritteOk(s).catch(function (err) { OWIA.alert(err.message) })
   }
   function dritteOk(s) {
-    return fetch(s.put + '/dritte', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ ok: true }),
-    })
-      .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Speichern fehlgeschlagen.') }) })
+    return window.OWIA.fetchJson(s.put + '/dritte', { method: 'PATCH', json: { ok: true }, fallback: 'Speichern fehlgeschlagen.' })
       .then(function () { if (state === s) loadStatus(s) })
   }
   function renderVerstossExtras(s) {
     setTimeout(function () { if (kzInEl && state === s) kzMehrSync() }, 0)
-    var esc = function (t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') }
+    var esc = window.OWIA.escapeHtml
     var sel = dlg.querySelector('[data-variante]')
     var opts = (s.report && s.report.varianten) || []
     var cur = (s.report && s.report.fields.verstoss_variante) || ''
@@ -1493,12 +1437,7 @@
     updateUi()
     savePlate()
       .then(function () {
-        return fetch('/anzeige/' + encodeURIComponent(s.az) + '/submit' + (sofort ? '?sofort=1' : ''), { method: 'POST', headers: { Accept: 'application/json' } })
-      })
-      .then(function (r) {
-        return r.json().catch(function () { return {} }).then(function (d) {
-          if (!r.ok || r.redirected) throw new Error(d.error || 'Einreichen fehlgeschlagen.')
-        })
+        return window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s.az) + '/submit' + (sofort ? '?sofort=1' : ''), { method: 'POST', fallback: 'Einreichen fehlgeschlagen.' })
       })
       .then(function () {
         s.busy = false
@@ -1520,9 +1459,8 @@
         .then(function (ok) { if (ok && state === s) trashReport(true) })
     }
     s.busy = true
-    fetch('/anzeige/' + encodeURIComponent(s.az) + '/discard', { method: 'POST', headers: { Accept: 'application/json' } })
-      .then(function (r) {
-        if (!r.ok || r.redirected) throw new Error()
+    window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s.az) + '/discard', { method: 'POST' })
+      .then(function () {
         s.busy = false
         if (state === s) runDone()
       })
@@ -1536,13 +1474,7 @@
     var s = state
     var b = dlg.querySelector('[data-act=tatort-photo]')
     b.disabled = true
-    fetch('/anzeige/' + encodeURIComponent(s.az) + '/tatort-aus-fotos', { method: 'POST', headers: { Accept: 'application/json' } })
-      .then(function (r) {
-        return r.json().catch(function () { return {} }).then(function (d) {
-          if (!r.ok) throw new Error(d.error || 'Kein Tatort aus den Fotos ermittelbar.')
-          return d
-        })
-      })
+    window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s.az) + '/tatort-aus-fotos', { method: 'POST', fallback: 'Kein Tatort aus den Fotos ermittelbar.' })
       .then(function (d) {
         if (state !== s) return
         s.tatort = d.tatort
@@ -1907,13 +1839,8 @@
     return b[2] > b[0] && b[3] > b[1] ? b : null
   }
   function kzSpeichern(s, body) {
-    return fetch(s.put + '/kennzeichen', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
-    }).then(function (r) {
-      return r.json().catch(function () { return {} }).then(function (d) { if (!r.ok) throw new Error(d.error || 'Kennzeichen-Markierung konnte nicht gespeichert werden.') })
-    }).then(function () { s.kzGeaendert = false })
+    return window.OWIA.fetchJson(s.put + '/kennzeichen', { method: 'PATCH', json: body, fallback: 'Kennzeichen-Markierung konnte nicht gespeichert werden.' })
+      .then(function () { s.kzGeaendert = false })
   }
 
   function pixelate(r) {
@@ -2250,12 +2177,7 @@
     msg('Original wird wiederhergestellt …')
     ;(s.saveChain || Promise.resolve())
       .catch(function () {})
-      .then(function () { return fetch(s.put + '/original', { method: 'POST', headers: { Accept: 'application/json' } }) })
-      .then(function (r) {
-        return r.json().catch(function () { return {} }).then(function (d) {
-          if (!r.ok || r.redirected) throw new Error(d.error || 'Original konnte nicht wiederhergestellt werden.')
-        })
-      })
+      .then(function () { return window.OWIA.fetchJson(s.put + '/original', { method: 'POST', fallback: 'Original konnte nicht wiederhergestellt werden.' }) })
       .then(function () {
         fassung[s.put] = Date.now()
         if (s.thumb) s.thumb.setAttribute('data-geprueft', '0')
@@ -2485,12 +2407,10 @@
     moveTargets = null
     renderMoveList()
     var az = s.az
-    fetch('/pruefen/' + encodeURIComponent(az) + '/ziele', { headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.ok && !r.redirected ? r.json() : { drafts: [] } })
-      .catch(function () { return { drafts: [] } })
+    window.OWIA.tryJson('/pruefen/' + encodeURIComponent(az) + '/ziele')
       .then(function (d) {
         if (!state || state.az !== az) return
-        moveTargets = d.drafts || []
+        moveTargets = (d && d.drafts) || []
         renderMoveList()
       })
   }
@@ -2534,17 +2454,10 @@
     dlg.querySelector('.photo-edit-move-menu').hidden = true
     s.busy = true
     updateUi()
-    fetch('/anzeige/' + encodeURIComponent(s.az) + '/images/move', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ imageIds: ids, targetAz: dest.targetAz, newDraft: !!dest.newDraft }),
+    window.OWIA.fetchJson('/anzeige/' + encodeURIComponent(s.az) + '/images/move', {
+      json: { imageIds: ids, targetAz: dest.targetAz, newDraft: !!dest.newDraft },
+      fallback: 'Verschieben fehlgeschlagen.',
     })
-      .then(function (r) {
-        return r.json().catch(function () { return {} }).then(function (d) {
-          if (!r.ok || r.redirected) throw new Error(d.error || 'Verschieben fehlgeschlagen.')
-          return d
-        })
-      })
       .then(function (d) {
         var to = d.targetAz
         document.dispatchEvent(new CustomEvent('owia:photos-moved', { detail: { from: s.az, to: to, newDraft: !!dest.newDraft } }))

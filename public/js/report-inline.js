@@ -59,8 +59,7 @@
     setState(el, 'is-saving')
     fetchJson('/anzeige/' + encodeURIComponent(row.dataset.az) + '/felder', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      json: body,
       fallback: 'Speichern fehlgeschlagen.',
     })
       .then(function (d) {
@@ -107,15 +106,8 @@
   })
   document.addEventListener('input', function (e) {
     var el = e.target
-    if (el.matches && el.matches('input[data-inline-field="kennzeichen"]')) {
-      // Nur Großschreibung – kein Länderformat erzwingen (Roller, Ausland …).
-      var pos = el.selectionStart
-      var up = el.value.toLocaleUpperCase('de-DE')
-      if (up !== el.value) {
-        el.value = up
-        try { el.setSelectionRange(pos, pos) } catch (_) {}
-      }
-    }
+    // Nur Großschreibung – kein Länderformat erzwingen (Roller, Ausland …).
+    if (el.matches && el.matches('input[data-inline-field="kennzeichen"]')) window.OWIA.upperCaseInput(el)
   })
   document.addEventListener('keydown', function (e) {
     var el = e.target
@@ -178,31 +170,12 @@
   var peekMarker = null
   var peekTimer = null
   var peekHide = null
-  var leafletLoading = null
-
-  function loadLeaflet() {
-    if (window.L) return Promise.resolve()
-    if (!leafletLoading) {
-      leafletLoading = new Promise(function (resolve, reject) {
-        var css = document.createElement('link')
-        css.rel = 'stylesheet'
-        css.href = '/public/vendor/leaflet.css'
-        document.head.appendChild(css)
-        var js = document.createElement('script')
-        js.src = '/public/vendor/leaflet.js'
-        js.onload = resolve
-        js.onerror = reject
-        document.head.appendChild(js)
-      })
-    }
-    return leafletLoading
-  }
 
   function showPeek(btn) {
     var lat = Number(btn.dataset.lat)
     var lon = Number(btn.dataset.lon)
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return
-    loadLeaflet().then(function () {
+    window.OWIA.map.loadLeaflet().then(function () {
       if (!peek) {
         peek = document.createElement('div')
         peek.className = 'map-peek-pop'
@@ -222,9 +195,9 @@
       peek.classList.add('is-visible')
       if (!peekMap) {
         peekMap = L.map(peek.querySelector('.map-peek-map'), { zoomControl: false, attributionControl: false })
-        L.tileLayer('/tiles/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(peekMap)
-        // circleMarker statt L.marker: das Standard-Icon findet beim Nachladen
-        // von Leaflet seinen Bildpfad nicht (kaputtes Bild).
+        window.OWIA.map.tileLayer({ attribution: false }).addTo(peekMap)
+        // circleMarker statt L.marker: früher fand das Standard-Icon beim
+        // Nachladen seinen Bildpfad nicht (inzwischen setzt loadLeaflet() ihn).
         peekMarker = L.circleMarker([lat, lon], { radius: 9, color: '#fff', weight: 3, fillColor: '#dc3545', fillOpacity: 1 }).addTo(peekMap)
       }
       peekMap.invalidateSize()

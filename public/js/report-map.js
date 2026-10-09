@@ -9,86 +9,14 @@
 // ({ lat, lon, label }), das Autocomplete/Standort/Foto dispatchen. So bleibt
 // dieses Skript die einzige Stelle, die Leaflet kennt.
 (function () {
-  // Standard-Marker-Icons explizit auf die lokal mitgelieferten Bilder setzen –
-  // sonst sucht Leaflet sie relativ zum eigenen Pfad und liefert 404 (graues Icon).
-  if (window.L && L.Icon && L.Icon.Default) {
-    const base = '/public/vendor/leaflet/images/'
-    L.Icon.Default.mergeOptions({
-      iconRetinaUrl: base + 'marker-icon-2x.png',
-      iconUrl: base + 'marker-icon.png',
-      shadowUrl: base + 'marker-shadow.png',
-    })
-  }
-
-  // `Number('')` ist 0 – ohne die Leerprüfung würde ein Entwurf ohne Tatort die
-  // Karte auf 0/0 (Golf von Guinea) zentrieren statt auf den Stadtmittelpunkt.
-  // Exakt 0 ist hier kein gültiger Wert: die App ist auf deutsche Städte
-  // beschränkt (gleiche Regel in public/js/overview-map.js und beim Speichern
-  // in src/routes/reports.ts).
-  function num(v) {
-    if (v === null || v === undefined || String(v).trim() === '') return null
-    const n = Number(v)
-    return Number.isFinite(n) && n !== 0 ? n : null
-  }
-
+  // Helfer (Icons, Koordinaten-Prüfung, Kacheln, Stadtgrenzen): map-common.js.
+  const M = window.OWIA.map
+  M.fixDefaultIcon()
+  // Leere/0-Koordinaten zählen nicht: ein Entwurf ohne Tatort zentriert sonst
+  // auf 0/0 statt auf den Stadtmittelpunkt.
+  const num = M.coord
   // Marker als kleines Vorschaubild (erstes Beweisfoto) statt Standard-Pin.
-  function imageIcon(url) {
-    const size = 48
-    return L.divIcon({
-      className: 'photo-marker',
-      html:
-        '<img src="' +
-        encodeURI(url) +
-        '" alt="" style="width:' +
-        size +
-        'px;height:' +
-        size +
-        'px;object-fit:cover;border-radius:8px;border:2px solid #0d6efd;box-shadow:0 1px 4px rgba(0,0,0,.45)">',
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
-      popupAnchor: [0, -size / 2],
-    })
-  }
-
-  // Hinweis-Banner oben auf der Karte, falls die Kacheln (noch) nicht verfügbar
-  // sind – z.B. weil basemap.de gerade nicht antwortet. Blendet
-  // sich aus, sobald die erste Kachel erfolgreich lädt.
-  function attachTileStatus(el, tileLayer) {
-    if (getComputedStyle(el).position === 'static') el.style.position = 'relative'
-    const banner = document.createElement('div')
-    banner.className = 'alert alert-warning small shadow-sm'
-    banner.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;z-index:1000;margin:0'
-    banner.textContent =
-      'Wir haben ein Update durchgeführt und die Karte wird serverseitig neu ' +
-      'verarbeitet. Bitte komm in ein paar Minuten wieder.'
-    banner.style.display = 'none'
-    el.appendChild(banner)
-    let ok = false
-    tileLayer.on('tileload', () => {
-      ok = true
-      banner.style.display = 'none'
-    })
-    tileLayer.on('tileerror', () => {
-      if (!ok) banner.style.display = 'block'
-    })
-  }
-
-  // Grenzen der freigeschalteten Städte als Umriss einzeichnen (GeoJSON aus
-  // OSM-Verwaltungsgrenzen, /api/geo/boundaries) – zeigt, in welchen Gebieten
-  // der Tatort liegen darf. Nicht interaktiv, damit Marker-Drag und Klicks
-  // ungestört bleiben; ohne erreichbaren Endpoint einfach keine Umrisse.
-  async function drawCityBoundaries(map) {
-    try {
-      const res = await fetch('/api/geo/boundaries', { headers: { Accept: 'application/json' } })
-      if (!res.ok) return
-      L.geoJSON(await res.json(), {
-        interactive: false,
-        style: { color: '#6f42c1', weight: 2.5, dashArray: '6 4', fillColor: '#6f42c1', fillOpacity: 0.05 },
-      }).addTo(map)
-    } catch (_) {
-      /* Grenzen nicht ladbar – Karte funktioniert auch ohne */
-    }
-  }
+  const imageIcon = (url) => M.photoIcon(url, { size: 48, border: '#0d6efd' })
 
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('tatort-map')
@@ -111,16 +39,7 @@
     const initLon = hasPoint ? startLon : centerLon
 
     const map = L.map(el).setView([initLat, initLon], hasPoint ? 16 : 13)
-    const tiles = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '<a href="https://basemap.de" target="_blank" rel="noopener">© basemap.de / BKG</a>',
-    }).addTo(map)
-    attachTileStatus(el, tiles)
-    drawCityBoundaries(map)
-
-    // Leaflet rendert in Containern, die beim Init evtl. noch kein finales
-    // Layout haben, sonst grau – nach kurzem Tick neu vermessen.
-    setTimeout(() => map.invalidateSize(), 200)
+    M.setupBaseMap(map, el)
 
     let marker = null
 
@@ -138,12 +57,7 @@
 
     async function reverseFill(lat, lon) {
       try {
-        const res = await fetch('/api/geo/reverse?lat=' + lat + '&lon=' + lon, {
-          headers: { Accept: 'application/json' },
-        })
-        if (!res.ok) return
-        const data = await res.json()
-        const result = data.result
+        const result = await window.OWIA.reverseGeocode(lat, lon)
         const label = result && result.label
         if (label && tatortInput) {
           // Adresse (nächstgelegene Straße/Hausnummer) nur als Beschriftung setzen.

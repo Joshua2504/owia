@@ -66,7 +66,7 @@
   function fmtEta(seconds) {
     if (!isFinite(seconds) || seconds < 0) return ''
     if (seconds < 60) return '~' + Math.max(1, Math.round(seconds)) + ' s'
-    return '~' + Math.floor(seconds / 60) + ':' + String(Math.round(seconds % 60)).padStart(2, '0') + ' min'
+    return '~' + OWIA.mmss(Math.round(seconds)) + ' min'
   }
 
   var speedSamples = [] // { t, bytes } – Fenster für die Momentan-Geschwindigkeit
@@ -186,9 +186,9 @@
     var timer = setInterval(updateProgress, 500)
     try {
       if (!validFiles.length) throw new Error('Keine hochladbaren Fotos ausgewählt.')
-      var batchResponse = await fetch('/import/batch', { method: 'POST' })
-      if (!batchResponse.ok || batchResponse.redirected) throw new Error('Import konnte nicht angelegt werden. Bitte Anmeldung prüfen.')
-      var batch = await batchResponse.json()
+      var batch = await OWIA.fetchJson('/import/batch', { method: 'POST' }).catch(function () {
+        throw new Error('Import konnte nicht angelegt werden. Bitte Anmeldung prüfen.')
+      })
       if (!batch.batchId) throw new Error('Import konnte nicht angelegt werden.')
       batchId = batch.batchId
       var next = 0
@@ -247,10 +247,8 @@
       } else await finishBatch()
       async function finishBatch() {
         progressText.textContent = 'Übertragung abgeschlossen. Die Verarbeitung läuft im Hintergrund …'
-        var response = await fetch('/import/' + batchId + '/finish', { method: 'POST' })
-        if (response.redirected) throw new Error('Bitte erneut anmelden.')
-        var data = await response.json()
-        if (!response.ok || !data.redirect) throw new Error(data.error || 'Gruppierung fehlgeschlagen.')
+        var data = await OWIA.fetchJson('/import/' + batchId + '/finish', { method: 'POST', fallback: 'Gruppierung fehlgeschlagen.' })
+        if (!data.redirect) throw new Error(data.error || 'Gruppierung fehlgeschlagen.')
         uploading = false
         location.href = data.redirect + (allSkipped.length ? '?uebersprungen=' + allSkipped.length : '')
       }

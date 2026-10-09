@@ -36,14 +36,12 @@
   function ensureMap() {
     if (map || !window.L) return
     map = L.map(mapEl, { zoomControl: true, attributionControl: false, maxZoom: 21 })
-    L.tileLayer('/tiles/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19 }).addTo(map)
+    window.OWIA.map.tileLayer({ maxZoom: 21, maxNativeZoom: 19, attribution: false }).addTo(map)
     marker = L.circleMarker([0, 0], { radius: 8, color: '#fff', weight: 2, fillColor: '#dc3545', fillOpacity: 1 }).addTo(map)
   }
 
   function datumDe(iso) {
-    if (!iso) return ''
-    var p = iso.split('-')
-    return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : iso
+    return iso ? window.OWIA.dateDe(iso) || iso : ''
   }
 
   function zeile(label, wert) {

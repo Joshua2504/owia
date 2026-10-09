@@ -38,23 +38,98 @@
   // fetch für JSON-Endpunkte: Accept: application/json, Antwort als JSON;
   // HTTP-Fehler mit { error } werden zum Error mit dieser Meldung. Eine
   // Weiterleitung (abgelaufene Sitzung → Login-Seite) kann nie JSON sein und
-  // wird als klarer Hinweis gemeldet statt als Parser-Fehler.
+  // wird als klarer Hinweis gemeldet statt als Parser-Fehler. Ein Body, der
+  // kein JSON ist (Proxy-Fehlerseite, leere 204), gilt als {} – entscheidend
+  // ist dann der Status.
   // opts: wie bei fetch, zusätzlich
+  //   json     – Objekt als JSON-Body (setzt Content-Type; Methode ohne
+  //              Angabe POST),
   //   fallback – Fehlertext, wenn der Server kein { error } liefert.
+  // Der Error trägt .status (HTTP-Status) und .data (geparster Body), bei der
+  // Weiterleitung .redirected – Aufrufer lesen daraus Zusatzfelder (warten,
+  // doppelt, redirect). Netzwerkfehler kommen unverändert von fetch (ohne
+  // .status).
   function fetchJson(url, opts) {
     opts = opts || {}
     var fallback = opts.fallback || 'Anfrage fehlgeschlagen.'
     var init = {}
-    for (var k in opts) if (k !== 'fallback' && k !== 'headers') init[k] = opts[k]
+    for (var k in opts) if (k !== 'fallback' && k !== 'headers' && k !== 'json') init[k] = opts[k]
     init.headers = { Accept: 'application/json' }
+    if (opts.json !== undefined) {
+      init.headers['Content-Type'] = 'application/json'
+      init.body = JSON.stringify(opts.json)
+      if (!init.method) init.method = 'POST'
+    }
     if (opts.headers) for (var h in opts.headers) init.headers[h] = opts.headers[h]
     return fetch(url, init).then(function (r) {
-      if (r.redirected) throw new Error('Bitte neu anmelden.')
-      return r.json().then(function (d) {
-        if (!r.ok) throw new Error((d && d.error) || fallback)
+      if (r.redirected) throw httpError('Bitte neu anmelden.', r, {}, true)
+      return r.json().catch(function () { return {} }).then(function (d) {
+        if (!r.ok) throw httpError((d && d.error) || fallback, r, d || {})
         return d
       })
     })
+  }
+  function httpError(message, r, data, redirected) {
+    var e = new Error(message)
+    e.status = r.status
+    e.data = data
+    if (redirected) e.redirected = true
+    return e
+  }
+
+  // Wie fetchJson, aber jeder Fehler (HTTP, Weiterleitung, Netz) ergibt null –
+  // für Polling und optionale Zusatzdaten, bei denen „gerade nicht da" kein
+  // Fehlerfall ist.
+  function tryJson(url, opts) {
+    return fetchJson(url, opts).catch(function () { return null })
+  }
+
+  // Adresse zu Koordinaten (Photon über /api/geo/reverse, der Browser spricht
+  // nie selbst mit Photon). Ergebnis { label, postcode, city, … } oder null
+  // (kein Treffer, HTTP-Fehler). Netzwerkfehler lehnen ab – report-form.js
+  // unterscheidet „nicht erreichbar" von „keine Adresse gefunden".
+  function reverseGeocode(lat, lon) {
+    return fetchJson('/api/geo/reverse?lat=' + lat + '&lon=' + lon).then(
+      function (d) { return (d && d.result) || null },
+      function (e) { if (e.status) return null; throw e }
+    )
+  }
+
+  // ---- Zeit/Datum ----------------------------------------------------------
+  // Foto-Zeitstempel sind Strings ('YYYY-MM-DD HH:MM:SS') und gehen nie durch
+  // ein Date (Zeitzonen) – die Helfer hier formatieren nur Strings bzw. Dates,
+  // die ohnehin schon lokale Gerätezeit sind (Kamera-Uhr, exifr-Ergebnis).
+  function pad2(n) {
+    return String(n).padStart(2, '0')
+  }
+  // Lokale Zeit eines Date als 'YYYY-MM-DD HH:MM:SS' (Format der Foto-
+  // Zeitstempel; slice(0, 10) = Datum, slice(11, 16) = HH:MM).
+  function dateStamp(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' +
+      pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds())
+  }
+  // 'YYYY-MM-DD' → 'DD.MM.YYYY' per Zerlegen (ohne Date, damit keine Zeitzone
+  // den Tag verschiebt); alles andere → null (Aufrufer wählen den Rückfall).
+  function dateDe(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso == null ? '' : iso))
+    return m ? m[3] + '.' + m[2] + '.' + m[1] : null
+  }
+  // Sekunden als Countdown 'M:SS' (padMinutes: 'MM:SS').
+  function mmss(sec, padMinutes) {
+    var m = Math.floor(sec / 60)
+    return (padMinutes ? pad2(m) : m) + ':' + pad2(sec % 60)
+  }
+
+  // Kennzeichenfeld beim Tippen in Großbuchstaben wandeln, Cursor bleibt
+  // stehen. Bewusst KEIN Formatzwang: ausländische, Roller-Versicherungs- und
+  // Sonderkennzeichen folgen keinem gemeinsamen Muster. Aufruf im input-Handler
+  // (report-form.js, report-inline.js).
+  function upperCaseInput(el) {
+    var up = el.value.toLocaleUpperCase('de-DE')
+    if (up === el.value) return
+    var pos = el.selectionStart
+    el.value = up
+    try { el.setSelectionRange(pos, pos) } catch (_) { /* nicht unterstützt */ }
   }
 
   // Verstoß-/Fahrzeug-Katalog (/anzeigen/bearbeitungsoptionen, ~55 KB) einmal
@@ -154,6 +229,13 @@
     loadCatalog: loadCatalog,
     normalizePlate: normalizePlate,
     fetchJson: fetchJson,
+    tryJson: tryJson,
+    reverseGeocode: reverseGeocode,
+    pad2: pad2,
+    dateStamp: dateStamp,
+    dateDe: dateDe,
+    mmss: mmss,
+    upperCaseInput: upperCaseInput,
     confirmDialog: confirmDialog,
     ask: ask,
     alert: alertDialog,

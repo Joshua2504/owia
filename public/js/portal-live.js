@@ -25,20 +25,14 @@
     })
   })
 
+  // Fehler ohne { error } nennen den HTTP-Status; e.warten = Wartezeit bis zum
+  // nächsten erlaubten Start (Versand-Takt), falls der Server sie mitschickt.
   function post(url, body) {
-    return fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body || {}),
-    }).then(function (r) {
-      return r.json().catch(function () { return {} }).then(function (d) {
-        if (!r.ok) {
-          var e = new Error(d.error || 'Fehler (HTTP ' + r.status + ')')
-          e.warten = d.warten
-          throw e
-        }
-        return d
-      })
+    return OWIA.fetchJson(url, { json: body || {} }).catch(function (e) {
+      var d = e.data || {}
+      if (e.status && !e.redirected && !d.error) e.message = 'Fehler (HTTP ' + e.status + ')'
+      e.warten = d.warten
+      throw e
     })
   }
   function item(id) { return root.querySelector('.versand-item[data-id="' + id + '"]') }
@@ -202,7 +196,7 @@
       if (!optNext.checked || self.state !== 'waiting') { clearInterval(timer); if (self.state === 'waiting') { self.state = null; self.showMsg('Nacheinander-Senden angehalten.', 'secondary') } return }
       var rest = Math.max(0, Math.round((bis - Date.now()) / 1000))
       if (!rest) { clearInterval(timer); self.start(id, true); return }
-      var mmss = Math.floor(rest / 60) + ':' + String(rest % 60).padStart(2, '0')
+      var mmss = OWIA.mmss(rest)
       self.showMsg(grund === 'Versand-Takt'
         ? '⏸ Versand-Takt: ' + az + ' startet in ' + mmss + ' min.'
         : '⏸ ' + grund + ' (' + az + ' in ' + mmss + ' min)', 'secondary')
@@ -215,10 +209,8 @@
     var self = this
     if (!this.current) return
     var id = this.current.id
-    fetch('/versand/' + id + '/status', { headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null })
+    OWIA.tryJson('/versand/' + id + '/status') // Fehler: nächster Versuch
       .then(function (d) { if (d && self.current && self.current.id === id) self.render(d) })
-      .catch(function () { /* nächster Versuch */ })
   }
 
   Slot.prototype.render = function (d) {
@@ -478,9 +470,8 @@
   function autoTick() {
     root.querySelectorAll('[data-auto-in]').forEach(function (el) {
       var rest = Math.max(0, Number(el.getAttribute('data-auto-in')) - Math.round((Date.now() - autoStart) / 1000))
-      var h = Math.floor(rest / 3600), m = Math.floor(rest % 3600 / 60), s = rest % 60
-      var p = function (n) { return String(n).padStart(2, '0') }
-      if (rest > 0) el.querySelector('[data-auto-uhr]').textContent = (h ? h + ':' + p(m) : p(m)) + ':' + p(s)
+      var h = Math.floor(rest / 3600)
+      if (rest > 0) el.querySelector('[data-auto-uhr]').textContent = (h ? h + ':' : '') + OWIA.mmss(rest % 3600, true)
       else { el.removeAttribute('data-auto-in'); el.textContent = 'automatischer Versand startet …' }
     })
   }
@@ -545,9 +536,7 @@
   // und ihn ins freie bzw. nicht beschäftigte Fenster holen.
   function watchLive() {
     if (document.hidden) return setTimeout(watchLive, 3000)
-    fetch('/api/versand/live', { headers: { Accept: 'application/json' }, cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null })
-      .catch(function () { return null })
+    OWIA.tryJson('/api/versand/live', { cache: 'no-store' })
       .then(function (d) {
         var l = d && d.live
         if (l && !slotOf(l.id)) {

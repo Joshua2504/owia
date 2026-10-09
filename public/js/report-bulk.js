@@ -29,12 +29,8 @@
     dialog.querySelectorAll('button, input, select').forEach(function (el) { el.disabled = value })
     dialog.setAttribute('aria-busy', String(value))
   }
-  async function request(url, body) {
-    var response = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
-    if (response.redirected) throw new Error('Bitte erneut anmelden und die Seite neu laden.')
-    var data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Anfrage fehlgeschlagen.')
-    return data
+  function request(url, body) {
+    return OWIA.fetchJson(url, { json: body })
   }
   function statusBoxes() { return Array.from(status.querySelectorAll('input[type="checkbox"]')) }
   function statusValues() { return statusBoxes().filter(function (b) { return b.checked }).map(function (b) { return b.value }) }

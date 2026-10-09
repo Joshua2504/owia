@@ -75,26 +75,19 @@
     return e
   }
 
+  // Fehler werden zu fail(): permanent = Wiederholen sinnlos (4xx außer 429,
+  // abgelaufene Sitzung), sonst versucht die Warteschlange es erneut.
   function send(url, opts) {
     opts = opts || {}
-    var headers = { Accept: 'application/json' }
-    var body = opts.body
-    if (opts.json) {
-      headers['Content-Type'] = 'application/json'
-      body = JSON.stringify(opts.json)
-    }
-    return fetch(url, { method: opts.method || 'POST', headers: headers, body: body, credentials: 'same-origin' })
-      .then(function (r) {
+    return OWIA.fetchJson(url, { method: opts.method || 'POST', json: opts.json, body: opts.body })
+      .catch(function (err) {
         // Abgelaufene Sitzung: requireAuth leitet auf die Login-Seite um.
-        if (r.redirected) throw fail('Sitzung abgelaufen – bitte neu anmelden.', true)
-        return r.json().catch(function () { return {} }).then(function (d) {
-          if (r.ok) return d
-          var e = fail(d.error || 'Fehler ' + r.status, r.status < 500 && r.status !== 429)
-          e.doppelt = !!d.doppelt
-          throw e
-        })
-      }, function () {
-        throw fail('Keine Verbindung.', false)
+        if (err.redirected) throw fail('Sitzung abgelaufen – bitte neu anmelden.', true)
+        if (!err.status) throw fail('Keine Verbindung.', false)
+        var d = err.data || {}
+        var e = fail(d.error || 'Fehler ' + err.status, err.status < 500 && err.status !== 429)
+        e.doppelt = !!d.doppelt
+        throw e
       })
   }
 
@@ -334,12 +327,6 @@
     return pos && Date.now() - pos.at < 120000 ? pos : null
   }
 
-  function stamp(d) {
-    function p2(n) { return (n < 10 ? '0' : '') + n }
-    return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' +
-      p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds())
-  }
-
   function toJpeg(source, w, h, quality) {
     // Lange Seite höchstens 4000 px: reicht für Kennzeichen, bleibt unter dem
     // Upload-Limit und schont den Speicher älterer Handys.
@@ -406,7 +393,7 @@
     if (busy || !stream) return
     if (live(cur).length >= MAX) return flashHint('Maximal ' + MAX + ' Fotos pro Anzeige – tippe auf „Fertig“.')
     busy = true
-    var meta = { aufgenommen: stamp(new Date()), pos: freshPos() }
+    var meta = { aufgenommen: OWIA.dateStamp(new Date()), pos: freshPos() }
     blitzEffect()
     render()
     capture()

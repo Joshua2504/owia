@@ -51,11 +51,9 @@
 
   function poll() {
     if (document.hidden) return setTimeout(poll, 5000)
-    fetch('/api/versand/live', { headers: { Accept: 'application/json' }, cache: 'no-store' })
-      .then(function (r) { return r.ok && !r.redirected ? r.json() : { live: null } })
-      .catch(function () { return { live: null } })
+    OWIA.tryJson('/api/versand/live', { cache: 'no-store' })
       .then(function (d) {
-        var l = d.live
+        var l = d && d.live
         if (l) {
           if (!el) build()
           clearTimeout(hideTimer)

@@ -5,86 +5,13 @@
 // einem anonymisierten Foto (/api/public/bild/:id/pixel.jpg, serverseitig
 // anonymisiert). Es werden keine personenbezogenen Daten angezeigt.
 (function () {
-  if (window.L && L.Icon && L.Icon.Default) {
-    const base = '/public/vendor/leaflet/images/'
-    L.Icon.Default.mergeOptions({
-      iconRetinaUrl: base + 'marker-icon-2x.png',
-      iconUrl: base + 'marker-icon.png',
-      shadowUrl: base + 'marker-shadow.png',
-    })
-  }
-
-  // `Number('')` und `Number(null)` sind 0 – ohne die Leerprüfung landet eine
-  // Anzeige ohne Tatort als Marker auf 0/0 (Golf von Guinea) und fitBounds()
-  // zoomt die Karte auf die halbe Weltkugel heraus. Exakt 0 ist hier kein
-  // gültiger Wert: die App ist auf deutsche Städte beschränkt.
-  function num(v) {
-    if (v === null || v === undefined || String(v).trim() === '') return null
-    const n = Number(v)
-    return Number.isFinite(n) && n !== 0 ? n : null
-  }
-
-  // Marker als kleines Vorschaubild (erstes Foto) statt Standard-Pin. Für öffentliche
-  // Anzeigen ist die URL bereits die verpixelte Fassung; eigene Entwürfe zeigen das Original.
-  function imageIcon(url, border) {
-    const size = 44
-    return L.divIcon({
-      className: 'photo-marker',
-      html:
-        '<img src="' +
-        encodeURI(url) +
-        '" alt="" style="width:' +
-        size +
-        'px;height:' +
-        size +
-        'px;object-fit:cover;border-radius:8px;border:2px solid ' +
-        (border || '#495057') +
-        ';box-shadow:0 1px 4px rgba(0,0,0,.45)">',
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
-      popupAnchor: [0, -size / 2],
-    })
-  }
-
-  // Hinweis-Banner oben auf der Karte, falls die Kacheln (noch) nicht verfügbar
-  // sind – z.B. weil basemap.de gerade nicht antwortet. Blendet
-  // sich aus, sobald die erste Kachel erfolgreich lädt.
-  function attachTileStatus(el, tileLayer) {
-    if (getComputedStyle(el).position === 'static') el.style.position = 'relative'
-    const banner = document.createElement('div')
-    banner.className = 'alert alert-warning small shadow-sm'
-    banner.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;z-index:1000;margin:0'
-    banner.textContent =
-      'Wir haben ein Update durchgeführt und die Karte wird serverseitig neu ' +
-      'verarbeitet. Bitte komm in ein paar Minuten wieder.'
-    banner.style.display = 'none'
-    el.appendChild(banner)
-    let ok = false
-    tileLayer.on('tileload', () => {
-      ok = true
-      banner.style.display = 'none'
-    })
-    tileLayer.on('tileerror', () => {
-      if (!ok) banner.style.display = 'block'
-    })
-  }
-
-  // Grenzen der freigeschalteten Städte als Umriss einzeichnen (GeoJSON aus
-  // OSM-Verwaltungsgrenzen, /api/geo/boundaries) – zeigt, in welchen Gebieten
-  // Anzeigen möglich sind. Nicht interaktiv, damit Marker-Klicks ungestört
-  // bleiben; ohne erreichbaren Endpoint einfach keine Umrisse.
-  async function drawCityBoundaries(map) {
-    try {
-      const res = await fetch('/api/geo/boundaries', { headers: { Accept: 'application/json' } })
-      if (!res.ok) return
-      L.geoJSON(await res.json(), {
-        interactive: false,
-        style: { color: '#6f42c1', weight: 2.5, dashArray: '6 4', fillColor: '#6f42c1', fillOpacity: 0.05 },
-      }).addTo(map)
-    } catch (_) {
-      /* Grenzen nicht ladbar – Karte funktioniert auch ohne */
-    }
-  }
+  // Helfer (Icons, Koordinaten-Prüfung, Kacheln, Stadtgrenzen): map-common.js.
+  const M = window.OWIA.map
+  M.fixDefaultIcon()
+  const num = M.coord
+  // Für öffentliche Anzeigen ist die Foto-URL bereits die verpixelte Fassung;
+  // eigene Entwürfe zeigen das Original (orange umrandet).
+  const imageIcon = (url, border) => M.photoIcon(url, { size: 44, border: border })
 
   // Eigener Entwurf ohne Foto: oranger Punkt (als Marker, damit er clustert).
   function ownDotIcon() {
@@ -145,8 +72,8 @@
     if (!d) return ''
     // /api/public/reports liefert „YYYY-MM-DD" – ohne Date, damit keine
     // Zeitzone den Tag verschiebt.
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d))
-    if (m) return m[3] + '.' + m[2] + '.' + m[1]
+    const de = window.OWIA.dateDe(d)
+    if (de) return de
     const dt = new Date(d)
     return isNaN(dt) ? '' : dt.toLocaleDateString('de-DE')
   }
@@ -222,25 +149,13 @@
     const centerLon = num(el.dataset.centerLon) || 8.6821
 
     const map = L.map(el, { maxZoom: MAX_ZOOM }).setView([centerLat, centerLon], 12)
-    const tiles = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
-      maxZoom: MAX_ZOOM,
-      maxNativeZoom: 19,
-      attribution: '<a href="https://basemap.de" target="_blank" rel="noopener">© basemap.de / BKG</a>',
-    }).addTo(map)
-    attachTileStatus(el, tiles)
-    drawCityBoundaries(map)
-    setTimeout(() => map.invalidateSize(), 200)
+    M.setupBaseMap(map, el, { maxZoom: MAX_ZOOM, maxNativeZoom: 19 })
 
     const cluster = createCluster()
     map.addLayer(cluster)
 
-    let reports = []
-    try {
-      const res = await fetch('/api/public/reports', { headers: { Accept: 'application/json' } })
-      if (res.ok) reports = (await res.json()).reports || []
-    } catch (_) {
-      /* Daten nicht erreichbar – leere Karte */
-    }
+    // Daten nicht erreichbar → leere Karte.
+    const reports = ((await window.OWIA.tryJson('/api/public/reports')) || {}).reports || []
 
     const bounds = []
     reports.forEach((r) => {
@@ -262,13 +177,7 @@
     // andersfarbig (orange) und mit Bearbeiten-Link, klar von den anonymen
     // versendeten Anzeigen unterscheidbar.
     if (el.dataset.includeOwn) {
-      let own = []
-      try {
-        const res = await fetch('/api/my/reports', { headers: { Accept: 'application/json' } })
-        if (res.ok) own = (await res.json()).reports || []
-      } catch (_) {
-        /* eigene Daten nicht erreichbar */
-      }
+      const own = ((await window.OWIA.tryJson('/api/my/reports')) || {}).reports || []
       own.forEach((r) => {
         const lat = num(r.lat)
         const lon = num(r.lon)

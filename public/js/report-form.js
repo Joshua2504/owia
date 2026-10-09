@@ -38,14 +38,8 @@
   // Gemeinsame Helfer
   // ---------------------------------------------------------------------------
 
-  async function reverseGeocode(lat, lon) {
-    const res = await fetch('/api/geo/reverse?lat=' + lat + '&lon=' + lon, {
-      headers: { Accept: 'application/json' },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.result || null
-  }
+  // null = keine Adresse gefunden; Ablehnung = Photon/Server nicht erreichbar.
+  const reverseGeocode = window.OWIA.reverseGeocode
 
   function setTatort(label) {
     const t = document.querySelector('#tatort')
@@ -1028,13 +1022,10 @@
     const buttons = document.querySelectorAll('#photo-select-bar button, #photo-select-bar select')
     buttons.forEach((b) => (b.disabled = true))
     try {
-      const res = await fetch('/anzeige/' + reportId + '/images/move', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(Object.assign({ imageIds: sel.map((it) => it.serverImageId) }, dest)),
+      const data = await OWIA.fetchJson('/anzeige/' + reportId + '/images/move', {
+        json: Object.assign({ imageIds: sel.map((it) => it.serverImageId) }, dest),
+        fallback: 'Verschieben fehlgeschlagen.',
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Verschieben fehlgeschlagen.')
       sel.forEach(dropItem)
       notifyParent(true)
       // Ziel direkt erreichbar machen (im Modal bleibt man im Modal).
@@ -1225,11 +1216,10 @@
   // wird nicht mehr automatisch aus den Fotos befüllt (nur noch per Button).
   let userEditedTimes = false
 
-  function pad2(n) {
-    return String(n).padStart(2, '0')
-  }
+  // takenAt ist ein lokal geparstes Date (parseCapturedAt, ohne Zeitzonen-
+  // Suffix) – dateStamp gibt dieselben Ziffern zurück.
   function toHHMM(d) {
-    return pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+    return OWIA.dateStamp(d).slice(11, 16)
   }
   // „bis" nur bei Tageswechsel oder ab 3 Minuten Abstand (wie services/tatzeit.ts).
   function isZeitraum(range) {
@@ -1238,7 +1228,7 @@
     return min(range.max) - min(range.min) >= 3
   }
   function toDateValue(d) {
-    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
+    return OWIA.dateStamp(d).slice(0, 10)
   }
 
   // Wert setzen und Autosave/Behörden-Logik wie bei echter Eingabe auslösen.
@@ -1285,8 +1275,7 @@
     const von = toHHMM(range.min)
     const bis = toHHMM(range.max)
     if (toDateValue(range.min) !== toDateValue(range.max)) {
-      const d = range.max
-      return von + ' – ' + pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1) + '.' + d.getFullYear() + ', ' + bis
+      return von + ' – ' + OWIA.dateDe(toDateValue(range.max)) + ', ' + bis
     }
     return isZeitraum(range) ? von + ' – ' + bis : von
   }
@@ -1513,11 +1502,8 @@
 
   async function pollAnalysisOnce(form) {
     try {
-      const res = await fetch('/anzeige/' + reportId + '/analysis', {
-        headers: { Accept: 'application/json' },
-      })
-      if (!res.ok) return { status: 'done' }
-      const data = await res.json()
+      const data = await OWIA.tryJson('/anzeige/' + reportId + '/analysis')
+      if (!data) return { status: 'done' }
       // Erst übernehmen, wenn alle Fotos analysiert sind: Der Vorschlag ist die
       // Mehrheit über alle Fotos, ein Zwischenstand könnte ein anderes Auto sein.
       if (data && data.suggestions && data.status !== 'pending') {
@@ -1533,7 +1519,7 @@
           if (it) setItemPlate(it, info.kennzeichen)
         })
       }
-      return data || { status: 'done' }
+      return data
     } catch (_) {
       return { status: 'done' }
     }
@@ -1662,17 +1648,7 @@
   function initKennzeichenFormat(form) {
     const el = form.elements['kennzeichen']
     if (!el) return
-    el.addEventListener('input', () => {
-      const up = el.value.toLocaleUpperCase('de-DE')
-      if (up === el.value) return
-      const pos = el.selectionStart
-      el.value = up
-      try {
-        el.setSelectionRange(pos, pos)
-      } catch (_) {
-        /* nicht unterstützt */
-      }
-    })
+    el.addEventListener('input', () => OWIA.upperCaseInput(el))
   }
 
   // „Wer wurde wie behindert?" nur einblenden, wenn „Ja" gewählt ist.
@@ -1759,16 +1735,7 @@
     async function handleLocation(e) {
       const plz = plzFrom(e.detail || {})
       if (!plz) return showWarning(null)
-      let data
-      try {
-        const res = await fetch('/api/geo/authority?plz=' + encodeURIComponent(plz), {
-          headers: { Accept: 'application/json' },
-        })
-        if (!res.ok) return
-        data = await res.json()
-      } catch (_) {
-        return
-      }
+      const data = await OWIA.tryJson('/api/geo/authority?plz=' + encodeURIComponent(plz))
       if (!data) return
       if (data.status === 'unlocked') {
         showWarning(null)
@@ -1829,12 +1796,11 @@
         if (status) status.textContent = 'Speichert …'
         try {
           if (flushAutosave) await flushAutosave()
-          const res = await fetch(form.action, {
+          await OWIA.fetchJson(form.action, {
             method: 'POST',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams(new FormData(form)).toString(),
           })
-          if (!res.ok || res.redirected) throw new Error()
           notifyParent(false)
           window.parent.postMessage({ type: 'owia:close' }, location.origin)
         } catch (_) {
@@ -1900,7 +1866,7 @@
       const cur = sel.value || sel.dataset.current || ''
       row.hidden = !opts.length
       sel.innerHTML = '<option value="">Bitte wählen …</option>' +
-        opts.map((o) => '<option' + (o === cur ? ' selected' : '') + '>' + o.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</option>').join('')
+        opts.map((o) => '<option' + (o === cur ? ' selected' : '') + '>' + OWIA.escapeHtml(o) + '</option>').join('')
       if (!opts.length) sel.value = ''
       sel.classList.toggle('is-invalid', !!opts.length && !sel.value)
       const lang = (hilfen.langparker || {})[v]
@@ -1969,11 +1935,12 @@
     const btn = document.querySelector('#btn-submit')
     const errBox = document.querySelector('#submit-error')
     if (!btn) return
-    const post = (url, body) =>
-      fetch(url, {
+    const post = (url, body, fallback) =>
+      OWIA.fetchJson(url, {
         method: 'POST',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body,
+        fallback,
       })
     btn.addEventListener('click', async () => {
       if (busyUploads() && !(await OWIA.ask('Fotos werden noch hochgeladen. Trotzdem jetzt einreichen?'))) return
@@ -1983,15 +1950,13 @@
       btn.textContent = 'Wird eingereicht …'
       try {
         if (flushAutosave) await flushAutosave()
-        const saved = await post(form.action, new URLSearchParams(new FormData(form)).toString())
-        if (!saved.ok || saved.redirected) throw new Error('Speichern fehlgeschlagen – bitte erneut versuchen.')
-        const res = await post('/anzeige/' + encodeURIComponent(reportId) + '/submit', '')
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) {
-          const err = new Error(data.error || 'Einreichen fehlgeschlagen.')
-          err.redirect = data.redirect
+        await post(form.action, new URLSearchParams(new FormData(form)).toString()).catch(() => {
+          throw new Error('Speichern fehlgeschlagen – bitte erneut versuchen.')
+        })
+        await post('/anzeige/' + encodeURIComponent(reportId) + '/submit', '', 'Einreichen fehlgeschlagen.').catch((err) => {
+          err.redirect = err.data && err.data.redirect // Profil unvollständig → Link unten
           throw err
-        }
+        })
         notifyParent(true)
         if (isEmbed && !form.dataset.queue) {
           window.parent.postMessage({ type: 'owia:close' }, location.origin)

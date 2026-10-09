@@ -9,17 +9,9 @@
   var batchId = root.getAttribute('data-intake-batch')
 
   function assign(photoId, body) {
-    fetch('/import/' + batchId + '/photos/' + photoId + '/assign', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
-      .then(function (res) {
-        if (!res.ok) { OWIA.alert(res.d.error || 'Zuordnung fehlgeschlagen.'); return }
-        location.reload()
-      })
-      .catch(function () { OWIA.alert('Zuordnung fehlgeschlagen.') })
+    OWIA.fetchJson('/import/' + batchId + '/photos/' + photoId + '/assign', { json: body, fallback: 'Zuordnung fehlgeschlagen.' })
+      .then(function () { location.reload() })
+      .catch(function (err) { OWIA.alert(err.status ? err.message : 'Zuordnung fehlgeschlagen.') })
   }
   root.querySelectorAll('[data-assign-btn]').forEach(function (btn) {
     btn.addEventListener('click', function () {
