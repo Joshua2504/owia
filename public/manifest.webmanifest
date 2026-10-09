@@ -1,13 +1,13 @@
 {
   "name": "OWiA-Anzeiger",
   "short_name": "OWiA",
-  "description": "Ordnungswidrigkeiten dokumentieren und anzeigen – App öffnen, fotografieren, fertig.",
+  "description": "Falschparker dokumentieren und anzeigen – fotografieren, Verstoß wählen, fertig.",
   "lang": "de",
   "display": "standalone",
-  "start_url": "/kamera",
+  "start_url": "/",
   "scope": "/",
-  "background_color": "#000000",
-  "theme_color": "#212529",
+  "background_color": "#f4f6f9",
+  "theme_color": "#f4f6f9",
   "icons": [
     {
       "src": "/public/icons/icon-192.png",
@@ -35,7 +35,7 @@
   "shortcuts": [
     {
       "name": "Kamera",
-      "url": "/kamera",
+      "url": "/kamera?von=app",
       "icons": [
         {
           "src": "/public/icons/icon-192.png",
