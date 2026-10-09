@@ -34,6 +34,7 @@ import { getCity } from '../config/cities'
 import { isProfileComplete, drittProblem } from '../routes/reports'
 import { isVerjaehrt } from './verjaehrung'
 import { prewarmPublicImages } from './publicImages'
+import { versandBestaetigungEinreihen } from './versandBestaetigung'
 import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 import { versandPlatzBelegen, versandPlatzFreigeben } from './versandTakt'
 
@@ -362,6 +363,7 @@ async function finishRun(reportId: number, runId: string, st: PortalRunStatus): 
     )
     await conn.commit()
     void prewarmPublicImages(reportId)
+    await versandBestaetigungEinreihen(reportId).catch(() => {})
   } catch (err) {
     await conn.rollback()
     throw err

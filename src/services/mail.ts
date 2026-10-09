@@ -407,6 +407,78 @@ export const MailService = {
     })
   },
 
+  /** Bestätigung an den Erstatter nach dem Versand: alle Angaben der Anzeige,
+   *  Empfänger, Zeitpunkt und der übermittelte Text (services/versandBestaetigung.ts). */
+  async sendVersandBestaetigung(
+    user: mysql.RowDataPacket,
+    report: mysql.RowDataPacket,
+    versand: {
+      gesendetAm: Date
+      betreff: string | null
+      text: string | null
+      fotoZeiten: (string | null)[]
+      belege: { filename: string; content: Buffer; contentType: string }[]
+    }
+  ): Promise<void> {
+    const transport = createTransport()
+    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    const city = getCity(report.city)
+    const { tattag, tatzeit } = formatTatzeit(report)
+    const portal = report.versand_art === 'portal'
+    const empfaenger = portal
+      ? `${city.ordnungsamt} (Online-Portal der Stadt)`
+      : `${city.ordnungsamt} <${recipientEmailForReport(report) || 'unbekannt'}>`
+    const zeit = versand.gesendetAm.toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })
+    const text = [
+      'Hallo,',
+      '',
+      `deine Anzeige ${report.aktenzeichen} wurde am ${zeit} Uhr verschickt.`,
+      '',
+      '--- Versand ---',
+      `Aktenzeichen: ${report.aktenzeichen}`,
+      `Empfänger:    ${empfaenger}`,
+      `Versandweg:   ${portal ? 'Online-Portal' : 'E-Mail'}`,
+      `Zeitpunkt:    ${zeit} Uhr`,
+      report.portal_vorgang_id ? `Vorgangs-ID:  ${report.portal_vorgang_id}` : undefined,
+      versand.betreff ? `Betreff:      ${versand.betreff}` : undefined,
+      '',
+      '--- Angaben der Anzeige ---',
+      `Kennzeichen:  ${report.kennzeichen}${
+        report.kennzeichen_land && report.kennzeichen_land !== 'D' ? ` (${report.kennzeichen_land})` : ''
+      }`,
+      `Fahrzeug:     ${fahrzeugBeschreibung(report) || '—'}`,
+      `Tattag:       ${tattag}`,
+      `Tatzeit:      ${tatzeit || '—'}`,
+      `Tatort:       ${report.tatort || '—'}`,
+      report.tatort_lat != null && report.tatort_lon != null && Number(report.tatort_lat) !== 0
+        ? `Koordinaten:  ${Number(report.tatort_lat).toFixed(5)}, ${Number(report.tatort_lon).toFixed(5)}`
+        : undefined,
+      `Verstoß:      ${report.verstoss_art || '—'}${report.verstoss_variante ? ` (genauer: ${report.verstoss_variante})` : ''}`,
+      report.fahrzeug_verlassen === 1 ? 'Verlassen:    ja' : undefined,
+      report.behinderung === 1 ? `Behinderung:  ${report.behinderung_text || 'ja'}` : undefined,
+      report.beschreibung ? `Beschreibung: ${report.beschreibung}` : undefined,
+      `Fotos:        ${versand.fotoZeiten.length}`,
+      ...versand.fotoZeiten.map((z, i) => `  - Foto ${i + 1}: ${z ? `aufgenommen ${z} Uhr` : 'Aufnahmezeit unbekannt'}`),
+      ...(versand.text ? ['', `--- ${portal ? 'Portal-Protokoll' : 'Übermittelter Text'} ---`, versand.text.trim()] : []),
+      ...(versand.belege.length ? ['', 'Die Belege des Portals hängen an dieser E-Mail.'] : []),
+      '',
+      'Alle Details und spätere Antworten des Amts findest du hier:',
+      `${base}/anzeige/${report.aktenzeichen}`,
+      '',
+      'Viele Grüße',
+      'OWiA-Anzeiger',
+    ]
+      .filter((line) => line !== undefined)
+      .join('\n')
+    await transport.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      to: user.email,
+      subject: `Versendet: Anzeige ${report.aktenzeichen} – Kfz ${report.kennzeichen}`,
+      text,
+      attachments: versand.belege,
+    })
+  },
+
   /** Betriebshinweis an alle Admins (ADMIN_EMAILS), z.B. fehlgeschlagener
    *  Portal-Selbsttest. Ohne Admins passiert nichts. */
   async sendAdminHinweis(subject: string, text: string): Promise<void> {
