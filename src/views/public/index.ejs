@@ -63,6 +63,43 @@
       </div>
     </section>
 
+    <!-- Automatisch ausgefüllt + lokale Analyse. Nur belegbare Aussagen:
+         Kennzeichen/Fahrzeug/Gesichter = Container alpr, Adresse = Container
+         photon, Zeit/GPS = EXIF (services/exif.ts), Amt = PLZ (districts.ts). -->
+    <section class="mb-5" id="automatisch">
+      <h2 class="h4 mb-2 text-center">Fast alles füllt sich von selbst</h2>
+      <p class="text-center text-body-secondary mb-4 mx-auto hero-lead">
+        Unsere Bildanalyse liest aus deinen Fotos, was für die Anzeige gebraucht wird.
+        Du wählst nur noch den Verstoß und prüfst – statt ein Formular abzutippen.
+      </p>
+      <div class="row g-3 mb-3">
+        <% [
+          ['🔢', 'Kennzeichen', 'Wird auf allen Fotos erkannt – bei mehreren Fotos zählt der häufigste Treffer.'],
+          ['🚗', 'Marke & Farbe', 'Werden vorausgefüllt, wenn die Erkennung sicher ist; das Modell gibt es als Vorschlag.'],
+          ['🕒', 'Datum & Uhrzeit', 'Kommen aus den Aufnahmedaten – über mehrere Fotos samt Dauer von–bis.'],
+          ['📍', 'Tatort', 'Die GPS-Position der Fotos wird zur Adresse aufgelöst.'],
+          ['🏛️', 'Zuständiges Amt', 'Ergibt sich aus der Postleitzahl des Tatorts.'],
+          ['🛡️', 'Datenschutz', 'Fremde Kennzeichen und Gesichter auf den Fotos werden erkannt und zum Schwärzen markiert.'],
+        ].forEach(([icon, feld, text]) => { %>
+          <div class="col-sm-6 col-lg-4">
+            <div class="auto-field h-100">
+              <span class="auto-field-icon" aria-hidden="true"><%= icon %></span>
+              <div><strong class="d-block mb-1"><%= feld %></strong><span class="text-body-secondary"><%= text %></span></div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+      <div class="local-note">
+        <span class="local-note-icon" aria-hidden="true">🔒</span>
+        <div>
+          <strong>Analysiert auf unseren eigenen Servern.</strong>
+          Kennzeichen-, Fahrzeug- und Gesichtserkennung sowie die Adresssuche laufen bei uns – nicht bei
+          einem Cloud- oder KI-Anbieter. Deine Fotos gehen an keinen Dritten, sondern nur (wo nötig
+          geschwärzt) mit deiner Anzeige an das zuständige Amt.
+        </div>
+      </div>
+    </section>
+
     <!-- Öffentliche Kennzahlen (aggregiert, anonym) + Karte -->
     <% const stats = locals.stats || {} %>
     <section class="mb-5">
@@ -160,7 +197,11 @@
       ['Bleibe ich anonym?',
        'Gegenüber der Öffentlichkeit ja – die öffentliche Karte zeigt keine personenbezogenen Daten. Gegenüber dem Ordnungsamt nicht: Anonyme Anzeigen werden nicht bearbeitet, als Zeugin oder Zeuge musst du mit Name und Anschrift benannt sein.'],
       ['Was passiert nach dem Absenden?',
-       'Wir prüfen deine Anzeige und senden sie mit allen Angaben und Beweisfotos per E-Mail an das zuständige Ordnungsamt – du erhältst eine Kopie. Antworten des Amts (z.B. Rückfragen oder der Ausgang des Verfahrens) siehst du direkt in der App.'],
+       'Wir prüfen deine Anzeige und übermitteln sie mit allen Angaben und Beweisfotos an das zuständige Ordnungsamt – je nach Stadt per E-Mail oder über das Online-Formular der Stadt. Du erhältst eine Bestätigung mit allen übermittelten Angaben; Antworten des Amts siehst du direkt in der App.'],
+      ['Werden meine Fotos von einer Cloud-KI ausgewertet?',
+       'Nein. Kennzeichen-, Fahrzeug- und Gesichtserkennung sowie die Umwandlung der GPS-Position in eine Adresse laufen auf unseren eigenen Servern. Deine Fotos werden an keinen Cloud- oder KI-Dienst geschickt – sie gehen nur mit deiner Anzeige an das zuständige Amt.'],
+      ['Muss ich alles selbst eintippen?',
+       'Kaum. Kennzeichen, Datum, Uhrzeit, Tatort und das zuständige Amt liest die App aus deinen Fotos, Marke und Farbe des Fahrzeugs füllt sie bei sicherer Erkennung vor. Du wählst den Verstoß, prüfst die Angaben und schickst ab.'],
     ]
     %>
     <section class="my-5">
