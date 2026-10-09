@@ -8,8 +8,10 @@ import {
   LINK_MELDUNG, StickerLayout, batchCodes, createBatch, formatCode, linkCode, loadBatch,
   normalizeCode, openCodeCount, openSheetCount, parseLayout, perPage, renderBatchPdf, renderCalibrationPdf,
   unlinkCode, voidOpenCodes, AUFDRUCK_MAX, formatEuro, geldArt,
+  STICKER_PDF_TEIL, entwurfFavoriten, vorschauSvg,
 } from '../services/stickers'
-import { VERSTOESSE, VERSTOSS_HAEUFIG, regelsatzEuro, tbnrAusLabel } from '../config/verstoss'
+import { VERSTOESSE, VERSTOSS_HAEUFIG, regelsatzEuro, tbnrAusLabel, verstossText } from '../config/verstoss'
+import { ENTWUERFE, brauchtBetrag, entwurf, entwurfNr } from '../services/stickerEntwuerfe'
 import { appUrl } from '../config/app'
 
 /** Auswahl für Fall-Sticker: alle Tatbestände mit Regelsatz, häufige oben. */
@@ -89,18 +91,38 @@ export default async function stickerRoutes(app: FastifyInstance) {
     const fallText = (l: StickerLayout) => {
       if (!l.tbnr) return null
       const euro = regelsatzEuro(l.tbnr)
-      return `${l.aufdruck}${euro === null ? '' : ` · ${geldArt(euro)} ${formatEuro(euro)}`}`
+      const text = l.entwurf ? verstossText(l.tbnr) : l.aufdruck
+      return `${text}${euro === null ? '' : ` · ${geldArt(euro)} ${formatEuro(euro)}`}`
+    }
+    const textName = (l: StickerLayout) => {
+      const e = entwurf(l.entwurf)
+      return e ? `Vorlage ${String(entwurfNr(e.slug)).padStart(2, '0')} · ${e.name}` : 'Klassischer Text'
     }
     const offeneBoegen = await openSheetCount(userId)
+    const favoriten = await entwurfFavoriten(userId)
+    const layout = await lastLayout(userId)
+    // Vorauswahl: Link aus /sticker-test (?entwurf=…), sonst die zuletzt
+    // benutzte Vorlage, sonst der erste Favorit, sonst klassischer Text.
+    const gewuenscht = entwurf(String((request.query as { entwurf?: string }).entwurf || ''))
+    const ersterFavorit = ENTWUERFE.find((e) => favoriten.has(e.slug))
+    layout.entwurf = gewuenscht?.slug || (entwurf(layout.entwurf) ? layout.entwurf : ersterFavorit?.slug || null)
+    const entwuerfe = ENTWUERFE.map((e, i) => ({
+      nr: i + 1, slug: e.slug, name: e.name, fest: e.tbnr || null, betrag: brauchtBetrag(e), favorit: favoriten.has(e.slug),
+    }))
     return reply.view('/sticker/index.ejs', viewData(request, {
       title: 'Sticker',
       batches: batches.map((b) => {
         const layout = JSON.parse(b.layout) as StickerLayout
-        return { ...b, layout, vorlageName: vorlagenName(layout), fall: fallText(layout), offen: Number(b.offen || 0) }
+        return {
+          ...b, layout, vorlageName: vorlagenName(layout), textName: textName(layout), fall: fallText(layout),
+          offen: Number(b.offen || 0), teile: Math.ceil(Number(b.seiten) / STICKER_PDF_TEIL),
+        }
       }),
       linked: linked.map((l) => ({ ...l, codeFmt: formatCode(l.code), loesbar: Number(l.loesbar) === 1 })),
       offen: await openCodeCount(userId),
-      layout: await lastLayout(userId),
+      layout,
+      entwuerfe,
+      pdfTeil: STICKER_PDF_TEIL,
       vorlagen: STICKER_VORLAGEN,
       maxSeiten: STICKER_MAX_SEITEN,
       freieSeiten: Math.max(0, STICKER_MAX_SEITEN - offeneBoegen),
@@ -128,7 +150,8 @@ export default async function stickerRoutes(app: FastifyInstance) {
       return flashRedirect(reply, 'error', result.error, '/sticker')
     }
     return flashRedirect(reply, 'success',
-      `${seiten * perPage(layout)} Sticker auf ${seiten} ${seiten === 1 ? 'Bogen' : 'Bögen'} erzeugt – jetzt das PDF herunterladen und drucken.`, `/sticker#batch-${result.batchId}`)
+      `${seiten * perPage(layout)} Sticker auf ${seiten} ${seiten === 1 ? 'Bogen' : 'Bögen'} erzeugt – jetzt das PDF herunterladen und drucken` +
+      (seiten > STICKER_PDF_TEIL ? ` (in Teilen zu je ${STICKER_PDF_TEIL} Bögen).` : '.'), `/sticker#batch-${result.batchId}`)
   })
 
   // PDF eines Batches – immer dieselben Codes, beliebig oft. Druckversatz und
@@ -151,14 +174,29 @@ export default async function stickerRoutes(app: FastifyInstance) {
         await pool.execute('UPDATE sticker_batches SET layout = ? WHERE id = ?', [JSON.stringify(layout), batch.id])
       }
     }
-    const pdf = await renderBatchPdf(await batchCodes(batch.id), layout, appUrl(request))
+    // Große Batches in Teilen zu STICKER_PDF_TEIL Bögen (Teil 1 = Standard),
+    // damit ein Download nur wenige Sekunden rechnet.
+    const teile = Math.ceil(batch.seiten / STICKER_PDF_TEIL)
+    const teil = Math.min(teile, Math.max(1, Math.floor(Number((request.query as { teil?: string }).teil ?? q.teil ?? 1)) || 1))
+    const proTeil = STICKER_PDF_TEIL * perPage(layout)
+    const codes = (await batchCodes(batch.id)).slice((teil - 1) * proTeil, teil * proTeil)
+    const pdf = await renderBatchPdf(codes, layout, appUrl(request))
+    const name = teile > 1 ? `owia-sticker-${batch.id}-teil-${teil}-von-${teile}.pdf` : `owia-sticker-${batch.id}.pdf`
     return reply
       .header('Content-Type', 'application/pdf')
-      .header('Content-Disposition', `inline; filename="owia-sticker-${batch.id}.pdf"`)
+      .header('Content-Disposition', `inline; filename="${name}"`)
       .send(Buffer.from(pdf))
   }
   app.get('/sticker/:id/sticker.pdf', { preHandler: requireAuth }, stickerPdf)
   app.post('/sticker/:id/sticker.pdf', { preHandler: requireAuth }, stickerPdf)
+
+  // Vorschau der gewählten Textvorlage im gewählten Format (Formular /sticker).
+  app.get('/sticker/vorschau.svg', { preHandler: requireAuth }, async (request, reply) => {
+    const layout = parseLayout(request.query as Record<string, unknown>)
+    const svg = typeof layout === 'string' ? null : await vorschauSvg(layout, appUrl(request))
+    if (!svg) return reply.status(404).send('Keine Vorschau.')
+    return reply.header('Content-Type', 'image/svg+xml; charset=utf-8').header('Cache-Control', 'private, max-age=300').send(svg)
+  })
 
   app.get('/sticker/kalibrierung.pdf', { preHandler: requireAuth }, async (request, reply) => {
     const layout = parseLayout(request.query as Record<string, unknown>)

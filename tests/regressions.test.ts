@@ -41,8 +41,10 @@ import { viewHelpers } from '../src/views/helpers'
 import { zaehleAufruf, ladeAufrufe } from '../src/services/aufrufe'
 import {
   createBatch, linkCode, unlinkCode, voidOpenCodes, normalizeCode, parseLayout, renderBatchPdf,
-  batchCodes, StickerLayout,
+  batchCodes, StickerLayout, STICKER_MAX_SEITEN, STICKER_VORLAGEN, vorschauSvg,
 } from '../src/services/stickers'
+import { ENTWUERFE } from '../src/services/stickerEntwuerfe'
+import { setze, satzFonts } from '../src/services/stickerSatz'
 
 // Harte Schranke: Diese Suite darf niemals auf einer vorhandenen DB laufen.
 if (process.env.OWIA_TEST_ONLY !== '1' || process.env.DB_NAME !== 'owia_test' || process.env.DB_HOST !== 'db') {
@@ -667,22 +669,24 @@ test('Sticker: Kontingent, Verknüpfen, Lösen und Code-Normalisierung', async (
   assert.equal(codes.length, 48)
   assert.equal(new Set(codes).size, 48)
   assert.ok(codes.every(c => normalizeCode(c) === c))
-  // Höchstens 20 Bögen mit offenen Codes gleichzeitig (über alle Batches):
-  // 2 offen → 18 gehen noch, 19 nicht. Fall-Sticker je Verstoß parallel.
-  assert.ok('error' in await createBatch(owner, layout, 19))
-  assert.ok('error' in await createBatch(owner, layout, 21))
+  // Höchstens STICKER_MAX_SEITEN Bögen mit offenen Codes gleichzeitig (über
+  // alle Batches): 2 offen → MAX-2 gehen noch, MAX-1 nicht. Fall-Sticker je
+  // Verstoß parallel.
+  assert.equal(STICKER_MAX_SEITEN, 1000)
+  assert.ok('error' in await createBatch(owner, layout, STICKER_MAX_SEITEN - 1))
+  assert.ok('error' in await createBatch(owner, layout, STICKER_MAX_SEITEN + 1))
   const gehweg = parseLayout({ vorlage: '70x37', tbnr: '112454', aufdruck: 'Auf dem Gehweg 🚗 geparkt.' }) as StickerLayout
   assert.equal(gehweg.tbnr, '112454')
   assert.equal(gehweg.aufdruck, 'Auf dem Gehweg geparkt.') // Emoji kann die PDF-Schrift nicht
   assert.equal((parseLayout({ vorlage: '105x57', tbnr: '112454' }) as StickerLayout).aufdruck, 'Sie parkten verbotswidrig auf dem Gehweg.')
   assert.match(String(parseLayout({ vorlage: '105x57', tbnr: '999999' })), /Katalog/)
   assert.match(String(parseLayout({ vorlage: 'eigen', tbnr: '112454', cols: 4, rows: 12, labelW: 48.5, labelH: 25.4, marginLeft: 8, marginTop: 10 })), /60 × 33/)
-  const fallBatch = await createBatch(owner, gehweg, 18)
+  const fallBatch = await createBatch(owner, gehweg, STICKER_MAX_SEITEN - 2)
   assert.ok('batchId' in fallBatch)
   assert.ok('error' in await createBatch(owner, layout, 1))
   const fallPdf = await PDFDocument.load(await renderBatchPdf((await batchCodes(fallBatch.batchId)).slice(0, 24), gehweg, 'https://owia.example'))
   assert.equal(fallPdf.getPageCount(), 1)
-  assert.equal(await voidOpenCodes(owner, fallBatch.batchId), 18 * 24)
+  assert.equal(await voidOpenCodes(owner, fallBatch.batchId), (STICKER_MAX_SEITEN - 2) * 24)
 
   const id = await report(owner)
   assert.equal(await linkCode(owner, codes[0], id), 'ok')
@@ -711,6 +715,34 @@ test('Sticker: Kontingent, Verknüpfen, Lösen und Code-Normalisierung', async (
 
   const pdf = await PDFDocument.load(await renderBatchPdf(codes, layout, 'https://owia.example'))
   assert.equal(pdf.getPageCount(), 2)
+})
+
+test('Sticker-Textvorlagen: passen in jedes Format, Tatbestand und PDF', async () => {
+  // Stabile Schlüssel: Favoriten und Batches speichern den Slug.
+  assert.equal(new Set(ENTWUERFE.map(e => e.slug)).size, ENTWUERFE.length)
+  assert.equal(ENTWUERFE.length, 50)
+  const fonts = await satzFonts()
+  for (const e of ENTWUERFE) {
+    for (const v of STICKER_VORLAGEN) {
+      const satz = setze(e, v.labelW, v.labelH, { betrag: '55\u00a0€', codeLabel: 'owia.net/S/XXXX-XXXX', fonts })
+      assert.ok(satz.passt, `${e.slug} passt nicht auf ${v.id}`)
+      assert.ok(satz.qr.size >= 15, `${e.slug}: QR auf ${v.id} kleiner als 15 mm`)
+    }
+  }
+  assert.match(String(parseLayout({ vorlage: '105x57', entwurf: 'sachlich-ordnungsamt' })), /Betrag/)
+  assert.match(String(parseLayout({ vorlage: '105x57', entwurf: 'gibt-es-nicht' })), /gibt es nicht/)
+  assert.match(String(parseLayout({ vorlage: 'eigen', entwurf: 'minimal', cols: 4, rows: 12, labelW: 48.5, labelH: 25.4, marginLeft: 8, marginTop: 10 })), /60 × 33/)
+  // Vorlage ohne Betrag braucht keinen Verstoß; Vorlage mit festem Tatbestand
+  // überstimmt die Auswahl, ein Aufdruck gilt nur für den klassischen Text.
+  assert.equal((parseLayout({ vorlage: '70x37', entwurf: 'minimal' }) as StickerLayout).tbnr, null)
+  const radweg = parseLayout({ vorlage: '105x57', entwurf: 'radweg', tbnr: '141312', aufdruck: 'x' }) as StickerLayout
+  assert.equal(radweg.entwurf, 'radweg')
+  assert.equal(radweg.tbnr, '112474')
+  assert.equal(radweg.aufdruck, null)
+  const pdf = await PDFDocument.load(await renderBatchPdf(['7KQ27KQ2', '8XM98XM9'], radweg, 'https://owia.example'))
+  assert.equal(pdf.getPageCount(), 1)
+  assert.match(String(await vorschauSvg(radweg, 'https://owia.example')), /^<svg[^>]*viewBox="0 0 105 57"/)
+  assert.equal(await vorschauSvg(parseLayout({ vorlage: '105x57' }) as StickerLayout, 'https://owia.example'), null)
 })
 
 test('Sticker-Entwürfe: Favoriten nur angemeldet, je Nutzer, stehen oben', async () => {

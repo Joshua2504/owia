@@ -13,15 +13,20 @@
 // Deshalb gibt es die Route in routes/sticker.ts auch als `/S/:code`.
 import crypto from 'crypto'
 import mysql from 'mysql2/promise'
-import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, PDFEmbeddedPage, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib'
 import { pool } from '../db/connection'
 import { qrcodegen } from '../vendor/qrcodegen'
 import { regelsatzEuro, verstossText } from '../config/verstoss'
+import { MM, Entwurf, embedSatzFonts, satzFonts, setze, svgVon, zeichnePdf } from './stickerSatz'
+import { brauchtBetrag, entwurf as findeEntwurf, entwurfTbnr } from './stickerEntwuerfe'
 
 /** Höchstzahl Bögen mit offenen Codes – über alle Batches eines Nutzers
  *  zusammen (siehe createBatch). So lassen sich Bögen für mehrere Verstöße
- *  parallel drucken, ohne dass unbegrenzt Codes herumliegen. */
-export const STICKER_MAX_SEITEN = 20
+ *  und Vorlagen im Voraus drucken, ohne dass unbegrenzt Codes herumliegen.
+ *  Große Batches gibt es als PDF in Teilen (STICKER_PDF_TEIL Bögen). */
+export const STICKER_MAX_SEITEN = 1000
+/** Bögen je PDF-Download – ein Teil rendert in wenigen Sekunden. */
+export const STICKER_PDF_TEIL = 100
 /** So lange kann der Besitzer eine Verknüpfung wieder lösen (Verklicker). */
 export const STICKER_LOESEN_MINUTEN = 30
 
@@ -84,9 +89,12 @@ export interface StickerLayout {
    *  bei neutralen Bögen (und bei allen Batches von vor dieser Option). */
   tbnr?: string | null
   aufdruck?: string | null
+  /** Textvorlage (Slug aus services/stickerEntwuerfe.ts). Fehlt bzw. null =
+   *  klassischer Text mit Aufdruck (alle Batches von vor den Vorlagen). */
+  entwurf?: string | null
 }
 
-type Vorlage = Omit<StickerLayout, 'vorlage' | 'dx' | 'dy' | 'rahmen' | 'tbnr' | 'aufdruck'> & { id: string; name: string }
+type Vorlage = Omit<StickerLayout, 'vorlage' | 'dx' | 'dy' | 'rahmen' | 'tbnr' | 'aufdruck' | 'entwurf'> & { id: string; name: string }
 
 const A4_W = 210
 const A4_H = 297
@@ -140,6 +148,7 @@ export function parseLayout(input: Record<string, unknown>): StickerLayout | str
     rahmen: input.rahmen === true || input.rahmen === '1' || input.rahmen === 'on',
     tbnr: null,
     aufdruck: null,
+    entwurf: null,
   }
   const tbnr = String(input.tbnr ?? '').trim()
   if (tbnr) {
@@ -148,11 +157,26 @@ export function parseLayout(input: Record<string, unknown>): StickerLayout | str
     layout.tbnr = tbnr
     layout.aufdruck = winAnsi(String(input.aufdruck ?? '')).slice(0, AUFDRUCK_MAX) || winAnsi(katalog)
   }
+  const slug = String(input.entwurf ?? '').trim()
+  if (slug) {
+    const e = findeEntwurf(slug)
+    if (!e) return 'Diese Textvorlage gibt es nicht.'
+    // Vorlagen, deren Text einen Tatbestand nennt, bringen ihren eigenen mit.
+    const tb = entwurfTbnr(e, layout.tbnr)
+    if (brauchtBetrag(e) && !tb) return 'Diese Textvorlage nennt den Betrag – bitte einen Verstoß wählen.'
+    if (tb && regelsatzEuro(tb) === null) return 'Für diesen Tatbestand ist kein Regelsatz hinterlegt.'
+    layout.entwurf = e.slug
+    layout.tbnr = tb
+    layout.aufdruck = null
+  }
   if (layout.cols < 1 || layout.cols > 6 || layout.rows < 1 || layout.rows > 15) {
     return 'Bitte 1–6 Spalten und 1–15 Zeilen angeben.'
   }
   if (layout.labelW < 40 || layout.labelH < 25) {
     return 'Etiketten müssen mindestens 40 × 25 mm groß sein, sonst wird der QR-Code zu klein.'
+  }
+  if (layout.entwurf && (layout.labelW < 60 || layout.labelH < 33)) {
+    return 'Textvorlagen brauchen Etiketten ab 60 × 33 mm.'
   }
   if (layout.tbnr && (layout.labelW < 60 || layout.labelH < 33)) {
     return 'Sticker mit Verstoß brauchen Etiketten ab 60 × 33 mm – sonst bleibt kein Platz zum Ausfüllen von Ort und Zeit.'
@@ -248,9 +272,10 @@ export async function createBatch(userId: number, layout: StickerLayout, seiten:
     let position = 0
     while (codes.size < total) {
       const chunk: string[] = []
-      while (chunk.length < 100 && codes.size + chunk.length < total) {
+      const imChunk = new Set<string>()
+      while (chunk.length < 500 && codes.size + chunk.length < total) {
         const c = generateCode()
-        if (!codes.has(c) && !chunk.includes(c)) chunk.push(c)
+        if (!codes.has(c) && !imChunk.has(c)) { chunk.push(c); imChunk.add(c) }
       }
       // INSERT IGNORE: eine (astronomisch unwahrscheinliche) Kollision mit
       // einem bestehenden Code fällt einfach weg und wird nachgezogen.
@@ -362,7 +387,6 @@ export async function voidOpenCodes(userId: number, batchId: number): Promise<nu
 // PDF
 // ---------------------------------------------------------------------------
 
-const MM = 72 / 25.4
 
 // Texte: sachlich, Deutsch groß, Englisch klein darunter. Neutrale Bögen:
 // ohne Betrag, weil beim Druck noch kein Verstoß feststeht. Bögen für einen
@@ -492,78 +516,52 @@ function layoutText(absaetze: Absatz[], fonts: Fonts, maxW: number, maxH: number
   return []
 }
 
-function drawQr(page: PDFPage, text: string, x: number, y: number, size: number) {
+/** QR-Module als rohe PDF-Operatoren („x y w h re"): ein gemeinsamer
+ *  Content-Stream je Seite statt Hunderter drawRectangle-Objekte je Sticker –
+ *  sonst brauchen große Batches Minuten und Gigabytes. */
+function qrOps(text: string, x: number, y: number, size: number): string {
+  // Feste Maske: Die automatische Wahl probiert alle 8 durch und war der
+  // größte Zeitfresser bei großen Batches; jede Maske ist gültig und scanbar.
   const qr = qrcodegen.QrCode.encodeSegments(
     [qrcodegen.QrSegment.makeAlphanumeric(text)],
-    qrcodegen.QrCode.Ecc.MEDIUM
+    qrcodegen.QrCode.Ecc.MEDIUM, 1, 40, 0
   )
   const quiet = 2 // Ruhezone in Modulen; Etikettenrand gibt zusätzlich Luft
   const m = size / (qr.size + 2 * quiet)
+  const n = (v: number) => v.toFixed(2)
+  let ops = ''
   for (let row = 0; row < qr.size; row++) {
     let start = -1
     for (let col = 0; col <= qr.size; col++) {
       const dark = col < qr.size && qr.getModule(col, row)
       if (dark && start < 0) start = col
       if (!dark && start >= 0) {
-        // Horizontale Läufe zusammenfassen: weniger Pfade, keine Haarlinien
-        // zwischen Nachbarmodulen in manchen PDF-Viewern.
-        page.drawRectangle({
-          x: x + (quiet + start) * m,
-          y: y + size - (quiet + row + 1) * m,
-          width: (col - start) * m,
-          height: m + 0.01,
-          color: rgb(0, 0, 0),
-        })
+        // Horizontale Läufe zusammenfassen; +0,01 gegen Haarlinien zwischen
+        // Nachbarzeilen in manchen PDF-Viewern.
+        ops += `${n(x + (quiet + start) * m)} ${n(y + size - (quiet + row + 1) * m)} ${n((col - start) * m)} ${n(m + 0.01)} re\n`
         start = -1
       }
     }
   }
+  return ops
 }
 
 /** Kleine Schnittmarken an den vier Ecken, nach außen als Verlängerung der
  *  Etikettenkanten. Sie liegen damit entweder im Zwischenraum oder (bei
  *  Bögen ohne Abstand) genau auf der Schnittlinie des Nachbarn – nie mitten
- *  auf einem Etikett. */
-function drawCutMarks(page: PDFPage, x: number, y: number, w: number, h: number) {
+ *  auf einem Etikett. Als rohe Linien-Operatoren (siehe qrOps). */
+function cutMarkOps(x: number, y: number, w: number, h: number): string {
   const len = 2 * MM
   const off = 0.4 * MM // kleine Lücke zur Ecke, damit nichts aufs Etikett ragt
-  const color = rgb(0.55, 0.55, 0.55)
+  const n = (v: number) => v.toFixed(2)
+  let ops = ''
   for (const [cx, sx] of [[x, -1], [x + w, 1]]) {
     for (const [cy, sy] of [[y, -1], [y + h, 1]]) {
-      page.drawLine({ start: { x: cx + sx * off, y: cy }, end: { x: cx + sx * (off + len), y: cy }, thickness: 0.3, color })
-      page.drawLine({ start: { x: cx, y: cy + sy * off }, end: { x: cx, y: cy + sy * (off + len) }, thickness: 0.3, color })
+      ops += `${n(cx + sx * off)} ${n(cy)} m ${n(cx + sx * (off + len))} ${n(cy)} l\n`
+      ops += `${n(cx)} ${n(cy + sy * off)} m ${n(cx)} ${n(cy + sy * (off + len))} l\n`
     }
   }
-}
-
-function drawSticker(
-  page: PDFPage, fonts: Fonts, code: string, url: string,
-  x: number, y: number, w: number, h: number, rahmen: boolean, muster: boolean, fall: Fall | null
-) {
-  if (rahmen) {
-    page.drawRectangle({ x, y, width: w, height: h, borderColor: rgb(0.7, 0.7, 0.7), borderWidth: 0.4 })
-  } else {
-    drawCutMarks(page, x, y, w, h)
-  }
-  const pad = Math.min(w, h) * 0.08
-  const codeSize = Math.max(6, Math.min(9, h * 0.06))
-  // Unter dem QR-Code die Adresse zum Abtippen, z. B. „owia.net/S/7KQ2-XM9P"
-  // (/S/ nimmt auch Kleinbuchstaben und Bindestrich, siehe normalizeCode).
-  const host = url.replace(/^HTTPS?:\/\//i, '').split('/')[0].toLowerCase()
-  const label = `${host}/S/${muster ? 'MUSTER' : formatCode(code)}`
-
-  // Text links, QR-Code rechts – auch bei Fall-Stickern. Keine Felder zum
-  // Ausfüllen: alles Nötige steht vorgedruckt bzw. hinter dem QR-Code.
-  const qrSize = Math.min(h - 2 * pad - codeSize * 1.4, w * 0.42)
-  const qrX = x + w - pad - qrSize
-  drawQr(page, url, qrX, y + pad + codeSize * 1.4, qrSize)
-  // Adresse darf links und rechts etwas über den QR-Code hinausragen.
-  const labelMaxW = qrSize + pad * 1.4
-  const labelSize = Math.min(codeSize, codeSize * labelMaxW / fonts.mono.widthOfTextAtSize(label, codeSize))
-  const lw = fonts.mono.widthOfTextAtSize(label, labelSize)
-  page.drawText(label, { x: qrX + (qrSize - lw) / 2, y: y + pad, size: labelSize, font: fonts.mono, color: rgb(0.2, 0.2, 0.2) })
-  const absaetze = fall ? fallAbsaetze(fall) : ABSAETZE
-  drawLines(page, layoutText(absaetze, fonts, qrX - x - pad * 1.8, h - 2 * pad), x + pad, y + h - pad, h - 2 * pad)
+  return ops
 }
 
 /** Zeilen in eine Box (links oben ab x/top, Höhe boxH) vertikal zentriert setzen. */
@@ -606,6 +604,77 @@ async function newDoc(): Promise<{ doc: PDFDocument; fonts: Fonts }> {
   return { doc, fonts }
 }
 
+/** Druckform eines Batches: alles, was auf jedem Sticker gleich ist, als
+ *  eingebettete Seite (Form-XObject, einmal im PDF) plus die Stellen, an die
+ *  pro Sticker QR-Code und Code-Text kommen. Maße in pt relativ zur linken
+ *  unteren Etikettenecke. */
+interface Druckform {
+  statisch: PDFEmbeddedPage
+  qr: { x: number; y: number; size: number }
+  code: { cx: number; y: number; size: number; color: ReturnType<typeof rgb> }
+}
+
+function codeLabel(url: string, code: string, muster: boolean): string {
+  // Unter dem QR-Code die Adresse zum Abtippen, z. B. „owia.net/S/7KQ2-XM9P"
+  // (/S/ nimmt auch Kleinbuchstaben und Bindestrich, siehe normalizeCode).
+  const host = url.replace(/^HTTPS?:\/\//i, '').split('/')[0].toLowerCase()
+  return `${host}/S/${muster ? 'MUSTER' : formatCode(code)}`
+}
+
+// Die Vorlage wird gespeichert und als Bytes eingebettet: pdf-lib schreibt
+// Schriften erst beim Speichern, ein direkt eingebettetes Dokument hätte
+// leere Font-Verweise.
+async function druckform(doc: PDFDocument, fonts: Fonts, layout: StickerLayout, baseUrl: string, muster: boolean): Promise<Druckform> {
+  const w = layout.labelW * MM
+  const h = layout.labelH * MM
+  const tplDoc = await PDFDocument.create()
+  const page = tplDoc.addPage([w, h])
+  const beispiel = codeLabel(stickerUrl(baseUrl, 'XXXXXXXX'), 'XXXXXXXX', muster)
+  const e = findeEntwurf(layout.entwurf)
+
+  if (e) {
+    const satzFonts = await embedSatzFonts(tplDoc)
+    const tb = entwurfTbnr(e, layout.tbnr)
+    const euro = tb ? regelsatzEuro(tb) : null
+    const satz = setze(e, layout.labelW, layout.labelH, {
+      betrag: euro === null ? '' : formatEuro(euro), codeLabel: beispiel, fonts: satzFonts,
+    })
+    zeichnePdf(page, satzFonts, satz.items, 0, h)
+    const c = parseInt(satz.code.color.slice(1), 16)
+    const [statisch] = await doc.embedPdf(await tplDoc.save(), [0])
+    return {
+      statisch,
+      qr: { x: satz.qr.x * MM, y: h - (satz.qr.y + satz.qr.size) * MM, size: satz.qr.size * MM },
+      code: { cx: satz.code.cx * MM, y: h - satz.code.y * MM, size: satz.code.size * MM, color: rgb(((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255) },
+    }
+  }
+
+  // Klassischer Text: links Absätze, rechts QR-Code. Keine Felder zum
+  // Ausfüllen: alles Nötige steht vorgedruckt bzw. hinter dem QR-Code.
+  const tplFonts: Fonts = {
+    regular: await tplDoc.embedFont(StandardFonts.Helvetica),
+    bold: await tplDoc.embedFont(StandardFonts.HelveticaBold),
+    italic: await tplDoc.embedFont(StandardFonts.HelveticaOblique),
+    mono: await tplDoc.embedFont(StandardFonts.CourierBold),
+  }
+  const pad = Math.min(w, h) * 0.08
+  const codeSize = Math.max(6, Math.min(9, h * 0.06))
+  const qrSize = Math.min(h - 2 * pad - codeSize * 1.4, w * 0.42)
+  const qrX = w - pad - qrSize
+  // Adresse darf links und rechts etwas über den QR-Code hinausragen.
+  const labelMaxW = qrSize + pad * 1.4
+  const labelSize = Math.min(codeSize, codeSize * labelMaxW / fonts.mono.widthOfTextAtSize(beispiel, codeSize))
+  const fall = fallAus(layout)
+  const absaetze = fall ? fallAbsaetze(fall) : ABSAETZE
+  drawLines(page, layoutText(absaetze, tplFonts, qrX - pad * 1.8, h - 2 * pad), pad, h - pad, h - 2 * pad)
+  const [statisch] = await doc.embedPdf(await tplDoc.save(), [0])
+  return {
+    statisch,
+    qr: { x: qrX, y: pad + codeSize * 1.4, size: qrSize },
+    code: { cx: qrX + qrSize / 2, y: pad, size: labelSize, color: rgb(0.2, 0.2, 0.2) },
+  }
+}
+
 /** Position eines Etiketts (Index auf der Seite) in PDF-Koordinaten (pt, unten links). */
 function labelBox(layout: StickerLayout, index: number) {
   const col = index % layout.cols
@@ -620,29 +689,85 @@ function labelBox(layout: StickerLayout, index: number) {
   }
 }
 
-export async function renderBatchPdf(codes: string[], layout: StickerLayout, baseUrl: string): Promise<Uint8Array> {
+async function renderSheets(codes: string[], layout: StickerLayout, baseUrl: string, muster: boolean, rahmen: boolean): Promise<Uint8Array> {
   const { doc, fonts } = await newDoc()
+  const form = await druckform(doc, fonts, layout, baseUrl, muster)
   const n = perPage(layout)
-  const fall = fallAus(layout)
   for (let p = 0; p * n < codes.length; p++) {
     const page = doc.addPage([A4_W * MM, A4_H * MM])
+    let ops = ''
+    let linien = ''
     codes.slice(p * n, (p + 1) * n).forEach((code, i) => {
       const b = labelBox(layout, i)
-      drawSticker(page, fonts, code, stickerUrl(baseUrl, code), b.x, b.y, b.w, b.h, layout.rahmen, false, fall)
+      page.drawPage(form.statisch, { x: b.x, y: b.y })
+      linien += rahmen
+        ? `${b.x.toFixed(2)} ${b.y.toFixed(2)} ${b.w.toFixed(2)} ${b.h.toFixed(2)} re\n`
+        : cutMarkOps(b.x, b.y, b.w, b.h)
+      const label = codeLabel(stickerUrl(baseUrl, code), code, muster)
+      const lw = fonts.mono.widthOfTextAtSize(label, form.code.size)
+      page.drawText(label, { x: b.x + form.code.cx - lw / 2, y: b.y + form.code.y, size: form.code.size, font: fonts.mono, color: form.code.color })
+      ops += qrOps(stickerUrl(baseUrl, code), b.x + form.qr.x, b.y + form.qr.y, form.qr.size)
     })
+    // QR-Module zuletzt: liegen damit über der Druckform (dort ist das Feld weiß).
+    const grau = rahmen ? '0.7 0.7 0.7 RG 0.4 w' : '0.55 0.55 0.55 RG 0.3 w'
+    const stream = doc.context.flateStream(`q 0 0 0 rg\n${ops}f\n${grau}\n${linien}S\nQ\n`)
+    page.node.addContentStream(doc.context.register(stream))
   }
   return doc.save()
+}
+
+export async function renderBatchPdf(codes: string[], layout: StickerLayout, baseUrl: string): Promise<Uint8Array> {
+  return renderSheets(codes, layout, baseUrl, false, layout.rahmen)
 }
 
 /** Testseite auf Normalpapier: alle Etikettenränder + Muster-Sticker. Gegen
  *  einen leeren Etikettenbogen ins Licht halten, dann Druckversatz anpassen. */
 export async function renderCalibrationPdf(layout: StickerLayout, baseUrl: string): Promise<Uint8Array> {
-  const { doc, fonts } = await newDoc()
-  const page = doc.addPage([A4_W * MM, A4_H * MM])
-  const fall = fallAus(layout)
-  for (let i = 0; i < perPage(layout); i++) {
-    const b = labelBox(layout, i)
-    drawSticker(page, fonts, MUSTER_CODE, stickerUrl(baseUrl, MUSTER_CODE), b.x, b.y, b.w, b.h, true, true, fall)
+  return renderSheets(Array(perPage(layout)).fill(MUSTER_CODE), layout, baseUrl, true, true)
+}
+
+// ---------------------------------------------------------------------------
+// Vorschau (SVG) der Textvorlagen – /sticker und /sticker-test
+// ---------------------------------------------------------------------------
+
+/** QR-Module als SVG-Pfad (Einheit = Modul), Maske wie im Druck. */
+export function qrModulPfad(text: string): { size: number; d: string } {
+  const qr = qrcodegen.QrCode.encodeSegments([qrcodegen.QrSegment.makeAlphanumeric(text)], qrcodegen.QrCode.Ecc.MEDIUM, 1, 40, 0)
+  let d = ''
+  for (let y = 0; y < qr.size; y++) {
+    let x = 0
+    while (x < qr.size) {
+      if (!qr.getModule(x, y)) { x++; continue }
+      const start = x
+      while (x < qr.size && qr.getModule(x, y)) x++
+      d += `M${start} ${y}h${x - start}v1h-${x - start}z`
+    }
   }
-  return doc.save()
+  return { size: qr.size, d }
+}
+
+/** Eine Textvorlage als SVG mit Muster-Code; Betrag aus tbnr (fester
+ *  Tatbestand der Vorlage geht vor). */
+export async function entwurfSvg(e: Entwurf, w: number, h: number, tbnr: string | null, baseUrl: string): Promise<string> {
+  const fonts = await satzFonts()
+  const tb = entwurfTbnr(e, tbnr)
+  const euro = tb ? regelsatzEuro(tb) : null
+  const url = stickerUrl(baseUrl, MUSTER_CODE)
+  const label = codeLabel(url, MUSTER_CODE, true)
+  const satz = setze(e, w, h, { betrag: euro === null ? '' : formatEuro(euro), codeLabel: label, fonts })
+  return svgVon(satz, w, h, qrModulPfad(url), label, fonts, e.name)
+}
+
+/** Vorschau für ein Formular-Layout; null bei klassischem Text. */
+export async function vorschauSvg(layout: StickerLayout, baseUrl: string): Promise<string | null> {
+  const e = findeEntwurf(layout.entwurf)
+  return e ? entwurfSvg(e, layout.labelW, layout.labelH, layout.tbnr ?? null, baseUrl) : null
+}
+
+/** Favorisierte Textvorlagen eines Nutzers (/sticker-test). */
+export async function entwurfFavoriten(userId: number): Promise<Set<string>> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT slug FROM sticker_entwurf_favoriten WHERE user_id = ?', [userId]
+  )
+  return new Set(rows.map((r) => String(r.slug)))
 }

@@ -1,8 +1,18 @@
 <%
 // Sticker-Verwaltung (routes/sticker.ts): Bögen erzeugen + drucken, Reste
 // entwerten, verknüpfte Sticker im Blick. Höchstens maxSeiten Bögen mit
-// offenen Codes gleichzeitig (über alle Batches).
+// offenen Codes gleichzeitig (über alle Batches). Textvorlagen: Auswahl
+// (Favoriten zuerst) + SVG-Vorschau /sticker/vorschau.svg, Logik in
+// public/js/sticker-page.js.
 const gesperrt = freieSeiten < 1
+const aktiv = entwuerfe.find((e) => e.slug === layout.entwurf)
+const vorschauQuery = new URLSearchParams({
+  vorlage: layout.vorlage, entwurf: layout.entwurf || '', tbnr: layout.tbnr || '',
+  cols: layout.cols, rows: layout.rows, labelW: layout.labelW, labelH: layout.labelH,
+  marginLeft: layout.marginLeft, marginTop: layout.marginTop, gapX: layout.gapX, gapY: layout.gapY,
+}).toString()
+const favs = entwuerfe.filter((e) => e.favorit)
+const entwurfOpt = (e) => `<option value="${e.slug}" data-fest="${e.fest || ''}" data-betrag="${e.betrag ? 1 : 0}"${layout.entwurf === e.slug ? ' selected' : ''}>${String(e.nr).padStart(2, '0')} · ${e.name}</option>`
 %>
 <div class="page-head mb-3">
   <h2>Sticker</h2>
@@ -61,10 +71,39 @@ const gesperrt = freieSeiten < 1
       </div>
 
       <div class="row g-3 mt-0">
+        <div class="col-md-6">
+          <label class="form-label" for="entwurf">Textvorlage</label>
+          <select class="form-select" name="entwurf" id="entwurf">
+            <% if (favs.length) { %>
+              <optgroup label="★ Meine Favoriten">
+                <% for (const e of favs) { %><%- entwurfOpt(e) %><% } %>
+              </optgroup>
+            <% } %>
+            <optgroup label="<%= favs.length ? 'Weitere Vorlagen' : 'Alle Vorlagen' %>">
+              <% for (const e of entwuerfe.filter((x) => !x.favorit)) { %><%- entwurfOpt(e) %><% } %>
+            </optgroup>
+            <option value="" <%= aktiv ? '' : 'selected' %>>Klassischer Text (mit eigenem Aufdruck)</option>
+          </select>
+          <div class="form-text">
+            Alle <%= entwuerfe.length %> Vorlagen groß ansehen und Favoriten markieren:
+            <a href="/sticker-test">Sticker-Vorlagen</a>. Favoriten stehen hier oben.
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="form-label">Vorschau</div>
+          <img id="sticker-vorschau" class="img-fluid border rounded <%= aktiv ? '' : 'd-none' %>" alt="Vorschau der gewählten Textvorlage"
+               src="/sticker/vorschau.svg?<%= vorschauQuery %>" style="max-height: 14rem">
+          <div id="sticker-vorschau-klassisch" class="form-text <%= aktiv ? 'd-none' : '' %>">
+            Klassischer Text: Vorschau über die Testseite (PDF) unten.
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mt-0">
         <div class="col-md-8">
           <label class="form-label" for="tbnr">Verstoß</label>
           <select class="form-select" name="tbnr" id="tbnr">
-            <option value="">Ohne Verstoß – neutraler Text für alle Fälle</option>
+            <option value="">Ohne Verstoß (nur für Vorlagen ohne Betrag)</option>
             <%
               // Ein gewählter häufiger Verstoß wird nur oben markiert, nicht doppelt.
               const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
@@ -78,13 +117,15 @@ const gesperrt = freieSeiten < 1
               <% for (const v of verstoesse) { %><%- opt(v, !imHaeufig && layout.tbnr === v.tbnr) %><% } %>
             </optgroup>
           </select>
-          <div class="form-text">
-            Mit Verstoß stehen Tatbestand und Regelsatz laut Bußgeldkatalog auf dem
-            Sticker.
+          <div class="form-text" id="verstoss-hinweis">
+            Der Regelsatz laut Bußgeldkatalog steht als Betrag auf dem Sticker.
             Für jeden Verstoß einen eigenen Batch erzeugen.
           </div>
+          <div class="form-text d-none" id="verstoss-fest">
+            Diese Vorlage nennt ihren Tatbestand selbst – der Verstoß ist deshalb fest eingestellt.
+          </div>
         </div>
-        <div class="col-md-4 <%= layout.tbnr ? '' : 'd-none' %>" id="aufdruck-feld">
+        <div class="col-md-4 <%= layout.tbnr && !aktiv ? '' : 'd-none' %>" id="aufdruck-feld">
           <label class="form-label" for="aufdruck">Aufdruck</label>
           <textarea class="form-control" name="aufdruck" id="aufdruck" rows="3" maxlength="<%= aufdruckMax %>"><%= layout.tbnr ? layout.aufdruck : '' %></textarea>
           <div class="form-text">Text aus dem Katalog, kürzbar. Betrag und Nummer werden automatisch ergänzt.</div>
@@ -149,7 +190,7 @@ const gesperrt = freieSeiten < 1
           <div>
             <strong><%= b.seiten %> <%= b.seiten === 1 ? 'Bogen' : 'Bögen' %></strong>
             <span class="text-muted small">· <%= b.vorlageName %> · erstellt <%= b.erstellt %></span>
-            <div class="small"><%= b.fall ? `Verstoß: ${b.fall}` : 'Neutral, ohne Verstoß' %></div>
+            <div class="small"><%= b.textName %> · <%= b.fall ? `Verstoß: ${b.fall}` : 'ohne Verstoß' %></div>
           </div>
           <div class="small">
             <span class="badge bg-success"><%= Number(b.verknuepft || 0) %> verknüpft</span>
@@ -172,7 +213,15 @@ const gesperrt = freieSeiten < 1
               <input class="form-check-input" type="checkbox" name="rahmen" value="1" id="rahmen-<%= b.id %>" <%= b.layout.rahmen ? 'checked' : '' %>>
               <label class="form-check-label small" for="rahmen-<%= b.id %>">Ränder</label>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm">PDF herunterladen</button>
+            <% if (b.teile > 1) { %>
+              <% for (let t = 1; t <= b.teile; t++) { %>
+                <button type="submit" name="teil" value="<%= t %>" class="btn btn-primary btn-sm">
+                  PDF Teil <%= t %> (Bögen <%= (t - 1) * pdfTeil + 1 %>–<%= Math.min(b.seiten, t * pdfTeil) %>)
+                </button>
+              <% } %>
+            <% } else { %>
+              <button type="submit" class="btn btn-primary btn-sm">PDF herunterladen</button>
+            <% } %>
           </form>
           <% if (b.offen > 0) { %>
             <form method="post" action="/sticker/<%= b.id %>/entwerten" class="m-0 ms-auto">
