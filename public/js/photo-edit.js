@@ -1189,7 +1189,7 @@
         var base = '/public/vendor/leaflet/images/'
         L.Icon.Default.mergeOptions({ iconRetinaUrl: base + 'marker-icon-2x.png', iconUrl: base + 'marker-icon.png', shadowUrl: base + 'marker-shadow.png' })
         map = L.map(el, { zoomControl: true })
-        L.tileLayer('/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap-Mitwirkende' }).addTo(map)
+        L.tileLayer('/tiles/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '<a href="https://basemap.de" target="_blank" rel="noopener">© basemap.de / BKG</a>' }).addTo(map)
         // Ohne Tatort setzt ein Klick in die Karte den Marker.
         map.on('click', function (e) {
           if (marker || !state) return

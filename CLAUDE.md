@@ -136,14 +136,15 @@ Request. Dateien werden beim Verschieben kopiert → DB → Quelle gelöscht.
   Beim Ändern beide Seiten + Kommentar nachziehen.
 - Flash-Messages laufen über ein kurzlebiges Cookie, NICHT über die Session
   (parallele Bild-/Tile-Requests würden Session-Flashes wiederbeleben).
-- Externe Dienste (Photon, ALPR, Tileserver) degradieren graceful: `fetch` mit
+- Externe Dienste (Photon, ALPR, Kartenkacheln) degradieren graceful: `fetch` mit
   `AbortController`-Timeout, Fehler ⇒ `null`/leer statt Exception. In Handlern:
   `try/catch` + `log.error` + deutsche Flash-Message, Redirect trotzdem.
 - Foto-Zeitstempel bleiben Strings (`'YYYY-MM-DD HH:MM:SS'`) und gehen nie
   durch ein JS-`Date` (Zeitzonen). Abgeleitete Dateien liegen per
   Namenskonvention neben dem Original (`.thumb.jpg`, `.pixel.jpg`, `.plate.jpg`)
   unter `data/uploads/<userId>/<reportId>/`.
-- Datenschutz ist Designbedingung: keine externen Requests, Originalfotos
+- Datenschutz ist Designbedingung: keine externen Requests aus dem Browser
+  (Kartenkacheln holt der Server von basemap.de, `services/tiles.ts`), Originalfotos
   verlassen den Host nie, öffentliche Endpoints liefern nur anonymisierte
   Bilder (erkannte Kennzeichen/Gesichter geschwärzt + 160 px, ohne Analyse
   32 px verpixelt; `services/pixelate.ts`) und Aggregate.

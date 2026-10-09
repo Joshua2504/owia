@@ -1,14 +1,14 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { PNG } from 'pngjs'
+import { getTile } from './tiles'
 
-// Statisches Karten-PNG für die Anzeige-PDF: Wir setzen die nötigen OSM-Kacheln
-// vom internen Tileserver zu einem Bild zusammen und zeichnen den Tatort-Marker
-// darüber. Reines pngjs (keine native Abhängigkeit). Die Kacheln kommen vom
-// selben Tileserver wie der /tiles-Proxy (TILESERVER_URL).
+// Statisches Karten-PNG für die Anzeige-PDF: Wir setzen die nötigen Kacheln
+// (basemap.de, über denselben Cache wie der /tiles-Proxy, services/tiles.ts)
+// zu einem Bild zusammen und zeichnen den Tatort-Marker darüber. Reines pngjs
+// (keine native Abhängigkeit). Quellenhinweis setzt pdf.ts unter die Karte.
 
 const TILE = 256
-const TILESERVER_URL = (process.env.TILESERVER_URL || 'http://tileserver:80').replace(/\/$/, '')
 
 // Default-Ausschnitt: Zoom mit Straßendetail, Querformat mit etwas Umfeld.
 const ZOOM = 16
@@ -32,13 +32,10 @@ function latToTileY(lat: number, z: number): number {
 async function fetchTile(z: number, x: number, y: number): Promise<PNG | null> {
   const max = Math.pow(2, z)
   if (x < 0 || y < 0 || x >= max || y >= max) return null
+  const buf = await getTile(z, x, y, 10000)
+  if (!buf) return null
   try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10000)
-    const res = await fetch(`${TILESERVER_URL}/tile/${z}/${x}/${y}.png`, { signal: controller.signal })
-    clearTimeout(timeout)
-    if (!res.ok) return null
-    return PNG.sync.read(Buffer.from(await res.arrayBuffer()))
+    return PNG.sync.read(buf)
   } catch {
     return null
   }
@@ -102,7 +99,7 @@ function drawFallbackPin(out: PNG, cx: number, cy: number): void {
 /**
  * Erzeugt ein PNG (WIDTH×HEIGHT) mit dem Tatort-Marker in der Mitte.
  * Gibt null zurück, wenn keine einzige Kachel geladen werden konnte
- * (Tileserver nicht erreichbar / Import noch nicht fertig).
+ * (Kachelquelle nicht erreichbar).
  */
 export async function renderTatortMap(lat: number, lon: number): Promise<Buffer | null> {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null

@@ -237,7 +237,7 @@ export const PdfService = {
     const margin = 40
 
     // Tatort-Karte mit Marker als eigene Seite (vor den Beweisfotos), sofern
-    // Koordinaten vorliegen und der Tileserver die Kacheln liefern kann.
+    // Koordinaten vorliegen und basemap.de die Kacheln liefern kann.
     if (report.tatort_lat != null && report.tatort_lon != null) {
       try {
         const mapPng = await renderTatortMap(Number(report.tatort_lat), Number(report.tatort_lon))
@@ -265,6 +265,13 @@ export const PdfService = {
             y: cursorY - scaled.height,
             width: scaled.width,
             height: scaled.height,
+          })
+          // Quellenhinweis ist Lizenzbedingung von basemap.de (DL-DE BY 2.0).
+          page.drawText('Karte: (c) basemap.de / BKG, Datenlizenz Deutschland - Namensnennung 2.0', {
+            x: (A4.width - scaled.width) / 2,
+            y: cursorY - scaled.height - 12,
+            size: 7,
+            font,
           })
         }
       } catch {

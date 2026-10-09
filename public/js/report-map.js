@@ -1,7 +1,7 @@
 // Tatort-Karte auf der Bearbeiten-Seite (/anzeige/:id/bearbeiten).
 //
 // Zeigt den Tatort als verschiebbaren Marker. Tiles kommen same-origin über
-// /tiles/{z}/{x}/{y}.png (Proxy auf den OSM-Tileserver, siehe src/routes/tiles.ts).
+// /tiles/{z}/{x}/{y}.png (Proxy auf basemap.de, siehe src/routes/tiles.ts).
 // Geocoding bleibt Sache von Photon (/api/geo/*): Beim Verschieben des Markers
 // wird per Reverse-Geocoding die Adresse aktualisiert.
 //
@@ -51,7 +51,7 @@
   }
 
   // Hinweis-Banner oben auf der Karte, falls die Kacheln (noch) nicht verfügbar
-  // sind – z.B. weil der Tileserver nach einem Update neu importiert. Blendet
+  // sind – z.B. weil basemap.de gerade nicht antwortet. Blendet
   // sich aus, sobald die erste Kachel erfolgreich lädt.
   function attachTileStatus(el, tileLayer) {
     if (getComputedStyle(el).position === 'static') el.style.position = 'relative'
@@ -113,7 +113,7 @@
     const map = L.map(el).setView([initLat, initLon], hasPoint ? 16 : 13)
     const tiles = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '© OpenStreetMap-Mitwirkende',
+      attribution: '<a href="https://basemap.de" target="_blank" rel="noopener">© basemap.de / BKG</a>',
     }).addTo(map)
     attachTileStatus(el, tiles)
     drawCityBoundaries(map)

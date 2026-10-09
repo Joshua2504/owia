@@ -27,8 +27,8 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 - **EXIF-/GPS-Auswertung** – Aufnahmezeitpunkt und Position aus den Fotos.
 - **Foto-Import in Serie** – viele Fotos auf einmal hochladen und gruppiert zu
   mehreren Anzeigen verarbeiten (Bulk-Intake).
-- **Karten** – Adresssuche (Photon), Reverse-Geocoding und selbst gehostete
-  OSM-Kacheln, alles same-origin ohne externe Requests.
+- **Karten** – Adresssuche (Photon), Reverse-Geocoding und Kacheln von
+  basemap.de (BKG) über einen eigenen Proxy – der Browser lädt alles same-origin.
 - **Prüf-Workflow** – eingereichte Anzeigen landen bei Admins, die sie freigeben
   (Versand ans Ordnungsamt) oder ablehnen.
 - **Amts-Antworten in der App** – Antworten des Ordnungsamts werden per IMAP
@@ -57,7 +57,7 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 | PDF              | `pdf-lib` (AcroForm-Befüllung) |
 | Bilder           | `heic-convert`, `exifr`, `jpeg-js`, `pngjs` (Pixelierung) |
 | E-Mail           | `nodemailer` (Versand), `imapflow` + `mailparser` (Posteingang) |
-| Geodaten         | Photon (Geocoding), OSM-Tileserver (Kacheln) |
+| Geodaten         | Photon (Geocoding), basemap.de (Kacheln, via Proxy) |
 | Kennzeichen      | eigener ALPR-Dienst (YOLOv9 + fast-plate-ocr über ONNX, CPU-only) |
 | Reverse-Proxy    | Caddy (automatisches HTTPS via Let's Encrypt, nur Produktion) |
 | Orchestrierung   | Docker Compose |
@@ -69,8 +69,8 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 - **mail** – Mailpit (Dev-Mailserver mit Web-UI auf Port 8025)
 - **photon** – OSM-Geocoder für die Adresssuche (lädt beim ersten Start den
   Deutschland-Index, mehrere GB)
-- **tileserver** – OSM-Raster-Tileserver (Hessen); importiert beim ersten Start
-  automatisch die Render-DB (~10–30 Min)
+- **tileserver** – alter OSM-Raster-Tileserver (Hessen, Mainz, Hamburg), nur
+  noch Fallback, falls basemap.de nicht antwortet; soll entfallen
 - **alpr** – Kennzeichenerkennung (Produktion automatisch, Dev opt-in)
 - **caddy** – Reverse-Proxy mit HTTPS (nur Produktions-Profil)
 
@@ -111,11 +111,8 @@ Anmelden.
 
 - **Kennzeichenerkennung** einschalten: `COMPOSE_PROFILES=alpr` und
   `ALPR_ENABLED=on` in der `.env`, dann Stack neu starten.
-- **Karten-Kacheln** – der Tileserver braucht einmalig einen Import:
-  ```bash
-  docker compose run --rm tileserver import
-  ```
-  Bis der Import fertig ist, liefert `/tiles` leere Kacheln (die App blockiert nicht).
+- **Karten-Kacheln** kommen von basemap.de (`src/services/tiles.ts`), ein
+  Import ist nicht nötig.
 - **Amts-Antwort testen** (Mailpit spricht kein IMAP) – rohe RFC822-Mail einspielen:
   ```bash
   curl -X POST http://localhost:3000/dev/inbound-mail \
