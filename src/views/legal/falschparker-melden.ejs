@@ -1,121 +1,334 @@
+<%
+// SEO-Landingpage Frankfurt (routes/legal.ts). Zielsuchen: „Falschparker
+// melden Frankfurt", „Verkehrspolizei Frankfurt Nummer", „Feuerwehrzufahrt
+// zugeparkt", „Falschparker anzeigen online". Inhalt bleibt ehrlich: privates
+// Angebot, keine erfundenen Zahlen – Bußgelder aus dem KBA-Katalog, Frankfurt-
+// Zahlen aus der DB (ffm = null, wenn die DB nicht antwortet).
+const _ffm = locals.ffm
+const _cta = currentUser ? null : '/login'
+const _faq = [
+  ['Wie melde ich einen Falschparker in Frankfurt?',
+   'Akut – etwa bei zugeparkter Feuerwehrzufahrt oder blockiertem Gehweg – rufst du die Städtische Verkehrspolizei an (069 212-36360, Mo–Fr 7–22 Uhr, Sa 10–18 Uhr) oder außerhalb dieser Zeiten das Sicherheitstelefon der Stadtpolizei (069 212-44044, rund um die Uhr). Ist es nicht dringend, erstattest du im Nachhinein eine Anzeige mit Fotos beim Ordnungsamt – zum Beispiel kostenlos online mit dem OWiA-Anzeiger.'],
+  ['Welche Nummer hat die Verkehrspolizei Frankfurt?',
+   'Die Städtische Verkehrspolizei Frankfurt erreichst du unter 069 212-36360 (Mo–Fr 7–22 Uhr, Sa 10–18 Uhr) und per E-Mail an verkehrspolizei@stadt-frankfurt.de. Sie ist für den ruhenden Verkehr zuständig und kann Fahrzeuge abschleppen lassen.'],
+  ['Wen rufe ich nachts oder am Sonntag an?',
+   'Außerhalb der Dienstzeiten der Verkehrspolizei ist das Sicherheitstelefon der Stadtpolizei unter 069 212-44044 rund um die Uhr erreichbar. Ist auch dort niemand verfügbar, hilft die Polizei Frankfurt unter 069 755-0. Bei unmittelbarer Gefahr wählst du 110.'],
+  ['Kann ich Falschparker in Frankfurt online anzeigen?',
+   'Ja. Mit dem OWiA-Anzeiger lädst du Fotos hoch, Tatort und Uhrzeit werden aus den Bildern übernommen, du wählst den Verstoß – und die Anzeige geht über das Online-Formular der Stadt an das Ordnungsamt Frankfurt. Du bekommst eine Bestätigung mit allen übermittelten Angaben.'],
+  ['Was kostet es, einen Falschparker anzuzeigen?',
+   'Nichts. Die Anzeige ist für dich als Zeugin oder Zeuge kostenlos – beim Ordnungsamt genauso wie beim OWiA-Anzeiger.'],
+  ['Wie hoch ist das Bußgeld fürs Parken auf dem Gehweg?',
+   'Laut bundesweitem Bußgeldkatalog kostet Parken auf dem Gehweg ' + (locals.bussgelder?.[0]?.ohne ? locals.bussgelder[0].ohne + ' €' : 'ein Verwarnungsgeld') + (locals.bussgelder?.[0]?.mit ? ', mit Behinderung anderer ' + locals.bussgelder[0].mit + ' €' : '') + '. Über die Höhe im Einzelfall entscheidet das Ordnungsamt.'],
+  ['Bleibe ich bei einer Anzeige anonym?',
+   'Gegenüber dem Ordnungsamt nicht: Anonyme Anzeigen werden nicht bearbeitet, du wirst als Zeugin oder Zeuge mit Name und Anschrift benannt. Auf den öffentlichen Seiten des OWiA-Anzeigers erscheinen dagegen keine personenbezogenen Daten.'],
+  ['Wie lange habe ich Zeit für die Anzeige?',
+   'Reiche die Anzeige zeitnah ein: Das Online-Formular der Stadt Frankfurt nimmt nur Verstöße der letzten zwei Monate an, und Parkverstöße verjähren nach drei Monaten. Der OWiA-Anzeiger zeigt dir bei jedem Entwurf, wie viel Zeit noch bleibt.'],
+  ['Welche Fotos brauche ich als Beweis?',
+   'Ein Übersichtsfoto, das die Situation zeigt (Gehweg, Radweg, Schild oder Markierung), und eine Nahaufnahme mit gut lesbarem Kennzeichen. Mehrere Fotos im Abstand von einigen Minuten belegen, wie lange das Fahrzeug stand.'],
+  ['Darf ich einen Zettel an die Scheibe kleben?',
+   'Besser nicht: Kleber, die sich schwer lösen lassen, können als Sachbeschädigung gelten, und Diskussionen vor Ort eskalieren schnell. Melde den Verstoß lieber bei der Verkehrspolizei oder erstatte eine Anzeige.'],
+]
+%>
 <div class="row justify-content-center">
-  <div class="col-lg-9">
-    <h1 class="h3 mb-2">Zugeparkte Feuerwehrzufahrt in Frankfurt melden</h1>
-    <p class="text-muted mb-4">
-      Wen du anrufst, wenn ein Falschparker <strong>jetzt</strong> eine Gefahr ist –
-      Feuerwehrzufahrt, Rettungsweg, blockierter Gehweg oder Radweg.
-    </p>
+  <article class="col-lg-9 seo-page">
+    <nav aria-label="Brotkrümelnavigation" class="small mb-3">
+      <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="/">Startseite</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Falschparker melden in Frankfurt</li>
+      </ol>
+    </nav>
 
-    <h2 class="h5 mb-3">Die richtigen Nummern</h2>
-    <div class="row g-3 mb-4">
-      <div class="col-md-6">
-        <div class="card h-100 shadow-sm"><div class="card-body">
-          <h3 class="h6 mb-1">Städtische Verkehrspolizei</h3>
-          <p class="small text-muted mb-2">
-            Zuständig für Falschparker („ruhender Verkehr“). Kann Fahrzeuge
-            abschleppen lassen.
-          </p>
-          <a href="tel:+496921236360" class="fs-5 fw-semibold text-decoration-none">069 212-36360</a>
-          <ul class="small mb-0 mt-2 ps-3">
-            <li>Mo–Fr 7–22 Uhr, Sa 10–18 Uhr</li>
-            <li>E-Mail: <a href="mailto:verkehrspolizei@stadt-frankfurt.de">verkehrspolizei@stadt-frankfurt.de</a></li>
-          </ul>
+    <header class="hero mb-4 text-start">
+      <span class="hero-kicker">Frankfurt am Main · Stand <%= locals.stand?.text %></span>
+      <h1 class="display-6 fw-bold mb-3">Falschparker in Frankfurt melden</h1>
+      <p class="lead text-body-secondary mb-4">
+        Feuerwehrzufahrt zugeparkt, Auto auf dem Gehweg oder Radweg? Hier findest du
+        die richtigen Nummern der <strong>Verkehrspolizei Frankfurt</strong> für den Notfall –
+        und wie du Falschparker im Nachhinein <strong>kostenlos online beim Ordnungsamt anzeigst</strong>.
+      </p>
+      <div class="row g-2">
+        <div class="col-sm-6">
+          <a href="tel:+496921236360" class="seo-cta seo-cta-call">
+            <span class="seo-cta-label">Akut? Jetzt anrufen</span>
+            <span class="seo-cta-value">069 212-36360</span>
+            <span class="seo-cta-sub">Verkehrspolizei · nachts: 069 212-44044</span>
+          </a>
+        </div>
+        <div class="col-sm-6">
+          <% if (_cta) { %>
+            <a href="<%= _cta %>" class="seo-cta seo-cta-online">
+              <span class="seo-cta-label">Nicht dringend?</span>
+              <span class="seo-cta-value">Online anzeigen</span>
+              <span class="seo-cta-sub">kostenlos, mit Fotos, in 2 Minuten</span>
+            </a>
+          <% } else { %>
+            <form method="post" action="/anzeige/neu" class="m-0 h-100">
+              <button type="submit" class="seo-cta seo-cta-online w-100">
+                <span class="seo-cta-label">Nicht dringend?</span>
+                <span class="seo-cta-value">Online anzeigen</span>
+                <span class="seo-cta-sub">kostenlos, mit Fotos, in 2 Minuten</span>
+              </button>
+            </form>
+          <% } %>
+        </div>
+      </div>
+    </header>
+
+    <nav class="seo-toc mb-5" aria-label="Inhalt">
+      <strong class="d-block mb-2">Auf dieser Seite</strong>
+      <ol class="mb-0">
+        <li><a href="#nummern">Telefonnummern: Verkehrspolizei, Stadtpolizei, Polizei</a></li>
+        <li><a href="#dringend">Wann du sofort anrufen solltest</a></li>
+        <li><a href="#anruf">So läuft der Anruf</a></li>
+        <li><a href="#online">Falschparker online anzeigen</a></li>
+        <li><a href="#bussgeld">Bußgelder für Falschparker</a></li>
+        <li><a href="#fotos">Die richtigen Beweisfotos</a></li>
+        <li><a href="#faq">Häufige Fragen</a></li>
+      </ol>
+    </nav>
+
+    <section id="nummern" class="mb-5">
+      <h2>Telefonnummern: Wen rufe ich in Frankfurt an?</h2>
+      <p>
+        Für Falschparker („ruhender Verkehr“) ist in Frankfurt zuerst die
+        <strong>Städtische Verkehrspolizei</strong> zuständig. Außerhalb ihrer Dienstzeiten übernimmt
+        die <strong>Stadtpolizei</strong> des Ordnungsamts, danach die Landespolizei.
+      </p>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="card h-100 shadow-sm"><div class="card-body">
+            <h3 class="h6 mb-1">Städtische Verkehrspolizei Frankfurt</h3>
+            <p class="small text-muted mb-2">
+              Zuständig für Falschparker. Kann Fahrzeuge abschleppen lassen.
+            </p>
+            <a href="tel:+496921236360" class="fs-5 fw-semibold text-decoration-none">069 212-36360</a>
+            <ul class="small mb-0 mt-2 ps-3">
+              <li>Mo–Fr 7–22 Uhr, Sa 10–18 Uhr</li>
+              <li>E-Mail: <a href="mailto:verkehrspolizei@stadt-frankfurt.de">verkehrspolizei@stadt-frankfurt.de</a></li>
+            </ul>
+          </div></div>
+        </div>
+        <div class="col-md-6">
+          <div class="card h-100 shadow-sm"><div class="card-body">
+            <h3 class="h6 mb-1">Stadtpolizei – Sicherheitstelefon</h3>
+            <p class="small text-muted mb-2">
+              Ordnungsamt, rund um die Uhr besetzt – auch abends, nachts und
+              sonntags, wenn die Verkehrspolizei nicht im Dienst ist.
+            </p>
+            <a href="tel:+496921244044" class="fs-5 fw-semibold text-decoration-none">069 212-44044</a>
+            <ul class="small mb-0 mt-2 ps-3"><li>24 Stunden, 7 Tage</li></ul>
+          </div></div>
+        </div>
+        <div class="col-md-6">
+          <div class="card h-100 shadow-sm"><div class="card-body">
+            <h3 class="h6 mb-1">Polizei Frankfurt (Schutzpolizei)</h3>
+            <p class="small text-muted mb-2">
+              Übernimmt, wenn Verkehrs- und Stadtpolizei nicht erreichbar sind –
+              bei unmittelbarer Gefahr direkt 110.
+            </p>
+            <a href="tel:+49697550" class="fs-5 fw-semibold text-decoration-none">069 755-0</a>
+            <span class="text-muted mx-1">·</span>
+            <a href="tel:110" class="fs-5 fw-semibold text-decoration-none">110</a>
+            <ul class="small mb-0 mt-2 ps-3">
+              <li>069 755-0: Zentrale des Polizeipräsidiums, 24/7</li>
+              <li>110: Notruf, nur bei unmittelbarer Gefahr</li>
+            </ul>
+          </div></div>
+        </div>
+        <div class="col-md-6">
+          <div class="card h-100 shadow-sm border-primary-subtle"><div class="card-body">
+            <h3 class="h6 mb-1">Nicht dringend?</h3>
+            <p class="small text-muted mb-2">
+              Steht niemand akut im Weg, reicht eine Anzeige im Nachhinein – mit
+              Fotos, Ort und Uhrzeit. Das geht auch Stunden oder Tage später.
+            </p>
+            <a href="#online" class="btn btn-primary btn-sm">So zeigst du online an</a>
+          </div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="dringend" class="mb-5">
+      <h2>Wann du sofort anrufen solltest</h2>
+      <p>Ein Anruf lohnt sich, wenn das Fahrzeug andere <strong>gefährdet oder behindert</strong>, zum Beispiel:</p>
+      <ul>
+        <li><strong>Feuerwehrzufahrt oder Feuerwehr-Aufstellfläche</strong> zugeparkt (Schild „Feuerwehrzufahrt“, rot-weiße Markierung)</li>
+        <li><strong>Rettungsweg</strong> zu eng: Drehleiter oder Löschfahrzeug kommen nicht durch (Faustregel: unter ca. 3 m Restbreite)</li>
+        <li><strong>Gehweg</strong> so zugestellt, dass Rollstuhl, Kinderwagen oder Rollator auf die Fahrbahn müssen</li>
+        <li><strong>Radweg oder Schutzstreifen</strong> blockiert, Radfahrende müssen in den fließenden Verkehr ausweichen</li>
+        <li><strong>Kreuzung, Kurve oder abgesenkter Bordstein</strong> zugeparkt – Sichtbehinderung, Querung unmöglich</li>
+        <li><strong>Grundstücks- oder Garagenausfahrt</strong> blockiert, du kommst nicht raus</li>
+        <li><strong>Behindertenparkplatz</strong> ohne Ausweis belegt</li>
+        <li><strong>Bushaltestelle</strong> zugeparkt, der Bus kann nicht anfahren</li>
+      </ul>
+    </section>
+
+    <section id="anruf" class="mb-5">
+      <h2>So läuft der Anruf bei der Verkehrspolizei</h2>
+      <ol class="seo-steps">
+        <li>Sag gleich am Anfang das Stichwort <strong>„Verkehrsbehinderung“</strong> (bzw. „Feuerwehrzufahrt blockiert“). Dann wird eine Streife geschickt statt nur notiert.</li>
+        <li><strong>Genaue Adresse</strong>: Straße, Hausnummer, ggf. Einfahrt oder Hinterhof.</li>
+        <li><strong>Fahrzeug</strong>: Kennzeichen, Marke, Farbe.</li>
+        <li><strong>Was genau blockiert ist</strong> und seit wann (z. B. „steht seit 20 Uhr in der Feuerwehrzufahrt, Zufahrt komplett zu“).</li>
+        <li>Deinen Namen und eine Rückrufnummer.</li>
+      </ol>
+      <p class="small text-muted mb-0">
+        Ob abgeschleppt wird, entscheidet die Behörde vor Ort. Bei blockierten Feuerwehrzufahrten
+        ist Abschleppen in der Regel verhältnismäßig.
+      </p>
+    </section>
+
+    <section id="online" class="mb-5">
+      <h2>Falschparker in Frankfurt online anzeigen</h2>
+      <p>
+        Nicht jeder Falschparker ist ein Notfall – aber jeder darf angezeigt werden. Eine
+        <strong>Privatanzeige</strong> beim Ordnungsamt ist der Weg für alles, was nicht sofort
+        geräumt werden muss: das Dauerparken auf dem Gehweg vor deiner Haustür, der zugestellte
+        Radweg auf dem Weg zur Arbeit, das Auto im Halteverbot an der Kita.
+      </p>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4"><div class="step-card h-100">
+          <div class="step-icon" aria-hidden="true">📸</div>
+          <h3 class="h6 mb-1">1. Fotos hochladen</h3>
+          <p class="small text-body-secondary mb-0">Tatort und Uhrzeit liest der OWiA-Anzeiger aus den Bildern, das Kennzeichen erkennt er automatisch.</p>
+        </div></div>
+        <div class="col-md-4"><div class="step-card h-100">
+          <div class="step-icon" aria-hidden="true">📝</div>
+          <h3 class="h6 mb-1">2. Verstoß wählen</h3>
+          <p class="small text-body-secondary mb-0">Gehweg, Radweg, Feuerwehrzufahrt, Halteverbot – mit den Tatbeständen aus dem Bußgeldkatalog.</p>
+        </div></div>
+        <div class="col-md-4"><div class="step-card h-100">
+          <div class="step-icon" aria-hidden="true">📮</div>
+          <h3 class="h6 mb-1">3. Ans Ordnungsamt</h3>
+          <p class="small text-body-secondary mb-0">Die Anzeige geht über das Online-Formular der Stadt ans Ordnungsamt Frankfurt. Du bekommst eine Bestätigung.</p>
         </div></div>
       </div>
-      <div class="col-md-6">
-        <div class="card h-100 shadow-sm"><div class="card-body">
-          <h3 class="h6 mb-1">Stadtpolizei – Sicherheitstelefon</h3>
-          <p class="small text-muted mb-2">
-            Ordnungsamt, rund um die Uhr besetzt – auch abends, nachts und
-            sonntags, wenn die Verkehrspolizei nicht im Dienst ist.
-          </p>
-          <a href="tel:+496921244044" class="fs-5 fw-semibold text-decoration-none">069 212-44044</a>
-          <ul class="small mb-0 mt-2 ps-3">
-            <li>24/7</li>
-          </ul>
-        </div></div>
-      </div>
-      <div class="col-md-6">
-        <div class="card h-100 shadow-sm"><div class="card-body">
-          <h3 class="h6 mb-1">Polizei Frankfurt (Schutzpolizei)</h3>
-          <p class="small text-muted mb-2">
-            Rund um die Uhr. Übernimmt, wenn Verkehrs- und Stadtpolizei nicht
-            erreichbar sind – bei unmittelbarer Gefahr direkt 110.
-          </p>
-          <a href="tel:+49697550" class="fs-5 fw-semibold text-decoration-none">069 755-0</a>
-          <span class="text-muted mx-1">·</span>
-          <a href="tel:110" class="fs-5 fw-semibold text-decoration-none">110</a>
-          <ul class="small mb-0 mt-2 ps-3">
-            <li>069 755-0: Zentrale des Polizeipräsidiums, 24/7</li>
-            <li>110: Notruf, nur bei unmittelbarer Gefahr</li>
-          </ul>
-        </div></div>
-      </div>
-      <div class="col-md-6">
-        <div class="card h-100 shadow-sm"><div class="card-body">
-          <h3 class="h6 mb-1">Nicht dringend?</h3>
-          <p class="small text-muted mb-2">
-            Steht niemand akut im Weg, reicht eine Anzeige im Nachhinein –
-            mit Fotos, Ort und Uhrzeit.
-          </p>
-          <a href="/" class="btn btn-outline-primary btn-sm">Anzeige mit dem OWiA-Anzeiger erstellen</a>
-        </div></div>
-      </div>
-    </div>
+      <% if (_ffm && _ffm.total > 0) { %>
+        <p class="small">
+          Bisher wurden über den OWiA-Anzeiger <strong><%= h.zahl(_ffm.total) %> Anzeigen</strong> an das
+          Ordnungsamt Frankfurt übermittelt<% if (_ffm.last30) { %>, davon <%= h.zahl(_ffm.last30) %> zu Verstößen der letzten 30 Tage<% } %>.
+          Wo, siehst du auf der <a href="/">anonymisierten Karte</a> und in der <a href="/statistik">Statistik</a>.
+        </p>
+      <% } %>
+      <% if (_cta) { %>
+        <a href="<%= _cta %>" class="btn btn-primary">Kostenlos anmelden &amp; Falschparker anzeigen</a>
+      <% } else { %>
+        <form method="post" action="/anzeige/neu" class="m-0 d-inline">
+          <button type="submit" class="btn btn-primary">+ Neue Anzeige erstatten</button>
+        </form>
+      <% } %>
+    </section>
 
-    <h2 class="h5 mb-3">Wann ist es dringend?</h2>
-    <p class="small mb-2">Ein Anruf lohnt sich, wenn das Fahrzeug andere gefährdet oder behindert, z.B.:</p>
-    <ul class="small mb-4">
-      <li><strong>Feuerwehrzufahrt oder Feuerwehr-Aufstellfläche</strong> zugeparkt (Schild „Feuerwehrzufahrt“, rot-weiße Markierung)</li>
-      <li><strong>Rettungsweg</strong> zu eng: Drehleiter oder Löschfahrzeug kommen nicht durch (Faustregel: unter ca. 3 m Restbreite)</li>
-      <li><strong>Gehweg</strong> so zugestellt, dass Rollstuhl, Kinderwagen oder Rollator auf die Fahrbahn müssen</li>
-      <li><strong>Radweg oder Schutzstreifen</strong> blockiert, Radfahrende müssen in den fließenden Verkehr ausweichen</li>
-      <li><strong>Kreuzung, Kurve oder abgesenkter Bordstein</strong> zugeparkt – Sichtbehinderung, Querung unmöglich</li>
-      <li><strong>Grundstücks- oder Garagenausfahrt</strong> blockiert, du kommst nicht raus</li>
-      <li><strong>Behindertenparkplatz</strong> ohne Ausweis belegt</li>
-      <li><strong>Haltestelle</strong> zugeparkt, der Bus kann nicht anfahren</li>
-    </ul>
+    <% if ((locals.bussgelder || []).length) { %>
+    <section id="bussgeld" class="mb-5">
+      <h2>Bußgelder für Falschparker (Auszug)</h2>
+      <p>
+        Die Regelsätze stehen im bundesweiten Bußgeldkatalog und gelten in Frankfurt wie überall in
+        Deutschland. Behindert das Fahrzeug andere, steigt der Betrag.
+      </p>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle seo-table">
+          <thead>
+            <tr><th scope="col">Verstoß</th><th scope="col" class="text-end">Regelsatz</th><th scope="col" class="text-end">mit Behinderung</th></tr>
+          </thead>
+          <tbody>
+            <% for (const b of bussgelder) { %>
+              <tr>
+                <td><%= b.label %></td>
+                <td class="text-end text-nowrap"><%= h.eur(b.ohne) %></td>
+                <td class="text-end text-nowrap"><%= b.mit !== null ? h.eur(b.mit) : '–' %></td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+      <p class="small text-muted mb-0">
+        Quelle: Bundeseinheitlicher Tatbestandskatalog (KBA). Über den Betrag im Einzelfall entscheidet
+        die Bußgeldbehörde. Mehr Zahlen in der <a href="/statistik">Statistik</a>.
+      </p>
+    </section>
+    <% } %>
 
-    <h2 class="h5 mb-3">So läuft der Anruf</h2>
-    <ol class="small mb-4">
-      <li>
-        Sag gleich am Anfang das Stichwort <strong>„Verkehrsbehinderung“</strong>
-        (bzw. „Feuerwehrzufahrt blockiert“). Dann wird eine Streife geschickt statt
-        nur notiert.
-      </li>
-      <li><strong>Genaue Adresse</strong>: Straße, Hausnummer, ggf. Einfahrt/Hinterhof.</li>
-      <li><strong>Fahrzeug</strong>: Kennzeichen, Marke, Farbe.</li>
-      <li><strong>Was genau blockiert ist</strong> und seit wann (z.B. „steht seit 20 Uhr in der Feuerwehrzufahrt, Zufahrt komplett zu“).</li>
-      <li>Deinen Namen und eine Rückrufnummer.</li>
-    </ol>
+    <section id="fotos" class="mb-5">
+      <h2>Die richtigen Beweisfotos</h2>
+      <ul>
+        <li><strong>Übersicht</strong>: Fahrzeug samt Umgebung – Gehweg, Radweg, Schild oder Markierung müssen erkennbar sein.</li>
+        <li><strong>Kennzeichen</strong>: eine Nahaufnahme, auf der es gut lesbar ist.</li>
+        <li><strong>Dauer</strong>: steht das Auto länger, ein zweites Foto einige Minuten später.</li>
+        <li><strong>Behinderung</strong>: zeigt ein Foto, dass z. B. ein Kinderwagen nicht vorbeikommt, wird das höhere Bußgeld fällig.</li>
+        <li><strong>Datenschutz</strong>: Personen auf den Bildern lassen sich im OWiA-Anzeiger vor dem Absenden schwärzen.</li>
+      </ul>
+      <p class="mb-0">
+        <strong>Nicht selbst eingreifen:</strong> Kein Zettel an der Scheibe, keine Diskussion vor Ort –
+        das ist Aufgabe der Behörden.
+      </p>
+    </section>
 
-    <h2 class="h5 mb-3">Tipps</h2>
-    <ul class="small mb-4">
-      <li>
-        <strong>Fotos machen</strong> – Kennzeichen und Situation (Schild, Markierung,
-        Restbreite) sichtbar. So kannst du später noch Anzeige erstatten, falls
-        niemand kommt.
-      </li>
-      <li>
-        <strong>Nicht selbst eingreifen.</strong> Kein Zettel an der Scheibe, keine
-        Diskussion vor Ort – das ist Aufgabe der Behörden.
-      </li>
-      <li>
-        <strong>Verkehrspolizei nicht erreichbar?</strong> Außerhalb der Dienstzeiten
-        oder bei langer Wartezeit: Stadtpolizei (069 212-44044), danach Polizei (069 755-0).
-      </li>
-      <li>
-        Ob abgeschleppt wird, entscheidet die Behörde vor Ort. Bei blockierten
-        Feuerwehrzufahrten ist Abschleppen in der Regel verhältnismäßig.
-      </li>
-    </ul>
+    <section class="mb-5">
+      <h2>In allen Frankfurter Stadtteilen</h2>
+      <p class="mb-0">
+        Ob in der Innenstadt, in Sachsenhausen, Bornheim, im Nordend, Ostend oder Westend, in
+        Bockenheim, im Gallus, in Höchst oder Niederrad: Zuständig ist immer das Ordnungsamt der
+        Stadt Frankfurt am Main mit der Städtischen Verkehrspolizei. Der OWiA-Anzeiger ordnet den
+        Tatort anhand der Adresse automatisch der richtigen Behörde zu – auch in den
+        <a href="/">weiteren unterstützten Städten</a> wie Wiesbaden, Mainz oder Hamburg.
+      </p>
+    </section>
+
+    <section id="faq" class="mb-5">
+      <h2>Häufige Fragen zum Falschparker melden in Frankfurt</h2>
+      <div class="accordion" id="faq-ffm">
+        <% _faq.forEach(([q, a], i) => { %>
+          <div class="accordion-item">
+            <h3 class="accordion-header">
+              <button class="accordion-button <%= i ? 'collapsed' : '' %>" type="button" data-bs-toggle="collapse"
+                      data-bs-target="#faq-ffm-<%= i %>" aria-expanded="<%= i ? 'false' : 'true' %>" aria-controls="faq-ffm-<%= i %>"><%= q %></button>
+            </h3>
+            <div id="faq-ffm-<%= i %>" class="accordion-collapse collapse <%= i ? '' : 'show' %>" data-bs-parent="#faq-ffm">
+              <div class="accordion-body"><%= a %></div>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+    </section>
 
     <p class="text-muted small mb-0">
-      Angaben ohne Gewähr, Stand Oktober 2026. Rufnummern und Dienstzeiten können sich
+      Angaben ohne Gewähr, Stand <%= locals.stand?.text %>. Rufnummern und Dienstzeiten können sich
       ändern – maßgeblich sind die Angaben auf
       <a href="https://frankfurt.de" target="_blank" rel="noopener">frankfurt.de</a>.
       Der OWiA-Anzeiger ist ein privates Angebot und kein offizielles Angebot der
       Stadt Frankfurt am Main.
     </p>
-  </div>
+
+    <%# Strukturierte Daten: Seite + Brotkrümel + FAQ (gleiche Texte wie oben). %>
+    <script type="application/ld+json"><%- JSON.stringify({
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'WebPage',
+          '@id': (locals.canonical || '') + '#webpage',
+          url: locals.canonical || '',
+          name: locals.pageTitle || title,
+          description: locals.metaDescription || '',
+          inLanguage: 'de-DE',
+          dateModified: locals.stand?.iso,
+          about: { '@type': 'City', name: 'Frankfurt am Main', sameAs: 'https://www.wikidata.org/wiki/Q1794' },
+          breadcrumb: { '@id': (locals.canonical || '') + '#breadcrumb' },
+          isPartOf: { '@type': 'WebSite', name: 'OWiA-Anzeiger', url: (locals.appUrl || '') + '/' },
+        },
+        {
+          '@type': 'BreadcrumbList',
+          '@id': (locals.canonical || '') + '#breadcrumb',
+          itemListElement: [
+            { '@type': 'ListItem', position: 1, name: 'Startseite', item: (locals.appUrl || '') + '/' },
+            { '@type': 'ListItem', position: 2, name: 'Falschparker melden in Frankfurt', item: locals.canonical || '' },
+          ],
+        },
+        {
+          '@type': 'FAQPage',
+          mainEntity: _faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+        },
+      ],
+    }).replace(/</g, '\\u003c') %></script>
+  </article>
 </div>

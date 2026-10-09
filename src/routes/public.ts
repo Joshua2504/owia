@@ -13,6 +13,7 @@ import { isValidEmail, normalizeEmail } from './auth'
 import { MailService } from '../services/mail'
 import { createChallenge, verifyCaptcha } from '../services/captcha'
 import { huPlaketten } from '../services/huPlakette'
+import { LANDING_FFM, LANDING_STAND } from './legal'
 
 // Öffentliche, anonyme Übersicht aller versendeter Anzeigen auf einer Karte.
 // Bewusst ohne Auth: Startseite und Daten sind öffentlich sichtbar. Es werden
@@ -223,9 +224,14 @@ export default async function publicRoutes(app: FastifyInstance) {
         'Allow: /impressum',
         'Allow: /datenschutz',
         'Allow: /nutzungsbedingungen',
-        'Allow: /falschparker-melden',
+        `Allow: ${LANDING_FFM}`,
+        'Allow: /falschparker-melden$',
         'Allow: /statistik',
         'Allow: /analyse',
+        // CSS/JS/Icons: Google rendert Seiten mit – ohne Stylesheets gelten
+        // sie als nicht mobilfreundlich.
+        'Allow: /public/',
+        'Allow: /favicon.ico',
         'Disallow: /',
         `Sitemap: ${appUrl}/sitemap.xml`,
         '',
@@ -235,11 +241,13 @@ export default async function publicRoutes(app: FastifyInstance) {
 
   app.get('/sitemap.xml', async (_request, reply) => {
     const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
-    const urls = ['/', '/login', '/impressum', '/datenschutz', '/nutzungsbedingungen', '/falschparker-melden', '/statistik', '/analyse']
+    const urls = ['/', LANDING_FFM, '/statistik', '/analyse', '/login', '/impressum', '/datenschutz', '/nutzungsbedingungen']
+    // lastmod nur, wo der Stand gepflegt wird (Landingpage, legal.ts STAND).
+    const lastmod: Record<string, string> = { [LANDING_FFM]: LANDING_STAND }
     const xml = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-      ...urls.map((u) => `  <url><loc>${appUrl}${u}</loc></url>`),
+      ...urls.map((u) => `  <url><loc>${appUrl}${u}</loc>${lastmod[u] ? `<lastmod>${lastmod[u]}</lastmod>` : ''}</url>`),
       '</urlset>',
       '',
     ].join('\n')

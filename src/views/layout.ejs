@@ -22,6 +22,8 @@
     <% if (locals.canonical) { %>
       <meta property="og:url" content="<%= canonical %>">
       <link rel="canonical" href="<%= canonical %>">
+      <%# Vorschaubild für Messenger/soziale Netze (App-Icon, absolute URL nötig). %>
+      <meta property="og:image" content="<%= new URL(canonical).origin %>/public/icons/icon-512.png">
     <% } %>
     <meta name="twitter:card" content="summary">
   <% } %>
@@ -148,7 +150,7 @@
       <nav aria-label="Rechtliches und Informationen">
         <a href="/statistik">Statistik</a>
         <a href="/analyse">Analyse</a>
-        <a href="/falschparker-melden">Feuerwehrzufahrt zugeparkt?</a>
+        <a href="/falschparker-melden-frankfurt">Falschparker melden in Frankfurt</a>
         <a href="/impressum">Impressum</a>
         <a href="/datenschutz">Datenschutz</a>
         <a href="/nutzungsbedingungen">Nutzungsbedingungen</a>

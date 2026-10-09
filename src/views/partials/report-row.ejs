@@ -18,7 +18,6 @@
 // PATCH /anzeige/:az/felder). Erwartet dafür fahrzeugTypen (defaultContext in
 // server.ts bzw. explizit bei ejs.renderFile); die Datalists fz-marken/fz-farben
 // stellt report-table.ejs bereit.
-const _fmtDate = (d) => h.fmtDate(d)
 const _hhmm = h.hhmm
 const _queue = queueId ? '?queue=' + queueId : ''
 const _isDraft = r.status === 'entwurf'
