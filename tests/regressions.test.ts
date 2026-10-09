@@ -36,6 +36,7 @@ import { assertProductionMailConfig } from '../src/config/mail'
 import view from '@fastify/view'
 import { PDFDocument } from 'pdf-lib'
 import stickerRoutes from '../src/routes/sticker'
+import stickerTestRoutes from '../src/routes/stickerTest'
 import { viewHelpers } from '../src/views/helpers'
 import {
   createBatch, linkCode, unlinkCode, voidOpenCodes, normalizeCode, parseLayout, renderBatchPdf,
@@ -92,8 +93,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0047_marke_volkswagen.sql')
-  assert.equal(rows.length, 47)
+  assert.equal(rows.at(-1)?.filename, '0048_sticker_entwurf_favoriten.sql')
+  assert.equal(rows.length, 48)
 })
 
 test('Versand-Takt: höchstens ein Versand je VERSAND_ABSTAND_SEK, Freigabe gibt den Platz zurück', async () => {
@@ -709,6 +710,52 @@ test('Sticker: Kontingent, Verknüpfen, Lösen und Code-Normalisierung', async (
 
   const pdf = await PDFDocument.load(await renderBatchPdf(codes, layout, 'https://owia.example'))
   assert.equal(pdf.getPageCount(), 2)
+})
+
+test('Sticker-Entwürfe: Favoriten nur angemeldet, je Nutzer, stehen oben', async () => {
+  const [u] = await pool.execute<mysql.ResultSetHeader>("INSERT INTO users(email) VALUES ('sticker-favorit@example.invalid')")
+  let viewer: number | undefined = u.insertId
+  const app = Fastify()
+  await app.register(cookie)
+  await app.register(formbody)
+  await app.register(view, {
+    engine: { ejs },
+    root: path.join(process.cwd(), 'src', 'views'),
+    layout: '/layout.ejs',
+    defaultContext: { isAdmin: false, h: viewHelpers, verjaehrung },
+  })
+  app.addHook('preHandler', async request => { request.session = { userId: viewer } as typeof request.session })
+  await app.register(stickerTestRoutes)
+  const favorit = (slug: string) => app.inject({
+    method: 'POST', url: '/sticker-test/favorit', payload: `slug=${slug}`,
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  })
+  const kartenIds = (html: string) => [...html.matchAll(/class="card h-100[^"]*" id="([^"]+)"/g)].map(m => m[1])
+  try {
+    const leer = await app.inject({ method: 'GET', url: '/sticker-test' })
+    assert.equal(leer.statusCode, 200)
+    assert.equal(kartenIds(leer.body).length, 50)
+    assert.equal(kartenIds(leer.body)[0], 'sachlich-ordnungsamt')
+
+    assert.equal((await favorit('zeitung')).headers.location, '/sticker-test#zeitung')
+    await favorit('minimal')
+    const mit = await app.inject({ method: 'GET', url: '/sticker-test' })
+    assert.deepEqual(kartenIds(mit.body).slice(0, 2), ['minimal', 'zeitung'])
+    assert.equal(kartenIds(mit.body).length, 50)
+
+    await favorit('zeitung') // zweiter Klick nimmt den Favoriten zurück
+    assert.deepEqual((await query('SELECT slug FROM sticker_entwurf_favoriten WHERE user_id=?', [u.insertId])).map(r => r.slug), ['minimal'])
+    assert.equal((await favorit('gibt-es-nicht')).statusCode, 400)
+
+    viewer = undefined
+    const anonym = await favorit('minimal')
+    assert.equal(anonym.headers.location, '/login?weiter=/sticker-test')
+    const seite = await app.inject({ method: 'GET', url: '/sticker-test' })
+    assert.equal(kartenIds(seite.body)[0], 'sachlich-ordnungsamt', 'Favoriten anderer Nutzer bleiben privat')
+    assert.ok(!seite.body.includes('/sticker-test/favorit'))
+  } finally {
+    await app.close()
+  }
 })
 
 test('Sticker-Seite zeigt Fremden nur öffentliche Angaben und zählt nur deren Aufrufe', async () => {

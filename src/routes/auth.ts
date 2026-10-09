@@ -28,8 +28,9 @@ function baseUrl(request: FastifyRequest): string {
 // Handy-Kamera scannt, landet ausgeloggt auf /S/<code> (iOS: die installierte
 // PWA hat einen eigenen Cookie-Speicher). Nur fest bekannte Pfade sind erlaubt –
 // kein Open Redirect. Cookie statt Session, weil der Login die Session neu
-// erzeugt (Session-Fixation-Schutz). Außerdem /kamera, die Startseite der PWA.
-const WEITER_RE = /^(?:\/S\/[0-9A-Z]{8}|\/kamera)$/
+// erzeugt (Session-Fixation-Schutz). Außerdem /kamera, die Startseite der PWA,
+// und /sticker-test (Favoriten nur angemeldet).
+const WEITER_RE = /^(?:\/S\/[0-9A-Z]{8}|\/kamera|\/sticker-test)$/
 
 function afterLogin(request: FastifyRequest, reply: FastifyReply): string {
   const weiter = (request.cookies as Record<string, string | undefined>)?.weiter

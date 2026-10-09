@@ -12,20 +12,25 @@
   .stk-s { font-size: 2.25cqw; line-height: 1.3; color: #444; }
   .stk-fine { font-size: 1.75cqw; line-height: 1.25; color: #555; }
   .stk-mark { background: #ffd400; color: #111; padding: 0 .5cqw; font-weight: 800; white-space: nowrap; }
+  .stk-mark-sw { font-weight: 800; white-space: nowrap; border-bottom: .5cqw solid #111; }
   .stk-bar { width: 7.6cqw; height: 1cqw; background: #ffd400; }
   .stk-qr { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1cqw; }
   .stk-qr svg { width: 24cqw; height: 24cqw; display: block; background: #fff; fill: #000; }
   .stk-code { font-family: "Courier New", ui-monospace, monospace; font-weight: 700; font-size: 1.9cqw; color: #333; white-space: nowrap; }
   .stk-rev { flex-direction: row-reverse; }
   .stk-rev .stk-qr svg { width: 30cqw; height: 30cqw; }
+  .stk-qr-klein .stk-qr svg { width: 19cqw; height: 19cqw; }
 
   .stk-dunkel { background: #111; color: #fff; }
   .stk-dunkel .stk-s, .stk-dunkel .stk-fine { color: #c8c8c8; }
   .stk-dunkel .stk-code { color: #ddd; }
-  .stk-dunkel .stk-qr svg { border-radius: .6cqw; }
+  .stk-dunkel .stk-qr svg, .stk-gelb .stk-qr svg { border-radius: .6cqw; }
+  .stk-gelb-h { color: #ffd400; }
   .stk-gelb { background: #ffd400; }
   .stk-gelb .stk-s, .stk-gelb .stk-fine { color: #222; }
-  .stk-gelb .stk-qr svg { border-radius: .6cqw; }
+  .stk-leise { color: #333; }
+  .stk-leise .stk-p { font-size: 3cqw; line-height: 1.35; }
+  .stk-leise .stk-fine { color: #777; }
 
   /* Varianten mit Kopfband / Rahmen: .stk ohne Innenabstand, Inhalt in .stk-in */
   .stk-col { flex-direction: column; gap: 0; padding: 0; }
@@ -34,9 +39,11 @@
   .stk-warnband { padding: 2.2cqw; background: repeating-linear-gradient(-45deg, #111 0 2.2cqw, #ffd400 2.2cqw 4.4cqw); }
   .stk-warnband .stk-in { background: #fff; border-radius: .4cqw; padding: 2.2cqw 3cqw; }
 
-  .stk-preis { align-self: flex-start; background: #ffd400; padding: .4cqw 1.6cqw; font-size: 11cqw; font-weight: 900; line-height: 1; letter-spacing: -.03em; white-space: nowrap; }
+  .stk-preis { align-self: flex-start; background: #ffd400; color: #111; padding: .4cqw 1.6cqw; font-size: 11cqw; font-weight: 900; line-height: 1; letter-spacing: -.03em; white-space: nowrap; }
   .stk-stempel { align-self: flex-start; border: .7cqw solid #111; padding: .6cqw 2cqw; margin: 1cqw 0 0 .6cqw; font-size: 6.6cqw; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; transform: rotate(-4deg); }
   .stk-riesig { font-size: 9.5cqw; font-weight: 900; line-height: 1; letter-spacing: -.03em; }
+  .stk-gross { font-size: 6.4cqw; font-weight: 900; line-height: 1.02; letter-spacing: -.02em; }
+  .stk-einzeiler { font-size: 7.6cqw; font-weight: 900; letter-spacing: -.02em; white-space: nowrap; }
   .stk-kicker { font-size: 2.1cqw; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 
   .stk-beleg { font-family: "Courier New", ui-monospace, monospace; }
@@ -45,17 +52,43 @@
   .stk-zeile { display: flex; gap: 1cqw; font-size: 2.2cqw; align-items: baseline; }
   .stk-zeile .stk-pkt { flex: 1; border-bottom: .25cqw dotted #888; }
   .stk-zeile b { white-space: nowrap; }
+  .stk-zeilen-gross .stk-zeile { font-size: 3cqw; }
 
   .stk-liste { display: flex; flex-direction: column; gap: 1.2cqw; }
   .stk-cb { display: flex; align-items: center; gap: 1.4cqw; font-size: 2.7cqw; line-height: 1.2; }
   .stk-kasten { width: 3.2cqw; height: 3.2cqw; border: .45cqw solid #111; box-sizing: border-box; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
   .stk-kasten svg { width: 2.6cqw; height: 2.6cqw; fill: none; stroke: #111; stroke-width: 3.2; }
   .stk-num { width: 3.8cqw; height: 3.8cqw; border-radius: 50%; background: #111; color: #ffd400; font-weight: 800; font-size: 2.2cqw; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
-  .stk-zwei { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2.6cqw; }
-  .stk-zwei > div { display: flex; flex-direction: column; gap: 1cqw; }
-  .stk-zwei > div + div { border-left: .3cqw solid #111; padding-left: 2.6cqw; }
+  .stk-dot { width: 3.2cqw; height: 3.2cqw; border-radius: 50%; flex-shrink: 0; box-sizing: border-box; background: #1f8a3b; }
+  .stk-dot-offen { background: none; border: .5cqw solid #999; }
+  .stk-zwei, .stk-drei { display: grid; gap: 2.4cqw; }
+  .stk-zwei { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stk-drei { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.8cqw; }
+  .stk-zwei > div, .stk-drei > div { display: flex; flex-direction: column; gap: 1cqw; }
+  .stk-zwei > div + div, .stk-drei > div + div { border-left: .3cqw solid #111; padding-left: 2.2cqw; }
+  .stk-drei .stk-h { font-size: 3cqw; }
+  .stk-drei .stk-s { font-size: 2cqw; }
+
+  .stk-ikon { flex-shrink: 0; align-self: center; width: 17cqw; height: 17cqw; border-radius: 2cqw; background: #111; color: #ffd400; display: flex; align-items: center; justify-content: center; }
+  .stk-ikon svg { width: 13cqw; height: 13cqw; fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+  .stk-ikon-text { font-size: 13cqw; font-weight: 900; line-height: 1; stroke: none; }
+  .stk-ikon-gelb { background: #ffd400; color: #111; }
+  .stk-ikon-mini { width: 6cqw; height: 6cqw; border-radius: 1cqw; align-self: flex-start; }
+  .stk-ikon-mini svg { width: 4.6cqw; height: 4.6cqw; }
+  .stk-paragraf { flex-shrink: 0; align-self: center; font-family: Georgia, "Times New Roman", serif; font-size: 22cqw; line-height: .8; font-weight: 700; }
+
+  .stk-blase { position: relative; align-self: flex-start; background: #ececec; border-radius: 2cqw; padding: 1.2cqw 2.2cqw; font-size: 2.8cqw; font-style: italic; }
+  .stk-blase::after { content: ""; position: absolute; left: 3cqw; bottom: -1.6cqw; border: .9cqw solid transparent; border-top: 1cqw solid #ececec; border-left: 1cqw solid #ececec; }
+  .stk-abriss .stk-qr { border-left: .45cqw dashed #111; padding-left: 3cqw; }
+  .stk-zeitung .stk-h, .stk-zeitung .stk-p { font-family: Georgia, "Times New Roman", serif; }
+  .stk-zeitung .stk-h { font-size: 4.4cqw; font-weight: 700; letter-spacing: 0; }
+  .stk-zeitung .stk-kicker { border-top: .5cqw solid #111; border-bottom: .2cqw solid #111; padding: .5cqw 0; }
+  .stk-qa { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .9cqw 1.6cqw; font-size: 2.6cqw; line-height: 1.25; align-items: baseline; }
+  .stk-qa dt { font-weight: 800; }
+  .stk-qa dd { margin: 0; }
 
   .stk-nr { font-variant-numeric: tabular-nums; }
+  .stk-fav { white-space: nowrap; }
 </style>
 
 <%
@@ -64,309 +97,333 @@
   const haken = '<span class="stk-kasten"><svg viewBox="0 0 16 16"><path d="M3 8.5l3.2 3.2L13 4.5"/></svg></span>'
   const leer = '<span class="stk-kasten"></span>'
   const G = betrag.gehweg
+  const F = {
+    notiz: 'Bitte werfen Sie diese Notiz nicht auf den Boden.',
+    zettel: 'Bitte werfen Sie diesen Zettel nicht auf den Boden.',
+    blatt: 'Bitte werfen Sie dieses Blatt nicht auf den Boden.',
+    danke: 'Bitte nicht auf den Boden werfen. Danke!',
+    papier: 'Bitte nicht auf den Boden werfen – Altpapier ist um die Ecke.',
+  }
+  const ikon = {
+    fussgaenger: '<svg viewBox="0 0 48 48"><circle cx="25" cy="7" r="4"/><path d="M24 14l-3 13-6 15M21 27l8 6 2 9M23 18l-8 6M24 17l7 7 6 1"/></svg>',
+    fahrrad: '<svg viewBox="0 0 48 48"><circle cx="11" cy="32" r="8"/><circle cx="37" cy="32" r="8"/><path d="M11 32l8-14h13l5 14M19 18l7 14H11M15 13h7M32 18l-2-6h5"/></svg>',
+    rollstuhl: '<svg viewBox="0 0 48 48"><circle cx="19" cy="7" r="4"/><path d="M19 14v14h12l5 11h4M19 20h10"/><path d="M13 22a11 11 0 1 0 16 13"/></svg>',
+  }
+  // Grundform: Text links (Hauptteil + Kleingedrucktes), QR rechts.
+  const std = (inner, fine, cls = '') =>
+    `<div class="stk ${cls}"><div class="stk-text"><div class="stk-main">${inner}</div><p class="stk-fine">${fine}</p></div>${Q}</div>`
+  // Mit Kopfband bzw. Warnband-Rahmen.
+  const band = (titel, inner, fine) =>
+    `<div class="stk stk-col"><div class="stk-band">${titel}</div><div class="stk-in"><div class="stk-text"><div class="stk-main">${inner}</div><p class="stk-fine">${fine}</p></div>${Q}</div></div>`
+  // Piktogramm/Großzeichen links vom Text.
+  const links = (block, inner, fine, cls = '') =>
+    `<div class="stk ${cls}">${block}<div class="stk-text"><div class="stk-main">${inner}</div><p class="stk-fine">${fine}</p></div>${Q}</div>`
 
-  const S = [
-    { name: 'Sachlich – Ordnungsamt', idee: 'Ihr Wortlaut, ruhig gesetzt. Betrag als einzige Farbfläche.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <div class="stk-bar"></div>
-            <p class="stk-h">Sie wurden von einer Privatperson beim Ordnungsamt angezeigt.</p>
-            <p class="stk-p">Sollte das Ordnungsamt diese Anzeige verfolgen, kostet Sie das wahrscheinlich <span class="stk-mark">${G}</span>.</p>
-            <p class="stk-s">Fotos und Details zur Anzeige: QR-Code scannen.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diese Notiz nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+  const H = {
+    'sachlich-ordnungsamt': std(`
+      <div class="stk-bar"></div>
+      <p class="stk-h">Sie wurden von einer Privatperson beim Ordnungsamt angezeigt.</p>
+      <p class="stk-p">Sollte das Ordnungsamt diese Anzeige verfolgen, kostet Sie das wahrscheinlich <span class="stk-mark">${G}</span>.</p>
+      <p class="stk-s">Fotos und Details zur Anzeige: QR-Code scannen.</p>`, F.notiz),
 
-    { name: 'Sachlich – Verkehrspolizei', idee: 'Ihr erster Wortlaut. Nur für Städte, in denen die Polizei den ruhenden Verkehr verfolgt.', html: `
-      <div class="stk stk-col">
-        <div class="stk-band">Hinweis zu Ihrem Fahrzeug</div>
-        <div class="stk-in">
-          <div class="stk-text">
-            <div class="stk-main">
-              <p class="stk-h">Eine Privatperson hat Sie im ruhenden Verkehr bei der Verkehrspolizei angezeigt.</p>
-              <p class="stk-p">Verfolgt die Polizei die Anzeige, kostet Sie das wahrscheinlich <b>${G}</b>.</p>
-            </div>
-            <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-          </div>
-          ${Q}
-        </div>
-      </div>` },
+    'sachlich-polizei': band('Hinweis zu Ihrem Fahrzeug', `
+      <p class="stk-h">Eine Privatperson hat Sie im ruhenden Verkehr bei der Verkehrspolizei angezeigt.</p>
+      <p class="stk-p">Verfolgt die Polizei die Anzeige, kostet Sie das wahrscheinlich <b>${G}</b>.</p>`, F.zettel),
 
-    { name: 'Der Preis zuerst', idee: 'Der Betrag ist das, was auf zwei Meter Abstand gelesen wird.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <div class="stk-preis">${G}</div>
-            <p class="stk-h">So viel kostet Sie dieser Parkplatz wahrscheinlich.</p>
-            <p class="stk-s">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Ob ein Verwarnungsgeld fällig wird, entscheidet das Amt.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'preis-zuerst': std(`
+      <div class="stk-preis">${G}</div>
+      <p class="stk-h">So viel kostet Sie dieser Parkplatz wahrscheinlich.</p>
+      <p class="stk-s">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Ob ein Verwarnungsgeld fällig wird, entscheidet das Amt.</p>`, F.zettel),
 
-    { name: 'Stempel', idee: 'Ein Wort, schräg gestempelt. Tatbestand und Regelsatz klein darunter.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <div class="stk-stempel">Angezeigt</div>
-            <p class="stk-p">von einer Privatperson beim Ordnungsamt.</p>
-            <p class="stk-s">Parken auf dem Gehweg · Regelsatz ${G}</p>
-          </div>
-          <p class="stk-fine">Bitte nicht auf den Boden werfen. Danke!</p>
-        </div>
-        ${Q}
-      </div>` },
+    'stempel': std(`
+      <div class="stk-stempel">Angezeigt</div>
+      <p class="stk-p">von einer Privatperson beim Ordnungsamt.</p>
+      <p class="stk-s">Parken auf dem Gehweg · Regelsatz ${G}</p>`, F.danke),
 
-    { name: 'Warnband', idee: 'Absperrband-Rahmen: fällt auf der Scheibe sofort auf.', html: `
-      <div class="stk stk-col stk-warnband">
-        <div class="stk-in">
-          <div class="stk-text">
-            <div class="stk-main">
-              <p class="stk-h">Achtung: Dieses Fahrzeug wurde angezeigt.</p>
-              <p class="stk-p">Eine Privatperson hat Fotos an das Ordnungsamt geschickt. Wahrscheinliche Kosten: <b>${G}</b>.</p>
-            </div>
-            <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-          </div>
-          ${Q}
-        </div>
-      </div>` },
+    'warnband': `
+      <div class="stk stk-col stk-warnband"><div class="stk-in"><div class="stk-text"><div class="stk-main">
+        <p class="stk-h">Achtung: Dieses Fahrzeug wurde angezeigt.</p>
+        <p class="stk-p">Eine Privatperson hat Fotos an das Ordnungsamt geschickt. Wahrscheinliche Kosten: <b>${G}</b>.</p>
+      </div><p class="stk-fine">${F.zettel}</p></div>${Q}</div></div>`,
 
-    { name: 'Beleg', idee: 'Wie ein Kassenbon – und ausdrücklich keine amtliche Mitteilung.', html: `
-      <div class="stk stk-beleg">
-        <div class="stk-text">
-          <div class="stk-main">
-            <div class="stk-kopf">ANZEIGE-BELEG</div>
-            <div class="stk-zeilen">
-              <div class="stk-zeile"><span>Erstattet von</span><span class="stk-pkt"></span><b>Privatperson</b></div>
-              <div class="stk-zeile"><span>Empfänger</span><span class="stk-pkt"></span><b>Ordnungsamt</b></div>
-              <div class="stk-zeile"><span>Tatbestand</span><span class="stk-pkt"></span><b>Parken auf Gehweg</b></div>
-              <div class="stk-zeile"><span>Regelsatz</span><span class="stk-pkt"></span><b>${G}</b></div>
-              <div class="stk-zeile"><span>Status</span><span class="stk-pkt"></span><b>übermittelt</b></div>
-            </div>
-          </div>
-          <p class="stk-fine">Keine amtliche Mitteilung. Bitte nicht auf den Boden werfen.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'beleg': std(`
+      <div class="stk-kopf">ANZEIGE-BELEG</div>
+      <div class="stk-zeilen">
+        <div class="stk-zeile"><span>Erstattet von</span><span class="stk-pkt"></span><b>Privatperson</b></div>
+        <div class="stk-zeile"><span>Empfänger</span><span class="stk-pkt"></span><b>Ordnungsamt</b></div>
+        <div class="stk-zeile"><span>Tatbestand</span><span class="stk-pkt"></span><b>Parken auf Gehweg</b></div>
+        <div class="stk-zeile"><span>Regelsatz</span><span class="stk-pkt"></span><b>${G}</b></div>
+        <div class="stk-zeile"><span>Status</span><span class="stk-pkt"></span><b>übermittelt</b></div>
+      </div>`, 'Keine amtliche Mitteilung. Bitte nicht auf den Boden werfen.', 'stk-beleg'),
 
-    { name: 'Freundliche Vorwarnung', idee: 'Gleicher Inhalt, aber als Info „bevor Post kommt“ – nimmt Ärger raus.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-kicker">Kurze Info, bevor Post kommt</p>
-            <p class="stk-h">Ihr Fahrzeug wurde von einer Privatperson beim Ordnungsamt angezeigt.</p>
-            <p class="stk-p">Verfolgt das Amt die Anzeige, kostet Sie das wahrscheinlich <span class="stk-mark">${G}</span>.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diese Notiz nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'vorwarnung': std(`
+      <p class="stk-kicker">Kurze Info, bevor Post kommt</p>
+      <p class="stk-h">Ihr Fahrzeug wurde von einer Privatperson beim Ordnungsamt angezeigt.</p>
+      <p class="stk-p">Verfolgt das Amt die Anzeige, kostet Sie das wahrscheinlich <span class="stk-mark">${G}</span>.</p>`, F.notiz),
 
-    { name: 'Gehweg – Kinderwagen', idee: 'Begründet die Anzeige mit den Betroffenen statt mit der Regel.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <div class="stk-bar"></div>
-            <p class="stk-h">Hier wollte jemand mit Kinderwagen vorbei.</p>
-            <p class="stk-p">… und hat Sie deshalb beim Ordnungsamt angezeigt. Parken auf dem Gehweg kostet wahrscheinlich <span class="stk-mark">${G}</span>.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'kinderwagen': std(`
+      <div class="stk-bar"></div>
+      <p class="stk-h">Hier wollte jemand mit Kinderwagen vorbei.</p>
+      <p class="stk-p">… und hat Sie deshalb beim Ordnungsamt angezeigt. Parken auf dem Gehweg kostet wahrscheinlich <span class="stk-mark">${G}</span>.</p>`, F.zettel),
 
-    { name: 'Radweg', idee: 'Dunkler Sticker, eine klare Aussage in Gelb.', html: `
-      <div class="stk stk-dunkel">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-h" style="color:#ffd400">Dieser Radweg ist kein Parkplatz.</p>
-            <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Wahrscheinliche Kosten: <b>${betrag.radweg}</b>.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'radweg': std(`
+      <p class="stk-h stk-gelb-h">Dieser Radweg ist kein Parkplatz.</p>
+      <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Wahrscheinliche Kosten: <b>${betrag.radweg}</b>.</p>`, F.zettel, 'stk-dunkel'),
 
-    { name: 'Feuerwehrzufahrt', idee: 'Kopfband nennt den Ort, die Zeile darunter das Warum.', html: `
-      <div class="stk stk-col">
-        <div class="stk-band">Feuerwehrzufahrt</div>
-        <div class="stk-in">
-          <div class="stk-text">
-            <div class="stk-main">
-              <p class="stk-h">Im Ernstfall zählt jede Sekunde.</p>
-              <p class="stk-p">Eine Privatperson hat Ihr Fahrzeug beim Ordnungsamt angezeigt. Parken in der Feuerwehrzufahrt kostet wahrscheinlich <b>${betrag.feuerwehr}</b>.</p>
-            </div>
-            <p class="stk-fine">Bitte nicht auf den Boden werfen. Danke!</p>
-          </div>
-          ${Q}
-        </div>
-      </div>` },
+    'feuerwehr': band('Feuerwehrzufahrt', `
+      <p class="stk-h">Im Ernstfall zählt jede Sekunde.</p>
+      <p class="stk-p">Eine Privatperson hat Ihr Fahrzeug beim Ordnungsamt angezeigt. Parken in der Feuerwehrzufahrt kostet wahrscheinlich <b>${betrag.feuerwehr}</b>.</p>`, F.danke),
 
-    { name: 'Checkliste', idee: 'Zwei Haken gesetzt, der dritte liegt beim Amt.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <div class="stk-liste">
-              <div class="stk-cb">${haken}<span>Falschparken fotografiert</span></div>
-              <div class="stk-cb">${haken}<span>Beim Ordnungsamt angezeigt</span></div>
-              <div class="stk-cb">${leer}<span>Verwarnungsgeld: wahrscheinlich <b>${G}</b></span></div>
-            </div>
-            <p class="stk-s">Den letzten Haken setzt das Ordnungsamt. Angezeigt hat Sie eine Privatperson.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'checkliste': std(`
+      <div class="stk-liste">
+        <div class="stk-cb">${haken}<span>Falschparken fotografiert</span></div>
+        <div class="stk-cb">${haken}<span>Beim Ordnungsamt angezeigt</span></div>
+        <div class="stk-cb">${leer}<span>Verwarnungsgeld: wahrscheinlich <b>${G}</b></span></div>
+      </div>
+      <p class="stk-s">Den letzten Haken setzt das Ordnungsamt. Angezeigt hat Sie eine Privatperson.</p>`, F.zettel),
 
-    { name: 'Ablauf in 3 Schritten', idee: 'Erklärt nüchtern, was als Nächstes passiert.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-kicker">Was jetzt passiert</p>
-            <div class="stk-liste">
-              <div class="stk-cb"><span class="stk-num">1</span><span>Eine Privatperson hat Ihr Fahrzeug fotografiert.</span></div>
-              <div class="stk-cb"><span class="stk-num">2</span><span>Die Anzeige geht an das Ordnungsamt.</span></div>
-              <div class="stk-cb"><span class="stk-num">3</span><span>Sie bekommen Post – wahrscheinlich <b>${G}</b>.</span></div>
-            </div>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diese Notiz nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'ablauf': std(`
+      <p class="stk-kicker">Was jetzt passiert</p>
+      <div class="stk-liste">
+        <div class="stk-cb"><span class="stk-num">1</span><span>Eine Privatperson hat Ihr Fahrzeug fotografiert.</span></div>
+        <div class="stk-cb"><span class="stk-num">2</span><span>Die Anzeige geht an das Ordnungsamt.</span></div>
+        <div class="stk-cb"><span class="stk-num">3</span><span>Sie bekommen Post – wahrscheinlich <b>${G}</b>.</span></div>
+      </div>`, F.notiz),
 
-    { name: 'Zweisprachig DE/EN', idee: 'Für Touristen, Mietwagen, Lieferfahrer: beide Sprachen gleich groß.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-zwei">
-            <div>
-              <p class="stk-h">Angezeigt.</p>
-              <p class="stk-s">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Wahrscheinliche Kosten: <b>${G}</b>.</p>
-            </div>
-            <div>
-              <p class="stk-h">Reported.</p>
-              <p class="stk-s">A private person has reported you to the local authority. Likely fine: <b>${G}</b>.</p>
-            </div>
-          </div>
-          <p class="stk-fine">Bitte nicht auf den Boden werfen · Please don’t litter.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'zweisprachig': std(`
+      <div class="stk-zwei">
+        <div><p class="stk-h">Angezeigt.</p><p class="stk-s">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Wahrscheinliche Kosten: <b>${G}</b>.</p></div>
+        <div><p class="stk-h">Reported.</p><p class="stk-s">A private person has reported you to the local authority. Likely fine: <b>${G}</b>.</p></div>
+      </div>`, 'Bitte nicht auf den Boden werfen · Please don’t litter.'),
 
-    { name: 'Minimal', idee: 'Kürzeste Fassung – trägt auch auf 70 × 37 mm.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-riesig">Angezeigt.</p>
-            <p class="stk-p">Von einer Privatperson, beim Ordnungsamt.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'minimal': std(`
+      <p class="stk-riesig">Angezeigt.</p>
+      <p class="stk-p">Von einer Privatperson, beim Ordnungsamt.</p>`, F.zettel),
 
-    { name: 'Kein Knöllchen', idee: 'Stellt klar, dass der Zettel nicht vom Amt ist – schützt vor dem Vorwurf, ein Knöllchen vorzutäuschen.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-h">Das ist kein Knöllchen.</p>
-            <p class="stk-p">Sondern der Hinweis, dass eine Privatperson Sie beim Ordnungsamt angezeigt hat. Ob Sie zahlen müssen (wahrscheinlich <b>${G}</b>), erfahren Sie per Post.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie dieses Blatt nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'kein-knoellchen': std(`
+      <p class="stk-h">Das ist kein Knöllchen.</p>
+      <p class="stk-p">Sondern der Hinweis, dass eine Privatperson Sie beim Ordnungsamt angezeigt hat. Ob Sie zahlen müssen (wahrscheinlich <b>${G}</b>), erfahren Sie per Post.</p>`, F.blatt),
 
-    { name: 'Wussten Sie …?', idee: 'Frage als Einstieg, Antwort gleich hinterher.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-h">Wussten Sie, dass Parken auf dem Gehweg <span class="stk-mark">${G}</span> kostet?</p>
-            <p class="stk-p">Jetzt schon: Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'wussten-sie': std(`
+      <p class="stk-h">Wussten Sie, dass Parken auf dem Gehweg <span class="stk-mark">${G}</span> kostet?</p>
+      <p class="stk-p">Jetzt schon: Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>`, F.zettel),
 
-    { name: 'Teurer Parkplatz', idee: 'Vollflächig gelb, zwei Wörter Schlagzeile.', html: `
-      <div class="stk stk-gelb">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-riesig">Teurer Parkplatz.</p>
-            <p class="stk-p">Voraussichtlich <b>${G}</b>: Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>
-          </div>
-          <p class="stk-fine">Bitte nicht auf den Boden werfen – Altpapier ist um die Ecke.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'teurer-parkplatz': std(`
+      <p class="stk-riesig">Teurer Parkplatz.</p>
+      <p class="stk-p">Voraussichtlich <b>${G}</b>: Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>`, F.papier, 'stk-gelb'),
 
-    { name: 'Nächstes Mal', idee: 'Blick nach vorn statt Vorwurf.', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <div class="stk-bar"></div>
-            <p class="stk-h">Nächstes Mal vielleicht ein paar Meter weiter?</p>
-            <p class="stk-p">Diesmal hat eine Privatperson Sie beim Ordnungsamt angezeigt. Das kostet Sie wahrscheinlich <span class="stk-mark">${G}</span>.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diese Notiz nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'naechstes-mal': std(`
+      <div class="stk-bar"></div>
+      <p class="stk-h">Nächstes Mal vielleicht ein paar Meter weiter?</p>
+      <p class="stk-p">Diesmal hat eine Privatperson Sie beim Ordnungsamt angezeigt. Das kostet Sie wahrscheinlich <span class="stk-mark">${G}</span>.</p>`, F.notiz),
 
-    { name: 'Datenschutz-Hinweis', idee: 'Beantwortet die erste Sorge beim Scannen: Steht mein Kennzeichen im Netz?', html: `
-      <div class="stk">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-h">Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>
-            <p class="stk-p">Wahrscheinliche Kosten: <span class="stk-mark">${G}</span>.</p>
-            <p class="stk-s">Online zeigen wir nur Verstoß, Tag und ein stark verpixeltes Foto – kein Kennzeichen.</p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
+    'datenschutz': std(`
+      <p class="stk-h">Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>
+      <p class="stk-p">Wahrscheinliche Kosten: <span class="stk-mark">${G}</span>.</p>
+      <p class="stk-s">Online zeigen wir nur Verstoß, Tag und ein stark verpixeltes Foto – kein Kennzeichen.</p>`, F.zettel),
 
-    { name: 'QR im Mittelpunkt', idee: 'Großer Code links: lädt zum Scannen ein, Text erklärt warum.', html: `
-      <div class="stk stk-rev">
-        <div class="stk-text">
-          <div class="stk-main">
-            <p class="stk-h">Was wurde hier angezeigt?</p>
-            <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Verstoß und Foto: Code scannen.</p>
-            <p class="stk-s">Wahrscheinliche Kosten: <b>${G}</b></p>
-          </div>
-          <p class="stk-fine">Bitte werfen Sie diesen Zettel nicht auf den Boden.</p>
-        </div>
-        ${Q}
-      </div>` },
-  ]
+    'qr-mitte': std(`
+      <p class="stk-h">Was wurde hier angezeigt?</p>
+      <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Verstoß und Foto: Code scannen.</p>
+      <p class="stk-s">Wahrscheinliche Kosten: <b>${G}</b></p>`, F.zettel, 'stk-rev'),
+
+    // 21–50
+    'dokumentiert': std(`
+      <p class="stk-kicker">Hinweis</p>
+      <p class="stk-h">Ihr Fahrzeug wurde dokumentiert.</p>
+      <p class="stk-p">Eine Privatperson hat Fotos gemacht und zeigt den Verstoß beim Ordnungsamt an. Wahrscheinliche Kosten: <span class="stk-mark">${G}</span>.</p>
+      <p class="stk-s">Stand der Anzeige: QR-Code scannen.</p>`, F.zettel),
+
+    'wird-angezeigt': std(`
+      <div class="stk-bar"></div>
+      <p class="stk-h">Dieses Falschparken wird angezeigt.</p>
+      <p class="stk-p">Eine Privatperson schickt Fotos an das Ordnungsamt. Verfolgt das Amt die Anzeige, kostet Sie das wahrscheinlich <span class="stk-mark">${G}</span>.</p>`, F.notiz),
+
+    'zustaendige-behoerde': std(`
+      <div class="stk-bar"></div>
+      <p class="stk-h">Sie wurden von einer Privatperson bei der zuständigen Behörde angezeigt.</p>
+      <p class="stk-p">Wird die Anzeige verfolgt, kostet Sie das wahrscheinlich <span class="stk-mark">${G}</span>.</p>`, F.zettel),
+
+    'schwarzweiss': std(`
+      <p class="stk-h">Sie wurden von einer Privatperson beim Ordnungsamt angezeigt.</p>
+      <p class="stk-p">Sollte das Ordnungsamt diese Anzeige verfolgen, kostet Sie das wahrscheinlich <span class="stk-mark-sw">${G}</span>.</p>
+      <p class="stk-s">Fotos und Details zur Anzeige: QR-Code scannen.</p>`, F.notiz),
+
+    'halteverbot': band('Absolutes Haltverbot', `
+      <p class="stk-h">Hier ist nicht einmal Halten erlaubt.</p>
+      <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Parken im absoluten Haltverbot kostet wahrscheinlich <b>${betrag.halteverbot}</b>.</p>`, F.zettel),
+
+    'schwerbehinderte': std(`
+      <p class="stk-h">Dieser Platz gehört Menschen, die ihn wirklich brauchen.</p>
+      <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Parken auf einem Schwerbehindertenparkplatz kostet wahrscheinlich <span class="stk-mark">${betrag.schwerbehinderte}</span>.</p>`, F.notiz),
+
+    'haltestelle': std(`
+      <p class="stk-gross">Hier hält der Bus. Eigentlich.</p>
+      <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Parken an der Haltestelle kostet wahrscheinlich <b>${betrag.haltestelle}</b>.</p>`, F.danke),
+
+    'zebrastreifen': std(`
+      <p class="stk-h">Kinder sehen nicht über Autos hinweg.</p>
+      <p class="stk-p">Deshalb gilt 5 Meter vor dem Zebrastreifen Parkverbot. Eine Privatperson hat Sie beim Ordnungsamt angezeigt – wahrscheinlich <span class="stk-mark">${betrag.zebrastreifen}</span>.</p>`, F.zettel),
+
+    'kreuzung': std(`
+      <p class="stk-h">5 Meter Abstand zur Kreuzung.</p>
+      <p class="stk-p">Damit alle sehen und gesehen werden. Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>
+      <p class="stk-s">Kosten: wahrscheinlich <b>${betrag.kreuzung}</b> – der Grund ist größer.</p>`, F.notiz),
+
+    'rollstuhl': links(`<div class="stk-ikon">${ikon.rollstuhl}</div>`, `
+      <p class="stk-h">Mit dem Rollstuhl kommt hier niemand vorbei.</p>
+      <p class="stk-p">Deshalb hat eine Privatperson Sie beim Ordnungsamt angezeigt. Wahrscheinlich <b>${G}</b>.</p>`, F.zettel, 'stk-qr-klein'),
+
+    'schulweg': band('Schulweg', `
+      <p class="stk-h">Hier laufen jeden Morgen Kinder entlang.</p>
+      <p class="stk-p">Zugeparkte Gehwege zwingen sie auf die Fahrbahn. Eine Privatperson hat Sie beim Ordnungsamt angezeigt – wahrscheinlich <b>${G}</b>.</p>`, F.zettel),
+
+    'fussgaenger-icon': links(`<div class="stk-ikon">${ikon.fussgaenger}</div>`, `
+      <p class="stk-gross">Gehweg.</p>
+      <p class="stk-p">Für Menschen zu Fuß. Eine Privatperson hat Sie beim Ordnungsamt angezeigt: wahrscheinlich <b>${G}</b>.</p>`, F.danke, 'stk-qr-klein'),
+
+    'fahrrad-icon': links(`<div class="stk-ikon">${ikon.fahrrad}</div>`, `
+      <p class="stk-gross">Radweg.</p>
+      <p class="stk-p">Für Menschen auf dem Rad. Eine Privatperson hat Sie beim Ordnungsamt angezeigt: wahrscheinlich <b>${betrag.radweg}</b>.</p>`, F.danke, 'stk-qr-klein'),
+
+    'ausrufezeichen': links(`<div class="stk-ikon stk-ikon-gelb"><span class="stk-ikon-text">!</span></div>`, `
+      <p class="stk-h">Sie wurden angezeigt.</p>
+      <p class="stk-p">Eine Privatperson hat Fotos Ihres Fahrzeugs an das Ordnungsamt geschickt. Wahrscheinliche Kosten: <b>${G}</b>.</p>`, F.zettel, 'stk-qr-klein'),
+
+    'brief': std(`
+      <p class="stk-p"><b>Guten Tag,</b></p>
+      <p class="stk-p">eine Privatperson hat Ihr Fahrzeug hier beim Ordnungsamt angezeigt. Verfolgt das Amt die Anzeige, kostet Sie das wahrscheinlich ${G}.</p>
+      <p class="stk-p">Mit freundlichen Grüßen</p>`, F.blatt),
+
+    'nicht-persoenlich': std(`
+      <div class="stk-bar"></div>
+      <p class="stk-h">Nicht persönlich gemeint.</p>
+      <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt – weil der Gehweg für alle da ist. Wahrscheinliche Kosten: <span class="stk-mark">${G}</span>.</p>`, F.notiz),
+
+    'wer-wo-wie': std(`
+      <dl class="stk-qa">
+        <dt>Wer hat angezeigt?</dt><dd>Eine Privatperson.</dd>
+        <dt>Bei wem?</dt><dd>Beim Ordnungsamt.</dd>
+        <dt>Was kostet das?</dt><dd>Wahrscheinlich <span class="stk-mark">${G}</span>.</dd>
+      </dl>
+      <p class="stk-s">Fotos und Details: QR-Code scannen.</p>`, F.zettel),
+
+    'rechnung': std(`
+      <p class="stk-kicker">Kleine Rechnung</p>
+      <div class="stk-zeilen stk-zeilen-gross">
+        <div class="stk-zeile"><span>Parkhaus</span><span class="stk-pkt"></span><b>ein paar Euro</b></div>
+        <div class="stk-zeile"><span>Gehweg</span><span class="stk-pkt"></span><b class="stk-mark">${G}</b></div>
+      </div>
+      <p class="stk-s">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Ob Sie zahlen, entscheidet das Amt.</p>`, F.papier),
+
+    'drei-akte': std(`
+      <div class="stk-liste">
+        <div class="stk-cb"><span class="stk-num">I</span><span>Sie haben hier geparkt.</span></div>
+        <div class="stk-cb"><span class="stk-num">II</span><span>Eine Privatperson hat es fotografiert und angezeigt.</span></div>
+        <div class="stk-cb"><span class="stk-num">III</span><span>Das Ordnungsamt entscheidet – wahrscheinlich <b>${G}</b>.</span></div>
+      </div>`, F.notiz),
+
+    'paragraf': links(`<div class="stk-paragraf">§</div>`, `
+      <p class="stk-h">§ 12 StVO – Halten und Parken.</p>
+      <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Regelsatz für Parken auf dem Gehweg: <b>${G}</b>.</p>`, F.blatt, 'stk-qr-klein'),
+
+    'ampel': std(`
+      <p class="stk-kicker">Stand Ihrer Anzeige</p>
+      <div class="stk-liste">
+        <div class="stk-cb"><span class="stk-dot"></span><span>Fotos gemacht</span></div>
+        <div class="stk-cb"><span class="stk-dot"></span><span>Beim Ordnungsamt angezeigt</span></div>
+        <div class="stk-cb"><span class="stk-dot stk-dot-offen"></span><span>Bescheid vom Amt – wahrscheinlich <b>${G}</b></span></div>
+      </div>
+      <p class="stk-s">Angezeigt hat Sie eine Privatperson.</p>`, F.zettel),
+
+    'sprechblase': std(`
+      <div class="stk-blase">„Ich steh hier nur kurz.“</div>
+      <p class="stk-h">Kurz reicht für eine Anzeige.</p>
+      <p class="stk-p">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Wahrscheinliche Kosten: <span class="stk-mark">${G}</span>.</p>`, F.danke),
+
+    'kurz-geparkt': std(`
+      <p class="stk-gross">Kurz geparkt. Teuer geworden.</p>
+      <p class="stk-p">Wahrscheinlich <span class="stk-mark">${G}</span>: Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>`, F.zettel),
+
+    'preis-dunkel': std(`
+      <div class="stk-preis">${G}</div>
+      <p class="stk-h">So viel kostet Sie dieser Parkplatz wahrscheinlich.</p>
+      <p class="stk-s">Eine Privatperson hat Sie beim Ordnungsamt angezeigt. Ob ein Verwarnungsgeld fällig wird, entscheidet das Amt.</p>`, F.zettel, 'stk-dunkel'),
+
+    'abriss': std(`
+      <p class="stk-kicker">Anzeige · Privatperson</p>
+      <p class="stk-h">Eine Privatperson hat Sie beim Ordnungsamt angezeigt.</p>
+      <p class="stk-p">Wahrscheinliche Kosten: <span class="stk-mark">${G}</span>.</p>
+      <p class="stk-s">Rechts: Ihr Code zur Anzeige.</p>`, F.notiz, 'stk-abriss'),
+
+    'einzeiler': std(`
+      <p class="stk-einzeiler">Angezeigt · ${G}</p>
+      <p class="stk-p">Von einer Privatperson beim Ordnungsamt.</p>`, F.zettel),
+
+    'dreisprachig': std(`
+      <div class="stk-drei">
+        <div><p class="stk-h">Angezeigt.</p><p class="stk-s">Von einer Privatperson beim Ordnungsamt. Wahrscheinlich <b>${G}</b>.</p></div>
+        <div><p class="stk-h">Reported.</p><p class="stk-s">By a private person to the local authority. Likely fine: <b>${G}</b>.</p></div>
+        <div><p class="stk-h">Signalé.</p><p class="stk-s">Par un particulier auprès des autorités. Amende probable : <b>${G}</b>.</p></div>
+      </div>`, 'Bitte nicht auf den Boden werfen · Please don’t litter · Merci de ne pas jeter.', 'stk-qr-klein'),
+
+    'gehweg-fuer-alle': std(`
+      <p class="stk-h">Gehwege sind für alle da.</p>
+      <p class="stk-p">Für Kinderwagen, Rollstühle, Rollatoren und Kinder. Deshalb hat eine Privatperson Sie beim Ordnungsamt angezeigt – wahrscheinlich <span class="stk-mark">${G}</span>.</p>`, F.danke),
+
+    'zeitung': std(`
+      <p class="stk-kicker">Lokales</p>
+      <p class="stk-h">Fahrzeug auf Gehweg angezeigt</p>
+      <p class="stk-p">Eine Privatperson hat das Fahrzeug beim Ordnungsamt gemeldet. Nach Bußgeldkatalog sind wahrscheinlich ${G} fällig.</p>`, F.blatt, 'stk-zeitung'),
+
+    'ruhig-grau': std(`
+      <p class="stk-p">Hinweis: Eine Privatperson hat Ihr Fahrzeug beim Ordnungsamt angezeigt.</p>
+      <p class="stk-p">Sollte das Amt die Anzeige verfolgen, kostet Sie das wahrscheinlich ${G}.</p>`, F.notiz, 'stk-leise'),
+  }
 %>
+
+<%_ function karte(e) { _%>
+  <div class="col-12 col-lg-6 col-xxl-4">
+    <div class="card h-100<%= e.favorit ? ' border-warning' : '' %>" id="<%= e.slug %>">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="badge text-bg-secondary stk-nr"><%= String(e.nr).padStart(2, '0') %></span>
+          <h2 class="h6 mb-0"><%= e.name %></h2>
+          <% if (angemeldet) { %>
+            <form method="post" action="/sticker-test/favorit" class="ms-auto">
+              <input type="hidden" name="slug" value="<%= e.slug %>">
+              <button type="submit" class="btn btn-sm stk-fav <%= e.favorit ? 'btn-warning' : 'btn-outline-secondary' %>" aria-pressed="<%= e.favorit %>">
+                <%= e.favorit ? '★ Favorit' : '☆ Favorit' %>
+              </button>
+            </form>
+          <% } %>
+        </div>
+        <div class="stk-box"><%- H[e.slug] %></div>
+        <p class="small text-muted mt-3 mb-0"><%= e.idee %></p>
+      </div>
+    </div>
+  </div>
+<%_ } _%>
 
 <div class="mb-4">
   <h1 class="h3 mb-1">Sticker-Entwürfe</h1>
   <p class="text-muted mb-0">
-    20 Textentwürfe im Format 96 × 50,8 mm (ablösbare Etiketten), maßstäblich. Der QR-Code ist echt und
-    führt zum Muster-Code. Beträge sind Regelsätze aus dem Bußgeldkatalog (Gehweg, Radweg, Feuerwehrzufahrt).
-    Favoriten einfach per Nummer nennen.
+    <%= favoriten.length + andere.length %> Textentwürfe im Format 96 × 50,8 mm (ablösbare Etiketten), maßstäblich.
+    Der QR-Code ist echt und führt zum Muster-Code. Beträge sind Regelsätze aus dem Bußgeldkatalog.
   </p>
+  <% if (!angemeldet) { %>
+    <p class="mb-0 mt-2"><a href="/login?weiter=/sticker-test">Anmelden</a>, um Favoriten zu markieren – sie stehen dann oben.</p>
+  <% } %>
 </div>
 
+<% if (favoriten.length) { %>
+  <h2 class="h5 mb-3">★ Ihre Favoriten (<%= favoriten.length %>)</h2>
+  <div class="row g-4 mb-5">
+    <% favoriten.forEach(karte) %>
+  </div>
+  <h2 class="h5 mb-3">Weitere Entwürfe</h2>
+<% } %>
+
 <div class="row g-4">
-  <% S.forEach((s, i) => { const nr = String(i + 1).padStart(2, '0') %>
-    <div class="col-12 col-lg-6 col-xxl-4">
-      <div class="card h-100" id="sticker-<%= i + 1 %>">
-        <div class="card-body">
-          <div class="d-flex align-items-baseline gap-2 mb-3">
-            <span class="badge text-bg-secondary stk-nr"><%= nr %></span>
-            <h2 class="h6 mb-0"><%= s.name %></h2>
-          </div>
-          <div class="stk-box"><%- s.html %></div>
-          <p class="small text-muted mt-3 mb-0"><%= s.idee %></p>
-        </div>
-      </div>
-    </div>
-  <% }) %>
+  <% andere.forEach(karte) %>
 </div>
