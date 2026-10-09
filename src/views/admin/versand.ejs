@@ -7,6 +7,14 @@
   <h2 class="h4 mb-0">Live-Versand</h2>
   <span class="text-muted small">Online-Formulare der Städte: <%= staedte %></span>
   <span class="ms-auto d-flex align-items-center gap-2 small">
+    <form class="d-flex align-items-center gap-1" data-abstand
+          title="Mindestabstand zwischen zwei Portal-Anzeigen (Warteschlange und „nacheinander senden“). Mail-Versand ist nicht getaktet.">
+      <label for="versand-abstand" class="text-muted text-nowrap">Abstand</label>
+      <input id="versand-abstand" type="number" min="0" max="1440" step="0.5" class="form-control form-control-sm" style="width:5.5rem"
+             value="<%= Math.round(abstandSek / 30) / 2 %>" required>
+      <span class="text-muted">min</span>
+      <button type="submit" class="btn btn-sm btn-outline-primary">Speichern</button>
+    </form>
     <% if (selbsttest) { %>
       <span class="badge <%= selbsttest.laeuft ? 'text-bg-info' : selbsttest.ok ? 'text-bg-success' : 'text-bg-danger' %>"
             title="<%= selbsttest.meldung %>">Selbsttest <%= selbsttest.laeuft ? '' : selbsttest.ok ? 'OK' : 'FEHLER' %> · <%= selbsttest.zeit %></span>

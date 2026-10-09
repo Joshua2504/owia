@@ -16,7 +16,9 @@ import {
 } from '../services/portalDispatch'
 import { letzterSelbsttest, enqueueSelbsttest } from '../services/portalSelbsttest'
 import { versandWartezeiten } from '../services/versandWarte'
-import { versandMerken, versandPlatzBelegen, versandPlatzFreigeben } from '../services/versandTakt'
+import {
+  versandMerken, versandPlatzBelegen, versandPlatzFreigeben, versandAbstand, versandAbstandSetzen, ABSTAND_MIN_SEK, ABSTAND_MAX_SEK,
+} from '../services/versandTakt'
 
 const adapterOf = (r: mysql.RowDataPacket) => portalFuer(r.city)!
 const portalCities = () => unlockedCities().filter((c) => c.portal).map((c) => c.id)
@@ -80,6 +82,7 @@ export default async function portalRoutes(app: FastifyInstance) {
       queue,
       portalOk: await portalHealthy(),
       selbsttest: await letzterSelbsttest(),
+      abstandSek: await versandAbstand(),
       selectedAz: String((request.query as { az?: string }).az || ''),
       staedte: unlockedCities().filter((c) => c.portal).map((c) => c.name).join(', '),
     }))
@@ -124,6 +127,16 @@ export default async function portalRoutes(app: FastifyInstance) {
   app.post('/versand/selbsttest', { preHandler: requireAdmin }, async () => {
     await enqueueSelbsttest()
     return { ok: true }
+  })
+
+  // Versand-Takt: Abstand zwischen zwei Portal-Anzeigen (Sekunden).
+  app.post('/versand/abstand', { preHandler: requireAdmin }, async (request, reply) => {
+    const sek = Number((request.body as { sek?: unknown } | null)?.sek)
+    if (!Number.isInteger(sek) || sek < ABSTAND_MIN_SEK || sek > ABSTAND_MAX_SEK) {
+      return reply.status(400).send({ error: `Abstand muss zwischen ${ABSTAND_MIN_SEK} und ${ABSTAND_MAX_SEK} Sekunden liegen.` })
+    }
+    await versandAbstandSetzen(sek)
+    return { ok: true, sek }
   })
 
   const fail = (reply: any, err: unknown) => {

@@ -345,6 +345,18 @@
   }
   if (root.querySelector('[data-auto-in]')) setInterval(autoTick, 1000)
 
+  var abstandForm = document.querySelector('[data-abstand]')
+  if (abstandForm) abstandForm.addEventListener('submit', function (e) {
+    e.preventDefault()
+    var btn = abstandForm.querySelector('button')
+    var min = Number(abstandForm.querySelector('input').value)
+    btn.disabled = true
+    post('/versand/abstand', { sek: Math.round(min * 60) }).then(function () {
+      btn.textContent = 'Gespeichert'
+      setTimeout(function () { btn.textContent = 'Speichern'; btn.disabled = false }, 1500)
+    }).catch(function (err) { OWIA.alert(err.message); btn.disabled = false })
+  })
+
   var testBtn = document.querySelector('[data-act=selbsttest]')
   if (testBtn) testBtn.addEventListener('click', function () {
     testBtn.disabled = true
