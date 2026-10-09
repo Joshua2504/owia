@@ -28,6 +28,7 @@ import legalRoutes from './routes/legal'
 import statistikRoutes from './routes/statistik'
 import analyseRoutes from './routes/analyse'
 import logosRoutes from './routes/logos'
+import stickerTestRoutes from './routes/stickerTest'
 import { verjaehrung } from './services/verjaehrung'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN } from './config/fahrzeug'
 import adminRoutes from './routes/admin'
@@ -224,6 +225,7 @@ async function main() {
   await app.register(statistikRoutes)
   await app.register(analyseRoutes)
   await app.register(logosRoutes)
+  await app.register(stickerTestRoutes)
   await app.register(adminRoutes)
   await app.register(portalRoutes)
 
