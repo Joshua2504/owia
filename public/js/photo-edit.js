@@ -193,7 +193,8 @@
       ' placeholder="Wer wurde wie behindert? (Vorschläge beim Antippen)" hidden>' +
       '<datalist id="pe-beh-vorschlaege">' +
       // Wie die Schnellauswahl in reports/edit.ejs.
-      ['Ich musste auf die Straße ausweichen.', 'Ich musste auf den Gehweg ausweichen.', 'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
+      ['Ich musste auf die Straße ausweichen.', 'Ich musste auf den Gehweg ausweichen.', 'Ich musste auf den Radweg ausweichen.',
+        'Ich musste mit dem Rad auf die Fahrbahn ausweichen.',
         'Fußgänger mussten auf die Straße ausweichen.', 'Rollstuhlfahrer bzw. Kinderwagen kamen nicht vorbei.']
         .map(function (t) { return '<option value="' + t + '">' }).join('') +
       '</datalist></div>' +
