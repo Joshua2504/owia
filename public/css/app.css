@@ -615,6 +615,17 @@ code {
 }
 .photo-pick-bar[hidden] { display: none; }
 .photo-pick-bar .ss { min-width: 14rem; }
+/* Handy: Leiste bricht um – als volle Bodenleiste statt Pille (sonst wird ein Kreis daraus). */
+@media (max-width: 767.98px) {
+  .photo-pick-bar {
+    left: 0; right: 0; bottom: 0; transform: none; max-width: none;
+    border-radius: 1rem 1rem 0 0; border-width: 1px 0 0;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: var(--bs-body-bg);
+  }
+  .photo-pick-bar > :first-child { flex: 1 0 100%; font-weight: 600; }
+  .photo-pick-bar .ss, .photo-pick-bar .form-select { flex: 1 1 100%; min-width: 0; width: 100% !important; }
+}
 /* Aktionen in der Foto-Vorschau (Schwärzen/Zuschneiden bei Entwurfs-Fotos). */
 /* Foto-Editor der Liste (public/js/photo-edit.js) */
 .photo-edit-dialog {
