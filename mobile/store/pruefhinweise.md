@@ -16,12 +16,13 @@ in der Play Console unter *App-Inhalte → App-Zugriff*. Platzhalter in
 > anzuzeigen. Die Anmeldung läuft normalerweise per Einmal-Code aus einer
 > E-Mail. Für die Prüfung gibt es ein Demo-Konto mit festem Code:
 >
-> 1. App öffnen → „Anmelden“ → E-Mail-Adresse `<APP_REVIEW_EMAIL>` eingeben,
+> 1. App öffnen → „Anmelden & Anzeige erstatten“ → E-Mail-Adresse `<APP_REVIEW_EMAIL>` eingeben,
 >    Datenschutz bestätigen, Sicherheitsprüfung abwarten, „Code anfordern“.
 > 2. Als Code `<APP_REVIEW_CODE>` eingeben.
 > 3. Unter „Einstellungen“ einmal Name und Anschrift ausfüllen (beliebige Testwerte).
-> 4. Kamera-Modus: Kamera- und Standortfreigabe erlauben, ein beliebiges Motiv
->    fotografieren, „Fertig“. Der Entwurf erscheint unter „Meine Anzeigen“.
+> 4. Kamera-Modus (📷-Knopf unten links): Kamera- und Standortfreigabe erlauben,
+>    ein beliebiges Motiv fotografieren, „Fertig“. Der Entwurf erscheint unter
+>    „Meine Anzeigen“.
 >
 > Das Demo-Konto kann alles ausprobieren, **reicht aber nichts ein** – nichts
 > erreicht eine Behörde. Bitte keine Fotos echter Fahrzeuge verwenden.
@@ -33,12 +34,13 @@ in der Play Console unter *App-Inhalte → App-Zugriff*. Platzhalter in
 > responsible municipal authority (Ordnungsamt). Normal sign-in uses a one-time
 > code sent by e-mail. For review, please use the demo account with a fixed code:
 >
-> 1. Open the app → "Anmelden" → enter `<APP_REVIEW_EMAIL>`, accept the privacy
+> 1. Open the app → "Anmelden & Anzeige erstatten" → enter `<APP_REVIEW_EMAIL>`, accept the privacy
 >    checkbox, wait for the automatic security check, tap "Code anfordern".
 > 2. Enter the code `<APP_REVIEW_CODE>`.
 > 3. Under "Einstellungen" (settings) fill in any test name and address once.
-> 4. Camera mode: allow camera and location access, take a photo of any object,
->    tap "Fertig". The draft appears under "Meine Anzeigen".
+> 4. Camera mode (📷 button, bottom left): allow camera and location access,
+>    take a photo of any object, tap "Fertig". The draft appears under
+>    "Meine Anzeigen".
 >
 > The demo account can use every feature but **cannot submit reports** – nothing
 > is ever sent to an authority. Account deletion: Einstellungen → "Konto schließen".

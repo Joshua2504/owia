@@ -37,7 +37,7 @@ Zugeparkter Radweg, blockierter Gehweg? Foto machen, Tatort kommt aus dem GPS �
 OWiA hilft dir, Parkverstöße schnell und vollständig beim zuständigen Ordnungsamt anzuzeigen – ohne Formular-Chaos.
 
 SO FUNKTIONIERT ES
-• App öffnen, die Kamera startet sofort.
+• App öffnen, Kamera antippen.
 • Fotos vom Fahrzeug und der Situation machen. Uhrzeit und Standort werden automatisch übernommen.
 • Kennzeichen, Marke und Farbe werden auf deinen Fotos erkannt und vorgeschlagen – du prüfst und bestätigst.
 • Verstoß aus dem amtlichen Tatbestandskatalog wählen, fertig.

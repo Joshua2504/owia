@@ -18,10 +18,9 @@ const config: CapacitorConfig = {
   // von scripts/prepare-www.mjs.
   webDir: 'www',
   server: {
+    // Start auf der Startseite wie bei der PWA (manifest start_url /); die
+    // Kamera ist von dort und über den 📷-Knopf einen Tipp entfernt.
     url: serverUrl,
-    // Start in der Kamera wie bei der PWA (manifest start_url). Ohne Anmeldung
-    // leitet /kamera zum Login und danach zurück.
-    appStartPath: '/kamera',
     // Lädt eine Seite nicht (offline, Server weg), zeigt die App diese lokale
     // Seite statt einer leeren WebView. Android zeigt sie auch bei HTTP-Fehlern
     // der Hauptseite (4xx/5xx), daher allgemein formuliert.

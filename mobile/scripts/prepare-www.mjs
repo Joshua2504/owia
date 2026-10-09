@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const www = join(here, '..', 'www')
 const server = (process.env.OWIA_APP_URL || 'https://owia.net').replace(/\/$/, '')
-const start = `${server}/kamera`
+const start = `${server}/`
 
 const page = (title, body) => `<!DOCTYPE html>
 <html lang="de">

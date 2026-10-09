@@ -8,7 +8,7 @@ iOS ist konfiguriert, aber mangels Mac noch nie gebaut worden.
 
 ```
 mobile/
-  capacitor.config.ts     App-ID net.owia.app, lädt https://owia.net, Start /kamera
+  capacitor.config.ts     App-ID net.owia.app, lädt https://owia.net (Start / wie die PWA)
   scripts/prepare-www.mjs Offline-Seite (www/, erzeugt, nicht im Git)
   scripts/generate-icons.mjs  Icon-/Splash-Quellen → assets/ (dann `npm run assets`)
   android/                Gradle-Projekt (im Git, Build-Ordner nicht)
