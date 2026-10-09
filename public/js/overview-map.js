@@ -86,6 +86,41 @@
     }
   }
 
+  // Eigener Entwurf ohne Foto: oranger Punkt (als Marker, damit er clustert).
+  function ownDotIcon() {
+    return L.divIcon({ className: 'overview-own-dot', iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8] })
+  }
+
+  // Marker-Clustering (Leaflet.markercluster): herausgezoomt fasst ein Kachel-
+  // Stapel nahe Anzeigen zusammen – erstes Foto + Anzahl. Klick zoomt hinein,
+  // auf der letzten Zoomstufe (gleicher Tatort) fächern die Marker auf.
+  function createCluster() {
+    if (!L.markerClusterGroup) return L.layerGroup()
+    return L.markerClusterGroup({
+      maxClusterRadius: 50,
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      zoomToBoundsOnClick: true,
+      spiderfyDistanceMultiplier: 1.8,
+      iconCreateFunction(c) {
+        const children = c.getAllChildMarkers()
+        const n = children.length
+        const foto = children.find((m) => m.options.fotoUrl)
+        const eigen = children.some((m) => m.options.eigen)
+        const size = n >= 100 ? 60 : n >= 10 ? 54 : 48
+        const bild = foto
+          ? '<img src="' + encodeURI(foto.options.fotoUrl) + '" alt="">'
+          : ''
+        return L.divIcon({
+          className: 'overview-cluster' + (eigen ? ' is-own' : '') + (bild ? '' : ' no-foto'),
+          html: bild + '<span class="overview-cluster-n">' + n + '</span>',
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+        })
+      },
+    })
+  }
+
   const escapeHtml = window.OWIA.escapeHtml
 
   function formatDate(d) {
@@ -162,6 +197,9 @@
     drawCityBoundaries(map)
     setTimeout(() => map.invalidateSize(), 200)
 
+    const cluster = createCluster()
+    map.addLayer(cluster)
+
     let reports = []
     try {
       const res = await fetch('/api/public/reports', { headers: { Accept: 'application/json' } })
@@ -175,9 +213,9 @@
       const lat = num(r.lat)
       const lon = num(r.lon)
       if (lat === null || lon === null) return
-      const m = L.marker([lat, lon], r.imageUrl ? { icon: imageIcon(r.imageUrl, '#495057') } : {})
-        .addTo(map)
+      const m = L.marker([lat, lon], r.imageUrl ? { icon: imageIcon(r.imageUrl, '#495057'), fotoUrl: r.imageUrl } : {})
         .bindPopup(popupHtml(r), { maxWidth: 360 })
+      cluster.addLayer(m)
       if (photoUrls(r).length && window.matchMedia('(hover: hover)').matches) {
         m.bindTooltip(() => hoverHtml(r), { direction: 'top', offset: [0, -24], className: 'overview-hover', opacity: 1 })
         // Popup offen → Tooltip wäre doppelt.
@@ -201,16 +239,12 @@
         const lat = num(r.lat)
         const lon = num(r.lon)
         if (lat === null || lon === null) return
-        const ownMarker = r.imageUrl
-          ? L.marker([lat, lon], { icon: imageIcon(r.imageUrl, '#fd7e14') })
-          : L.circleMarker([lat, lon], {
-              radius: 8,
-              color: '#fff',
-              weight: 2,
-              fillColor: '#fd7e14',
-              fillOpacity: 0.95,
-            })
-        ownMarker.addTo(map).bindPopup(ownPopupHtml(r))
+        const ownMarker = L.marker([lat, lon], {
+          icon: r.imageUrl ? imageIcon(r.imageUrl, '#fd7e14') : ownDotIcon(),
+          fotoUrl: r.imageUrl || null,
+          eigen: true,
+        })
+        cluster.addLayer(ownMarker.bindPopup(ownPopupHtml(r)))
         bounds.push([lat, lon])
       })
     }
