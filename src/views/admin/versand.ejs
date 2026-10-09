@@ -97,7 +97,7 @@
     </div>
 
     <% if (queue.gesendet.length) { %>
-      <div class="card shadow-sm mt-3">
+      <div class="card shadow-sm mt-3" data-gesendet>
         <div class="card-header">Zuletzt über das Portal versendet</div>
         <ul class="list-group list-group-flush small">
           <% queue.gesendet.forEach(function (r) { %>
@@ -125,6 +125,7 @@
         <div class="alert py-2 px-3 small mb-2" data-live-msg hidden></div>
         <div class="versand-screen" data-screen tabindex="0"
              title="Live-Bild des Portal-Browsers. Klicken, scrollen und tippen wirkt direkt im Formular.">
+          <video data-video muted playsinline disablepictureinpicture disableremoteplayback hidden></video>
           <img alt="Live-Bild des Portal-Browsers" data-frame hidden>
           <div class="versand-screen-empty text-muted small" data-frame-empty>
             Links eine Anzeige mit „▶ Senden" starten – hier erscheint dann der Browser live.

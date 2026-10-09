@@ -108,6 +108,7 @@ async function main() {
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
+        mediaSrc: ["'self'", 'blob:'], // Live-Video auf /versand (MediaSource)
         connectSrc: ["'self'"],
         // Altcha-Widget (public/vendor/altcha.min.js) löst die Proof-of-Work-
         // Aufgabe in Web Workern aus blob:/data:-URLs.

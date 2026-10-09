@@ -5,7 +5,8 @@ FROM mcr.microsoft.com/playwright:v1.62.1-noble
 
 # pdftotext: die Vorgangs-ID steht nur in der PDF-Zusammenfassung (Fußzeile
 # „Vorgang: Anzeige einer Ordnungswidrigkeit / 26.111745"), nicht auf der Seite.
-RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils \
+# ffmpeg: Live-Video (H.264) für /versand.
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -1,6 +1,6 @@
 // Live-Versand (/versand, src/views/admin/versand.ejs): startet Portal-Läufe
 // nacheinander in einem Fenster (Portal-Dienst: immer nur 1 Lauf), zeigt das
-// Browserbild (Einzelbilder per Polling – robust hinter jedem Proxy) und reicht
+// Browserbild (H.264-Video per MediaSource, Rückfall MJPEG/Einzelbilder) und reicht
 // Klicks, Scrollen und Tastatur durch. Server: src/routes/portal.ts.
 ;(function () {
   'use strict'
@@ -60,6 +60,7 @@
     this.frameTimer = null
     var q = function (s) { return el.querySelector(s) }
     this.img = q('[data-frame]')
+    this.video = q('[data-video]')
     this.empty = q('[data-frame-empty]')
     this.screen = q('[data-screen]')
     this.stateEl = q('[data-live-state]')
@@ -72,15 +73,17 @@
     this.btnCancel = q('[data-act=abbrechen]')
     q('[data-slot-nr]').textContent = 'Live'
 
-    this.img.addEventListener('click', function (e) {
-      var r = self.img.getBoundingClientRect()
-      self.input({ type: 'click', x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height })
-      self.screen.focus({ preventScroll: true })
+    ;[this.img, this.video].forEach(function (pic) {
+      pic.addEventListener('click', function (e) {
+        var r = pic.getBoundingClientRect()
+        self.input({ type: 'click', x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height })
+        self.screen.focus({ preventScroll: true })
+      })
     })
     var wheelAcc = 0
     var wheelTimer = null
     this.screen.addEventListener('wheel', function (e) {
-      if (!self.current || self.img.hidden) return
+      if (!self.current || (self.img.hidden && self.video.hidden)) return
       e.preventDefault()
       wheelAcc += e.deltaY
       if (wheelTimer) return
@@ -164,7 +167,9 @@
     if (!this.statusTimer) this.statusTimer = setInterval(function () { self.poll() }, 1000)
     if (this.frameTimer) clearInterval(this.frameTimer)
     this.frameTimer = null
-    this.openStream()
+    this.videoFails = 0
+    this.streamFails = 0
+    if (!this.openVideo()) this.openStream()
     this.poll()
   }
 
@@ -262,7 +267,7 @@
   Slot.prototype.finish = function (st, wasActive) {
     var self = this
     var id = this.current.id
-    finished[id] = true
+    finished[id] = st
     // Letztes Bild noch holen (der Stream endet mit dem Lauf), dann das
     // Bild-Polling einstellen, falls es als Ersatz lief.
     setTimeout(function () {
@@ -280,6 +285,106 @@
     if (wasActive && optNext.checked && (st === 'done' || st === 'failed')) setTimeout(function () { startNext(self) }, 1500)
   }
 
+  // Live-Video: H.264 als fragmentiertes MP4 (/versand/:id/video) über
+  // MediaSource. Der Player bleibt an der Live-Kante (springt vor, wenn er mehr
+  // als ½ s zurückliegt) und wirft alte Puffer weg. Gibt es (noch) keinen Lauf,
+  // nach 1 s neu versuchen; ist der Lauf vorbei oder klappt Video gar nicht,
+  // übernimmt das <img> (MJPEG bzw. letztes Bild).
+  var VIDEO_TYPE = 'video/mp4; codecs="avc1.42C028"'
+  var MS = window.MediaSource || window.ManagedMediaSource
+  var videoOk = !!(MS && MS.isTypeSupported && MS.isTypeSupported(VIDEO_TYPE))
+
+  Slot.prototype.stopVideo = function () {
+    clearTimeout(this.videoRetry)
+    if (this.vid) { this.vid.ctrl.abort(); this.vid = null }
+    if (this.videoUrl) { URL.revokeObjectURL(this.videoUrl); this.videoUrl = null }
+  }
+
+  Slot.prototype.openVideo = function () {
+    var self = this
+    if (!videoOk || !this.current) return false
+    var id = this.current.id
+    var v = this.video
+    this.stopVideo()
+    var gen = { ctrl: new AbortController() }
+    this.vid = gen
+    var ms = new MS()
+    var alive = function () { return self.vid === gen && self.current && self.current.id === id }
+    var failed = false
+    var fail = function (gotData) {
+      if (failed || !alive()) return
+      failed = true
+      self.stopVideo()
+      if (gotData) self.videoFails = 0
+      var active = !self.state || ACTIVE.indexOf(self.state) >= 0
+      if (active && ++self.videoFails <= 15) {
+        self.videoRetry = setTimeout(function () { if (self.current && self.current.id === id) self.openVideo() }, 1000)
+      } else {
+        self.openStream()
+      }
+    }
+    this.videoUrl = URL.createObjectURL(ms)
+    v.src = this.videoUrl
+    ms.addEventListener('sourceopen', function () {
+      if (!alive()) return
+      var sb
+      try { sb = ms.addSourceBuffer(VIDEO_TYPE) } catch (e) { videoOk = false; return fail() }
+      var queue = []
+      var got = false
+      var pump = function () {
+        if (!alive() || sb.updating || !queue.length) return
+        var buf = queue.length === 1 ? queue[0] : concat(queue)
+        queue = []
+        try { sb.appendBuffer(buf) } catch (e) { fail(got) }
+      }
+      sb.addEventListener('updateend', function () {
+        if (!alive()) return
+        var b = v.buffered
+        if (b.length) {
+          var end = b.end(b.length - 1)
+          if (end - v.currentTime > 0.5 || v.currentTime < b.start(0)) v.currentTime = Math.max(b.start(0), end - 0.1)
+          if (v.paused) v.play().catch(function () {})
+          if (!sb.updating && v.currentTime - b.start(0) > 30) { try { sb.remove(0, v.currentTime - 10); return } catch (e) { /* egal */ } }
+        }
+        pump()
+      })
+      fetch('/versand/' + id + '/video?n=' + Date.now(), { cache: 'no-store', signal: gen.ctrl.signal })
+        .then(function (r) {
+          if (r.status !== 200 || !r.body) return fail()
+          var reader = r.body.getReader()
+          var read = function () {
+            return reader.read().then(function (x) {
+              if (x.done) return fail(got)
+              got = true
+              queue.push(x.value)
+              pump()
+              return read()
+            })
+          }
+          return read()
+        })
+        .catch(function () { fail(got) })
+    })
+    // Kann der Browser das Video gar nicht laden (z. B. Richtlinie), auf MJPEG.
+    v.onerror = function () { if (alive()) { videoOk = false; fail() } }
+    v.onplaying = function () {
+      if (!alive()) return
+      v.hidden = false
+      self.img.hidden = true
+      self.empty.hidden = true
+    }
+    return true
+  }
+
+  function concat(parts) {
+    var n = 0
+    parts.forEach(function (p) { n += p.length })
+    var out = new Uint8Array(n)
+    var o = 0
+    parts.forEach(function (p) { out.set(p, o); o += p.length })
+    return out
+  }
+
   // Live-Bild als MJPEG-Stream (/versand/:id/stream) – das <img> zeigt jedes
   // neue Bild sofort. Gibt es (noch) keinen Lauf oder bricht die Verbindung
   // ab, nach 1 s neu verbinden; scheitert das wiederholt, Einzelbild-Polling.
@@ -290,6 +395,7 @@
     this.streamFails = this.streamFails || 0
     this.img.onload = function () {
       self.streamFails = 0
+      self.video.hidden = true
       self.img.hidden = false
       self.empty.hidden = true
     }
@@ -322,6 +428,7 @@
         var url = URL.createObjectURL(b)
         self.img.onload = function () { if (self.frameUrl && self.frameUrl !== url) URL.revokeObjectURL(self.frameUrl); self.frameUrl = url }
         self.img.src = url
+        self.video.hidden = true
         self.img.hidden = false
         self.empty.hidden = true
       })
@@ -370,7 +477,7 @@
       else { el.removeAttribute('data-auto-in'); el.textContent = 'automatischer Versand startet …' }
     })
   }
-  if (root.querySelector('[data-auto-in]')) setInterval(autoTick, 1000)
+  var autoTimer = root.querySelector('[data-auto-in]') ? setInterval(autoTick, 1000) : null
 
   var abstandForm = document.querySelector('[data-abstand]')
   if (abstandForm) abstandForm.addEventListener('submit', function (e) {
@@ -447,6 +554,38 @@
       })
   }
   watchLive()
+
+  // Liste links live halten: alle 5 s die Seite neu holen und Liste, Zähler und
+  // „Zuletzt versendet" austauschen (Optionen und Live-Fenster bleiben).
+  function refreshList() {
+    if (document.hidden) return setTimeout(refreshList, 5000)
+    fetch(location.pathname + location.search, { cache: 'no-store', headers: { Accept: 'text/html' } })
+      .then(function (r) { return r.ok && !r.redirected ? r.text() : null })
+      .catch(function () { return null })
+      .then(function (html) {
+        if (html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html')
+          var list = doc.querySelector('[data-list]')
+          if (list) {
+            root.querySelector('[data-list]').innerHTML = list.innerHTML
+            Object.keys(finished).forEach(function (id) {
+              var li = item(id)
+              if (li && finished[id] === 'done') { li.classList.add('is-done'); li.querySelectorAll('button').forEach(function (b) { b.disabled = true }) }
+            })
+            updateCount()
+            markActive()
+            autoStart = Date.now()
+            if (!autoTimer && root.querySelector('[data-auto-in]')) autoTimer = setInterval(autoTick, 1000)
+          }
+          var g = doc.querySelector('[data-gesendet]')
+          var mine = root.querySelector('[data-gesendet]')
+          if (g && mine) mine.innerHTML = g.innerHTML
+          else if (g) root.querySelector('[data-list]').closest('.card').after(g)
+        }
+        setTimeout(refreshList, 5000)
+      })
+  }
+  setTimeout(refreshList, 5000)
 
   // Laufende Vorgänge (z. B. nach Neuladen) und die Vorauswahl (?az=…) zeigen.
   root.querySelectorAll('.versand-item[data-busy="1"]').forEach(function (li, i) {

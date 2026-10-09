@@ -4,7 +4,8 @@
 // „Absenden" (POST /runs/:id/submit) und liefert Vorgangs-ID + Zusammenfassung.
 //
 // Live-Ansicht: Chromium streamt per CDP-Screencast JPEG-Frames; die App holt
-// den jeweils neuesten über GET /runs/:id/frame. Klicks/Tastatur aus der
+// sie als H.264-Video (GET /runs/:id/video), MJPEG (…/stream) bzw. als
+// Einzelbild (…/frame). Klicks/Tastatur aus der
 // Live-Ansicht kommen über POST /runs/:id/input zurück – damit kann der Nutzer
 // eingreifen, wenn der Lauf pausiert (state 'needs_input').
 //
@@ -18,6 +19,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
 import { fillSteps, submitForm, readSummary, Cancelled } from './lib.mjs'
 import { PROFILE as EKOM21 } from './ekom21.mjs'
@@ -67,6 +69,7 @@ function createRun(payload, files, dir) {
     frame: null,
     frameNo: 0,
     watchers: new Set(), // offene MJPEG-Streams (GET /runs/:id/stream)
+    videos: new Set(), // offene H.264-Streams (GET /runs/:id/video)
     summary: null,
     result: null,
     error: null,
@@ -146,7 +149,43 @@ function pushFrame(run) {
     else w.timer = setTimeout(() => sendTo(run, w), wait)
   }
 }
+// Live-Video: je Zuschauer ein ffmpeg, das das jeweils neueste Screencast-Bild
+// mit festen 25 fps zu H.264 kodiert (fragmentiertes MP4, im Browser per
+// MediaSource abgespielt). Ein fast stehendes Formular kostet so nur wenige
+// kbit/s; Bewegung bleibt flüssig. Ein eigener Encoder je Zuschauer, damit jeder
+// mit Init-Segment und Keyframe beginnt (es schauen höchstens 1–2 zu).
+const VIDEO_FPS = 25
+function startVideo(run, req, res) {
+  const ff = spawn('ffmpeg', [
+    '-loglevel', 'error', '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', String(VIDEO_FPS), '-i', 'pipe:0',
+    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-profile:v', 'baseline', '-level', '4.0',
+    '-crf', '26', '-maxrate', '1500k', '-bufsize', '750k', '-g', String(VIDEO_FPS * 2), '-threads', '2',
+    '-f', 'mp4', '-movflags', 'empty_moov+default_base_moof+frag_keyframe', '-frag_duration', '40000', 'pipe:1',
+  ], { stdio: ['pipe', 'pipe', 'inherit'] })
+  const v = { ff, timer: null }
+  const stop = () => {
+    clearInterval(v.timer)
+    run.videos.delete(v)
+    ff.stdin.destroy()
+    ff.kill('SIGKILL')
+  }
+  v.stop = stop
+  res.writeHead(200, { 'Content-Type': 'video/mp4', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' })
+  ff.stdout.pipe(res)
+  ff.on('exit', () => { clearInterval(v.timer); run.videos.delete(v); res.end() })
+  ff.stdin.on('error', () => {})
+  req.on('close', stop)
+  v.timer = setInterval(() => {
+    // Staut sich der Encoder, lieber ein Bild auslassen.
+    if (run.frame && !ff.stdin.writableNeedDrain) ff.stdin.write(run.frame)
+  }, 1000 / VIDEO_FPS)
+  run.videos.add(v)
+}
+
 function endWatchers(run) {
+  for (const v of run.videos) { clearInterval(v.timer); v.ff.stdin.end() }
+  run.videos.clear()
   for (const w of run.watchers) {
     clearTimeout(w.timer)
     if (run.frame) writePart(w.res, run.frame)
@@ -364,6 +403,11 @@ async function handle(req, res) {
     if (!run.frame) return send(res, 204, '')
     res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'X-Frame-No': String(run.frameNo) })
     return res.end(run.frame)
+  }
+
+  if (req.method === 'GET' && action === 'video') {
+    if (run.finishedAt || !run.frame) return send(res, 204, '')
+    return startVideo(run, req, res)
   }
 
   if (req.method === 'GET' && action === 'stream') {

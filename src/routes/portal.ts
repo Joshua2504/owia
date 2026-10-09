@@ -1,6 +1,6 @@
 // Live-Versand über Online-Portale (Frankfurt: ekom21). Die Seite /versand
 // zeigt die eingereichten Portal-Anzeigen und den Browser des Portal-Dienstes
-// live (MJPEG-Stream, Fallback Einzelbilder). Eingriffe (Klick/Tippen ins Live-Bild) gehen an
+// live (H.264-Video, Rückfall MJPEG bzw. Einzelbilder). Eingriffe (Klick/Tippen ins Live-Bild) gehen an
 // den Dienst durch. Logik und DB-Zustände: services/portalDispatch.ts.
 import { Readable } from 'node:stream'
 import { FastifyInstance } from 'fastify'
@@ -199,20 +199,23 @@ export default async function portalRoutes(app: FastifyInstance) {
     return reply.type('image/jpeg').send(Buffer.from(await res.arrayBuffer()))
   })
 
-  // Live-Bild als MJPEG-Stream: jedes Screencast-Bild geht sofort durch,
-  // statt dass der Browser einzeln nachfragt. Läuft bis zum Ende des Laufs.
-  app.get('/versand/:id/stream', { preHandler: requireAdmin, config: { rateLimit: false } }, async (request, reply) => {
-    const runId = await currentRunId(reportIdOf(request))
-    if (!runId) return reply.status(204).send()
-    const ctrl = new AbortController()
-    request.raw.on('close', () => ctrl.abort())
-    const res = await fetch(`${PORTAL_URL}/runs/${encodeURIComponent(runId)}/stream`, { signal: ctrl.signal }).catch(() => null)
-    if (!res || res.status !== 200 || !res.body) return reply.status(204).send()
-    reply.header('Cache-Control', 'no-store')
-    reply.header('X-Accel-Buffering', 'no')
-    reply.type(res.headers.get('content-type') || 'multipart/x-mixed-replace')
-    return reply.send(Readable.fromWeb(res.body as any).on('error', () => {}))
-  })
+  // Live-Bild als Stream durchreichen: /video = H.264 (fragmentiertes MP4,
+  // im Browser per MediaSource), /stream = MJPEG (Rückfall). Läuft bis zum Ende
+  // des Laufs bzw. bis der Browser die Verbindung schließt.
+  for (const art of ['video', 'stream'] as const) {
+    app.get(`/versand/:id/${art}`, { preHandler: requireAdmin, config: { rateLimit: false } }, async (request, reply) => {
+      const runId = await currentRunId(reportIdOf(request))
+      if (!runId) return reply.status(204).send()
+      const ctrl = new AbortController()
+      request.raw.on('close', () => ctrl.abort())
+      const res = await fetch(`${PORTAL_URL}/runs/${encodeURIComponent(runId)}/${art}`, { signal: ctrl.signal }).catch(() => null)
+      if (!res || res.status !== 200 || !res.body) return reply.status(204).send()
+      reply.header('Cache-Control', 'no-store')
+      reply.header('X-Accel-Buffering', 'no')
+      reply.type(res.headers.get('content-type') || 'application/octet-stream')
+      return reply.send(Readable.fromWeb(res.body as any).on('error', () => {}))
+    })
+  }
 
   app.post('/versand/:id/input', { preHandler: requireAdmin, config: { rateLimit: false } }, async (request, reply) => {
     const runId = await currentRunId(reportIdOf(request))
