@@ -6,7 +6,7 @@
 // Fahrzeugmarke und -farbe (derselbe Dienstaufruf liefert sie mit).
 //
 // Die Verarbeitung läuft SERIELL über eine einfache Promise-Kette: die
-// CPU-Inferenz teilt sich die Maschine mit dem Tileserver – mehrere Bilder
+// CPU-Inferenz teilt sich die Maschine mit App, DB und Photon – mehrere Bilder
 // gleichzeitig würden die CPU sättigen (der Dienst serialisiert zusätzlich).
 import { logger } from './logger'
 import fs from 'fs/promises'

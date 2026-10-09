@@ -34,7 +34,7 @@ COPY --from=fahrzeug-text /m/fahrzeug_text.npz /app/models/fahrzeug_text.npz
 COPY districts.py plate.py segment.py fahrzeug.py app.py warmup.py ./
 RUN python warmup.py
 
-# CPU wird mit dem Tileserver geteilt – Thread-Zahl der BLAS/OMP-Pools begrenzen.
+# CPU wird mit App, DB und Photon geteilt – Thread-Zahl der BLAS/OMP-Pools begrenzen.
 ENV OMP_NUM_THREADS=2
 
 EXPOSE 8000

@@ -78,7 +78,6 @@ services:
       IMAP_POLL_SECONDS: ${IMAP_POLL_SECONDS:-}
       REPLY_TRUSTED_DOMAINS: ${REPLY_TRUSTED_DOMAINS:-}
       PHOTON_URL: ${PHOTON_URL:-}
-      TILESERVER_URL: ${TILESERVER_URL:-}
       ALPR_URL: ${ALPR_URL:-}
       ALPR_ENABLED: ${ALPR_ENABLED:-}
       ALPR_MIN_CONFIDENCE: ${ALPR_MIN_CONFIDENCE:-}
@@ -87,7 +86,7 @@ services:
       # Shell-Default im command oben: unset ⇒ "watch" (Dev), leer ⇒ kein watch (Prod).
       TSX_WATCH: ${TSX_WATCH-watch}
     # Speichergrenze: Ein Riesenbild oder ein Leck darf nicht den ganzen Host
-    # (8 GB, geteilt mit DB, Tileserver, Photon, ALPR) in den OOM-Killer treiben.
+    # (8 GB, geteilt mit DB, Photon, ALPR, Portal) in den OOM-Killer treiben.
     mem_limit: 2g
     networks: [default, proxy]
     restart: unless-stopped
@@ -148,47 +147,6 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
-  # OSM-Raster-Tileserver. Prod-Daten seit 10/2026: Hessen + Mainzer Stadtgebiet + Hamburg
-  # (Mainz liegt in RLP), importiert mit scripts/tiles-import.sh. Der
-  # Auto-Import unten lädt nur Hessen – bei einem leeren Volume danach das
-  # Skript laufen lassen, sonst fehlen Mainz und Hamburg.
-  # Rendert Karten-Kacheln, die die App same-origin über /tiles/{z}/{x}/{y}.png
-  # ausliefert (Proxy in src/routes/tiles.ts) – daher kein Port nach außen.
-  #
-  # Auto-Import beim ersten Start: Fehlt der Import-Marker im Volume, läuft
-  # einmalig der Hessen-Import (baut die PostGIS-Render-DB, ~10–30 Min), danach
-  # der Tileserver. Dadurch funktioniert auch ein frisches `docker compose up -d`
-  # (inkl. automatischem Deploy) ohne manuellen Zwischenschritt; Folge-Deploys
-  # überspringen den Import (Marker liegt im persistenten Volume osm-tile-data).
-  # Während des Imports liefert /tiles leere Kacheln – die App blockiert nicht.
-  tileserver:
-    image: overv/openstreetmap-tile-server:latest
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        if [ ! -f /data/database/planet-import-complete ]; then
-          # Kein Abschluss-Marker => evtl. abgebrochener Import. Ein halb
-          # angelegtes Cluster (Rolle "renderer"/DB "gis" existieren bereits)
-          # ließe den Re-Import an `createuser renderer` scheitern
-          # ("role already exists" -> Crash-Schleife). Daher das unvollständige
-          # Postgres-Verzeichnis verwerfen und sauber von vorn importieren.
-          echo "Kein Import-Marker – räume evtl. unvollständigen Import-Stand und importiere neu ..."
-          rm -rf /data/database/postgres
-          /run.sh import
-        fi
-        exec /run.sh run
-    environment:
-      - DOWNLOAD_PBF=https://download.geofabrik.de/europe/germany/hessen-latest.osm.pbf
-      - DOWNLOAD_POLY=https://download.geofabrik.de/europe/germany/hessen.poly
-    volumes:
-      - osm-tile-data:/data/database/
-      - osm-tile-cache:/data/tiles/
-    mem_limit: 2g
-    shm_size: 512m
-    restart: unless-stopped
-    logging: *default-logging
-
   # Kennzeichenerkennung (YOLOv11 + PaddleOCR) für hochgeladene Beweisfotos.
   # Läuft in Produktion automatisch mit; in der Entwicklung opt-in über
   # COMPOSE_PROFILES=alpr (plus ALPR_ENABLED=on in der .env). Die App spricht
@@ -201,7 +159,7 @@ services:
     mem_limit: 2g
     # Foto-Verarbeitung darf nur 2 der 4 Kerne nutzen: fest auf CPU 2–3 gepinnt
     # (cpuset) und zusätzlich auf 2 Kerne gedeckelt. App, DB, Caddy und
-    # Tileserver behalten so immer die Kerne 0–1.
+    # Photon behalten so immer die Kerne 0–1.
     cpuset: "2-3"
     cpus: 2
     restart: unless-stopped
@@ -234,8 +192,6 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  osm-tile-data:
-  osm-tile-cache:
 
 # Gemeinsames Netz von Prod- und Dev-Stack: Der Prod-Caddy erreicht darüber
 # die Dev-Container (dev.<domain> / dev-mail.<domain>, siehe Caddyfile).

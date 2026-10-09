@@ -3,14 +3,10 @@
 // Deutschland, frei nutzbar unter „Datenlizenz Deutschland – Namensnennung
 // 2.0“, Hinweis „© basemap.de / BKG“ an der Karte). Der Browser spricht nie
 // direkt mit basemap.de: Nutzer-IPs gehen an keinen Dritten und die CSP
-// bleibt same-origin.
-//
-// Fallback ist der alte OSM-Tileserver im Docker-Netz (TILESERVER_URL), solange
-// der Container noch läuft – er kennt nur Hessen, Mainz und Hamburg.
+// bleibt same-origin. Der frühere eigene OSM-Tileserver ist seit 10/2026 weg.
 
 const BASEMAP_URL =
   'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_farbe/default/GLOBAL_WEBMERCATOR'
-const TILESERVER_URL = (process.env.TILESERVER_URL || 'http://tileserver:80').replace(/\/$/, '')
 
 /** Höchste Zoomstufe, die basemap.de liefert (Leaflet skaliert darüber hoch). */
 export const MAX_TILE_ZOOM = 19
@@ -40,16 +36,14 @@ async function fetchPng(url: string, timeoutMs: number): Promise<Buffer | null> 
   }
 }
 
-async function load(z: number, x: number, y: number, timeoutMs: number): Promise<Buffer | null> {
+function load(z: number, x: number, y: number, timeoutMs: number): Promise<Buffer | null> {
   // basemap.de (WMTS-REST): Reihenfolge {z}/{y}/{x}, nicht {z}/{x}/{y}.
-  const buf = await fetchPng(`${BASEMAP_URL}/${z}/${y}/${x}.png`, timeoutMs)
-  if (buf) return buf
-  return fetchPng(`${TILESERVER_URL}/tile/${z}/${x}/${y}.png`, Math.min(timeoutMs, 3000))
+  return fetchPng(`${BASEMAP_URL}/${z}/${y}/${x}.png`, timeoutMs)
 }
 
 /**
- * PNG-Kachel (Web-Mercator, 256 px) holen oder null, wenn weder basemap.de
- * noch der Fallback sie liefern. Aufrufer prüfen die Koordinaten vorher.
+ * PNG-Kachel (Web-Mercator, 256 px) holen oder null, wenn basemap.de sie
+ * nicht liefert. Aufrufer prüfen die Koordinaten vorher.
  */
 export async function getTile(z: number, x: number, y: number, timeoutMs = 5000): Promise<Buffer | null> {
   const key = `${z}/${x}/${y}`

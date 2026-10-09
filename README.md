@@ -71,8 +71,6 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 - **mail** – Mailpit (Dev-Mailserver mit Web-UI auf Port 8025)
 - **photon** – OSM-Geocoder für die Adresssuche (lädt beim ersten Start den
   Deutschland-Index, mehrere GB)
-- **tileserver** – alter OSM-Raster-Tileserver (Hessen, Mainz, Hamburg), nur
-  noch Fallback, falls basemap.de nicht antwortet; soll entfallen
 - **alpr** – Kennzeichenerkennung (Produktion automatisch, Dev opt-in)
 - **caddy** – Reverse-Proxy mit HTTPS (nur Produktions-Profil)
 
@@ -139,7 +137,7 @@ maßgebliche, dokumentierte Referenz. Die wichtigsten Gruppen:
 - **Datenbank** – `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`
 - **App** – `NODE_ENV`, `SESSION_SECRET`, `APP_URL`, `APP_BIND`, `TSX_WATCH`
 - **HTTPS / Proxy** – `COMPOSE_PROFILES`, `APP_DOMAIN`, `ACME_EMAIL`
-- **Geodaten** – `PHOTON_URL`, `TILESERVER_URL`
+- **Geodaten** – `PHOTON_URL`
 - **Kennzeichen** – `ALPR_URL`, `ALPR_ENABLED`, `ALPR_MIN_CONFIDENCE`
 - **E-Mail-Versand** – `MAIL_DRIVER` (`mailpit` | `smtp`), `MAIL_HOST`,
   `MAIL_PORT` (587/STARTTLS oder 465/SMTPS), `MAIL_USER`, `MAIL_PASS`,

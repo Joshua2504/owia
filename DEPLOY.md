@@ -59,7 +59,7 @@ sollen. Der obige Frankfurt-Wert ist nur ein Beispiel.
    Containernamen im Caddyfile (`owia-app-1`, `ffm-owianzeiger-app-1`, …)
    leiten sich aus dem Compose-Projektnamen ab: Prod = Verzeichnisname `owia`,
    Dev = per `COMPOSE_PROJECT_NAME=ffm-owianzeiger` in der Dev-`.env` gepinnt
-   (hält auch die benannten Volumes, z.B. die importierte Tileserver-DB, stabil).
+   (hält auch die benannten Volumes stabil).
 4. **DNS** für die Dev-Instanz: A-Records `dev.<domain>` und `dev-mail.<domain>`
    auf die Server-IP; Caddy holt die Zertifikate dann automatisch.
 5. Optional: externes Uptime-Monitoring auf `https://<domain>/health`.
@@ -120,7 +120,7 @@ Zustände und Wiederaufnahme: [docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md).
   gelisteten Variablen (kein `env_file`). Alle bisherigen Prod-Werte sind
   abgedeckt; `DB_ROOT_PASSWORD`/`ACME_EMAIL` sieht die App nicht mehr.
   `REPLY_TRUSTED_DOMAINS` hat jetzt alle fünf Städte als Default.
-- **Speichergrenzen:** app 2 GB, db 1,5 GB, photon 1,5 GB, tileserver 2 GB
+- **Speichergrenzen:** app 2 GB, db 1,5 GB, photon 1,5 GB
   (alpr 2 GB, portal 1,5 GB wie bisher). Summe liegt unter den 8 GB des Hosts.
 - **Verhalten:** Abmelden ist POST; Magic-Link zeigt erst eine
   Bestätigungsseite; Cross-Site-POSTs werden mit 403 abgewiesen; CSP ohne
