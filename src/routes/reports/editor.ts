@@ -16,7 +16,7 @@ import { STICKER_LOESEN_MINUTEN, formatCode } from '../../services/stickers'
 import { cityEmail, detectCityByLabel } from '../../services/districts'
 import { reverseGeocode } from '../../services/geocode'
 import { VERSTOSS_ARTEN } from '../../config/verstoss'
-import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, DEFAULT_FAHRZEUG_TYP, KENNZEICHEN_LAENDER } from '../../config/fahrzeug'
+import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, markeNormalisieren, DEFAULT_FAHRZEUG_TYP, KENNZEICHEN_LAENDER } from '../../config/fahrzeug'
 import { imageVersion } from '../../services/images'
 import { createDraft, trashDrafts } from '../../services/drafts'
 import { replyAttachmentPath } from '../../services/mailInbox'
@@ -163,7 +163,7 @@ export default async function editorRoutes(app: FastifyInstance) {
       values.push(land)
     }
     if (typeof body.fahrzeug_marke === 'string') {
-      out.fahrzeug_marke = body.fahrzeug_marke.trim().slice(0, 100) || null
+      out.fahrzeug_marke = markeNormalisieren(body.fahrzeug_marke.trim().slice(0, 100) || null)
       sets.push('fahrzeug_marke=?')
       values.push(out.fahrzeug_marke)
     }

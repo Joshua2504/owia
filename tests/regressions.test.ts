@@ -91,8 +91,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0045_tatzeit_bis_zeitpunkt.sql')
-  assert.equal(rows.length, 45)
+  assert.equal(rows.at(-1)?.filename, '0047_marke_volkswagen.sql')
+  assert.equal(rows.length, 47)
 })
 
 test('Versand-Takt: höchstens ein Versand je VERSAND_ABSTAND_SEK, Freigabe gibt den Platz zurück', async () => {
@@ -798,6 +798,16 @@ test('Statistik summiert Regelsätze je TBNR, Freitext zählt ohne Betrag', () =
   assert.deepEqual(s.monate.map((m) => [m.label, m.anzahl, m.euro]), [['September 2026', 1, 55], ['Oktober 2026', 3, 80]])
 })
 
+test('Marke: VW wird zu Volkswagen', async () => {
+  const { markeNormalisieren } = await import('../src/config/fahrzeug')
+  assert.equal(markeNormalisieren('VW'), 'Volkswagen')
+  assert.equal(markeNormalisieren('vw'), 'Volkswagen')
+  assert.equal(markeNormalisieren('VW Caddy'), 'Volkswagen Caddy')
+  assert.equal(markeNormalisieren('Volkswagen'), 'Volkswagen')
+  assert.equal(markeNormalisieren('Volvo'), 'Volvo')
+  assert.equal(markeNormalisieren('VWX'), 'VWX')
+})
+
 test('Analyse: Wiederholer-Ranking öffentlich ohne Kennzeichen und nur monatsgenau', () => {
   const r = (kennzeichen: string, tattag: string, stunde: number | null = 8) => ({
     kennzeichen, tattag, stunde, fahrzeug_marke: 'VW', fahrzeug_typ: null, fahrzeug_farbe: 'rot',
@@ -816,7 +826,7 @@ test('Analyse: Wiederholer-Ranking öffentlich ohne Kennzeichen und nur monatsge
   assert.equal(pub.heatmap[2][8], 2)
   assert.equal(pub.wochentage[0].anzahl, 1) // Montag ohne Uhrzeit zählt nur hier
   const adm = analysiere(rows, { mitKennzeichen: true })
-  assert.equal(adm.ranking[0].name, 'FAB1')
+  assert.equal(adm.ranking[0].name, 'F-AB 1') // gespeicherte Schreibweise, nicht die Gruppier-Form
   assert.equal(adm.ranking[0].vergehen[0].tatort, 'Musterstr. 1')
 })
 

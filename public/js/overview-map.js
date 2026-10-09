@@ -143,8 +143,25 @@
 
   function formatDate(d) {
     if (!d) return ''
+    // /api/public/reports liefert „YYYY-MM-DD" – ohne Date, damit keine
+    // Zeitzone den Tag verschiebt.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d))
+    if (m) return m[3] + '.' + m[2] + '.' + m[1]
     const dt = new Date(d)
     return isNaN(dt) ? '' : dt.toLocaleDateString('de-DE')
+  }
+
+  const euro = (n) => n.toLocaleString('de-DE') + ' €'
+
+  // Datum + möglicher Betrag (Regelsatz laut Bußgeldkatalog) als eine Zeile.
+  function metaHtml(r) {
+    const date = formatDate(r.tattag)
+    const teile = []
+    if (date) teile.push('<span>📅 ' + date + '</span>')
+    if (typeof r.betrag === 'number') {
+      teile.push('<span class="badge text-bg-danger" title="Regelsatz laut Bußgeldkatalog">' + euro(r.betrag) + '</span>')
+    }
+    return teile.length ? '<div class="overview-meta d-flex flex-wrap align-items-center gap-2 small my-1">' + teile.join('') + '</div>' : ''
   }
 
   function popupHtml(r) {
@@ -152,8 +169,7 @@
     if (r.verstossArt) {
       parts.push('<div class="fw-semibold">' + escapeHtml(r.verstossArt) + '</div>')
     }
-    const date = formatDate(r.tattag)
-    if (date) parts.push('<div class="text-muted small">' + date + '</div>')
+    parts.push(metaHtml(r))
     const fotos = fotosHtml(r)
     if (fotos) parts.push(fotos)
     return parts.join('') || 'Anzeige'
@@ -178,12 +194,11 @@
     )
   }
 
-  // Hover (nur mit Maus): alle Fotos als Tooltip, Klick öffnet weiter das Popup.
+  // Hover (nur mit Maus): Tatbestand, Datum, Betrag und alle Fotos als Tooltip, Klick öffnet weiter das Popup.
   function hoverHtml(r) {
-    const date = formatDate(r.tattag)
     return (
       (r.verstossArt ? '<div class="fw-semibold text-wrap">' + escapeHtml(r.verstossArt) + '</div>' : '') +
-      (date ? '<div class="text-muted small">' + date + '</div>' : '') +
+      metaHtml(r) +
       fotosHtml(r)
     )
   }
@@ -235,7 +250,7 @@
       const m = L.marker([lat, lon], r.imageUrl ? { icon: imageIcon(r.imageUrl, '#495057'), fotoUrl: r.imageUrl } : {})
         .bindPopup(popupHtml(r), { maxWidth: 360 })
       cluster.addLayer(m)
-      if (photoUrls(r).length && window.matchMedia('(hover: hover)').matches) {
+      if (window.matchMedia('(hover: hover)').matches) {
         m.bindTooltip(() => hoverHtml(r), { direction: 'top', offset: [0, -24], className: 'overview-hover', opacity: 1 })
         // Popup offen → Tooltip wäre doppelt.
         m.on('popupopen', () => m.closeTooltip())

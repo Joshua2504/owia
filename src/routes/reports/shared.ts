@@ -10,7 +10,7 @@ import { pool } from '../../db/connection'
 import { PdfService } from '../../services/pdf'
 import { getCity, CITIES, hasPdfForm } from '../../config/cities'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../../config/verstoss'
-import { FAHRZEUG_TYPEN } from '../../config/fahrzeug'
+import { FAHRZEUG_TYPEN, markeNormalisieren } from '../../config/fahrzeug'
 import { ALLE_VARIANTEN, formularHilfen } from '../../services/portalFfm'
 import { verstossSperren } from '../../services/portale'
 import { cachedMailVariant } from '../../services/pixelate'
@@ -198,7 +198,7 @@ export async function persistFields(
     [
       normalizePlate(v.kennzeichen),
       land,
-      text(v.fahrzeug_marke, 100),
+      markeNormalisieren(text(v.fahrzeug_marke, 100)),
       datum(v.tattag),
       datum(tattagBis ?? undefined),
       uhrzeit(v.tatzeit_von),

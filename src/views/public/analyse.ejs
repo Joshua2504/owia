@@ -34,6 +34,8 @@
   .an-platz { font-size: 1.4rem; font-weight: 700; width: 2.5rem; text-align: center; font-variant-numeric: tabular-nums; }
   .an-kz { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .03em; }
   .an-rank table td { font-size: .85rem; }
+  .an-vg { cursor: pointer; }
+  .an-vg:hover > td, .an-vg.is-active > td { background: var(--bs-tertiary-bg); }
   @media (max-width: 575.98px) { .an-heat { font-size: .55rem; grid-template-columns: 1.4rem repeat(24, 1fr); gap: 1px; } }
 </style>
 
@@ -69,6 +71,7 @@
   <p class="text-muted small mb-3">
     Fahrzeuge mit mindestens zwei Anzeigen, sortiert nach Anzahl verschiedener Tattage,
     dann nach Anzahl Anzeigen. Klick auf einen Platz zeigt alle Vergehen.
+    <% if (admin) { %>Maus über ein Vergehen zeigt Karte, Fotos und Anzeigendetails (Klick hält die Karte fest).<% } %>
     <% if (!admin) { %>Kennzeichen werden nicht veröffentlicht – die Fahrzeuge sind durchnummeriert.<% } %>
   </p>
   <% if (!a.ranking.length) { %>
@@ -99,7 +102,7 @@
             </tr></thead>
             <tbody>
               <% w.vergehen.forEach((v) => { %>
-                <tr>
+                <tr<% if (admin && v.detail) { %> class="an-vg" tabindex="0" data-detail="<%= JSON.stringify({ ...v.detail, datum: datum(v.datum), wochentag: v.wochentag, tatbestand: v.tatbestand, euro: v.euro === null ? null : eur(v.euro), tatort: v.tatort, stadt: v.stadt, behinderung: v.behinderung }) %>"<% } %>>
                   <td class="text-nowrap"><%= v.wochentag || '' %> <%= datum(v.datum) %></td>
                   <td class="text-nowrap"><%= v.stunde === null ? '–' : `${String(v.stunde).padStart(2, '0')}–${String((v.stunde + 1) % 24).padStart(2, '0')} Uhr` %></td>
                   <td><%= v.tatbestand %><% if (v.behinderung) { %> <span class="badge text-bg-secondary">mit Behinderung</span><% } %></td>
@@ -194,3 +197,9 @@
     Regelsätze laut Bußgeldkatalog (KBA, Stand 22.08.2024).
   </div>
 </div>
+
+<% if (admin) { %>
+<link rel="stylesheet" href="/public/vendor/leaflet.css">
+<script src="/public/vendor/leaflet.js"></script>
+<script src="/public/js/analyse-admin.js"></script>
+<% } %>

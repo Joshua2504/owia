@@ -6,6 +6,7 @@ import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { viewData, setFlash } from '../middleware/auth'
 import { loadPixelated } from '../services/intakeImageProcessing'
+import { regelsatzEuro, tbnrAusLabel } from '../config/verstoss'
 import { kartenAnalyse } from '../services/dritte'
 import { getCity, unlockedCities, DEFAULT_CITY_ID } from '../config/cities'
 import { isValidEmail, normalizeEmail } from './auth'
@@ -250,7 +251,7 @@ export default async function publicRoutes(app: FastifyInstance) {
   // öffentlich einsehbar sein (Bild-URL läuft über die Bild-ID).
   app.get('/api/public/reports', async (_request, reply) => {
     const [rows] = await pool.query<mysql.RowDataPacket[]>(
-      `SELECT r.tattag, r.verstoss_art, r.tatort_lat, r.tatort_lon,
+      `SELECT DATE_FORMAT(r.tattag, '%Y-%m-%d') AS tattag, r.verstoss_art, r.tatort_lat, r.tatort_lon,
               (SELECT GROUP_CONCAT(ri.id ORDER BY ri.sort_order, ri.id) FROM report_images ri
                 WHERE ri.report_id = r.id) AS image_ids
          FROM reports r
@@ -267,6 +268,8 @@ export default async function publicRoutes(app: FastifyInstance) {
       lon: genau(r.tatort_lon),
       verstossArt: r.verstoss_art || null,
       tattag: r.tattag || null,
+      // Regelsatz laut Bußgeldkatalog (wie /statistik); null ohne Katalog-Tatbestand.
+      betrag: regelsatzEuro(tbnrAusLabel(r.verstoss_art)),
       imageUrl: imageUrls[0] || null,
       imageUrls,
     }})

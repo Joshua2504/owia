@@ -76,6 +76,14 @@ export function portalMarke(marke: string | null | undefined): string | null {
   return MARKEN_ALIASE[first] || FAHRZEUG_MARKEN.find((x) => key(x) === first) || null
 }
 
+/** Marke beim Speichern vereinheitlichen: „VW"/„vw"/„V.W." → „Volkswagen",
+ *  auch als erstes Wort („VW Caddy" → „Volkswagen Caddy"). Sonst unverändert.
+ *  Bestand umgestellt in migrations/0047_marke_volkswagen.sql (gleiche Regel). */
+export function markeNormalisieren(marke: string | null): string | null {
+  if (!marke) return marke
+  return marke.replace(/^(vw|v\.\s?w\.?)(?=\s|$)/i, 'Volkswagen')
+}
+
 /** Vorschläge fürs Farbfeld (frei editierbar). */
 export const FAHRZEUG_FARBEN = [
   'schwarz', 'weiß', 'silber', 'grau', 'blau', 'rot', 'grün', 'gelb', 'orange', 'braun', 'beige', 'gold', 'violett',

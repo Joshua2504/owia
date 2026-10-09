@@ -20,6 +20,38 @@ export interface AnalyseEingabe {
   behinderung: number
   fahrzeug_verlassen: number
   tatort: string | null
+  // Nur für die Admin-Detailkarte (Hover); öffentlich nie ausgegeben.
+  id?: number
+  aktenzeichen?: string | null
+  tatort_lat?: number | string | null
+  tatort_lon?: number | string | null
+  tatzeit_von?: string | null
+  tatzeit_bis?: string | null
+  tattag_bis?: string | null
+  fahrzeug_modell?: string | null
+  beschreibung?: string | null
+  behinderung_text?: string | null
+  image_ids?: string | null
+  hat_pdf?: number | null
+}
+
+/** Anzeigendetails für die Hover-Karte in /admin/analyse. */
+export interface VergehenDetail {
+  id: number
+  az: string | null
+  kennzeichen: string | null
+  lat: number | null
+  lon: number | null
+  von: string | null
+  bis: string | null
+  tattagBis: string | null
+  verstoss: string | null
+  fahrzeug: string
+  beschreibung: string | null
+  behinderungText: string | null
+  verlassen: boolean
+  bilder: number[]
+  pdf: boolean
 }
 
 export interface Vergehen {
@@ -32,6 +64,7 @@ export interface Vergehen {
   behinderung: boolean
   /** Nur Admin-Ansicht. */
   tatort?: string | null
+  detail?: VergehenDetail
 }
 
 export interface Wiederholer {
@@ -99,6 +132,33 @@ function zaehle(werte: (string | null)[], top = 12): Zaehler[] {
   return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, top)
     .map(([k, n]) => ({ label: label.get(k)!, anzahl: n }))
 }
+function koord(v: unknown): number | null {
+  if (v === null || v === undefined || String(v).trim() === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) && n !== 0 ? n : null
+}
+
+function detail(r: AnalyseEingabe): VergehenDetail | undefined {
+  if (r.id === undefined) return undefined
+  return {
+    id: r.id,
+    az: r.aktenzeichen ?? null,
+    kennzeichen: r.kennzeichen,
+    lat: koord(r.tatort_lat),
+    lon: koord(r.tatort_lon),
+    von: r.tatzeit_von?.slice(0, 5) ?? null,
+    bis: r.tatzeit_bis?.slice(0, 5) ?? null,
+    tattagBis: r.tattag_bis ?? null,
+    verstoss: r.verstoss_art,
+    fahrzeug: [r.fahrzeug_marke, r.fahrzeug_modell, r.fahrzeug_typ, r.fahrzeug_farbe].filter(Boolean).join(' · '),
+    beschreibung: r.beschreibung ?? null,
+    behinderungText: r.behinderung_text ?? null,
+    verlassen: !!r.fahrzeug_verlassen,
+    pdf: !!r.hat_pdf,
+    bilder: String(r.image_ids || '').split(',').filter(Boolean).map(Number).slice(0, 12),
+  }
+}
+
 function tatbestand(verstoss: string | null): { text: string; euro: number | null } {
   const tbnr = tbnrAusLabel(verstoss)
   const euro = regelsatzEuro(tbnr)
@@ -143,7 +203,10 @@ export function analysiere(rows: AnalyseEingabe[], opts: { mitKennzeichen?: bool
             stadt: r.city ? getCity(r.city).name : 'unbekannt',
             behinderung: !!r.behinderung,
           }
-          if (opts.mitKennzeichen) v.tatort = r.tatort
+          if (opts.mitKennzeichen) {
+            v.tatort = r.tatort
+            v.detail = detail(r)
+          }
           return v
         })
         .sort((a, b) => (a.datum ?? '').localeCompare(b.datum ?? '') || (a.stunde ?? 0) - (b.stunde ?? 0))
@@ -161,7 +224,12 @@ export function analysiere(rows: AnalyseEingabe[], opts: { mitKennzeichen?: bool
         letzt: daten[daten.length - 1] ?? null,
         vergehen,
       }
-      if (opts.mitKennzeichen) w.farbe = erste((r) => r.fahrzeug_farbe)
+      if (opts.mitKennzeichen) {
+        w.farbe = erste((r) => r.fahrzeug_farbe)
+        // Gruppiert wird über die normalisierte Form („FMM1016"), angezeigt
+        // die häufigste gespeicherte Schreibweise („F-MM 1016").
+        w.name = erste((r) => r.kennzeichen) ?? kz
+      }
       return w
     })
     // Verschiedene Tattage zählen vor reiner Anzahl: zwei Anzeigen am selben
@@ -210,7 +278,13 @@ export async function ladeAnalyse(opts: { mitKennzeichen?: boolean } = {}): Prom
   const [rows] = await pool.query<mysql.RowDataPacket[]>(
     `SELECT kennzeichen, fahrzeug_marke, fahrzeug_typ, fahrzeug_farbe, verstoss_art,
             DATE_FORMAT(tattag, '%Y-%m-%d') AS tattag, HOUR(tatzeit_von) AS stunde,
-            city, behinderung, fahrzeug_verlassen, tatort
+            city, behinderung, fahrzeug_verlassen, tatort,
+            id, aktenzeichen, tatort_lat, tatort_lon,
+            TIME_FORMAT(tatzeit_von, '%H:%i') AS tatzeit_von, TIME_FORMAT(tatzeit_bis, '%H:%i') AS tatzeit_bis,
+            DATE_FORMAT(tattag_bis, '%Y-%m-%d') AS tattag_bis, fahrzeug_modell, beschreibung, behinderung_text,
+            pdf_filename IS NOT NULL AS hat_pdf,
+            (SELECT GROUP_CONCAT(ri.id ORDER BY ri.sort_order, ri.id) FROM report_images ri
+              WHERE ri.report_id = reports.id) AS image_ids
        FROM reports WHERE status = 'versendet'`
   )
   return analysiere(rows as AnalyseEingabe[], opts)

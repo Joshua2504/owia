@@ -1489,3 +1489,19 @@ body.is-bare { overflow: hidden; overscroll-behavior: none; background: #000; }
     text-overflow: ellipsis;
   }
 }
+
+/* Admin-Analyse: Detailkarte beim Hover über ein Vergehen (analyse-admin.js). */
+.an-card {
+  position: fixed; z-index: 1080; width: min(440px, calc(100vw - 16px)); max-height: calc(100vh - 16px);
+  overflow: auto; display: none; padding: .75rem; border-radius: .5rem;
+  background: var(--bs-body-bg); border: 1px solid var(--bs-border-color); font-size: .85rem;
+}
+.an-card.is-open { display: block; }
+.an-card.is-pinned { border-color: var(--bs-primary); }
+.an-card-close { position: absolute; top: .6rem; right: .6rem; font-size: .7rem; }
+.an-card-grid { display: grid; grid-template-columns: auto 1fr; gap: .15rem .75rem; }
+.an-card-row { display: contents; }
+.an-card-row > span:last-child { overflow-wrap: anywhere; white-space: pre-line; }
+.an-card-map { height: 190px; margin-top: .6rem; border-radius: .375rem; overflow: hidden; }
+.an-card-fotos { display: flex; gap: .35rem; overflow-x: auto; margin-top: .6rem; padding-bottom: .15rem; }
+.an-card-fotos img { height: 84px; width: auto; border-radius: .25rem; display: block; }
