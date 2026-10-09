@@ -19,18 +19,23 @@ import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
 /** Testfälle: Frankfurt je Rubrik ein typischer Tatbestand, dazu Wiesbaden
- *  (Rubrik + „Sonstiges") und Mainz (Rubrik + Kreuzung). */
+ *  (Rubrik + „Sonstiges"), Mainz (Rubrik + Kreuzung) und Hamburg (Radio-
+ *  Tatvorwurf, Listen-Tatvorwurf, „keiner" mit Sachverhalt). */
 const FAELLE: { stadt: string; tbnr: string }[] = [
   ...['141174', '112454', '141312', '112042', '141245', '112216', '112464', '112262'].map((tbnr) => ({ stadt: 'frankfurt', tbnr })),
   { stadt: 'wiesbaden', tbnr: '141312' },
   { stadt: 'wiesbaden', tbnr: '112456' },
   { stadt: 'mainz', tbnr: '112454' },
   { stadt: 'mainz', tbnr: '112262' },
+  { stadt: 'hamburg', tbnr: '112454' },
+  { stadt: 'hamburg', tbnr: '141322' },
+  { stadt: 'hamburg', tbnr: '112456' },
 ]
 const TATORT: Record<string, string> = {
   frankfurt: 'Römerberg 1, 60311 Frankfurt am Main',
   wiesbaden: 'Wilhelmstraße 10, 65183 Wiesbaden',
   mainz: 'Große Bleiche 12, 55116 Mainz',
+  hamburg: 'Hammer Straße 30, 22041 Hamburg',
 }
 
 function testbild(rgb: [number, number, number]): string {
@@ -78,10 +83,12 @@ export async function runSelbsttest(index = Math.floor(Date.now() / 86400000)): 
     behinderung: 0,
   } as unknown as mysql.RowDataPacket
   const user = {
-    anrede: 'herr', vorname: 'Max', nachname: 'Mustermann', strasse: 'Römerberg', hausnummer: '1',
+    // Hamburg prüft die Anschrift gegen ein Adressregister – daher eine real
+    // existierende Adresse (Zeil 51 gibt es; „Römerberg 1" lehnt das Register ab).
+    anrede: 'herr', vorname: 'Max', nachname: 'Mustermann', strasse: 'Zeil', hausnummer: '51',
     // Wiesbaden verlangt eine E-Mail, Mainz eine Telefonnummer – Test-Werte,
     // abgesendet wird nie.
-    plz: '60311', ort: 'Frankfurt am Main', telefon: '069 0000000', email: 'selbsttest@example.org',
+    plz: '60313', ort: 'Frankfurt am Main', telefon: '069 0000000', email: 'selbsttest@example.org',
   } as unknown as mysql.RowDataPacket
   const payload = adapter.payload(report, user)
   const files = [
@@ -120,9 +127,9 @@ registerJob('portal.selbsttest', async (_payload, log) => {
     if ((err as { status?: number })?.status === 429) throw new JobRetryLater('Portal-Dienst belegt', 300)
     const msg = err instanceof Error ? err.message : String(err)
     await MailService.sendAdminHinweis(
-      'OWiA: Portal-Selbsttest fehlgeschlagen (Frankfurt/ekom21)',
+      'OWiA: Portal-Selbsttest fehlgeschlagen',
       [
-        'Der nächtliche Testlauf gegen das Frankfurter Online-Portal ist fehlgeschlagen.',
+        'Der nächtliche Testlauf gegen ein Online-Portal der Städte ist fehlgeschlagen.',
         'Vermutlich hat sich das Formular geändert – Portal-Versand vor dem nächsten',
         'Einsatz unter /versand prüfen (Trockenlauf bis zur Zusammenfassung).',
         '',

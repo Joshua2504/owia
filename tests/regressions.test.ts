@@ -999,6 +999,45 @@ test('Wiesbaden- und Mainz-Portal: Zuordnung, Prüfungen, Payload', () => {
   assert.equal(getCityByName('Mainz-Kastel')!.id, 'wiesbaden')
 })
 
+test('Hamburg-Portal: Tatvorwürfe, Kennzeichen, Tatort, Payload', async () => {
+  const { hhTatbestand, hhKennzeichen, hhTatort, buildHhPayload, hhProblem, hhFotos, HH_TATVORWUERFE } = await import('../src/services/portalHh')
+  const { VERSTOSS_ARTEN } = await import('../src/config/verstoss')
+  const { getCity } = await import('../src/config/cities')
+  // Radio-Tatvorwurf, Listen-Tatvorwurf (Dauer/Behinderung fallen weg), sonst „keiner"
+  assert.deepEqual(hhTatbestand('112454 – Sie parkten verbotswidrig auf dem Gehweg.'), { radio: '1', liste: null, text: 'Sie parkten verbotswidrig auf dem Gehweg' })
+  assert.equal(hhTatbestand('141324 – Sie parkten unzulässig länger als 1 Stunde im eingeschränkten Haltverbot (Zeichen 286).').liste, '12')
+  assert.equal(hhTatbestand('142106 – Sie parkten in einem verkehrsberuhigten Bereich (Zeichen 325.1, 325.2) verbotswidrig außerhalb der zum Parken gekennzeichneten Flächen länger als 3 Stunden.').liste, '7')
+  assert.equal(hhTatbestand('141071 – Sie hielten auf einem Radweg/Radfahrstreifen (Zeichen 237) und behinderten dadurch Andere.').liste, '10')
+  assert.deepEqual(hhTatbestand('112456 – Sie hielten/parkten nicht Platz sparend.'), { radio: 'keine', liste: '25', text: null })
+  // Jeder Formular-Tatvorwurf außer 2 und 23 (kein Katalog-Pendant) hat Katalogeinträge, nichts landet doppelt.
+  const treffer = new Map<string, number>()
+  for (const l of VERSTOSS_ARTEN) { const t = hhTatbestand(l); const k = t.liste ?? t.radio; treffer.set(k, (treffer.get(k) || 0) + 1) }
+  for (const o of HH_TATVORWUERFE) if (!['2', '23'].includes(o.wert)) assert.ok((treffer.get(o.wert) || 0) >= 1, `Tatvorwurf ${o.wert} ohne Katalogtreffer`)
+  assert.ok((treffer.get('25') || 0) > 300, 'Rest geht über „keiner" mit Sachverhalt')
+  // Kennzeichen im Formular-Format, Mehrdeutiges unverändert
+  assert.equal(hhKennzeichen('hh ab 123'), 'HH-AB 123')
+  assert.equal(hhKennzeichen('F-OW1234E'), 'F-OW 1234E')
+  assert.equal(hhKennzeichen('HHAB123'), 'HHAB123')
+  // Tatort: Hausnummer, kreuzende Straße, ohne Nummer; PLZ nur Hamburger
+  assert.deepEqual(hhTatort('Hammer Straße 30, 22041 Hamburg'), { strasse: 'Hammer Straße', hausnummer: '30', plz: '22041', angaben: '' })
+  assert.deepEqual(hhTatort('Jungfernstieg / Ecke Ballindamm, 20095 Hamburg'), { strasse: 'Jungfernstieg', hausnummer: 'Ballindamm', plz: '20095', angaben: '' })
+  assert.equal(hhTatort('Jungfernstieg')!.angaben, 'Angabe laut Anzeige: Jungfernstieg')
+  assert.equal(hhTatort('Zeil 51, 60313 Frankfurt')!.plz, '')
+  assert.equal(hhProblem({ tatort: '' }), 'Der Tatort braucht mindestens die Straße (Adresse aus der Vorschlagsliste wählen).')
+  assert.equal(hhProblem({ tatort: 'Hammer Straße 30, 22041 Hamburg' }, { email: '' }), 'Hamburg verlangt eine E-Mail-Adresse.')
+  const u = { vorname: 'Max', nachname: 'M', strasse: 'Zeil', hausnummer: '51', plz: '60313', ort: 'Frankfurt am Main', email: 'm@x' } as any
+  const p = buildHhPayload({ verstoss_art: '141322 – Sie parkten unzulässig im eingeschränkten Haltverbot (Zeichen 286).', kennzeichen: 'HH-OW 1234', fahrzeug_typ: 'Elektrokleinstfahrzeug', fahrzeug_marke: 'VW', fahrzeug_modell: 'Golf', tattag: '2026-10-08', tatzeit_von: '10:00:00', tatort: 'Hammer Straße 30, 22041 Hamburg', behinderung: 1, behinderung_text: 'Kinderwagen', fahrzeug_verlassen: 1 } as any, u, '2026-10-08 10:20')
+  assert.equal(p.portal, 'intelliform-hh')
+  assert.deepEqual(p.tatbestand, { radio: 'keine', liste: '12', behinderung: true, sachverhalt: 'Tatbestand laut Bußgeldkatalog: 141322 – Sie parkten unzulässig im eingeschränkten Haltverbot (Zeichen 286). Das Fahrzeug war verlassen. Behinderung: Kinderwagen' })
+  assert.equal(p.fahrzeug.typ, 'Elektrokleinstfahrzeuge', 'Hamburger Typ-Liste schreibt den Plural')
+  assert.equal(p.fahrzeug.marke, 'VW Golf')
+  assert.deepEqual(p.tat, { datum: '08.10.2026', von: '10:00', bis: '10:20', strasse: 'Hammer Straße', hausnummer: '30', plz: '22041', angaben: '' })
+  assert.equal(p.bestaetigungEmail, 'm@x')
+  assert.deepEqual(hhFotos([1, 2, 3, 4]), { uebersicht: [2, 1, 3], fahrzeug: [] }, 'höchstens 3, Fahrzeugfoto zuerst')
+  assert.equal(portalFuer('hamburg')!.id, 'intelliform-hh')
+  assert.equal(getCity('hamburg').mail, undefined, 'Hamburg läuft übers Portal, nicht per Mail')
+})
+
 test('Öffentliches Kartenbild: mit Kennzeichen-Analyse geschwärzt in 160 px, sonst grob verpixelt', async () => {
   const { pixelate } = await import('../src/services/pixelate')
   const jpeg = (await import('jpeg-js')).default
@@ -1020,6 +1059,7 @@ test('Portal-Städte: kein PDF-Formular (Frankfurt seit 10/2026 nur ekom21-Porta
   assert.equal(hasPdfForm(getCity('frankfurt')), false, 'Frankfurt läuft übers Portal – kein PDF mehr')
   assert.equal(hasPdfForm(getCity('wiesbaden')), false)
   assert.equal(hasPdfForm(getCity('mainz')), false)
+  assert.equal(hasPdfForm(getCity('hamburg')), false)
   assert.equal(hasPdfForm({ pdfForm: 'formular.pdf' } as any), true, 'Formular-Stadt ohne Portal bekommt weiter ein PDF')
 })
 

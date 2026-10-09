@@ -24,9 +24,13 @@ import { chromium } from 'playwright'
 import { fillSteps, submitForm, readSummary, Cancelled } from './lib.mjs'
 import { PROFILE as EKOM21 } from './ekom21.mjs'
 import { PROFILE as MAINZ } from './mainz.mjs'
+import { PROFILE as HAMBURG } from './hamburg.mjs'
 
 // Formular-Profile je Stadt; payload.portal wählt (Standard: Frankfurt).
-const PROFILE = { ...EKOM21, ...MAINZ }
+// civento-Profile (ekom21, Mainz) liefern Handler je Schritt für fillSteps();
+// ein Profil mit eigenem fill()/submit() (Hamburg, IntelliForm) fährt den
+// ganzen Ablauf selbst.
+const PROFILE = { ...EKOM21, ...MAINZ, ...HAMBURG }
 
 const PORT = 8080
 const VIEWPORT = { width: 1100, height: 860 }
@@ -349,7 +353,8 @@ async function execute(run) {
     run.setState('filling')
     const profile = PROFILE[run.payload.portal || 'ekom21-ffm']
     if (!profile) throw new Error(`Unbekanntes Portal „${run.payload.portal}".`)
-    await fillSteps(run.engine, profile)
+    if (profile.fill) await profile.fill(run.engine)
+    else await fillSteps(run.engine, profile)
 
     run.summary = await readSummary(run.page)
     run.artifacts['summary.png'] = await run.page.screenshot({ type: 'png', fullPage: true }).catch(() => null)
@@ -362,7 +367,7 @@ async function execute(run) {
 
     run.setState('submitting', 'Wird abgesendet …')
     run.submitted = true
-    const result = await submitForm(run.engine)
+    const result = profile.submit ? await profile.submit(run.engine) : await submitForm(run.engine)
     run.artifacts['final.png'] = await run.page.screenshot({ type: 'png', fullPage: true }).catch(() => null)
     if (result.receipt) run.artifacts['receipt.pdf'] = result.receipt.buffer
     run.result = { vorgangsId: result.vorgangsId, text: result.text, hasReceipt: !!result.receipt }

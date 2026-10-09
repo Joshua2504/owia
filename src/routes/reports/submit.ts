@@ -102,7 +102,7 @@ export default async function submitRoutes(app: FastifyInstance) {
       },
       recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
       versandweg: city.portal ? 'portal' : hasPdfForm(city) ? 'pdf' : 'mail',
-      hinweise: city.mail?.hinweise || [],
+      hinweise: city.hinweise || city.mail?.hinweise || [],
       mail: mail && { subject: mail.subject, text: mail.text, attachments: mail.attachments },
       verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
       pdfUrl: hasPdfForm(city) && fresh[0]?.pdf_filename ? `/anzeige/${az}/pdf?inline=1&t=${Date.now()}` : null,

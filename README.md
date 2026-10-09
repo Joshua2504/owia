@@ -8,8 +8,10 @@ die – je nach Stadt – über das Online-Portal der Stadt, als amtliches
 PDF-Formular oder als strukturierte E-Mail ans Ordnungsamt versendet wird.
 
 Aktuell freigeschaltet: **Frankfurt am Main**, **Wiesbaden** (beide Online-Portal
-ekom21) und **Mainz** (civento-Formular RLP) – jeweils live im Browser ausgefüllt,
-da diese Städte keine Mail-Anzeigen mehr annehmen – sowie
+ekom21), **Mainz** (civento-Formular RLP) und **Hamburg** (Online-Dienst im
+Serviceportal, IntelliForm) – jeweils live im Browser ausgefüllt, weil diese
+Städte keine Mail-Anzeigen mehr annehmen bzw. Hamburg ausdrücklich um den
+Online-Dienst bittet – sowie
 **Bad Soden-Salmünster** und **Hanau** (jeweils E-Mail-Versand). Weitere Städte lassen sich über eine
 zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freischalten)).
 
@@ -165,13 +167,14 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
 - Welche Städte tatsächlich **freigeschaltet** sind, entscheidet die Registry
   [`src/config/cities.ts`](src/config/cities.ts). Ein erkannter Ort ohne Eintrag
   dort wird als „noch nicht freigeschaltet" abgewiesen.
-- Städte **mit** `portal` (Frankfurt) werden über das Online-Formular der Stadt
+- Städte **mit** `portal` (Frankfurt, Wiesbaden, Mainz, Hamburg) werden über das Online-Formular der Stadt
   versendet: der Container `portal` (`docker/portal/`, Playwright) füllt es aus,
   der Admin sieht unter `/versand` live zu (zwei Läufe parallel), greift bei
   Bedarf per Klick ins Live-Bild ein und sendet ab; nächtlicher Selbsttest. Je Stadt
   ein Adapter (`src/services/portale.ts` → `portalFfm.ts`, `portalWi.ts`,
-  `portalMz.ts`) und ein Formular-Profil im Dienst (`docker/portal/ekom21.mjs`,
-  `mainz.mjs`, Bausteine in `lib.mjs`); Ablauf/Zustände: `src/services/portalDispatch.ts`.
+  `portalMz.ts`, `portalHh.ts`) und ein Formular-Profil im Dienst (`docker/portal/ekom21.mjs`,
+  `mainz.mjs`, Bausteine in `lib.mjs`; Hamburg ist kein civento, sondern IntelliForm
+  und fährt den Ablauf in `hamburg.mjs` selbst); Ablauf/Zustände: `src/services/portalDispatch.ts`.
   Lücken im Frankfurter Formular (fehlende Tatbestände/Stufen):
   [docs/FRANKFURT-NOTIZEN.md](docs/FRANKFURT-NOTIZEN.md).
 - Städte **ohne** `portal` und **mit** `pdfForm` bekommen das amtliche Formular

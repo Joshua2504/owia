@@ -66,7 +66,7 @@ export interface City {
   /** Versand über ein Online-Formular statt per Mail (services/portalDispatch.ts).
    *  Frankfurt: ekom21/civento seit 10/2026 – Mails mit PDF nimmt das Amt nur
    *  noch für Tatbestände an, die das Portal nicht kennt. */
-  portal?: 'ekom21-ffm' | 'ekom21-wi' | 'civento-mz'
+  portal?: 'ekom21-ffm' | 'ekom21-wi' | 'civento-mz' | 'intelliform-hh'
   /** Annahmefrist der Stadt in Monaten, wenn kürzer als die Verjährung (3) –
    *  das ekom21-Portal nimmt nur Taten der letzten zwei Monate an. */
   fristMonate?: number
@@ -75,6 +75,8 @@ export interface City {
   aliases?: string[]
   /** Vorgaben für den Mailversand (services/mail.ts, Einreichen-Vorschau). */
   mail?: MailRegeln
+  /** Hinweise für die Einreichen-Vorschau (Portal-Städte; Mail-Städte nutzen mail.hinweise). */
+  hinweise?: string[]
   geo: CityGeo
 }
 
@@ -197,26 +199,23 @@ export const CITIES: Record<string, City> = {
       mapLon: 8.2588,
     },
   },
-  // Hamburg: Bußgeldstelle der Behörde für Inneres und Sport. Versand per Mail
-  // (hamburg.de „Anzeigen von Privatpersonen"): Sachverhalt im Mailtext, als
-  // Anhang NUR Beweisfotos im JPG-Format, keine Sammelanzeigen; ladungsfähige
-  // Anschrift ist Pflicht. 10 MB gesamt laut ADFC Hamburg. Das Online-Formular
-  // im Serviceportal (max. 3 Fotos) nutzen wir bewusst nicht.
+  // Hamburg: Bußgeldstelle der Behörde für Inneres und Sport. Versand über den
+  // Online-Dienst im Serviceportal (IntelliForm, services/portalHh.ts) – die
+  // Bußgeldstelle bittet in ihrer Auto-Antwort auf Mail-Anzeigen ausdrücklich
+  // darum (schnellere Prüfung). Mail-Versand (nur JPG-Fotos, 10 MB, höchstens
+  // 4 Fotos, Anschrift im Text) bleibt als Rückfalloption dokumentiert, wird
+  // aber nicht genutzt, solange `portal` gesetzt ist.
   hamburg: {
     id: 'hamburg',
     name: 'Hamburg',
     ordnungsamt: 'Bußgeldstelle Hamburg (Behörde für Inneres und Sport)',
-    mail: {
-      nurJpg: true,
-      ohneKarte: true,
-      maxAnhangBytes: 10 * 1024 * 1024,
-      anschriftImText: true,
-      hinweise: [
-        'Hamburg nimmt als Anhang nur Beweisfotos im JPG-Format an – die Tatort-Karte geht nicht mit, große Fotos werden auf zusammen höchstens 10 MB verkleinert.',
-        'Deine Anschrift steht im Mailtext (Hamburg verlangt eine ladungsfähige Anschrift). Betroffene können sie über eine Akteneinsicht sehen.',
-        'Eine Rückmeldung zum Ausgang des Verfahrens gibt die Bußgeldstelle in der Regel nicht.',
-      ],
-    },
+    portal: 'intelliform-hh',
+    hinweise: [
+      'Das Hamburger Formular verlangt die Bestätigung, dass du von dem Verstoß persönlich betroffen bist.',
+      'Deine Anschrift muss deine Meldeanschrift sein; das Portal prüft sie gegen ein Adressregister. Betroffene können sie über eine Akteneinsicht sehen.',
+      'Hamburg nimmt höchstens 3 Beweisfotos an – bei mehr gehen das erste Fahrzeugfoto, die Übersicht und das nächste Fahrzeugfoto mit.',
+      'Eine Sendebestätigung des Portals geht an deine E-Mail-Adresse; zum Ausgang des Verfahrens meldet sich die Bußgeldstelle in der Regel nicht.',
+    ],
     geo: {
       scope: 'hh',
       // Festland-Stadtgebiet (Neuwerk liegt weit draußen in der Elbmündung).

@@ -501,11 +501,10 @@ export async function submitForm(run) {
   return result
 }
 
-/** Vorgangs-ID aus der PDF-Zusammenfassung: Fußzeile
- *  „Vorgang: Anzeige einer Ordnungswidrigkeit / 26.111745" (Stand 10/2026). */
-export async function vorgangsIdAusPdf(buffer) {
+/** Text eines PDFs (pdftotext -layout; leer, wenn das Werkzeug fehlt). */
+export async function pdfText(buffer) {
   const { spawn } = await import('node:child_process')
-  const text = await new Promise((resolve) => {
+  return new Promise((resolve) => {
     const p = spawn('pdftotext', ['-layout', '-', '-'])
     let out = ''
     p.stdout.on('data', (d) => (out += d))
@@ -514,6 +513,12 @@ export async function vorgangsIdAusPdf(buffer) {
     p.stdin.on('error', () => {})
     p.stdin.end(buffer)
   })
+}
+
+/** Vorgangs-ID aus der PDF-Zusammenfassung: Fußzeile
+ *  „Vorgang: Anzeige einer Ordnungswidrigkeit / 26.111745" (ekom21, Stand 10/2026). */
+export async function vorgangsIdAusPdf(buffer) {
+  const text = await pdfText(buffer)
   const m = text.match(/Vorgang:[^\n/]*\/\s*(\d{2}\.\d{3,})/) || text.match(/Vorgangs-?(?:ID|nummer)\s*:?\s*([A-Za-z0-9][A-Za-z0-9.\-/]{3,})/i)
   return m ? m[1] : null
 }

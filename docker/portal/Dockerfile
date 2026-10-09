@@ -1,4 +1,5 @@
-# Browser-Automatisierung für Online-Anzeigeformulare (Frankfurt: ekom21/civento).
+# Browser-Automatisierung für Online-Anzeigeformulare (ekom21/civento in Hessen
+# und RLP, IntelliForm in Hamburg).
 # Das offizielle Playwright-Image bringt Chromium samt Systembibliotheken mit;
 # die npm-Version muss exakt zur Image-Version passen.
 FROM mcr.microsoft.com/playwright:v1.62.1-noble
@@ -12,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils f
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
-COPY server.mjs lib.mjs ekom21.mjs mainz.mjs ./
+COPY server.mjs lib.mjs ekom21.mjs mainz.mjs hamburg.mjs ./
 
 USER pwuser
 EXPOSE 8080

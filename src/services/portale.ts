@@ -5,14 +5,16 @@
 //   ekom21-ffm  Frankfurt  – services/portalFfm.ts (Tatbestand-Baum, Varianten Pflicht, 2-Monats-Frist)
 //   ekom21-wi   Wiesbaden  – services/portalWi.ts  (eine Ebene, „Sonstiges", 2-Monats-Frist)
 //   civento-mz  Mainz      – services/portalMz.ts  (Art × Rubrik + Freitext, Telefon Pflicht)
+//   intelliform-hh Hamburg – services/portalHh.ts  (24 Tatvorwürfe + „keiner" mit Sachverhalt, ≤ 3 Fotos)
 
 import mysql from 'mysql2/promise'
 import { CITIES, DEFAULT_CITY_ID, getCity } from '../config/cities'
 import { buildPortalPayload, imPortal, portalProblem, photoRoles, erstAbMorgen, verstossVarianten } from './portalFfm'
 import { buildWiPayload, wiProblem } from './portalWi'
 import { buildMzPayload, mzProblem, mzFotos } from './portalMz'
+import { buildHhPayload, hhProblem, hhFotos } from './portalHh'
 
-export type PortalId = 'ekom21-ffm' | 'ekom21-wi' | 'civento-mz'
+export type PortalId = 'ekom21-ffm' | 'ekom21-wi' | 'civento-mz' | 'intelliform-hh'
 
 export interface PortalAdapter {
   id: PortalId
@@ -65,7 +67,20 @@ const mz: PortalAdapter = {
   fotos: (imgs) => ({ uebersicht: mzFotos(photoRoles(imgs)), fahrzeug: [] }),
 }
 
-const ADAPTER: Record<PortalId, PortalAdapter> = { 'ekom21-ffm': ffm, 'ekom21-wi': wi, 'civento-mz': mz }
+const hh: PortalAdapter = {
+  id: 'intelliform-hh',
+  bezeichnung: 'Online-Dienst (Serviceportal Hamburg)',
+  // Was keinem der 24 Tatvorwürfe entspricht, geht über „keiner der
+  // aufgeführten" mit dem Katalogtext im Sachverhalt.
+  versendbar: (v) => !!v,
+  problem: (r, u) => hhProblem(r, u),
+  varianteFehlt: () => false,
+  heuteErlaubt: true,
+  payload: buildHhPayload,
+  fotos: hhFotos,
+}
+
+const ADAPTER: Record<PortalId, PortalAdapter> = { 'ekom21-ffm': ffm, 'ekom21-wi': wi, 'civento-mz': mz, 'intelliform-hh': hh }
 
 /** Adapter der Stadt (null = Versand per Mail). */
 export function portalFuer(cityId: string | null | undefined): PortalAdapter | null {

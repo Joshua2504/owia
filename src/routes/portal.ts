@@ -1,4 +1,4 @@
-// Live-Versand über Online-Portale (Frankfurt: ekom21). Die Seite /versand
+// Live-Versand über Online-Portale (ekom21, civento, Hamburg-IntelliForm). Die Seite /versand
 // zeigt die eingereichten Portal-Anzeigen und den Browser des Portal-Dienstes
 // live (H.264-Video, Rückfall MJPEG bzw. Einzelbilder). Eingriffe (Klick/Tippen ins Live-Bild) gehen an
 // den Dienst durch. Logik und DB-Zustände: services/portalDispatch.ts.
