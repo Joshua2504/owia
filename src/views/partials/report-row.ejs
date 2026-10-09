@@ -18,8 +18,8 @@
 // PATCH /anzeige/:az/felder). Erwartet dafür fahrzeugTypen (defaultContext in
 // server.ts bzw. explizit bei ejs.renderFile); die Datalists fz-marken/fz-farben
 // stellt report-table.ejs bereit.
-const _fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '')
-const _hhmm = (t) => (t ? String(t).slice(0, 5) : '')
+const _fmtDate = (d) => h.fmtDate(d)
+const _hhmm = h.hhmm
 const _queue = queueId ? '?queue=' + queueId : ''
 const _isDraft = r.status === 'entwurf'
 const _imgs = (typeof imgs !== 'undefined' && imgs) || []
@@ -27,7 +27,7 @@ const _typen = (typeof fahrzeugTypen !== 'undefined' && fahrzeugTypen) || ['PKW'
 %>
 <%
 // Sortierschlüssel Tatzeit (report-bulk.js): „YYYY-MM-DD HH:MM", leer = ohne Datum.
-const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if (isNaN(d)) return ''; return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + (r.tatzeit_von ? String(r.tatzeit_von).slice(0, 5) : '00:00') })()
+const _ts = r.tattag && h.isoDate(r.tattag) ? h.isoDate(r.tattag) + ' ' + (h.hhmm(r.tatzeit_von) || '00:00') : ''
 %>
 <tr data-status="<%= _isDraft && r.bereit_at ? 'bereit' : r.status %>" data-az="<%= r.aktenzeichen %>" data-sort-ts="<%= _ts %>" <% if (_isDraft) { %>data-drop-az="<%= r.aktenzeichen %>"<% } %>>
   <td class="cell-select <%= _isDraft ? '' : 'cell-empty' %>">
@@ -119,7 +119,7 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       </div>
     <% } else { %>
       <% if (r.kennzeichen) { %>
-        <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>
+        <%- h.plate(r.kennzeichen, r.kennzeichen_land) %>
       <% } %>
       <% const _fz = [r.fahrzeug_typ, [r.fahrzeug_marke, r.fahrzeug_modell].filter(Boolean).join(' '), r.fahrzeug_farbe].filter(Boolean).join(', ') %>
       <% if (_fz) { %>
@@ -127,17 +127,13 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       <% } %>
     <% } %>
   </td>
-  <%
-  // YYYY-MM-DD für <input type="date"> – lokale Datumsteile, kein toISOString (UTC-Versatz).
-  const _isoDate = (d) => { if (!d) return ''; const x = new Date(d); return isNaN(x) ? '' : x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0') }
-  %>
   <td class="cell-time text-nowrap">
     <span class="cell-label">Tatzeit</span>
     <% if (_isDraft) { %>
       <%# Tattag + Uhrzeit von/bis direkt bearbeiten (report-inline.js). %>
       <div class="inline-line">
       <input type="date" class="form-control form-control-sm inline-input" data-inline-field="tattag"
-             value="<%= _isoDate(r.tattag) %>" aria-label="Tattag von <%= r.aktenzeichen %>">
+             value="<%= h.isoDate(r.tattag) %>" aria-label="Tattag von <%= r.aktenzeichen %>">
       <%# Fotos haben eine andere Aufnahmezeit als eingetragen: per Klick übernehmen (report-inline.js). %>
       <% if (r.photo_time_min && r.photo_time_min !== _ts) { %>
         <button type="button" class="inline-icon-btn" data-time-from-photos
@@ -152,12 +148,9 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
                value="<%= _hhmm(r.tatzeit_bis) %>" aria-label="Uhrzeit bis">
       </div>
     <% } else { %>
-    <%= _fmtDate(r.tattag) || '—' %><% if (r.tattag_bis && _fmtDate(r.tattag_bis) !== _fmtDate(r.tattag)) { %> – <%= _fmtDate(r.tattag_bis) %><% } %>
-    <% const von = _hhmm(r.tatzeit_von), bis = _hhmm(r.tatzeit_bis) %>
-    <% if (von) { %>
-      <div class="cell-sub text-muted small">
-        <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr
-      </div>
+    <%= h.tattage(r) %>
+    <% if (r.tatzeit_von) { %>
+      <div class="cell-sub text-muted small"><%= h.uhrzeit(r) %> Uhr</div>
     <% } %>
     <% } %>
   </td>
@@ -250,9 +243,8 @@ const _ts = (() => { if (!r.tattag) return ''; const d = new Date(r.tattag); if 
       <% if (r.versand_status || (_w && (_w.laeuft || !_w.sek))) { %>
         <span class="badge rounded-pill text-bg-primary" data-versand-live title="Die Anzeige wird gerade ans Ordnungsamt übermittelt.">📤 Versand läuft</span>
       <% } else if (_w && _w.sek) { %>
-        <% const _mm = Math.floor(_w.sek / 60), _ss = _w.sek % 60 %>
         <span class="badge rounded-pill text-bg-info" data-versand-live data-versand-in="<%= _w.sek %>"
-              title="Die Anzeigen werden nacheinander im Abstand verschickt.">⏱ Versand in <span data-versand-uhr><%= String(_mm).padStart(2, '0') %>:<%= String(_ss).padStart(2, '0') %></span></span>
+              title="Die Anzeigen werden nacheinander im Abstand verschickt.">⏱ Versand in <span data-versand-uhr><%= h.mmss(_w.sek) %></span></span>
       <% } else { %>
         <span class="badge rounded-pill text-bg-info" title="Eingereicht – wird geprüft und dann ans Ordnungsamt verschickt.">Eingereicht</span>
       <% } %>

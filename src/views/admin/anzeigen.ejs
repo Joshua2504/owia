@@ -1,18 +1,14 @@
-<%
-const hhmm = (t) => (t ? String(t).slice(0, 5) : '')
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
-%>
 
 <% const unmatched = locals.unmatched || [] %>
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-  <h2 class="mb-0">Prüfung eingereichter Anzeigen</h2>
+<div class="page-head">
+  <h2>Prüfung eingereichter Anzeigen</h2>
   <nav class="d-flex gap-2 flex-wrap small" aria-label="Abschnitte">
     <a href="#offen" class="btn btn-sm <%= pending.length ? 'btn-primary' : 'btn-outline-secondary' %>">Offen <span class="badge text-bg-light"><%= pending.length %></span></a>
     <% if (unmatched.length) { %><a href="#antworten" class="btn btn-sm btn-outline-warning">Antworten <span class="badge text-bg-warning"><%= unmatched.length %></span></a><% } %>
     <% if (recent.length) { %><a href="#verschickt" class="btn btn-sm btn-outline-secondary">Zuletzt verschickt</a><% } %>
   </nav>
 </div>
-<div id="offen" style="scroll-margin-top:calc(var(--owia-nav-h, 0px) + 1rem)"></div>
+<div id="offen"></div>
 
 <% if (!pending.length) { %>
   <div class="card shadow-sm mb-4">
@@ -24,7 +20,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
 
 <% pending.forEach((r, i) => { %>
   <%# id = Sprungziel der Admin-Benachrichtigungsmail (#a-<id>) %>
-  <div class="card shadow-sm mb-4" id="a-<%= r.id %>" style="scroll-margin-top:calc(var(--owia-nav-h, 0px) + 1rem)">
+  <div class="card shadow-sm mb-4" id="a-<%= r.id %>">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
       <div>
         <span class="text-muted small me-1"><%= i + 1 %>/<%= pending.length %></span>
@@ -32,7 +28,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
         <% if (r.city) { %><span class="badge text-bg-secondary ms-1"><%= r.city %></span><% } %>
         <span class="text-muted small ms-2">von <%= r.user_email %> · eingereicht <%= r.eingereicht_fmt %></span>
       </div>
-      <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>
+      <%- h.plate(r.kennzeichen, r.kennzeichen_land) %>
     </div>
     <div class="card-body">
       <div class="row g-3">
@@ -40,9 +36,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
           <dl class="row small mb-3">
             <dt class="col-sm-4">Tattag / Zeit</dt>
             <dd class="col-sm-8">
-              <%= fmtDate(r.tattag) %><% if (r.tattag_bis && fmtDate(r.tattag_bis) !== fmtDate(r.tattag)) { %> – <%= fmtDate(r.tattag_bis) %><% } %>
-              <% const von = hhmm(r.tatzeit_von), bis = hhmm(r.tatzeit_bis) %>
-              <% if (von) { %>, <%= von %><% if (bis && bis !== von) { %> – <%= bis %><% } %> Uhr<% } %>
+              <%= h.tattage(r) %><% if (r.tatzeit_von) { %>, <%= h.uhrzeit(r) %> Uhr<% } %>
               <% if (verjaehrung(r).verjaehrt) { %><span class="badge text-bg-danger ms-1">⌛ Verjährt</span><% } %>
             </dd>
             <dt class="col-sm-4">Tatort</dt>
@@ -131,7 +125,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
 <% }) %>
 
 <% if (unmatched.length) { %>
-  <div class="card shadow-sm mb-4 border-warning" id="antworten" style="scroll-margin-top:calc(var(--owia-nav-h, 0px) + 1rem)">
+  <div class="card shadow-sm mb-4 border-warning" id="antworten">
     <div class="card-body">
       <h5 class="card-title mb-1">Nicht zugeordnete Antworten (<%= unmatched.length %>)</h5>
       <p class="text-muted small mb-3">
@@ -189,7 +183,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE') : '—')
 <% } %>
 
 <% if (recent.length) { %>
-  <div class="card shadow-sm" id="verschickt" style="scroll-margin-top:calc(var(--owia-nav-h, 0px) + 1rem)">
+  <div class="card shadow-sm" id="verschickt">
     <div class="card-body">
       <h5 class="card-title mb-3">Zuletzt verschickt</h5>
       <div class="table-responsive">

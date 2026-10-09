@@ -1,15 +1,6 @@
 <%
-const hhmm = (t) => t ? String(t).slice(0, 5) : ''
-const _langDatum = (d) => new Date(d).toLocaleDateString('de-DE', { dateStyle: 'long' })
-const tattag = report.tattag
-  ? _langDatum(report.tattag) +
-    (report.tattag_bis && _langDatum(report.tattag_bis) !== _langDatum(report.tattag)
-      ? ` – ${_langDatum(report.tattag_bis)}`
-      : '')
-  : '—'
-const von = hhmm(report.tatzeit_von)
-const bis = hhmm(report.tatzeit_bis)
-const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `${von} Uhr` : bis ? `${bis} Uhr` : '—'
+const tattag = h.tattage(report, { long: true })
+const tatzeit = h.uhrzeit(report) ? h.uhrzeit(report) + ' Uhr' : '—'
 const isVersendet = report.status === 'versendet'
 const isEntwurf = report.status === 'entwurf'
 const images = locals.images || []
@@ -30,13 +21,13 @@ const versandLabel = {
   <div class="col-lg-7">
     <%# Überschrift und Aktionen stapeln auf dem Handy – nebeneinander bleibt für
         „Anzeige OWiA-123456" plus zwei Schaltflächen kein Platz. %>
-    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-4">
-      <h2 class="mb-0">Anzeige <code><%= report.aktenzeichen || `#${report.id}` %></code></h2>
-      <div class="d-flex gap-2">
+    <div class="page-head">
+      <h2>Anzeige <code><%= report.aktenzeichen || `#${report.id}` %></code></h2>
+      <div class="page-head-actions">
         <% if (isEntwurf) { %>
-          <a href="/anzeige/<%= report.aktenzeichen %>/bearbeiten" class="btn btn-outline-primary btn-sm flex-fill">✎ Bearbeiten</a>
+          <a href="/anzeige/<%= report.aktenzeichen %>/bearbeiten" class="btn btn-outline-primary btn-sm">✎ Bearbeiten</a>
         <% } %>
-        <a href="/anzeigen" class="btn btn-outline-secondary btn-sm flex-fill">← Übersicht</a>
+        <a href="/anzeigen" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
       </div>
     </div>
 
@@ -61,7 +52,7 @@ const versandLabel = {
           <dd class="col-sm-8"><code><%= report.aktenzeichen || '—' %></code></dd>
 
           <dt class="col-sm-4">Kennzeichen</dt>
-          <dd class="col-sm-8"><% if (report.kennzeichen) { %><span class="plate-chip"><% if (report.kennzeichen_land && report.kennzeichen_land !== 'D') { %><small><%= report.kennzeichen_land %></small><% } %><%= report.kennzeichen %></span><% } else { %>—<% } %></dd>
+          <dd class="col-sm-8"><% if (report.kennzeichen) { %><%- h.plate(report.kennzeichen, report.kennzeichen_land) %><% } else { %>—<% } %></dd>
 
           <% const _fz = [report.fahrzeug_typ, [report.fahrzeug_marke, report.fahrzeug_modell].filter(Boolean).join(' '), report.fahrzeug_farbe].filter(Boolean).join(', ') %>
           <% if (_fz) { %>
@@ -98,14 +89,8 @@ const versandLabel = {
 
           <dt class="col-sm-4">Status</dt>
           <dd class="col-sm-8">
-            <% if (isVersendet) { %>
-              <span class="badge bg-success">Versendet</span>
-              <% if (versandLabel) { %><span class="text-muted small ms-1">(<%= versandLabel %>)</span><% } %>
-            <% } else if (isEntwurf) { %>
-              <span class="badge bg-secondary">Entwurf</span>
-            <% } else { %>
-              <span class="badge bg-info">Eingereicht</span>
-            <% } %>
+            <%- h.statusBadge(report.status) %>
+            <% if (isVersendet && versandLabel) { %><span class="text-muted small ms-1">(<%= versandLabel %>)</span><% } %>
           </dd>
         </dl>
       </div>

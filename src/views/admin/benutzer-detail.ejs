@@ -9,8 +9,8 @@ const counts = { entwurf: 0, eingereicht: 0, versendet: 0 }
 for (const r of reports) if (counts[r.status] !== undefined) counts[r.status]++
 %>
 
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-  <h2 class="mb-0">Benutzer</h2>
+<div class="page-head">
+  <h2>Benutzer</h2>
   <a href="/admin/benutzer" class="btn btn-outline-secondary btn-sm">← Alle Benutzer</a>
 </div>
 
@@ -63,12 +63,12 @@ for (const r of reports) if (counts[r.status] !== undefined) counts[r.status]++
               <td class="text-nowrap"><code class="small"><%= r.aktenzeichen || '—' %></code></td>
               <td class="text-nowrap">
                 <% if (r.status === 'versendet') { %>
-                  <span class="badge bg-success">Versendet</span>
+                  <%- h.statusBadge('versendet') %>
                 <% } else if (r.status === 'eingereicht') { %>
-                  <a href="/admin/anzeigen" class="badge bg-info text-decoration-none"
+                  <a href="/admin/anzeigen" class="badge text-bg-info text-decoration-none"
                      title="Zur Prüfung">Eingereicht<%= r.eingereicht_fmt ? ' · ' + r.eingereicht_fmt : '' %></a>
                 <% } else { %>
-                  <span class="badge text-bg-warning">Entwurf</span>
+                  <%- h.statusBadge(r.status) %>
                 <% } %>
                 <% if (r.ablehnung_grund) { %>
                   <span class="badge text-bg-danger" title="<%= r.ablehnung_grund %>">abgelehnt</span>
@@ -78,13 +78,11 @@ for (const r of reports) if (counts[r.status] !== undefined) counts[r.status]++
                 <% } %>
               </td>
               <td class="text-nowrap">
-                <% if (r.kennzeichen) { %>
-                  <span class="plate-chip"><% if (r.kennzeichen_land && r.kennzeichen_land !== 'D') { %><small><%= r.kennzeichen_land %></small><% } %><%= r.kennzeichen %></span>
-                <% } %>
+                <%- h.plate(r.kennzeichen, r.kennzeichen_land) %>
               </td>
               <td class="text-nowrap"><%= r.tattag_fmt || '—' %><% if (r.von_fmt) { %> <span class="text-muted small"><%= r.von_fmt %></span><% } %></td>
-              <td class="small" style="max-width:220px"><div class="text-truncate" title="<%= r.tatort || '' %>"><%= r.tatort || '—' %></div></td>
-              <td class="small" style="max-width:220px"><div class="text-truncate" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '—' %></div></td>
+              <td class="small mw-cell"><div class="text-truncate" title="<%= r.tatort || '' %>"><%= r.tatort || '—' %></div></td>
+              <td class="small mw-cell"><div class="text-truncate" title="<%= r.verstoss_art || '' %>"><%= r.verstoss_art || '—' %></div></td>
               <td class="text-end"><%= Number(r.image_count) || 0 %></td>
               <td class="text-nowrap"><%= r.created_fmt || '—' %></td>
             </tr>

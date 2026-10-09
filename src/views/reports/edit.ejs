@@ -2,16 +2,10 @@
 const r = locals.report || {}
 const images = locals.images || []
 const embed = !!locals.embed
-const pad = (n) => String(n).padStart(2, '0')
-const toDateInput = (d) => {
-  if (!d) return ''
-  const dt = new Date(d)
-  return isNaN(dt) ? '' : `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
-}
-const hhmm = (t) => (t ? String(t).slice(0, 5) : '')
+const { isoDate: toDateInput, hhmm, pad2 } = h
 const now = new Date()
 const today = toDateInput(now)
-const nowTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`
+const nowTime = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`
 const embedQ = embed ? '&embed=1' : ''
 %>
 <%#

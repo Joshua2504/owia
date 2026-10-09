@@ -3,8 +3,8 @@
   // Kennzeichen). Daten: services/analyse.ts. Öffentlich sind Fahrzeuge
   // pseudonymisiert und Zeiträume nur monatsgenau.
   const a = analyse
-  const eur = (n) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
-  const zahl = (n) => n.toLocaleString('de-DE')
+  const zahl = h.zahl
+  const eur = (n) => h.eur(Math.round(n))
   const proz = (n, d) => d ? Math.round(n / d * 100) + ' %' : '–'
   const datum = (d) => {
     if (!d) return '–'
@@ -14,32 +14,7 @@
   const maxHeat = Math.max(1, ...a.heatmap.flat())
   const WT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 %>
-<style>
-  .an-bar-track { background: var(--bs-tertiary-bg); border-radius: 4px; height: .5rem; }
-  .an-bar { background: var(--bs-primary); height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
-  .an-rows { display: grid; grid-template-columns: minmax(5rem, 11rem) 1fr 3rem; gap: .35rem .5rem; align-items: center; font-size: .875rem; }
-  .an-rows .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .an-cols { display: flex; align-items: flex-end; gap: 2px; height: 7rem; }
-  .an-cols > div { flex: 1; background: var(--bs-primary); border-radius: 3px 3px 0 0; min-height: 1px; }
-  .an-cols-lbl { display: flex; gap: 2px; font-size: .7rem; color: var(--bs-secondary-color); }
-  .an-cols-lbl > div { flex: 1; text-align: center; }
-  .an-heat { display: grid; grid-template-columns: 2rem repeat(24, 1fr); gap: 2px; font-size: .7rem; }
-  .an-heat .c { aspect-ratio: 1; border-radius: 2px; background: var(--bs-tertiary-bg); position: relative; }
-  .an-heat .c > i { position: absolute; inset: 0; border-radius: 2px; background: var(--bs-primary); }
-  .an-heat .h { text-align: center; color: var(--bs-secondary-color); }
-  .an-rank summary { list-style: none; cursor: pointer; }
-  .an-rank summary::-webkit-details-marker { display: none; }
-  .an-rank summary .an-chev { transition: transform .15s; display: inline-block; }
-  .an-rank details[open] summary .an-chev { transform: rotate(90deg); }
-  .an-platz { font-size: 1.4rem; font-weight: 700; width: 2.5rem; text-align: center; font-variant-numeric: tabular-nums; }
-  .an-kz { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .03em; }
-  .an-rank table td { font-size: .85rem; }
-  .an-vg { cursor: pointer; }
-  .an-vg:hover > td, .an-vg.is-active > td { background: var(--bs-tertiary-bg); }
-  @media (max-width: 575.98px) { .an-heat { font-size: .55rem; grid-template-columns: 1.4rem repeat(24, 1fr); gap: 1px; } }
-</style>
-
-<div class="mx-auto" style="max-width: 1040px">
+<div class="mx-auto page-wide">
   <h1 class="h3 mb-1">Analyse<% if (admin) { %> <span class="badge text-bg-warning align-middle fs-6">Admin – mit Kennzeichen</span><% } %></h1>
   <p class="text-muted mb-4">
     Explorative Auswertung aller über den OWiA-Anzeiger versendeten Anzeigen:
@@ -56,9 +31,9 @@
       [proz(a.behinderung, a.anzahl), 'mit Behinderung anderer'],
       [proz(a.verlassen, a.anzahl), 'Fahrzeug verlassen'],
     ].forEach(([v, l]) => { %>
-      <div class="col-6 col-md-4 col-lg-2"><div class="border rounded py-2 px-1 h-100">
-        <div class="fs-4 fw-bold"><%= v %></div>
-        <div class="text-muted small"><%= l %></div>
+      <div class="col-6 col-md-4 col-lg-2"><div class="stat-tile px-1">
+        <div class="stat-tile-value"><%= v %></div>
+        <div class="stat-tile-label"><%= l %></div>
       </div></div>
     <% }) %>
   </div>
@@ -126,7 +101,7 @@
       <div class="an-rows">
         <% a.haeufigkeit.forEach((z) => { %>
           <div><%= z.label %> angezeigt</div>
-          <div class="an-bar-track"><div class="an-bar" style="width: <%= (z.anzahl / maxH * 100).toFixed(1) %>%"></div></div>
+          <div class="bar-track bar-track-sm"><div class="bar" style="width: <%= (z.anzahl / maxH * 100).toFixed(1) %>%"></div></div>
           <div class="num"><%= zahl(z.anzahl) %></div>
         <% }) %>
       </div>
@@ -168,7 +143,7 @@
         <div class="an-rows">
           <% liste.forEach((z) => { %>
             <div class="text-truncate" title="<%= z.label %>"><%= z.label %></div>
-            <div class="an-bar-track"><div class="an-bar" style="width: <%= (z.anzahl / m * 100).toFixed(1) %>%"></div></div>
+            <div class="bar-track bar-track-sm"><div class="bar" style="width: <%= (z.anzahl / m * 100).toFixed(1) %>%"></div></div>
             <div class="num"><%= zahl(z.anzahl) %></div>
           <% }) %>
         </div>
@@ -182,7 +157,7 @@
   <div class="an-rows mb-5" style="grid-template-columns: minmax(10rem, 1.6fr) 1fr 3rem">
     <% a.tatbestaende.forEach((z) => { %>
       <div><%= z.label %></div>
-      <div class="an-bar-track"><div class="an-bar" style="width: <%= (z.anzahl / mT * 100).toFixed(1) %>%"></div></div>
+      <div class="bar-track bar-track-sm"><div class="bar" style="width: <%= (z.anzahl / mT * 100).toFixed(1) %>%"></div></div>
       <div class="num"><%= zahl(z.anzahl) %></div>
     <% }) %>
   </div>

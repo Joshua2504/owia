@@ -16,7 +16,7 @@ const _hasDrafts = reports.some((r) => r.status === 'entwurf')
 const _dupGroups = (typeof duplicateGroups !== 'undefined' && duplicateGroups) || []
 const _dupAz = new Set(_dupGroups.flatMap((g) => g.reports.map((x) => x.aktenzeichen)))
 const _back = (typeof mergeBack !== 'undefined' && mergeBack) || '/anzeigen'
-const _dFmt = (r) => { const d = r.tattag ? new Date(r.tattag).toLocaleDateString('de-DE') : '—'; return d + (r.tatzeit_von ? ' ' + String(r.tatzeit_von).slice(0, 5) : '') }
+const _dFmt = (r) => h.fmtDate(r.tattag, '—') + (r.tatzeit_von ? ' ' + h.hhmm(r.tatzeit_von) : '')
 %>
 <% if (_dupGroups.length) { %>
   <div class="alert alert-warning m-3 mb-0 dup-hint" role="status">
@@ -26,7 +26,7 @@ const _dFmt = (r) => { const d = r.tattag ? new Date(r.tattag).toLocaleDateStrin
       <form method="post" action="/anzeigen/zusammenfuehren" class="dup-group mt-2 pt-2 border-top"
             data-confirm="Entwürfe wirklich zusammenführen? Die übrigen Entwürfe werden danach gelöscht.">
         <input type="hidden" name="back" value="<%= _back %>">
-        <span class="plate-chip me-2"><%= g.kennzeichen %></span>
+        <%- h.plate(g.kennzeichen, null, 'me-2') %>
         <% const _firstDraft = g.reports.find((x) => x.status === 'entwurf') %>
         <% for (const x of g.reports) { %>
           <span class="d-inline-flex align-items-center gap-1 me-3 small">

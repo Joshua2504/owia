@@ -1,21 +1,22 @@
 <div class="row justify-content-center">
   <div class="col-lg-10">
     <!-- Hero: eine Aussage, ein Button -->
-    <div class="text-center pt-5 pb-4">
+    <div class="hero text-center mb-4">
+      <span class="hero-kicker">Kostenlos · Datenschutzfreundlich · Direkt ans Ordnungsamt</span>
       <h1 class="display-5 fw-bold mb-3">Falschparker melden – kostenlos Anzeige erstatten</h1>
-      <p class="lead text-muted mb-4 mx-auto" style="max-width:600px">
+      <p class="lead text-body-secondary mb-4 mx-auto hero-lead">
         Fotos hochladen, Verstoß wählen, fertig. Tatort und Uhrzeit kommen aus den
         Bildern, die Anzeige geht ans zuständige Ordnungsamt.
       </p>
       <% if (currentUser) { %>
-        <div class="d-flex justify-content-center gap-3 flex-wrap">
+        <div class="d-flex justify-content-center gap-2 flex-wrap">
           <form method="post" action="/anzeige/neu" class="m-0">
             <button type="submit" class="btn btn-primary btn-lg px-4">+ Neue Anzeige erstatten</button>
           </form>
           <a href="/anzeigen" class="btn btn-outline-secondary btn-lg px-4">Meine Anzeigen</a>
         </div>
       <% } else { %>
-        <a href="/login" class="btn btn-primary btn-lg px-5 py-3 fw-semibold shadow-sm">
+        <a href="/login" class="btn btn-primary btn-lg px-5 py-3 fw-semibold">
           Anmelden &amp; Anzeige erstatten
         </a>
       <% } %>
@@ -37,21 +38,27 @@
     <!-- So funktioniert's (liefert Suchmaschinen Kontext) -->
     <section class="mb-5">
       <h2 class="h4 mb-3 text-center">So funktioniert's</h2>
-      <div class="row g-3 text-center">
+      <div class="row g-3">
         <div class="col-md-4">
-          <div class="fs-2">📸</div>
-          <h3 class="h6 mb-1">1. Fotos hochladen</h3>
-          <p class="small text-muted mb-0">Kennzeichen und Situation sichtbar – Ort und Zeit liest die App aus den Bildern, auch für viele auf einmal.</p>
+          <div class="step-card h-100">
+            <div class="step-icon" aria-hidden="true">📸</div>
+            <h3 class="h6 mb-1">1. Fotos hochladen</h3>
+            <p class="small text-body-secondary mb-0">Kennzeichen und Situation sichtbar – Ort und Zeit liest die App aus den Bildern, auch für viele auf einmal.</p>
+          </div>
         </div>
         <div class="col-md-4">
-          <div class="fs-2">📝</div>
-          <h3 class="h6 mb-1">2. Verstoß wählen</h3>
-          <p class="small text-muted mb-0">Gehweg, Radweg, Feuerwehrzufahrt, Halteverbot … – das amtliche PDF entsteht automatisch.</p>
+          <div class="step-card h-100">
+            <div class="step-icon" aria-hidden="true">📝</div>
+            <h3 class="h6 mb-1">2. Verstoß wählen</h3>
+            <p class="small text-body-secondary mb-0">Gehweg, Radweg, Feuerwehrzufahrt, Halteverbot … – das amtliche PDF entsteht automatisch.</p>
+          </div>
         </div>
         <div class="col-md-4">
-          <div class="fs-2">📮</div>
-          <h3 class="h6 mb-1">3. Wir verschicken</h3>
-          <p class="small text-muted mb-0">Wir prüfen und senden ans Ordnungsamt. Du bekommst eine Kopie und siehst Antworten in der App.</p>
+          <div class="step-card h-100">
+            <div class="step-icon" aria-hidden="true">📮</div>
+            <h3 class="h6 mb-1">3. Wir verschicken</h3>
+            <p class="small text-body-secondary mb-0">Wir prüfen und senden ans Ordnungsamt. Du bekommst eine Kopie und siehst Antworten in der App.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -61,21 +68,21 @@
     <section class="mb-5">
       <h2 class="h4 mb-3 text-center">Bisher gemeldet</h2>
       <div class="row g-2 mb-3 text-center">
-        <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
-          <div class="fs-3 fw-bold"><%= stats.total || 0 %></div>
-          <div class="text-muted small">Anzeigen versendet</div>
+        <div class="col-6 col-md-3"><div class="stat-tile">
+          <div class="stat-tile-value"><%= stats.total || 0 %></div>
+          <div class="stat-tile-label">Anzeigen versendet</div>
         </div></div>
-        <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
-          <div class="fs-3 fw-bold"><%= stats.last30 || 0 %></div>
-          <div class="text-muted small">letzte 30 Tage</div>
+        <div class="col-6 col-md-3"><div class="stat-tile">
+          <div class="stat-tile-value"><%= stats.last30 || 0 %></div>
+          <div class="stat-tile-label">letzte 30 Tage</div>
         </div></div>
-        <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
-          <div class="fs-3 fw-bold"><%= stats.fotos || 0 %></div>
-          <div class="text-muted small">Beweisfotos</div>
+        <div class="col-6 col-md-3"><div class="stat-tile">
+          <div class="stat-tile-value"><%= stats.fotos || 0 %></div>
+          <div class="stat-tile-label">Beweisfotos</div>
         </div></div>
-        <div class="col-6 col-md-3"><div class="border rounded py-2 h-100 d-flex flex-column justify-content-center">
+        <div class="col-6 col-md-3"><div class="stat-tile">
           <div class="fw-bold"><%= stats.topVerstoss || '–' %></div>
-          <div class="text-muted small">häufigster Verstoß</div>
+          <div class="stat-tile-label">häufigster Verstoß</div>
         </div></div>
       </div>
       <p class="text-center small mb-3"><a href="/statistik">Statistik mit möglichen Bußgeldern →</a></p>

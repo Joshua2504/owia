@@ -58,6 +58,8 @@ export function viewData(
         }
       : null,
     isAdmin: isAdminEmail(request.session.userEmail),
+    // Für die aktive Markierung in der Navigation (layout.ejs).
+    currentPath: request.url.split('?')[0],
     flash,
     ...extra,
   }

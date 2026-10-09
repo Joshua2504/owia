@@ -30,6 +30,7 @@ import analyseRoutes from './routes/analyse'
 import logosRoutes from './routes/logos'
 import stickerTestRoutes from './routes/stickerTest'
 import { verjaehrung } from './services/verjaehrung'
+import { viewHelpers } from './views/helpers'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN } from './config/fahrzeug'
 import adminRoutes from './routes/admin'
 import portalRoutes from './routes/portal'
@@ -184,7 +185,8 @@ async function main() {
     // isAdmin ist Standard-false, damit das Layout es immer referenzieren kann,
     // auch bei (seltenen) Views, die ohne viewData gerendert werden.
     // Fahrzeuglisten: Auswahl/Vorschläge der Inline-Felder in report-row.ejs.
-    defaultContext: { isAdmin: false, verjaehrung, verstossGesperrt, fahrzeugTypen: FAHRZEUG_TYPEN, fahrzeugMarken: FAHRZEUG_MARKEN, fahrzeugFarben: FAHRZEUG_FARBEN },
+    // h: Formatier-/Markup-Helfer der Views (views/helpers.ts).
+    defaultContext: { isAdmin: false, h: viewHelpers, verjaehrung, verstossGesperrt, fahrzeugTypen: FAHRZEUG_TYPEN, fahrzeugMarken: FAHRZEUG_MARKEN, fahrzeugFarben: FAHRZEUG_FARBEN },
   })
 
   // Flash-Cookie nach dem Ausliefern einer HTML-Seite löschen (die Seite hat

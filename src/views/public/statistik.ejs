@@ -1,27 +1,10 @@
 <%
   const s = statistik
-  const eur = (n) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: n % 1 ? 2 : 0 })
-  const zahl = (n) => n.toLocaleString('de-DE')
+  const { eur, zahl } = h
   const maxMonat = Math.max(1, ...s.monate.map((m) => m.euro))
   const maxTat = Math.max(1, ...s.tatbestaende.map((t) => t.euro))
 %>
-<style>
-  /* Balken: eine Serie, eine Farbe (Bootstrap-Primär), Datenende abgerundet;
-     Werte stehen als Text daneben, nie in der Balkenfarbe. */
-  .stat-bar-track { background: var(--bs-tertiary-bg); border-radius: 4px; height: 1.25rem; }
-  .stat-bar { background: var(--bs-primary); height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
-  .stat-month { display: grid; grid-template-columns: 9rem 1fr 7.5rem; gap: .5rem; align-items: center; }
-  .stat-month:hover .stat-bar { filter: brightness(1.15); }
-  @media (max-width: 575.98px) {
-    .stat-month { grid-template-columns: 1fr auto; }
-    .stat-month .stat-bar-track { grid-column: 1 / -1; grid-row: 2; }
-  }
-  .stat-table td.stat-tbnr { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .stat-table td.num, .stat-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .stat-table .stat-bar-track { height: .375rem; margin-top: .25rem; }
-</style>
-
-<div class="mx-auto" style="max-width: 960px">
+<div class="mx-auto page-narrow">
   <h1 class="h3 mb-1">Statistik</h1>
   <p class="text-muted mb-4">
     Alle über den OWiA-Anzeiger an die Ordnungsämter versendeten Anzeigen und die
@@ -29,21 +12,21 @@
   </p>
 
   <div class="row g-2 mb-4 text-center">
-    <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
-      <div class="fs-3 fw-bold"><%= zahl(s.anzahl) %></div>
-      <div class="text-muted small">Anzeigen versendet</div>
+    <div class="col-6 col-md-3"><div class="stat-tile">
+      <div class="stat-tile-value"><%= zahl(s.anzahl) %></div>
+      <div class="stat-tile-label">Anzeigen versendet</div>
     </div></div>
-    <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
-      <div class="fs-3 fw-bold"><%= eur(s.euro) %></div>
-      <div class="text-muted small">mögliche Bußgelder</div>
+    <div class="col-6 col-md-3"><div class="stat-tile">
+      <div class="stat-tile-value"><%= eur(s.euro) %></div>
+      <div class="stat-tile-label">mögliche Bußgelder</div>
     </div></div>
-    <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
-      <div class="fs-3 fw-bold"><%= s.mitRegelsatz ? eur(Math.round(s.euro / s.mitRegelsatz * 100) / 100) : '–' %></div>
-      <div class="text-muted small">Ø je Anzeige</div>
+    <div class="col-6 col-md-3"><div class="stat-tile">
+      <div class="stat-tile-value"><%= s.mitRegelsatz ? eur(Math.round(s.euro / s.mitRegelsatz * 100) / 100) : '–' %></div>
+      <div class="stat-tile-label">Ø je Anzeige</div>
     </div></div>
-    <div class="col-6 col-md-3"><div class="border rounded py-2 h-100">
-      <div class="fs-3 fw-bold"><%= zahl(s.tatbestaende.filter((t) => t.key !== 'sonstige').length) %></div>
-      <div class="text-muted small">verschiedene Tatbestände</div>
+    <div class="col-6 col-md-3"><div class="stat-tile">
+      <div class="stat-tile-value"><%= zahl(s.tatbestaende.filter((t) => t.key !== 'sonstige').length) %></div>
+      <div class="stat-tile-label">verschiedene Tatbestände</div>
     </div></div>
   </div>
 
@@ -58,7 +41,7 @@
     <% s.monate.forEach((m) => { %>
       <div class="stat-month" role="listitem" title="<%= m.label %>: <%= zahl(m.anzahl) %> Anzeigen, <%= eur(m.euro) %>">
         <div class="small"><%= m.label %></div>
-        <div class="stat-bar-track" aria-hidden="true"><div class="stat-bar" style="width: <%= (m.euro / maxMonat * 100).toFixed(1) %>%"></div></div>
+        <div class="bar-track" aria-hidden="true"><div class="bar" style="width: <%= (m.euro / maxMonat * 100).toFixed(1) %>%"></div></div>
         <div class="small text-end"><span class="fw-semibold"><%= eur(m.euro) %></span> <span class="text-muted">· <%= zahl(m.anzahl) %></span></div>
       </div>
     <% }) %>
@@ -87,7 +70,7 @@
               <%# Schmale Displays: TBNR- und Regelsatz-Spalte sind ausgeblendet, damit
                   Anzahl/Summe ohne Querscrollen sichtbar bleiben – hier nachgereicht. %>
               <% if (t.regelsatz !== null) { %><div class="d-sm-none small text-muted"><%= t.key %> · Regelsatz <%= eur(t.regelsatz) %></div><% } %>
-              <% if (t.euro) { %><div class="stat-bar-track" aria-hidden="true"><div class="stat-bar" style="width: <%= (t.euro / maxTat * 100).toFixed(1) %>%"></div></div><% } %>
+              <% if (t.euro) { %><div class="bar-track" aria-hidden="true"><div class="bar" style="width: <%= (t.euro / maxTat * 100).toFixed(1) %>%"></div></div><% } %>
             </td>
             <td class="num d-none d-sm-table-cell"><%= t.regelsatz === null ? '–' : eur(t.regelsatz) %></td>
             <td class="num"><%= zahl(t.anzahl) %></td>

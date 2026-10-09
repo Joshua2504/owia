@@ -23,6 +23,7 @@ import { replyAttachmentPath } from '../../services/mailInbox'
 import { MailService } from '../../services/mail'
 import { verstossGesperrt } from '../../services/portale'
 import { loadReportByAktenzeichen, loadQueueContext, FORMULAR_HILFEN, VERSTOSS_SPERREN, strukturFelder, persistFields, normalizePlate, isComplete, mostUsedVerstoesse, isProfileComplete, enqueuePdf, istDatum, istUhrzeit } from './shared'
+import { viewHelpers } from '../../views/helpers'
 
 export default async function editorRoutes(app: FastifyInstance) {
   // Eigene, noch nicht versendete Anzeigen (Entwürfe) mit Koordinaten – für die
@@ -451,6 +452,7 @@ export default async function editorRoutes(app: FastifyInstance) {
         imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename), ok: i.geprueft_at !== null, plate: i.detected_plate || null })),
         // ejs.renderFile kennt den defaultContext von @fastify/view (server.ts)
         // nicht – Helfer, die report-row.ejs nutzt, hier explizit mitgeben.
+        h: viewHelpers,
         verjaehrung,
         verstossGesperrt,
         fahrzeugTypen: FAHRZEUG_TYPEN,

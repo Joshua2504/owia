@@ -54,10 +54,9 @@
         <% } %>
         <%# Wartender Auto-Start: Countdown bis zum geplanten Job-Start (Versand-Takt
             bzw. nach Mitternacht), zählt in portal-live.js herunter. %>
-        <% function uhr(sek) { const h = Math.floor(sek / 3600), m = Math.floor(sek % 3600 / 60), s = sek % 60, p = (n) => String(n).padStart(2, '0'); return (h ? h + ':' + p(m) : p(m)) + ':' + p(s) } %>
         <% function autoBadge(sek, fallback) {
              if (!sek) return '<span class="badge text-bg-info" title="Nach der Freigabe eingereiht – startet automatisch, sobald ein Platz frei ist.">' + fallback + '</span>'
-             return '<span class="badge text-bg-info" data-auto-in="' + sek + '" title="Geplanter Start (Versand-Takt bzw. nach Mitternacht).">⏱ automatischer Versand in <span data-auto-uhr>' + uhr(sek) + '</span></span>'
+             return '<span class="badge text-bg-info" data-auto-in="' + sek + '" title="Geplanter Start (Versand-Takt bzw. nach Mitternacht).">⏱ automatischer Versand in <span data-auto-uhr>' + h.dauer(sek) + '</span></span>'
            } %>
         <% queue.offen.forEach(function (r) { %>
           <li class="list-group-item versand-item" data-id="<%= r.id %>" data-az="<%= r.az %>" data-sendbar="<%= r.imPortal && !r.abMorgen ? '1' : '' %>"
@@ -66,7 +65,7 @@
               <a href="/anzeige/<%= r.az %>" class="fw-semibold" target="_blank" rel="noopener"><%= r.az %></a>
               <span class="d-flex gap-1 align-items-center">
                 <span class="badge text-bg-light border"><%= r.stadt %></span>
-                <span class="plate-chip"><%= r.kennzeichen || '—' %></span>
+                <%- h.plate(r.kennzeichen || '—') %>
               </span>
             </div>
             <div class="small text-muted"><%= r.tatzeit %> · <%= r.bilder %> Foto<%= r.bilder === 1 ? '' : 's' %><%= r.fahrzeug ? ' · ' + r.fahrzeug : '' %></div>

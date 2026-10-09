@@ -15,8 +15,8 @@
         <form method="post" action="/login/verify">
           <input type="hidden" name="email" value="<%= email %>">
           <div class="mb-3">
-            <label class="form-label">Anmeldecode</label>
-            <input type="text" name="code" class="form-control form-control-lg text-center"
+            <label class="form-label" for="login-code">Anmeldecode</label>
+            <input type="text" name="code" id="login-code" class="form-control form-control-lg text-center"
                    inputmode="numeric" pattern="[0-9]*" maxlength="6"
                    autocomplete="one-time-code" required autofocus
                    style="letter-spacing:.4em;">

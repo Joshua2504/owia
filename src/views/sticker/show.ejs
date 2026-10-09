@@ -105,10 +105,8 @@ const en = (text) => `<div class="small text-body-secondary fst-italic">${text}<
                 <input class="form-check-input flex-shrink-0 mt-1" type="radio" name="report" value="<%= a.id %>" <%= i === 0 ? 'checked' : '' %>>
                 <span class="small">
                   <code><%= a.aktenzeichen %></code>
-                  <% if (a.kennzeichen) { %><span class="plate-chip ms-1"><%= a.kennzeichen %></span><% } %>
-                  <span class="badge <%= a.status === 'versendet' ? 'bg-success' : a.status === 'eingereicht' ? 'bg-info' : 'bg-secondary' %> ms-1">
-                    <%= a.status === 'versendet' ? 'Versendet' : a.status === 'eingereicht' ? 'Eingereicht' : 'Entwurf' %>
-                  </span>
+                  <%- h.plate(a.kennzeichen, null, 'ms-1') %>
+                  <%- h.statusBadge(a.status) %>
                   <br>
                   <span class="text-muted">
                     <%= a.tattag_fmt || `erstellt ${a.erstellt_fmt}` %>

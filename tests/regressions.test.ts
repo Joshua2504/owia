@@ -36,6 +36,7 @@ import { assertProductionMailConfig } from '../src/config/mail'
 import view from '@fastify/view'
 import { PDFDocument } from 'pdf-lib'
 import stickerRoutes from '../src/routes/sticker'
+import { viewHelpers } from '../src/views/helpers'
 import {
   createBatch, linkCode, unlinkCode, voidOpenCodes, normalizeCode, parseLayout, renderBatchPdf,
   batchCodes, StickerLayout,
@@ -409,7 +410,7 @@ test('Kontoschließung kann einen ungeklärten Versand nicht löschen', async ()
 test('Adminansicht bietet bei unklarem Versand keinen Wiederholungsbutton an', async () => {
   for (const state of [null, 'vorbereitung', 'versand', 'angenommen']) {
     const html = await ejs.renderFile('src/views/admin/anzeigen.ejs', {
-      pending: [{ id: 1, aktenzeichen: 'OWiA-123456', versand_status: state }], recent: [], unmatched: [], verjaehrung,
+      pending: [{ id: 1, aktenzeichen: 'OWiA-123456', versand_status: state }], recent: [], unmatched: [], verjaehrung, h: viewHelpers,
     })
     if (state === 'versand' || state === 'vorbereitung') {
       assert.ok(!html.includes('action="/admin/anzeigen/1/approve"'))
@@ -732,7 +733,7 @@ test('Sticker-Seite zeigt Fremden nur öffentliche Angaben und zählt nur deren 
     engine: { ejs },
     root: path.join(process.cwd(), 'src', 'views'),
     layout: '/layout.ejs',
-    defaultContext: { isAdmin: false, verjaehrung },
+    defaultContext: { isAdmin: false, h: viewHelpers, verjaehrung },
   })
   app.addHook('preHandler', async request => { request.session = { userId: viewer } as typeof request.session })
   await app.register(stickerRoutes)
@@ -1132,7 +1133,7 @@ test('Magic-Link: GET verbraucht den Token nicht, erst der POST meldet an', asyn
   const app = Fastify()
   await app.register(cookie)
   await app.register(formbody)
-  await app.register(view, { engine: { ejs }, root: path.join(process.cwd(), 'src', 'views'), layout: '/layout.ejs', defaultContext: { isAdmin: false, verjaehrung } })
+  await app.register(view, { engine: { ejs }, root: path.join(process.cwd(), 'src', 'views'), layout: '/layout.ejs', defaultContext: { isAdmin: false, h: viewHelpers, verjaehrung } })
   const session: Record<string, unknown> = {
     regenerate: async () => {}, save: async () => {}, destroy: async () => {}, cookie: {},
   }
@@ -1188,7 +1189,7 @@ test('Öffentliche Karten-API liefert genaue Koordinaten (~1 m) und keine Kennun
   await pool.execute("UPDATE reports SET status='versendet', tatort_lat=50.1234567, tatort_lon=8.7654321, tattag='2026-09-01' WHERE id=?", [id])
   const app = Fastify()
   await app.register(cookie)
-  await app.register(view, { engine: { ejs }, root: path.join(process.cwd(), 'src', 'views'), layout: '/layout.ejs', defaultContext: { isAdmin: false, verjaehrung } })
+  await app.register(view, { engine: { ejs }, root: path.join(process.cwd(), 'src', 'views'), layout: '/layout.ejs', defaultContext: { isAdmin: false, h: viewHelpers, verjaehrung } })
   app.addHook('preHandler', async request => { request.session = {} as typeof request.session })
   await app.register(publicRoutes)
   try {

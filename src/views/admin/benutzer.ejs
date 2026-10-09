@@ -5,8 +5,8 @@
 const active = users.filter((u) => !u.anonymized_at)
 %>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h2 class="mb-0">Benutzer</h2>
+<div class="page-head">
+  <h2>Benutzer</h2>
   <div class="text-muted small">
     <%= active.length %> aktiv<% if (users.length - active.length) { %>, <%= users.length - active.length %> geschlossen<% } %>
   </div>

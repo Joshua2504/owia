@@ -29,7 +29,8 @@
   <%# PWA: installierbar mit Start direkt in der Kamera (/kamera, kamera.js).
       iOS liest das Manifest-Icon nicht → apple-touch-icon. %>
   <link rel="manifest" href="/public/manifest.webmanifest">
-  <meta name="theme-color" content="#212529">
+  <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
   <link rel="apple-touch-icon" href="/public/icons/icon-180.png">
   <link rel="stylesheet" href="/public/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="/public/css/app.css">
@@ -41,65 +42,78 @@
 <% const _embed = !!locals.embed || _bare %>
 <body class="<%= _bare ? 'is-embed is-bare' : (_embed ? 'is-embed' : '') %>"<%= isAdmin ? ' data-admin' : '' %><%= currentUser ? ' data-user' : '' %>>
   <% if (!_embed) { %>
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top" id="site-nav">
+  <%
+    // Aktive Seite in der Navigation: Präfix-Vergleich auf den Pfad (viewData).
+    const _path = locals.currentPath || ''
+    const _act = (...prefixes) => prefixes.some((p) => _path === p || _path.startsWith(p + '/')) ? ' active' : ''
+    const _adminLinks = [
+      ['/admin/anzeigen', 'Prüfung'], ['/versand', 'Versand'], ['/admin/newsletter', 'Newsletter'],
+      ['/admin/benutzer', 'Benutzer'], ['/admin/analyse', 'Analyse'],
+    ]
+    const _adminActive = _adminLinks.some(([href]) => _act(href))
+  %>
+  <nav class="navbar navbar-expand-lg sticky-top site-nav" id="site-nav">
     <%# Menü immer volle Breite (rechtsbündig), wie auf den Listen-Seiten. %>
     <div class="container-fluid px-3 px-xl-4">
-      <a class="navbar-brand fw-bold" href="/">🚗 OWiA-Anzeiger</a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
-        <span class="navbar-toggler-icon"></span>
-      </button>
+      <a class="navbar-brand site-brand" href="/"><span class="site-brand-mark" aria-hidden="true">🚗</span>OWiA-Anzeiger</a>
+      <div class="d-flex align-items-center gap-1 ms-auto order-lg-last">
+        <button type="button" id="theme-toggle" class="btn btn-link nav-link px-2"
+                title="Hell/Dunkel umschalten" aria-label="Farbschema umschalten">🌙</button>
+        <% if (currentUser) { %>
+          <div class="dropdown">
+            <button class="btn btn-link nav-link px-1 d-flex align-items-center gap-2" type="button"
+                    data-bs-toggle="dropdown" aria-expanded="false" aria-label="Konto-Menü">
+              <span class="site-nav-avatar" aria-hidden="true"><%= String(currentUser.name || currentUser.email || '?').trim().charAt(0).toUpperCase() %></span>
+              <span class="d-none d-xl-inline"><%= currentUser.name %></span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><h6 class="dropdown-header text-truncate site-nav-email"><%= currentUser.email %></h6></li>
+              <li><a class="dropdown-item" href="/einstellungen">Einstellungen</a></li>
+              <li><a class="dropdown-item" href="/papierkorb">Papierkorb</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <form method="post" action="/logout" class="m-0">
+                  <button type="submit" class="dropdown-item">Abmelden</button>
+                </form>
+              </li>
+            </ul>
+          </div>
+        <% } else { %>
+          <a class="btn btn-primary btn-sm ms-1" href="/login">Anmelden</a>
+        <% } %>
+        <% if (currentUser) { %>
+          <button class="navbar-toggler ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#nav"
+                  aria-controls="nav" aria-expanded="false" aria-label="Menü">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+        <% } %>
+      </div>
+      <% if (currentUser) { %>
       <div class="collapse navbar-collapse" id="nav">
-        <ul class="navbar-nav ms-auto align-items-center gap-2">
-          <% if (currentUser) { %>
-            <li class="nav-item">
-              <form method="post" action="/anzeige/neu" class="m-0">
-                <button type="submit" class="btn btn-link nav-link p-0">+ Neue Anzeige</button>
-              </form>
+        <ul class="navbar-nav ms-auto me-lg-2 align-items-lg-center gap-lg-1">
+          <li class="nav-item"><a class="nav-link<%= _act('/anzeigen', '/anzeige') %>" href="/anzeigen">Meine Anzeigen</a></li>
+          <li class="nav-item"><a class="nav-link<%= _act('/import') %>" href="/import">Foto-Import</a></li>
+          <li class="nav-item d-lg-none"><a class="nav-link<%= _act('/kamera') %>" href="/kamera">Kamera</a></li>
+          <li class="nav-item"><a class="nav-link<%= _act('/sticker') %>" href="/sticker">Sticker</a></li>
+          <% if (isAdmin) { %>
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle<%= _adminActive ? ' active' : '' %>" href="#" role="button"
+                 data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
+              <ul class="dropdown-menu dropdown-menu-lg-end">
+                <% for (const [href, label] of _adminLinks) { %>
+                  <li><a class="dropdown-item<%= _act(href) %>" href="<%= href %>"><%= label %></a></li>
+                <% } %>
+              </ul>
             </li>
-            <li class="nav-item d-lg-none">
-              <a class="nav-link" href="/kamera">📷 Kamera</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/anzeigen">Meine Anzeigen</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/import">📸 Foto-Import</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/sticker">Sticker</a>
-            </li>
-            <% if (isAdmin) { %>
-              <li class="nav-item">
-                <a class="nav-link" href="/admin/anzeigen">Prüfung</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="/versand">Versand</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="/admin/newsletter">Newsletter</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="/admin/benutzer">Benutzer</a>
-              </li>
-              <li class="nav-item">
-                <a class="nav-link" href="/admin/analyse">Analyse</a>
-              </li>
-            <% } %>
-            <li class="nav-item">
-              <a class="nav-link" href="/einstellungen"><%= currentUser.name %></a>
-            </li>
-            <li class="nav-item">
-              <form method="post" action="/logout" class="m-0 d-inline"><button type="submit" class="btn btn-outline-light btn-sm">Abmelden</button></form>
-            </li>
-          <% } else { %>
-            <li class="nav-item"><a class="btn btn-primary btn-sm" href="/login">Anmelden</a></li>
           <% } %>
-          <li class="nav-item">
-            <button type="button" id="theme-toggle" class="btn btn-link nav-link p-0"
-                    title="Hell/Dunkel umschalten" aria-label="Farbschema umschalten">🌙</button>
+          <li class="nav-item site-nav-cta ms-lg-2">
+            <form method="post" action="/anzeige/neu" class="m-0">
+              <button type="submit" class="btn btn-primary btn-sm px-3">+ Neue Anzeige</button>
+            </form>
           </li>
         </ul>
       </div>
+      <% } %>
     </div>
   </nav>
   <% } %>
@@ -120,31 +134,30 @@
   <!-- Cookie-Hinweis: rein informativ, da ausschließlich technisch notwendige
        Cookies (Sitzung + Statusmeldung) genutzt werden – keine Einwilligung
        erforderlich (§ 25 Abs. 2 TTDSG). Bestätigung merkt sich localStorage. -->
-  <div id="cookie-notice" class="d-none position-fixed bottom-0 start-0 end-0 p-2" style="z-index:2100">
-    <div class="container">
-      <div class="bg-dark text-white rounded shadow p-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <span class="small">
-          🍪 Diese Website verwendet ausschließlich <strong>technisch notwendige</strong> Cookies
-          (Anmeldung &amp; Statusmeldungen) – kein Tracking, keine Werbung.
-          <a href="/datenschutz" class="link-light">Mehr in der Datenschutzerklärung</a>.
-        </span>
-        <button type="button" id="cookie-notice-ok" class="btn btn-light btn-sm">Verstanden</button>
-      </div>
+  <div id="cookie-notice" class="cookie-notice d-none" role="region" aria-label="Cookie-Hinweis">
+    <div class="cookie-notice-box">
+      <span>
+        🍪 Nur <strong>technisch notwendige</strong> Cookies (Anmeldung &amp; Statusmeldungen) – kein Tracking, keine Werbung.
+        <a href="/datenschutz">Datenschutz</a>
+      </span>
+      <button type="button" id="cookie-notice-ok" class="btn btn-primary btn-sm">Verstanden</button>
     </div>
   </div>
-  <footer class="text-center text-muted py-4 small">
-    <div class="mt-1">
-      <a href="/impressum" class="text-muted">Impressum</a> ·
-      <a href="/datenschutz" class="text-muted">Datenschutz</a> ·
-      <a href="/nutzungsbedingungen" class="text-muted">Nutzungsbedingungen</a> ·
-      <a href="/falschparker-melden" class="text-muted">Feuerwehrzufahrt zugeparkt?</a> ·
-      <a href="/statistik" class="text-muted">Statistik</a> ·
-      <a href="/analyse" class="text-muted">Analyse</a>
+  <footer class="site-footer">
+    <div class="container">
+      <nav aria-label="Rechtliches und Informationen">
+        <a href="/statistik">Statistik</a>
+        <a href="/analyse">Analyse</a>
+        <a href="/falschparker-melden">Feuerwehrzufahrt zugeparkt?</a>
+        <a href="/impressum">Impressum</a>
+        <a href="/datenschutz">Datenschutz</a>
+        <a href="/nutzungsbedingungen">Nutzungsbedingungen</a>
+      </nav>
     </div>
   </footer>
   <%# Handy: Kamera immer einen Daumen entfernt (unten links, „Nach oben" sitzt rechts). %>
   <% if (currentUser) { %><a href="/kamera" class="kamera-fab d-lg-none" aria-label="Kamera öffnen" title="Kamera">📷</a><% } %>
-  <button type="button" id="back-to-top" class="btn btn-dark back-to-top" aria-label="Nach oben" title="Nach oben" hidden>↑</button>
+  <button type="button" id="back-to-top" class="btn back-to-top" aria-label="Nach oben" title="Nach oben" hidden>↑</button>
   <% } %>
 
   <%# layout.js: Service Worker, Flash, Cookie-Hinweis, Theme-Umschalter und
