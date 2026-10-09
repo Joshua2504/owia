@@ -1,0 +1,13 @@
+<%# Brotkrümel der SEO-Seiten. Parameter: crumbs ([Name, Pfad][]; letzter = aktuelle Seite).
+    Dieselbe Liste geht über seo-schema.ejs als BreadcrumbList ins Schema. %>
+<nav aria-label="Brotkrümelnavigation" class="small mb-3">
+  <ol class="breadcrumb mb-0">
+    <% crumbs.forEach(([name, href], i) => { %>
+      <% if (i < crumbs.length - 1) { %>
+        <li class="breadcrumb-item"><a href="<%= href %>"><%= name %></a></li>
+      <% } else { %>
+        <li class="breadcrumb-item active" aria-current="page"><%= name %></li>
+      <% } %>
+    <% }) %>
+  </ol>
+</nav>

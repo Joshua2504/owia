@@ -25,6 +25,7 @@ import geoRoutes from './routes/geo'
 import tilesRoutes from './routes/tiles'
 import publicRoutes from './routes/public'
 import legalRoutes from './routes/legal'
+import ratgeberRoutes from './routes/ratgeber'
 import statistikRoutes from './routes/statistik'
 import analyseRoutes from './routes/analyse'
 import logosRoutes from './routes/logos'
@@ -184,6 +185,12 @@ async function main() {
   await app.register(staticFiles, {
     root: path.join(process.cwd(), 'public'),
     prefix: '/public/',
+    // Gevendorte Bibliotheken, Icons und Vorschaubild ändern sich praktisch nie →
+    // einen Tag cachen (PageSpeed/SEO). Eigenes JS/CSS (ohne Versions-Hash im
+    // Namen) bleibt bei max-age=0 + ETag, damit Deploys sofort greifen.
+    setHeaders: (res, filePath) => {
+      if (/[\\/](vendor|icons|og)[\\/]/.test(filePath)) res.header('Cache-Control', 'public, max-age=86400')
+    },
   })
   await app.register(view, {
     engine: { ejs },
@@ -231,6 +238,7 @@ async function main() {
   await app.register(tilesRoutes)
   await app.register(publicRoutes)
   await app.register(legalRoutes)
+  await app.register(ratgeberRoutes)
   await app.register(statistikRoutes)
   await app.register(analyseRoutes)
   await app.register(logosRoutes)

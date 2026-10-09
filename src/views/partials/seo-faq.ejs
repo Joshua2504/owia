@@ -1,0 +1,15 @@
+<%# FAQ-Akkordeon der SEO-Seiten. Parameter: faq ([Frage, Antwort][]), faqId.
+    Dieselben Texte gehen über seo-schema.ejs ins FAQPage-Schema. %>
+<div class="accordion" id="<%= faqId %>">
+  <% faq.forEach(([q, a], i) => { %>
+    <div class="accordion-item">
+      <h3 class="accordion-header">
+        <button class="accordion-button <%= i ? 'collapsed' : '' %>" type="button" data-bs-toggle="collapse"
+                data-bs-target="#<%= faqId %>-<%= i %>" aria-expanded="<%= i ? 'false' : 'true' %>" aria-controls="<%= faqId %>-<%= i %>"><%= q %></button>
+      </h3>
+      <div id="<%= faqId %>-<%= i %>" class="accordion-collapse collapse <%= i ? '' : 'show' %>" data-bs-parent="#<%= faqId %>">
+        <div class="accordion-body"><%= a %></div>
+      </div>
+    </div>
+  <% }) %>
+</div>

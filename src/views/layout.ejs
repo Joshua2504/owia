@@ -24,10 +24,15 @@
     <% if (locals.canonical) { %>
       <meta property="og:url" content="<%= canonical %>">
       <link rel="canonical" href="<%= canonical %>">
-      <%# Vorschaubild für Messenger/soziale Netze (App-Icon, absolute URL nötig). %>
-      <meta property="og:image" content="<%= new URL(canonical).origin %>/public/icons/icon-512.png">
+      <%# Vorschaubild für Messenger/soziale Netze (absolute URL nötig). Erzeugt
+          per Playwright-Screenshot; bei neuem Bild den Dateinamen ändern (1 Tag Cache). %>
+      <meta property="og:image" content="<%= new URL(canonical).origin %>/public/og/owia-1200x630.png">
+      <meta property="og:image:width" content="1200">
+      <meta property="og:image:height" content="630">
+      <meta property="og:image:alt" content="OWiA-Anzeiger: Falschparker melden – kostenlos & online">
     <% } %>
-    <meta name="twitter:card" content="summary">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
   <% } %>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
   <%# PWA: installierbar, Start auf der Startseite (/; Umleitung alter Starts in layout.js).
@@ -154,6 +159,8 @@
       <nav aria-label="Rechtliches und Informationen">
         <a href="/statistik">Statistik</a>
         <a href="/analyse">Analyse</a>
+        <a href="/ratgeber">Ratgeber</a>
+        <a href="/bussgeldkatalog-parken">Bußgeldkatalog Parken</a>
         <a href="/falschparker-melden-frankfurt">Falschparker melden in Frankfurt</a>
         <a href="/impressum">Impressum</a>
         <a href="/datenschutz">Datenschutz</a>
@@ -172,7 +179,7 @@
       ['/kamera', 'Kamera', '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>', false],
       ['/import', 'Import', '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>', !!_act('/import')],
     ]
-    const _mehrAktiv = !!_act('/sticker', '/einstellungen', '/statistik', '/analyse', '/impressum', '/datenschutz', '/nutzungsbedingungen', '/falschparker-melden-frankfurt') || _adminActive
+    const _mehrAktiv = !!_act('/sticker', '/einstellungen', '/statistik', '/analyse', '/impressum', '/datenschutz', '/nutzungsbedingungen', '/falschparker-melden-frankfurt', '/ratgeber', '/bussgeldkatalog-parken') || _adminActive
   %>
   <nav class="app-tabbar" aria-label="App-Navigation">
     <% for (const [href, label, d, aktiv] of _tabs) { %>
@@ -199,7 +206,7 @@
       <% const _gruppen = [
            [null, [['/sticker', '🏷️', 'Sticker'], ['/papierkorb', '🗑️', 'Papierkorb'], ['/einstellungen', '⚙️', 'Einstellungen']]],
            isAdmin ? ['Admin', _adminLinks.map(([href, label]) => [href, '🛠️', label])] : null,
-           ['Infos', [['/statistik', '📊', 'Statistik'], ['/analyse', '🔎', 'Analyse'], ['/falschparker-melden-frankfurt', '📞', 'Falschparker melden in Frankfurt']]],
+           ['Infos', [['/statistik', '📊', 'Statistik'], ['/analyse', '🔎', 'Analyse'], ['/ratgeber', '📚', 'Ratgeber'], ['/falschparker-melden-frankfurt', '📞', 'Falschparker melden in Frankfurt']]],
            ['Rechtliches', [['/impressum', '', 'Impressum'], ['/datenschutz', '', 'Datenschutz'], ['/nutzungsbedingungen', '', 'Nutzungsbedingungen']]],
          ].filter(Boolean) %>
       <% for (const [titel, links] of _gruppen) { %>

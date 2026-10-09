@@ -5,6 +5,7 @@ import { pool } from '../db/connection'
 import { regelsatzEuro } from '../config/verstoss'
 import { logger } from '../services/logger'
 import { appUrl } from '../config/app'
+import { RATGEBER_THEMEN } from '../config/ratgeber'
 
 // Frankfurt-Landingpage: Keyword in der URL („falschparker melden frankfurt").
 // Auch in Sitemap/robots.txt (routes/public.ts) und in den Links von Footer/Startseite.
@@ -46,6 +47,13 @@ async function frankfurtKennzahlen(): Promise<{ total: number; last30: number } 
   return ffmCache.werte
 }
 
+/** Bußgeld-Beispiele mit Beträgen (auch für die übrigen Stadtseiten, routes/ratgeber.ts). */
+export function bussgeldBeispiele(): { label: string; ohne: number | null; mit: number | null }[] {
+  return BUSSGELD_BEISPIELE
+    .map(([label, ohne, mit]) => ({ label, ohne: regelsatzEuro(ohne), mit: mit ? regelsatzEuro(mit) : null }))
+    .filter((b) => b.ohne !== null)
+}
+
 export default async function legalRoutes(app: FastifyInstance) {
   // Öffentlich erreichbar (kein requireAuth), damit Impressum und
   // Datenschutzerklärung auch ohne Anmeldung aufrufbar sind.
@@ -68,9 +76,7 @@ export default async function legalRoutes(app: FastifyInstance) {
   app.get('/falschparker-melden', (_request, reply) => reply.redirect(LANDING_FFM, 301))
   app.get(LANDING_FFM, async (request, reply) => {
     const base = appUrl()
-    const bussgelder = BUSSGELD_BEISPIELE
-      .map(([label, ohne, mit]) => ({ label, ohne: regelsatzEuro(ohne), mit: mit ? regelsatzEuro(mit) : null }))
-      .filter((b) => b.ohne !== null)
+    const bussgelder = bussgeldBeispiele()
     return reply.view(
       '/legal/falschparker-melden.ejs',
       viewData(request, {
@@ -83,6 +89,7 @@ export default async function legalRoutes(app: FastifyInstance) {
         bussgelder,
         ffm: await frankfurtKennzahlen(),
         stand: STAND,
+        themen: RATGEBER_THEMEN,
       })
     )
   })

@@ -1,0 +1,167 @@
+<%
+// Stadt-Landingpage „Falschparker melden in <Stadt>" (routes/ratgeber.ts, Daten
+// in config/stadtSeiten.ts). Frankfurt hat eine eigene View (legal/falschparker-melden.ejs).
+// zahlen = {total, last30} | null (versendete Anzeigen dieser Stadt, nur Aggregate).
+const s = stadt
+const _crumbs = [['Startseite', '/'], ['Ratgeber', '/ratgeber'], ['Falschparker melden in ' + s.name, '/' + s.slug]]
+%>
+<div class="row justify-content-center">
+  <article class="col-lg-9 seo-page">
+    <%- include('../partials/seo-breadcrumb', { crumbs: _crumbs }) %>
+
+    <header class="hero mb-4 text-start">
+      <span class="hero-kicker"><%= s.name %> · <%= s.bundesland %> · Stand <%= stand.text %></span>
+      <h1 class="display-6 fw-bold mb-3">Falschparker in <%= s.name %> melden</h1>
+      <p class="lead text-body-secondary mb-4">
+        Gehweg, Radweg oder Einfahrt in <%= s.name %> zugeparkt? Hier findest du die richtigen Nummern für den
+        akuten Fall – und wie du Falschparker im Nachhinein <strong>kostenlos online anzeigst</strong>.
+      </p>
+      <div class="row g-2">
+        <div class="col-sm-6">
+          <a href="<%= s.anruf[1] %>" class="seo-cta seo-cta-call">
+            <span class="seo-cta-label">Akut? Jetzt anrufen</span>
+            <span class="seo-cta-value"><%= s.anruf[0] %></span>
+            <span class="seo-cta-sub"><%= s.anruf[2] %></span>
+          </a>
+        </div>
+        <div class="col-sm-6">
+          <% if (!currentUser) { %>
+            <a href="/login" class="seo-cta seo-cta-online">
+              <span class="seo-cta-label">Nicht dringend?</span>
+              <span class="seo-cta-value">Online anzeigen</span>
+              <span class="seo-cta-sub">kostenlos, mit Fotos, in 2 Minuten</span>
+            </a>
+          <% } else { %>
+            <form method="post" action="/anzeige/neu" class="m-0 h-100">
+              <button type="submit" class="seo-cta seo-cta-online w-100">
+                <span class="seo-cta-label">Nicht dringend?</span>
+                <span class="seo-cta-value">Online anzeigen</span>
+                <span class="seo-cta-sub">kostenlos, mit Fotos, in 2 Minuten</span>
+              </button>
+            </form>
+          <% } %>
+        </div>
+      </div>
+    </header>
+
+    <nav class="seo-toc mb-5" aria-label="Inhalt">
+      <strong class="d-block mb-2">Auf dieser Seite</strong>
+      <ol class="mb-0">
+        <li><a href="#nummern">Telefonnummern in <%= s.name %></a></li>
+        <li><a href="#online">Falschparker online anzeigen</a></li>
+        <li><a href="#bussgeld">Bußgelder für Falschparker</a></li>
+        <li><a href="#ratgeber">Was tun, wenn …</a></li>
+        <li><a href="#faq">Häufige Fragen</a></li>
+      </ol>
+    </nav>
+
+    <section id="nummern" class="mb-5">
+      <h2>Telefonnummern: Wen rufe ich in <%= s.name %> an?</h2>
+      <div class="row g-3">
+        <% for (const k of s.kontakte) { %>
+          <div class="col-md-6">
+            <div class="card h-100 shadow-sm"><div class="card-body">
+              <h3 class="h6 mb-1"><%= k.titel %></h3>
+              <p class="small text-muted mb-2"><%= k.text %></p>
+              <% k.nummern.forEach(([anz, tel], i) => { %><% if (i) { %><span class="text-muted mx-1">·</span><% } %><a href="<%= tel %>" class="fs-5 fw-semibold text-decoration-none text-nowrap"><%= anz %></a><% }) %>
+              <% if ((k.zeilen || []).length) { %>
+                <ul class="small mb-0 mt-2 ps-3"><% for (const z of k.zeilen) { %><li><%= z %></li><% } %></ul>
+              <% } %>
+            </div></div>
+          </div>
+        <% } %>
+      </div>
+      <p class="small text-muted mt-3 mb-0">
+        Anrufen lohnt sich, wenn das Fahrzeug andere behindert oder gefährdet – etwa in der
+        <a href="/feuerwehrzufahrt-zugeparkt">Feuerwehrzufahrt</a>, auf dem <a href="/gehweg-zugeparkt">Gehweg</a>
+        oder vor deiner <a href="/einfahrt-zugeparkt">Einfahrt</a>.
+      </p>
+    </section>
+
+    <section id="online" class="mb-5">
+      <h2>Falschparker in <%= s.name %> online anzeigen</h2>
+      <p>Zuständig für Anzeigen ist: <strong><%= s.behoerde %></strong>.</p>
+      <%- s.versand %>
+      <div class="row g-3 mb-3">
+        <div class="col-md-4"><div class="step-card h-100">
+          <div class="step-icon" aria-hidden="true">📸</div>
+          <h3 class="h6 mb-1">1. Fotos hochladen</h3>
+          <p class="small text-body-secondary mb-0">Tatort und Uhrzeit kommen aus den Bildern, das Kennzeichen wird automatisch erkannt.</p>
+        </div></div>
+        <div class="col-md-4"><div class="step-card h-100">
+          <div class="step-icon" aria-hidden="true">📝</div>
+          <h3 class="h6 mb-1">2. Verstoß wählen</h3>
+          <p class="small text-body-secondary mb-0">Mit den Tatbeständen aus dem <a href="/bussgeldkatalog-parken">Bußgeldkatalog</a>.</p>
+        </div></div>
+        <div class="col-md-4"><div class="step-card h-100">
+          <div class="step-icon" aria-hidden="true">📮</div>
+          <h3 class="h6 mb-1">3. Ans Amt</h3>
+          <p class="small text-body-secondary mb-0">Die Anzeige geht an die zuständige Stelle in <%= s.name %>, du bekommst eine Bestätigung.</p>
+        </div></div>
+      </div>
+      <% if (locals.zahlen && zahlen.total > 0) { %>
+        <p class="small">
+          Bisher wurden über den OWiA-Anzeiger <strong><%= h.zahl(zahlen.total) %> Anzeigen</strong> aus <%= s.name %>
+          übermittelt<% if (zahlen.last30) { %>, davon <%= h.zahl(zahlen.last30) %> zu Verstößen der letzten 30 Tage<% } %>.
+          Wo, siehst du auf der <a href="/">anonymisierten Karte</a>.
+        </p>
+      <% } %>
+      <%- include('../partials/seo-cta') %>
+    </section>
+
+    <% if ((locals.bussgelder || []).length) { %>
+    <section id="bussgeld" class="mb-5">
+      <h2>Bußgelder für Falschparker (Auszug)</h2>
+      <p>Die Regelsätze stehen im bundesweiten Bußgeldkatalog und gelten in <%= s.name %> wie überall in Deutschland.</p>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle seo-table">
+          <thead><tr><th scope="col">Verstoß</th><th scope="col" class="text-end">Regelsatz</th><th scope="col" class="text-end">mit Behinderung</th></tr></thead>
+          <tbody>
+            <% for (const b of bussgelder) { %>
+              <tr><td><%= b.label %></td><td class="text-end text-nowrap"><%= h.eur(b.ohne) %></td><td class="text-end text-nowrap"><%= b.mit !== null ? h.eur(b.mit) : '–' %></td></tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+      <p class="small text-muted mb-0">Quelle: Bundeseinheitlicher Tatbestandskatalog (KBA). Alle Beträge im <a href="/bussgeldkatalog-parken">Bußgeldkatalog Parken</a>.</p>
+    </section>
+    <% } %>
+
+    <section id="ratgeber" class="mb-5">
+      <h2>Was tun, wenn …</h2>
+      <div class="row g-2">
+        <% for (const t of themen) { %>
+          <div class="col-sm-6">
+            <a class="card h-100 shadow-sm text-decoration-none seo-link-card" href="/<%= t.slug %>">
+              <div class="card-body py-2"><span class="fw-semibold"><%= t.icon %> <%= t.kurz %></span></div>
+            </a>
+          </div>
+        <% } %>
+      </div>
+    </section>
+
+    <% if (s.stadtteile.length) { %>
+    <section class="mb-5">
+      <h2>In allen Stadtteilen von <%= s.name %></h2>
+      <p class="mb-0">
+        Ob <%= s.stadtteile.slice(0, -1).join(', ') %> oder <%= s.stadtteile[s.stadtteile.length - 1] %>: Der OWiA-Anzeiger
+        ordnet den Tatort anhand der Adresse automatisch der richtigen Behörde zu.
+        Weitere Städte: <% staedte.filter((x) => x.id !== s.id).forEach((x, i, a) => { %><a href="/<%= x.slug %>"><%= x.kurz || x.name %></a><%= i < a.length - 1 ? ', ' : '.' %><% }) %>
+      </p>
+    </section>
+    <% } %>
+
+    <section id="faq" class="mb-5">
+      <h2>Häufige Fragen zum Falschparker melden in <%= s.name %></h2>
+      <%- include('../partials/seo-faq', { faq: s.faq, faqId: 'faq-' + s.id }) %>
+    </section>
+
+    <p class="text-muted small mb-0">
+      Angaben ohne Gewähr, Stand <%= stand.text %>. Rufnummern und Dienstzeiten können sich ändern – maßgeblich sind
+      die Angaben der Stadt<% if (s.quellen.length) { %>: <% s.quellen.forEach(([label, url], i) => { %><a href="<%= url %>" target="_blank" rel="noopener"><%= label %></a><%= i < s.quellen.length - 1 ? ', ' : '' %><% }) %><% } %>.
+      Der OWiA-Anzeiger ist ein privates Angebot und kein offizielles Angebot der Stadt <%= s.name %>.
+    </p>
+
+    <%- include('../partials/seo-schema', { crumbs: _crumbs, faq: s.faq, about: { '@type': 'City', name: s.name } }) %>
+  </article>
+</div>

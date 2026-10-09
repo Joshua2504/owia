@@ -270,9 +270,25 @@ const _faq = [
         Ob in der Innenstadt, in Sachsenhausen, Bornheim, im Nordend, Ostend oder Westend, in
         Bockenheim, im Gallus, in Höchst oder Niederrad: Zuständig ist immer das Ordnungsamt der
         Stadt Frankfurt am Main mit der Städtischen Verkehrspolizei. Der OWiA-Anzeiger ordnet den
-        Tatort anhand der Adresse automatisch der richtigen Behörde zu – auch in den
-        <a href="/">weiteren unterstützten Städten</a> wie Wiesbaden, Mainz oder Hamburg.
+        Tatort anhand der Adresse automatisch der richtigen Behörde zu – auch in
+        <a href="/falschparker-melden-wiesbaden">Wiesbaden</a>, <a href="/falschparker-melden-mainz">Mainz</a>,
+        <a href="/falschparker-melden-hanau">Hanau</a>, <a href="/falschparker-melden-hamburg">Hamburg</a> und
+        <a href="/falschparker-melden-bad-soden-salmuenster">Bad Soden-Salmünster</a>.
       </p>
+    </section>
+
+    <section id="ratgeber" class="mb-5">
+      <h2>Was tun, wenn …</h2>
+      <div class="row g-2">
+        <% for (const t of (locals.themen || [])) { %>
+          <div class="col-sm-6">
+            <a class="card h-100 shadow-sm text-decoration-none seo-link-card" href="/<%= t.slug %>">
+              <div class="card-body py-2"><span class="fw-semibold"><%= t.icon %> <%= t.kurz %></span></div>
+            </a>
+          </div>
+        <% } %>
+      </div>
+      <p class="small mt-2 mb-0">Alle Beträge im <a href="/bussgeldkatalog-parken">Bußgeldkatalog Parken</a>.</p>
     </section>
 
     <section id="faq" class="mb-5">

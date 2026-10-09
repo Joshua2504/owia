@@ -10,6 +10,9 @@
 # zufällig auf die Dev-App routen!). Die Namen kommen aus den Compose-
 # Projektnamen (owia bzw. ffm-owianzeiger), siehe docker-compose.yml.
 {$APP_DOMAIN} {
+	# Kompression: HTML/CSS/JS schrumpfen auf ein Viertel (Core Web Vitals/SEO).
+	# Bilder sind schon komprimiert; Caddy lässt sie per Default-Typliste aus.
+	encode zstd gzip
 	reverse_proxy owia-app-1:3000
 }
 

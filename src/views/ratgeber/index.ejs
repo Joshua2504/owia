@@ -1,0 +1,75 @@
+<%
+// Ratgeber-Übersicht (/ratgeber): Einstieg zu Themen, Städten und Bußgeldkatalog.
+const _crumbs = [['Startseite', '/'], ['Ratgeber', '/ratgeber']]
+%>
+<div class="row justify-content-center">
+  <article class="col-lg-10 seo-page">
+    <%- include('../partials/seo-breadcrumb', { crumbs: _crumbs }) %>
+
+    <header class="hero mb-5 text-start">
+      <span class="hero-kicker">Ratgeber · Stand <%= stand.text %></span>
+      <h1 class="display-6 fw-bold mb-3">Ratgeber Falschparker: melden, anzeigen, Bußgeld</h1>
+      <p class="lead text-body-secondary mb-4">
+        Gehweg, Radweg, Einfahrt oder Feuerwehrzufahrt zugeparkt? Hier steht, was erlaubt ist, wen du
+        anrufst, welches Bußgeld droht – und wie du Falschparker kostenlos beim Ordnungsamt anzeigst.
+      </p>
+      <%- include('../partials/seo-cta') %>
+    </header>
+
+    <section class="mb-5">
+      <h2>Was ist zugeparkt?</h2>
+      <div class="row g-3">
+        <% for (const t of themen) { %>
+          <div class="col-md-6">
+            <a class="card h-100 shadow-sm text-decoration-none seo-link-card" href="/<%= t.slug %>">
+              <div class="card-body">
+                <div class="h6 mb-1"><%= t.icon %> <%= t.h1 %></div>
+                <p class="small text-muted mb-0"><%= t.metaDescription %></p>
+              </div>
+            </a>
+          </div>
+        <% } %>
+        <div class="col-md-6">
+          <a class="card h-100 shadow-sm text-decoration-none seo-link-card border-primary-subtle" href="/bussgeldkatalog-parken">
+            <div class="card-body">
+              <div class="h6 mb-1">📖 Bußgeldkatalog Parken &amp; Halten</div>
+              <p class="small text-muted mb-0">Alle Tatbestände zum Parken und Halten mit Regelsatz – durchsuchbar.</p>
+            </div>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-5">
+      <h2>Falschparker melden in deiner Stadt</h2>
+      <p>Telefonnummern für akute Fälle und der Weg der Online-Anzeige – für alle Städte, in denen der OWiA-Anzeiger Anzeigen übermittelt:</p>
+      <div class="row g-2">
+        <% for (const s of staedte) { %>
+          <div class="col-sm-6 col-md-4">
+            <a class="card h-100 shadow-sm text-decoration-none seo-link-card" href="/<%= s.slug %>">
+              <div class="card-body py-2">
+                <div class="fw-semibold">📍 <%= s.name %></div>
+                <div class="small text-muted">Falschparker melden in <%= s.kurz || s.name %></div>
+              </div>
+            </a>
+          </div>
+        <% } %>
+      </div>
+    </section>
+
+    <section class="mb-5">
+      <h2>In drei Schritten zur Anzeige</h2>
+      <ol class="seo-steps">
+        <li><strong>Fotos machen</strong>: Übersicht mit Schild oder Markierung, Nahaufnahme vom Kennzeichen.</li>
+        <li><strong>Hochladen</strong>: Tatort und Uhrzeit liest der OWiA-Anzeiger aus den Bildern, das Kennzeichen erkennt er automatisch.</li>
+        <li><strong>Verstoß wählen und absenden</strong>: Die Anzeige geht an das zuständige Ordnungsamt, du bekommst eine Bestätigung.</li>
+      </ol>
+      <%- include('../partials/seo-cta') %>
+    </section>
+
+    <%- include('../partials/seo-schema', { crumbs: _crumbs, faq: [], extra: [{
+      '@type': 'ItemList',
+      itemListElement: themen.map((t, i) => ({ '@type': 'ListItem', position: i + 1, url: appUrl + '/' + t.slug, name: t.h1 })),
+    }] }) %>
+  </article>
+</div>

@@ -148,8 +148,9 @@
       <div class="row g-3 justify-content-center">
         <% (locals.cities || []).forEach((city) => { %>
           <div class="col-md-4">
+            <% const _seite = (locals.stadtSeiten || []).find((x) => x.id === city.id) %>
             <div class="card h-100 shadow-sm"><div class="card-body">
-              <h3 class="h6 mb-1">📍 <%= city.name %></h3>
+              <h3 class="h6 mb-1">📍 <% if (_seite) { %><a href="/<%= _seite.slug %>" class="stretched-link text-reset text-decoration-none">Falschparker melden in <%= city.name %></a><% } else { %><%= city.name %><% } %></h3>
               <p class="small text-muted mb-0">
                 Anzeigen gehen an: <%= city.ordnungsamt %>
               </p>
@@ -216,6 +217,16 @@
        'Kaum. Kennzeichen, Datum, Uhrzeit, Tatort und das zuständige Amt liest die App aus deinen Fotos, Marke und Farbe des Fahrzeugs füllt sie bei sicherer Erkennung vor. Du wählst den Verstoß, prüfst die Angaben und schickst ab.'],
     ]
     %>
+    <section class="my-5">
+      <h2 class="h4 mb-3 text-center">Ratgeber: Was tun, wenn …</h2>
+      <div class="d-flex flex-wrap justify-content-center gap-2">
+        <% for (const t of (locals.themen || [])) { %>
+          <a class="btn btn-outline-secondary" href="/<%= t.slug %>"><%= t.icon %> <%= t.kurz %></a>
+        <% } %>
+        <a class="btn btn-outline-secondary" href="/bussgeldkatalog-parken">📖 Bußgeldkatalog Parken</a>
+      </div>
+    </section>
+
     <section class="my-5">
       <h2 class="h4 mb-3 text-center">Häufige Fragen zum Melden von Falschparkern</h2>
       <div class="accordion" id="faq">

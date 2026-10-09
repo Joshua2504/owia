@@ -1,0 +1,8 @@
+<%# Haupt-Aktion der SEO-Seiten: Besucher → Anmeldung, Eingeloggte → neuer Entwurf. %>
+<% if (currentUser) { %>
+  <form method="post" action="/anzeige/neu" class="m-0 d-inline">
+    <button type="submit" class="btn btn-primary">+ Neue Anzeige erstatten</button>
+  </form>
+<% } else { %>
+  <a href="/login" class="btn btn-primary">Kostenlos anmelden &amp; Falschparker anzeigen</a>
+<% } %>

@@ -1,0 +1,37 @@
+<%# Strukturierte Daten der SEO-Seiten: WebPage + BreadcrumbList (+ FAQPage, + extra).
+    Parameter: crumbs ([Name, Pfad][]), faq (optional), about (optional, schema.org-Objekt),
+    extra (optional, weitere Graph-Knoten). Basis-URL aus locals.appUrl. %>
+<%
+  const _base = locals.appUrl || ''
+  const _url = locals.canonical || ''
+  const _graph = [
+    {
+      '@type': 'WebPage',
+      '@id': _url + '#webpage',
+      url: _url,
+      name: locals.pageTitle || title,
+      description: locals.metaDescription || '',
+      inLanguage: 'de-DE',
+      dateModified: locals.stand?.iso,
+      ...(locals.about ? { about: locals.about } : {}),
+      breadcrumb: { '@id': _url + '#breadcrumb' },
+      isPartOf: { '@id': _base + '/#website' },
+      publisher: { '@id': _base + '/#organization' },
+    },
+    {
+      '@type': 'BreadcrumbList',
+      '@id': _url + '#breadcrumb',
+      itemListElement: crumbs.map(([name, href], i) => ({ '@type': 'ListItem', position: i + 1, name, item: _base + href })),
+    },
+  ]
+  // WebSite + Organization in jedem Graph (Google löst @id nicht seitenübergreifend auf).
+  _graph.push(
+    { '@type': 'WebSite', '@id': _base + '/#website', url: _base + '/', name: 'OWiA-Anzeiger', inLanguage: 'de-DE', publisher: { '@id': _base + '/#organization' } },
+    { '@type': 'Organization', '@id': _base + '/#organization', name: 'OWiA-Anzeiger', url: _base + '/', logo: _base + '/public/icons/icon-512.png' },
+  )
+  if (locals.faq && faq.length) {
+    _graph.push({ '@type': 'FAQPage', mainEntity: faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) })
+  }
+  for (const n of (locals.extra || [])) _graph.push(n)
+%>
+<script type="application/ld+json"><%- JSON.stringify({ '@context': 'https://schema.org', '@graph': _graph }).replace(/</g, '\\u003c') %></script>

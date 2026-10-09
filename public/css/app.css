@@ -1978,3 +1978,7 @@ html { -webkit-tap-highlight-color: transparent; }
 .photo-edit-kz-slot .pe-kz-box[hidden] { display: none; }
 .photo-edit-kz-slot .pe-kz-box > .input-group { width: 100%; }
 .photo-edit-kz-slot .pe-kz-box .form-control, .photo-edit-kz-slot .pe-kz-box .form-select, .photo-edit-kz-slot .pe-kz-weiter { min-height: 2.5rem; font-size: 16px; box-shadow: none; }
+
+/* SEO-/Ratgeberseiten: verlinkte Karten (views/ratgeber/*.ejs) */
+.seo-link-card { color: inherit; transition: transform .12s ease, box-shadow .12s ease; }
+.seo-link-card:hover { color: inherit; transform: translateY(-1px); box-shadow: var(--owia-shadow); }

@@ -1,0 +1,73 @@
+<%
+// Bußgeldkatalog Parken & Halten (routes/ratgeber.ts): alle Tatbestände aus
+// resources/verstoesse.csv mit Regelsatz, gruppiert nach config/ratgeber.ts
+// KATALOG_KATEGORIEN. gruppen = [{id, titel, thema?, zeilen: [{tbnr, text, euro}]}].
+const _crumbs = [['Startseite', '/'], ['Ratgeber', '/ratgeber'], ['Bußgeldkatalog Parken', '/bussgeldkatalog-parken']]
+%>
+<div class="row justify-content-center">
+  <article class="col-lg-10 seo-page">
+    <%- include('../partials/seo-breadcrumb', { crumbs: _crumbs }) %>
+
+    <header class="hero mb-4 text-start">
+      <span class="hero-kicker">📖 Bußgeldkatalog · Stand des Katalogs <%= katalogStand %></span>
+      <h1 class="display-6 fw-bold mb-3">Bußgeldkatalog Parken &amp; Halten <%= jahr %></h1>
+      <p class="lead text-body-secondary mb-4">
+        Alle <strong><%= h.zahl(anzahl) %> Tatbestände</strong> zum Parken und Halten mit dem Regelsatz aus dem
+        bundeseinheitlichen Tatbestandskatalog – von Gehweg und Radweg über Feuerwehrzufahrt bis Parkschein.
+        Durchsuchbar, mit Tatbestandsnummer (TBNR).
+      </p>
+      <%- include('../partials/seo-cta') %>
+    </header>
+
+    <div class="mb-4">
+      <label for="katalog-suche" class="form-label fw-semibold">Tatbestand suchen</label>
+      <input type="search" id="katalog-suche" class="form-control" placeholder="z. B. Gehweg, Radweg, 141174, zweite Reihe …"
+             autocomplete="off" data-katalog-suche>
+      <div class="form-text" data-katalog-treffer aria-live="polite"></div>
+    </div>
+
+    <nav class="seo-toc mb-5" aria-label="Kategorien">
+      <strong class="d-block mb-2">Kategorien</strong>
+      <ol class="mb-0">
+        <% for (const g of gruppen) { %><li><a href="#<%= g.id %>"><%= g.titel %></a> <span class="text-muted small">(<%= g.zeilen.length %>)</span></li><% } %>
+      </ol>
+    </nav>
+
+    <% for (const g of gruppen) { %>
+      <section id="<%= g.id %>" class="mb-5" data-katalog-gruppe>
+        <h2><%= g.titel %></h2>
+        <% if (g.thema) { %>
+          <p class="small mb-2"><a href="/<%= g.thema.slug %>"><%= g.thema.icon %> Ratgeber: <%= g.thema.kurz %> – was tun?</a></p>
+        <% } %>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle seo-table">
+            <thead><tr><th scope="col" class="text-nowrap">TBNR</th><th scope="col">Tatbestand</th><th scope="col" class="text-end">Regelsatz</th></tr></thead>
+            <tbody>
+              <% for (const z of g.zeilen) { %>
+                <tr data-katalog-zeile>
+                  <td class="text-muted small text-nowrap"><%= z.tbnr %></td>
+                  <td><%= z.text %></td>
+                  <td class="text-end text-nowrap fw-semibold"><%= z.euro !== null ? h.eur(z.euro) : '–' %></td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    <% } %>
+
+    <section id="faq" class="mb-5">
+      <h2>Häufige Fragen zum Bußgeld fürs Falschparken</h2>
+      <%- include('../partials/seo-faq', { faq, faqId: 'faq-katalog' }) %>
+    </section>
+
+    <p class="text-muted small mb-0">
+      Quelle: Bundeseinheitlicher Tatbestandskatalog für Straßenverkehrsordnungswidrigkeiten des
+      Kraftfahrt-Bundesamts (KBA), Stand <%= katalogStand %>. Regelsätze für Pkw; über den Betrag im Einzelfall
+      entscheidet die Bußgeldbehörde. Angaben ohne Gewähr. Der OWiA-Anzeiger ist ein privates Angebot.
+    </p>
+
+    <%- include('../partials/seo-schema', { crumbs: _crumbs, faq }) %>
+  </article>
+</div>
+<script src="/public/js/katalog-suche.js" defer></script>

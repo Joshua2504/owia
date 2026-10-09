@@ -15,6 +15,9 @@ import { huPlaketten } from '../services/huPlakette'
 import { appUrl } from '../config/app'
 import { reportDir } from '../services/drafts'
 import { LANDING_FFM, LANDING_STAND } from './legal'
+import { RATGEBER_PFADE } from './ratgeber'
+import { RATGEBER_STAND, RATGEBER_THEMEN } from '../config/ratgeber'
+import { STADT_SEITEN } from '../config/stadtSeiten'
 
 // Öffentliche, anonyme Übersicht aller versendeter Anzeigen auf einer Karte.
 // Bewusst ohne Auth: Startseite und Daten sind öffentlich sichtbar. Es werden
@@ -122,6 +125,8 @@ export default async function publicRoutes(app: FastifyInstance) {
         topVerstoss: topRows[0]?.verstoss_art || null,
       },
       cities: unlockedCities(),
+      stadtSeiten: STADT_SEITEN,
+      themen: RATGEBER_THEMEN,
       huPlaketten: huPlaketten(),
       meine: request.session.userId ? await meineUebersicht(request.session.userId) : null,
     }))
@@ -248,6 +253,7 @@ export default async function publicRoutes(app: FastifyInstance) {
         'Allow: /nutzungsbedingungen',
         `Allow: ${LANDING_FFM}`,
         'Allow: /falschparker-melden$',
+        ...RATGEBER_PFADE.map((p) => `Allow: ${p}$`),
         'Allow: /statistik',
         'Allow: /analyse',
         // CSS/JS/Icons: Google rendert Seiten mit – ohne Stylesheets gelten
@@ -262,9 +268,10 @@ export default async function publicRoutes(app: FastifyInstance) {
   })
 
   app.get('/sitemap.xml', async (_request, reply) => {
-    const urls = ['/', LANDING_FFM, '/statistik', '/analyse', '/login', '/impressum', '/datenschutz', '/nutzungsbedingungen']
-    // lastmod nur, wo der Stand gepflegt wird (Landingpage, legal.ts STAND).
+    const urls = ['/', LANDING_FFM, ...RATGEBER_PFADE, '/statistik', '/analyse', '/impressum', '/datenschutz', '/nutzungsbedingungen']
+    // lastmod nur, wo der Stand gepflegt wird (Landingpages: legal.ts STAND, config/ratgeber.ts).
     const lastmod: Record<string, string> = { [LANDING_FFM]: LANDING_STAND }
+    for (const p of RATGEBER_PFADE) lastmod[p] = RATGEBER_STAND.iso
     const xml = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
