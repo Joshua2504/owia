@@ -1322,7 +1322,10 @@ textarea.inline-input { field-sizing: content; min-height: 2.6rem; max-height: 6
 @media (max-width: 767.98px) {
   /* Handy: Dialog scrollt als Ganzes – Foto oben, Angaben darunter. */
   .photo-edit-body { overflow-y: auto; }
-  .photo-edit-stage { flex: 0 0 58vh; }
+  /* Foto mit fester Höhe, Kennzeichen-Box und Werkzeuge darunter im Fluss
+     (photo-edit.js kzPlatz) – nichts liegt mehr über dem Foto. */
+  .photo-edit-stage { flex: 0 0 auto; padding: .5rem .5rem .75rem; }
+  .photo-edit-canvas { flex: 0 0 auto; height: 52vh; }
   .photo-edit-side { order: 3; flex: 0 0 auto; border-left: 0; border-top: 1px solid #333; }
   .photo-edit-fields { overflow: visible; }
   .photo-edit-actions { position: sticky; bottom: 0; background: var(--bs-body-bg); }
@@ -1421,8 +1424,8 @@ body:has(.editor-actions) .back-to-top { bottom: 5rem; }
 .pe-kz-mehr { display: grid; grid-template-columns: 4.6rem 1fr 1fr 1fr; gap: 3px; }
 .pe-kz-mehr > * { min-width: 0; box-shadow: 0 2px 6px rgba(0,0,0,.5); border: 1px solid #0dcaf0; }
 .pe-kz-mehr > select { padding-right: 1.4rem; background-position: right .3rem center; }
-.photo-edit-marks .pe-kz-land { flex: 0 0 3.4rem; width: 3.4rem; padding-left: .4rem; padding-right: 1.2rem; background-position: right .25rem center; border: 2px solid #0dcaf0; font-weight: 600; }
-.photo-edit-marks .pe-kz-input { position: static; pointer-events: auto; font-weight: 600; text-transform: uppercase; border: 2px solid #0dcaf0; }
+.photo-edit-marks .pe-kz-land, .photo-edit-kz-slot .pe-kz-land { flex: 0 0 3.4rem; width: 3.4rem; padding-left: .4rem; padding-right: 1.2rem; background-position: right .25rem center; border: 2px solid #0dcaf0; font-weight: 600; }
+.photo-edit-marks .pe-kz-input, .photo-edit-kz-slot .pe-kz-input { position: static; pointer-events: auto; font-weight: 600; text-transform: uppercase; border: 2px solid #0dcaf0; }
 
 /* Mini-Player des laufenden Portal-Versands (versand-mini.js): unten links,
    beim Hovern groß. */
@@ -1455,7 +1458,7 @@ body:has(.editor-actions) .back-to-top { bottom: 5rem; }
 /* Durchsuchbare Land-Auswahl (photo-edit.js landCombo). */
 .pe-land-menu { position: fixed; z-index: 1095; min-width: 12rem; overflow-y: auto; }
 .pe-land-input { text-transform: uppercase; font-weight: 600; }
-.photo-edit-marks .pe-land-input.pe-kz-land { flex: 0 0 3.4rem; width: 3.4rem; padding: .25rem .4rem; border: 2px solid #0dcaf0; }
+.photo-edit-marks .pe-land-input.pe-kz-land, .photo-edit-kz-slot .pe-land-input.pe-kz-land { flex: 0 0 3.4rem; width: 3.4rem; padding: .25rem .4rem; border: 2px solid #0dcaf0; }
 
 /* „+ Fotos" am Ende des Kachel-Streifens (photo-edit.js addPhotos). */
 .photo-edit-add { display: flex; align-items: center; justify-content: center; min-height: 64px; border: 2px dashed rgba(255,255,255,.4); background: transparent; color: #ddd; font-weight: 600; cursor: pointer; }
@@ -1968,3 +1971,10 @@ html { -webkit-tap-highlight-color: transparent; }
 .app-list-sub { font-size: .8rem; color: var(--bs-secondary-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-list-sub:empty { display: none; }
 .app-empty { text-align: center; color: var(--bs-secondary-color); padding: 1.5rem 0; }
+
+/* Handy: Kennzeichen-Box unter dem Foto (photo-edit.js kzPlatz). */
+.photo-edit-kz-slot:empty { display: none; }
+.photo-edit-kz-slot .pe-kz-box { position: static; width: 100%; display: flex; flex-direction: column; gap: 4px; }
+.photo-edit-kz-slot .pe-kz-box[hidden] { display: none; }
+.photo-edit-kz-slot .pe-kz-box > .input-group { width: 100%; }
+.photo-edit-kz-slot .pe-kz-box .form-control, .photo-edit-kz-slot .pe-kz-box .form-select, .photo-edit-kz-slot .pe-kz-weiter { min-height: 2.5rem; font-size: 16px; box-shadow: none; }

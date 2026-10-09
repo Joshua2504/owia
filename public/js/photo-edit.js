@@ -66,6 +66,8 @@
       '<div class="photo-edit-strip" aria-label="Alle Fotos der Anzeige"></div>' +
       '<div class="photo-edit-stage">' +
       '<div class="photo-edit-canvas"><canvas></canvas><div class="photo-edit-marks"></div><div class="photo-edit-msg"></div></div>' +
+      // Handy: Kennzeichen-Box hier unter dem Foto statt darüber (kzPlatz()).
+      '<div class="photo-edit-kz-slot"></div>' +
       // Bildwerkzeuge unten mittig unter dem Foto (nicht darüber – sonst
       // ließe sich am unteren Bildrand nicht schwärzen).
       '<div class="photo-edit-tools">' +
@@ -1945,6 +1947,17 @@
     if (map) map.invalidateSize()
   }
 
+  // Kennzeichen-Box: auf breiten Screens im Foto unter dem Kennzeichen-Rahmen,
+  // auf dem Handy darunter im Fluss – dort würde sie das halbe Foto verdecken.
+  // Breakpoint wie der Handy-Umbau des Dialogs in app.css (767.98px).
+  var kzMobil = window.matchMedia('(max-width: 767.98px)')
+  function kzPlatz() {
+    var ziel = kzMobil.matches ? dlg.querySelector('.photo-edit-kz-slot') : dlg.querySelector('.photo-edit-marks')
+    if (kzBoxEl.parentNode !== ziel) ziel.appendChild(kzBoxEl)
+    if (kzMobil.matches) { kzBoxEl.style.left = ''; kzBoxEl.style.top = '' }
+    return !kzMobil.matches
+  }
+
   function renderMarks() {
     var box = dlg.querySelector('.photo-edit-marks')
     var kzIn = kzInput()
@@ -1995,6 +2008,7 @@
         kzLandSync()
         kzMehrSync()
         kzBoxEl.hidden = false
+        if (!kzPlatz()) return weitereMarks()
         var w = kzBoxEl.offsetWidth
         var h = kzBoxEl.offsetHeight
         var left = br.left - cr.left + (state.kz.x + state.kz.w / 2) * br.k - w / 2
@@ -2007,9 +2021,12 @@
         kzBoxEl.style.top = Math.max(0, Math.min(cr.height - h, top)) + 'px'
       }
     }
-    state.redactions.forEach(function (r, i) {
-      add({ x: r.x, y: r.y, w: r.w, h: r.h, i: i }, [['entfernen', '✕', 'is-del', r.type === 'pixel' ? 'Verpixelung entfernen' : 'Schwärzung entfernen']])
-    })
+    weitereMarks()
+    function weitereMarks() {
+      state.redactions.forEach(function (r, i) {
+        add({ x: r.x, y: r.y, w: r.w, h: r.h, i: i }, [['entfernen', '✕', 'is-del', r.type === 'pixel' ? 'Verpixelung entfernen' : 'Schwärzung entfernen']])
+      })
+    }
   }
 
   // ohneVorschau: für Export/Einbacken – der gestrichelte Schwärzungs-
