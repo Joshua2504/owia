@@ -62,8 +62,8 @@ const _ts = r.tattag && h.isoDate(r.tattag) ? h.isoDate(r.tattag) + ' ' + (h.hhm
              <% } %>>
         <% if (_isDraft) { %>
           <span class="thumb-check" aria-hidden="true"><%= img.ok ? '✓' : '?' %></span>
-          <input type="checkbox" class="thumb-pick" data-pick-az="<%= r.aktenzeichen %>" data-pick-id="<%= img.id %>"
-                 aria-label="Foto zum Verschieben auswählen" title="Foto auswählen">
+<label class="thumb-pick-hit" title="Foto auswählen"><input type="checkbox" class="thumb-pick" data-pick-az="<%= r.aktenzeichen %>" data-pick-id="<%= img.id %>"
+                 aria-label="Foto zum Verschieben auswählen"></label>
         <% } %>
         </span>
       <% } %>
