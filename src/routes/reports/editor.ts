@@ -623,7 +623,8 @@ export default async function editorRoutes(app: FastifyInstance) {
       const buffer = await fs.readFile(replyAttachmentPath(Number(replyId), att.filename))
       return reply
         .header('Content-Type', att.mimetype || 'application/octet-stream')
-        .header('Content-Disposition', `attachment; filename="${att.original_filename || att.filename}"`)
+        // ?inline=1: PDF-Vorschau im iframe der Anzeigen-Seite statt Download.
+        .header('Content-Disposition', `${(request.query as { inline?: string }).inline ? 'inline' : 'attachment'}; filename="${att.original_filename || att.filename}"`)
         .send(buffer)
     } catch {
       return reply.status(404).send('Anhang-Datei nicht gefunden.')
