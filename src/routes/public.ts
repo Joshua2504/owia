@@ -28,10 +28,10 @@ const PUBLIC_WHERE =
   "r.status='versendet' AND r.tatort_lat IS NOT NULL AND r.tatort_lon IS NOT NULL" +
   ' AND r.tatort_lat <> 0 AND r.tatort_lon <> 0'
 
-/** Öffentliche Koordinaten auf ~100 m vergröbern (3 Nachkommastellen): Die
- *  Karte braucht nur die Straße, nicht die Einfahrt – punktgenaue Position
- *  plus Datum ließe auf Stellplätze einzelner Anwohner schließen. */
-const grob = (v: unknown) => Math.round(Number(v) * 1000) / 1000
+/** Öffentliche Koordinaten: genaue Tatort-Position (~1 m, 5 Nachkommastellen).
+ *  Nutzerentscheidung 09.10.2026 – die frühere ~100-m-Rundung reihte die Marker
+ *  im Raster auf; Rückschluss auf Stellplätze bewusst in Kauf genommen. */
+const genau = (v: unknown) => Math.round(Number(v) * 1e5) / 1e5
 
 /** Startseiten-Kennzahlen kurz zwischenspeichern: drei COUNT-Abfragen und ein
  *  GROUP BY bei jedem Aufruf der (öffentlichen, nicht limitierten) Startseite
@@ -263,8 +263,8 @@ export default async function publicRoutes(app: FastifyInstance) {
       const ids = String(r.image_ids || '').split(',').filter(Boolean).slice(0, MAX_KARTENFOTOS)
       const imageUrls = ids.map((id) => `/api/public/bild/${id}/pixel.jpg`)
       return {
-      lat: grob(r.tatort_lat),
-      lon: grob(r.tatort_lon),
+      lat: genau(r.tatort_lat),
+      lon: genau(r.tatort_lon),
       verstossArt: r.verstoss_art || null,
       tattag: r.tattag || null,
       imageUrl: imageUrls[0] || null,

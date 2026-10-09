@@ -1132,7 +1132,7 @@ test('Autosave validiert Datum, Uhrzeit und Katalog wie die Inline-Bearbeitung',
   } finally { await app.close() }
 })
 
-test('Öffentliche Karten-API liefert Koordinaten nur auf ~100 m genau und keine Kennungen', async () => {
+test('Öffentliche Karten-API liefert genaue Koordinaten (~1 m) und keine Kennungen', async () => {
   const publicRoutes = (await import('../src/routes/public')).default
   const id = await report()
   await pool.execute("UPDATE reports SET status='versendet', tatort_lat=50.1234567, tatort_lon=8.7654321, tattag='2026-09-01' WHERE id=?", [id])
@@ -1144,9 +1144,9 @@ test('Öffentliche Karten-API liefert Koordinaten nur auf ~100 m genau und keine
   try {
     const res = await app.inject({ method: 'GET', url: '/api/public/reports' })
     assert.equal(res.statusCode, 200)
-    const eintrag = (res.json().reports as any[]).find((r) => Math.abs(r.lat - 50.123) < 1e-9)
-    assert.ok(eintrag, 'Anzeige erscheint mit gerundeter Breite')
-    assert.equal(eintrag.lon, 8.765)
+    const eintrag = (res.json().reports as any[]).find((r) => Math.abs(r.lat - 50.12346) < 1e-9)
+    assert.ok(eintrag, 'Anzeige erscheint mit genauer Breite')
+    assert.equal(eintrag.lon, 8.76543)
     assert.deepEqual(Object.keys(eintrag).sort(), ['imageUrl', 'imageUrls', 'lat', 'lon', 'tattag', 'verstossArt'], 'keine zusätzlichen Felder (Aktenzeichen, Kennzeichen, Nutzer)')
   } finally { await app.close() }
 })
