@@ -91,13 +91,31 @@
     return L.divIcon({ className: 'overview-own-dot', iconSize: [16, 16], iconAnchor: [8, 8], popupAnchor: [0, -8] })
   }
 
+  // Höchste Zoomstufe der Karte. Kacheln gibt es bis 19, darüber werden sie
+  // hochskaliert – so lassen sich auch Anzeigen wenige Meter auseinander trennen.
+  const MAX_ZOOM = 21
+
+  // Gruppier-Radius in Pixeln je Zoomstufe: herausgezoomt großzügig (Übersicht),
+  // hineingezoomt nur noch dort, wo sich die 44-px-Vorschaubilder fast ganz
+  // verdecken würden. So bleiben beim Heranzoomen möglichst viele Anzeigen
+  // einzeln sichtbar.
+  function clusterRadius(zoom) {
+    if (zoom <= 13) return 50
+    if (zoom <= 15) return 40
+    if (zoom === 16) return 32
+    if (zoom === 17) return 24
+    if (zoom === 18) return 18
+    return 12
+  }
+
   // Marker-Clustering (Leaflet.markercluster): herausgezoomt fasst ein Kachel-
-  // Stapel nahe Anzeigen zusammen – erstes Foto + Anzahl. Klick zoomt hinein,
-  // auf der letzten Zoomstufe (gleicher Tatort) fächern die Marker auf.
+  // Stapel nahe Anzeigen zusammen – erstes Foto + Anzahl. Klick zoomt hinein;
+  // lassen sich die Anzeigen nicht weiter trennen (gleicher Tatort), fächern
+  // sie direkt auf.
   function createCluster() {
     if (!L.markerClusterGroup) return L.layerGroup()
     return L.markerClusterGroup({
-      maxClusterRadius: 50,
+      maxClusterRadius: clusterRadius,
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: true,
       zoomToBoundsOnClick: true,
@@ -188,9 +206,10 @@
     const centerLat = num(el.dataset.centerLat) || 50.1109
     const centerLon = num(el.dataset.centerLon) || 8.6821
 
-    const map = L.map(el).setView([centerLat, centerLon], 12)
+    const map = L.map(el, { maxZoom: MAX_ZOOM }).setView([centerLat, centerLon], 12)
     const tiles = L.tileLayer('/tiles/{z}/{x}/{y}.png', {
-      maxZoom: 19,
+      maxZoom: MAX_ZOOM,
+      maxNativeZoom: 19,
       attribution: '© OpenStreetMap-Mitwirkende',
     }).addTo(map)
     attachTileStatus(el, tiles)
