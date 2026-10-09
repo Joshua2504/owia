@@ -17,6 +17,7 @@ import type { FastifyBaseLogger } from 'fastify'
 import { pool } from '../db/connection'
 import { MailService } from './mail'
 import { UPLOAD_DIR } from './drafts'
+import { loadUser } from './users'
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
 const MAX_ATTACHMENTS = 10
@@ -229,12 +230,9 @@ export async function processInboundMail(
   // aber es geht keine Hinweis-Mail mehr raus (liefe an die Platzhalter-Adresse).
   if (report) {
     try {
-      const [users] = await pool.execute<mysql.RowDataPacket[]>(
-        'SELECT * FROM users WHERE id = ?',
-        [report.user_id]
-      )
-      if (users[0] && !users[0].anonymized_at) {
-        await MailService.sendReplyNotification(users[0], report)
+      const user = await loadUser(report.user_id)
+      if (user && !user.anonymized_at) {
+        await MailService.sendReplyNotification(user, report)
       }
     } catch (err) {
       log.error({ err, replyId }, 'Posteingang: Hinweis-Mail fehlgeschlagen')

@@ -11,6 +11,7 @@ import { dritteFunde, parseAnalyse, parseKennzeichenBox, erkannteKennzeichenBox 
 import { submitProblems, kennzeichenBestaetigt } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
 import { bestFahrzeugForReport } from '../services/plateAnalysis'
+import { isEditableDraft } from '../services/drafts'
 
 // JSON-Endpunkte des Foto-Prüfdialogs (public/js/photo-edit.js). Der frühere
 // Prüf-Modus /pruefen (eine Karte pro Entwurf) ist entfernt – alte Links und
@@ -85,7 +86,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
     if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
     // Schon eingereicht (anderer Tab/Gerät) oder im Versand: Karte überspringen.
     // Verjährt: nicht mehr einreichbar, also auch nicht prüfbar.
-    if (report.status !== 'entwurf' || report.versand_status !== null || isVerjaehrt(report)) {
+    if (!isEditableDraft(report) || isVerjaehrt(report)) {
       return reply.send({ az, gone: true, status: report.status })
     }
     const problems = await submitProblems(report, userId)

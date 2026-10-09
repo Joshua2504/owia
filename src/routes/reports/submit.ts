@@ -4,22 +4,23 @@
 import { isVerjaehrt, verjaehrung } from '../../services/verjaehrung'
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
-import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../../db/connection'
-import { requireAuth, setFlash } from '../../middleware/auth'
+import { requireAuth, flashRedirect, wantsJson } from '../../middleware/auth'
 import { getCity, hasPdfForm } from '../../config/cities'
 import { resolveSendCity, cityEmail } from '../../services/districts'
 import { fahrzeugBeschreibung } from '../../config/fahrzeug'
 import { portalFuer } from '../../services/portale'
 import { dritteFunde, fundeText } from '../../services/dritte'
 import { imageVersion } from '../../services/images'
-import { PDF_DIR } from '../../services/drafts'
+import { pdfPath } from '../../services/drafts'
 import { isAdminEmail } from '../../config/admin'
 import { enqueueJob } from '../../services/jobs'
 import { enqueuePortalStart } from '../../services/portalDispatch'
 import { previewReportMail } from '../../services/mail'
 import { loadReportByAktenzeichen, isProfileComplete, regeneratePdf, enqueuePdf, countUncheckedImages, uncheckedMessage } from './shared'
+import { loadUser } from '../../services/users'
+import { hhmm } from '../../utils/format'
 
 export default async function submitRoutes(app: FastifyInstance) {
   app.get('/anzeige/:az/pdf', { preHandler: requireAuth }, async (request, reply) => {
@@ -33,9 +34,9 @@ export default async function submitRoutes(app: FastifyInstance) {
     const report = rows[0]
     if (!report?.pdf_filename) return reply.status(404).send('PDF nicht verfügbar.')
 
-    const pdfPath = path.join(PDF_DIR, String(userId), report.pdf_filename)
+    const file = pdfPath(userId, report.pdf_filename)
     try {
-      const buffer = await fs.readFile(pdfPath)
+      const buffer = await fs.readFile(file)
       const disposition = inline ? 'inline' : 'attachment'
       return reply
         .header('Content-Type', 'application/pdf')
@@ -71,14 +72,13 @@ export default async function submitRoutes(app: FastifyInstance) {
     // zeigen, damit der Nutzer sieht, was beim Amt ankommt.
     let mail: Awaited<ReturnType<typeof previewReportMail>> | null = null
     if (!hasPdfForm(city) && !city.portal) {
-      const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id = ?', [userId])
-      if (users[0]) {
-        mail = await previewReportMail(report, users[0])
+      const user = await loadUser(userId)
+      if (user) {
+        mail = await previewReportMail(report, user)
         if (mail.problem) problems.push({ kind: 'mail', message: mail.problem })
       }
     }
     const fmtDate = (d: unknown) => (d ? new Date(d as string).toLocaleDateString('de-DE') : null)
-    const hhmm = (t: unknown) => (t ? String(t).slice(0, 5) : null)
     const vj = verjaehrung(report)
     return reply.send({
       az,
@@ -91,8 +91,8 @@ export default async function submitRoutes(app: FastifyInstance) {
         verstoss_variante: report.verstoss_variante,
         tattag: fmtDate(report.tattag),
         tattag_bis: report.tattag_bis ? fmtDate(report.tattag_bis) : null,
-        tatzeit_von: hhmm(report.tatzeit_von),
-        tatzeit_bis: hhmm(report.tatzeit_bis),
+        tatzeit_von: hhmm(report.tatzeit_von) || null,
+        tatzeit_bis: hhmm(report.tatzeit_bis) || null,
         tatort: report.tatort,
         verstoss_art: report.verstoss_art,
         beschreibung: report.beschreibung,
@@ -121,7 +121,7 @@ export default async function submitRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
     // „Speichern & Einreichen" im Editor schickt per fetch (Accept: JSON) und
     // zeigt Fehler direkt an, statt umzuleiten.
-    const json = String(request.headers.accept || '').includes('application/json')
+    const json = wantsJson(request)
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
     if (report.status !== 'entwurf') {
@@ -134,18 +134,16 @@ export default async function submitRoutes(app: FastifyInstance) {
     if (!out.ok) {
       if (json) return reply.status(out.status).send({ error: out.message, redirect: out.redirect })
       if (out.status === 409) return reply.redirect(`/anzeige/${az}`)
-      setFlash(reply, 'error', out.message)
-      return reply.redirect(out.redirect)
+      return flashRedirect(reply, 'error', out.message, out.redirect)
     }
     if (out.portal) {
       if (json) return reply.send({ ok: true, sent: false, queued: true, portal: out.portal })
       return reply.redirect(out.portal)
     }
     if (json) return reply.send(out.queued ? { ok: true, sent: false, queued: true } : { ok: true })
-    setFlash(reply, 'success', out.queued
+    return flashRedirect(reply, 'success', out.queued
       ? 'Anzeige eingereicht – der Versand ans Ordnungsamt läuft im Hintergrund.'
-      : 'Anzeige eingereicht – sie wird geprüft und dann ans Ordnungsamt verschickt.')
-    return reply.redirect(`/anzeige/${az}`)
+      : 'Anzeige eingereicht – sie wird geprüft und dann ans Ordnungsamt verschickt.', `/anzeige/${az}`)
   })
 
   // Eingereichte Anzeige zurückziehen (wird wieder bearbeitbarer Entwurf).
@@ -161,11 +159,9 @@ export default async function submitRoutes(app: FastifyInstance) {
       [report.id]
     )
     if (!withdrawn.affectedRows) {
-      setFlash(reply, 'error', 'Die Anzeige wird bereits versendet und kann nicht zurückgezogen werden.')
-      return reply.redirect(`/anzeige/${az}`)
+      return flashRedirect(reply, 'error', 'Die Anzeige wird bereits versendet und kann nicht zurückgezogen werden.', `/anzeige/${az}`)
     }
-    setFlash(reply, 'success', 'Anzeige zurückgezogen – sie ist wieder ein Entwurf.')
-    return reply.redirect(`/anzeige/${az}/bearbeiten`)
+    return flashRedirect(reply, 'success', 'Anzeige zurückgezogen – sie ist wieder ein Entwurf.', `/anzeige/${az}/bearbeiten`)
   })
 }
 
@@ -303,8 +299,7 @@ async function portalProblemFuer(report: mysql.RowDataPacket, cityId: string, us
   if (report.verstoss_art && !adapter.versendbar(report.verstoss_art)) {
     return 'Diesen Tatbestand bietet das Portal der Stadt nicht an – bitte einen passenden Verstoß wählen.'
   }
-  const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id = ?', [userId])
-  return adapter.problem(report, users[0] ?? null)
+  return adapter.problem(report, (await loadUser(userId)) ?? null)
 }
 
 /** Datenschutz: Fotos mit fremden Kennzeichen oder Gesichtern, die weder

@@ -8,15 +8,10 @@ import { getCity, DEFAULT_CITY_ID } from '../config/cities'
 import { renderTatortMap } from './staticmap'
 import { strasseMitNummer } from '../config/person'
 import { fahrzeugBeschreibung } from '../config/fahrzeug'
-
-/** "14:30:00" / "14:30" -> "14:30" */
-function hhmm(time: unknown): string {
-  if (!time) return ''
-  return String(time).slice(0, 5)
-}
+import { pdfDir } from './drafts'
+import { hhmm, localIsoDate } from '../utils/format'
 
 const RESOURCES_DIR = path.join(process.cwd(), 'resources')
-const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
 
 /** Pfad zum amtlichen Formular der jeweiligen Stadt. Städte ohne Formular werden
  *  als rohe E-Mail versendet – hier darf der PDF-Service dann nicht landen. */
@@ -45,7 +40,7 @@ export const PdfService = {
     user: mysql.RowDataPacket,
     images: ReportImage[] = []
   ): Promise<string> {
-    const userDir = path.join(PDF_DIR, String(user.id))
+    const userDir = pdfDir(user.id)
     await fs.mkdir(userDir, { recursive: true })
 
     const bytes = await fs.readFile(formPath(report.city))
@@ -374,8 +369,7 @@ export const PdfService = {
       if (report.tattag) {
         const t = new Date(report.tattag)
         if (!isNaN(t.getTime())) {
-          const pad = (n: number) => String(n).padStart(2, '0')
-          datum = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}-`
+          datum = `${localIsoDate(t)}-`
         }
       }
       // Erster Bindestrich trennt Präfix und Nummer: "OWiA-123456" -> "OWiA-<datum>-123456".

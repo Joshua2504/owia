@@ -6,12 +6,10 @@
 // unangetastet (Beleg dessen, was damals per Mail rausging).
 // Aufruf: npx tsx src/scripts/pdf-aufraeumen.ts [--trocken]
 import fs from 'fs/promises'
-import path from 'path'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { getCity, hasPdfForm } from '../config/cities'
-
-const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
+import { pdfPath } from '../services/drafts'
 
 async function main(): Promise<void> {
   const trocken = process.argv.includes('--trocken')
@@ -29,7 +27,7 @@ async function main(): Promise<void> {
     }
     n++
     if (trocken) continue
-    await fs.rm(path.join(PDF_DIR, String(r.user_id), String(r.pdf_filename)), { force: true }).catch(() => {})
+    await fs.rm(pdfPath(r.user_id, String(r.pdf_filename)), { force: true }).catch(() => {})
     await pool.execute('UPDATE reports SET pdf_filename=NULL WHERE id=? AND pdf_filename=?', [r.id, r.pdf_filename])
   }
   console.log(`${trocken ? '[trocken] ' : ''}${n} PDFs von Portal-Städten entfernt (von ${rows.length} offenen Anzeigen mit PDF).`)

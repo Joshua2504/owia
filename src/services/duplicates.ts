@@ -2,6 +2,8 @@
  *  (z.B. zwei Foto-Importe desselben Falschparkers). Wird in der Anzeigen-Liste
  *  als Hinweis mit „Zusammenführen" angezeigt – entschieden wird vom Nutzer. */
 
+import { localIsoDate } from '../utils/format'
+
 /** Max. Abstand zwischen zwei Tatzeitpunkten, damit sie als derselbe Vorfall gelten. */
 export const DUPLICATE_WINDOW_MINUTES = 180
 
@@ -30,7 +32,7 @@ function dayStr(d: Date | string | null): string | null {
   if (!d) return null
   if (d instanceof Date) {
     if (isNaN(d.getTime())) return null
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return localIsoDate(d)
   }
   return String(d).slice(0, 10)
 }

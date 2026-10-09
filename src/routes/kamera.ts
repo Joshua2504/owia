@@ -18,7 +18,7 @@ import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
-import { createDraft, trashDrafts } from '../services/drafts'
+import { createDraft, trashDrafts, imageCount } from '../services/drafts'
 import { withIntakeUploadLock } from '../services/intakeImageProcessing'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { queueTatortFill } from '../services/tatortFill'
@@ -83,11 +83,7 @@ export default async function kameraRoutes(app: FastifyInstance) {
     if (!upload) return reply.status(400).send({ error: 'Kein Bild empfangen.' })
 
     const voll = await withIntakeUploadLock(userId, async () => {
-      const [cnt] = await pool.execute<mysql.RowDataPacket[]>(
-        'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
-        [report.id]
-      )
-      return Number(cnt[0].c) >= MAX_IMAGES
+      return (await imageCount(report.id)) >= MAX_IMAGES
     })
     if (voll) return reply.status(409).send({ error: `Maximal ${MAX_IMAGES} Fotos pro Anzeige.` })
 

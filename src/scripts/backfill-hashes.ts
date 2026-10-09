@@ -12,7 +12,7 @@ import fs from 'fs/promises'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { photoSha256 } from '../services/photoDedup'
-import { UPLOAD_DIR, reportDir } from '../services/drafts'
+import { intakeDir, reportDir } from '../services/drafts'
 
 let updated = 0
 let missing = 0
@@ -56,7 +56,7 @@ async function backfillIntakePhotos(): Promise<void> {
   for (const row of rows) {
     const dir = row.report_id !== null
       ? reportDir(row.user_id, row.report_id)
-      : path.join(UPLOAD_DIR, String(row.user_id), 'intake', String(row.batch_id))
+      : intakeDir(row.user_id, row.batch_id)
     const hash = await hashFile(path.join(dir, row.original_filename))
     if (!hash) {
       missing++

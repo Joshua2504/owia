@@ -1,10 +1,9 @@
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import crypto from 'crypto'
-import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
-import { viewData, setFlash } from '../middleware/auth'
+import { viewData, setFlash, flashRedirect } from '../middleware/auth'
 import { loadPixelated } from '../services/intakeImageProcessing'
 import { regelsatzEuro, tbnrAusLabel } from '../config/verstoss'
 import { kartenAnalyse } from '../services/dritte'
@@ -13,14 +12,14 @@ import { isValidEmail, normalizeEmail } from './auth'
 import { MailService } from '../services/mail'
 import { createChallenge, verifyCaptcha } from '../services/captcha'
 import { huPlaketten } from '../services/huPlakette'
+import { appUrl } from '../config/app'
+import { reportDir } from '../services/drafts'
 import { LANDING_FFM, LANDING_STAND } from './legal'
 
 // Öffentliche, anonyme Übersicht aller versendeter Anzeigen auf einer Karte.
 // Bewusst ohne Auth: Startseite und Daten sind öffentlich sichtbar. Es werden
 // nur Verstoßart, Tattag, Koordinaten und ein stark verpixeltes Foto geliefert –
 // kein Kennzeichen, kein Name, kein Aktenzeichen, kein Adresstext.
-
-const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 
 // Nur abgeschlossene (versendete) Anzeigen mit Koordinaten erscheinen öffentlich.
 // `<> 0` filtert Altbestand mit 0/0 aus (Golf von Guinea): leere Hidden-Felder
@@ -77,15 +76,14 @@ export default async function publicRoutes(app: FastifyInstance) {
     const statsRows = [kz.stats]
     const topRows = kz.top ? [{ verstoss_art: kz.top }] : []
 
-    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
     return reply.view('/public/index.ejs', viewData(request, {
       title: 'Übersicht',
       // SEO: sprechender Titel + Beschreibung für Suchmaschinen und Vorschauen.
       pageTitle: 'Falschparker melden – kostenlos Anzeige erstatten | OWiA-Anzeiger',
       metaDescription:
         'Falschparker anzeigen: Fotos hochladen, Tatort und Zeit automatisch aus den Bildern, fertige Anzeige fürs zuständige Ordnungsamt – kostenlos und in wenigen Minuten. Gehweg, Radweg oder Feuerwehrzufahrt zugeparkt? Jetzt Ordnungswidrigkeit melden – in immer mehr Städten.',
-      canonical: `${appUrl}/`,
-      appUrl,
+      canonical: `${appUrl()}/`,
+      appUrl: appUrl(),
       centerLat: geo.biasLat,
       centerLon: geo.biasLon,
       stats: {
@@ -127,12 +125,10 @@ export default async function publicRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { email, plz, altcha } = (request.body || {}) as { email?: string; plz?: string; altcha?: string }
     if (!verifyCaptcha(altcha)) {
-      setFlash(reply, 'error', 'Bitte die Sicherheitsprüfung abschließen und erneut absenden.')
-      return reply.redirect('/#newsletter')
+      return flashRedirect(reply, 'error', 'Bitte die Sicherheitsprüfung abschließen und erneut absenden.', '/#newsletter')
     }
     if (!email || !isValidEmail(email)) {
-      setFlash(reply, 'error', 'Bitte gib eine gültige E-Mail-Adresse ein.')
-      return reply.redirect('/#newsletter')
+      return flashRedirect(reply, 'error', 'Bitte gib eine gültige E-Mail-Adresse ein.', '/#newsletter')
     }
     // PLZ ist optional (zeigt, wo Nachfrage sitzt); alles außer 5 Ziffern -> NULL.
     const plzValue = /^\d{5}$/.test((plz || '').trim()) ? (plz || '').trim() : null
@@ -158,8 +154,7 @@ export default async function publicRoutes(app: FastifyInstance) {
            VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 48 HOUR))`,
           [normalized, token, plzValue]
         )
-        const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
-        await MailService.sendNewsletterConfirmation(normalized, `${appUrl}/newsletter/bestaetigen/${token}`)
+        await MailService.sendNewsletterConfirmation(normalized, `${appUrl()}/newsletter/bestaetigen/${token}`)
       } else if (!existing.confirmed_at) {
         // Erneuter Versuch: Frist verlängern, PLZ ggf. aktualisieren und die
         // Bestätigung noch einmal senden.
@@ -169,8 +164,7 @@ export default async function publicRoutes(app: FastifyInstance) {
             WHERE id = ?`,
           [plzValue, existing.id]
         )
-        const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
-        await MailService.sendNewsletterConfirmation(normalized, `${appUrl}/newsletter/bestaetigen/${existing.token}`)
+        await MailService.sendNewsletterConfirmation(normalized, `${appUrl()}/newsletter/bestaetigen/${existing.token}`)
       }
       setFlash(reply, 'success', message)
     } catch (err) {
@@ -200,8 +194,7 @@ export default async function publicRoutes(app: FastifyInstance) {
   app.get('/newsletter/abmelden/:token', async (request, reply) => {
     const { token } = request.params as { token: string }
     await pool.execute('DELETE FROM newsletter_subscribers WHERE token = ?', [token])
-    setFlash(reply, 'success', 'Du bist abgemeldet und deine Adresse wurde gelöscht.')
-    return reply.redirect('/')
+    return flashRedirect(reply, 'success', 'Du bist abgemeldet und deine Adresse wurde gelöscht.', '/')
   })
 
   // Favicon für Clients/Crawler, die stur /favicon.ico anfragen (das Layout
@@ -215,7 +208,6 @@ export default async function publicRoutes(app: FastifyInstance) {
 
   // SEO: Crawler-Regeln (nur öffentliche Seiten indexieren) + Sitemap.
   app.get('/robots.txt', async (_request, reply) => {
-    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
     return reply.header('Content-Type', 'text/plain').send(
       [
         'User-agent: *',
@@ -233,21 +225,20 @@ export default async function publicRoutes(app: FastifyInstance) {
         'Allow: /public/',
         'Allow: /favicon.ico',
         'Disallow: /',
-        `Sitemap: ${appUrl}/sitemap.xml`,
+        `Sitemap: ${appUrl()}/sitemap.xml`,
         '',
       ].join('\n')
     )
   })
 
   app.get('/sitemap.xml', async (_request, reply) => {
-    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
     const urls = ['/', LANDING_FFM, '/statistik', '/analyse', '/login', '/impressum', '/datenschutz', '/nutzungsbedingungen']
     // lastmod nur, wo der Stand gepflegt wird (Landingpage, legal.ts STAND).
     const lastmod: Record<string, string> = { [LANDING_FFM]: LANDING_STAND }
     const xml = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-      ...urls.map((u) => `  <url><loc>${appUrl}${u}</loc>${lastmod[u] ? `<lastmod>${lastmod[u]}</lastmod>` : ''}</url>`),
+      ...urls.map((u) => `  <url><loc>${appUrl()}${u}</loc>${lastmod[u] ? `<lastmod>${lastmod[u]}</lastmod>` : ''}</url>`),
       '</urlset>',
       '',
     ].join('\n')
@@ -301,7 +292,7 @@ export default async function publicRoutes(app: FastifyInstance) {
     const img = rows[0]
     if (!img) return reply.status(404).send('Nicht gefunden.')
 
-    const imageDir = path.join(UPLOAD_DIR, String(img.user_id), String(img.report_id))
+    const imageDir = reportDir(img.user_id, img.report_id)
     try {
       // Berechnung im Bild-Worker (nicht im Eventloop): ohne Cache dekodierte
       // cachedPixelate() das Vollbild synchron – ein Durchzählen der Bild-IDs

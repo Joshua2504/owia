@@ -6,7 +6,7 @@ import mysql from 'mysql2/promise'
 import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
-import { UPLOAD_DIR, PDF_DIR } from './drafts'
+import { UPLOAD_DIR, pdfDir } from './drafts'
 import { repliesDir } from './mailInbox'
 
 export class UserDeleteError extends Error {}
@@ -52,7 +52,7 @@ export async function deleteUser(userId: number): Promise<{ email: string }> {
   }
   // Dateien erst nach erfolgreichem Commit entfernen.
   await fs.rm(path.join(UPLOAD_DIR, String(userId)), { recursive: true, force: true })
-  await fs.rm(path.join(PDF_DIR, String(userId)), { recursive: true, force: true })
+  await fs.rm(pdfDir(userId), { recursive: true, force: true })
   for (const id of replyIds) await fs.rm(repliesDir(id), { recursive: true, force: true })
   return { email }
 }

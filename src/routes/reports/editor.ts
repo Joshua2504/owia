@@ -10,7 +10,7 @@ import path from 'path'
 import fs from 'fs/promises'
 import ejs from 'ejs'
 import { pool } from '../../db/connection'
-import { requireAuth, viewData, setFlash } from '../../middleware/auth'
+import { requireAuth, viewData, setFlash, flashRedirect, wantsJson } from '../../middleware/auth'
 import { getCity, unlockedCities } from '../../config/cities'
 import { STICKER_LOESEN_MINUTEN, formatCode } from '../../services/stickers'
 import { cityEmail, detectCityByLabel } from '../../services/districts'
@@ -18,12 +18,20 @@ import { reverseGeocode } from '../../services/geocode'
 import { VERSTOSS_ARTEN } from '../../config/verstoss'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, markeNormalisieren, DEFAULT_FAHRZEUG_TYP, KENNZEICHEN_LAENDER } from '../../config/fahrzeug'
 import { imageVersion } from '../../services/images'
-import { createDraft, trashDrafts } from '../../services/drafts'
+import { createDraft, isEditableDraft, trashDrafts } from '../../services/drafts'
 import { replyAttachmentPath } from '../../services/mailInbox'
 import { MailService } from '../../services/mail'
 import { verstossGesperrt } from '../../services/portale'
-import { loadReportByAktenzeichen, loadQueueContext, FORMULAR_HILFEN, VERSTOSS_SPERREN, strukturFelder, persistFields, normalizePlate, isComplete, mostUsedVerstoesse, isProfileComplete, enqueuePdf, istDatum, istUhrzeit } from './shared'
+import { loadReportByAktenzeichen, loadQueueContext, FORMULAR_HILFEN, VERSTOSS_SPERREN, strukturFelder, persistFields, normalizePlate, isComplete, mostUsedVerstoesse, isProfileComplete, enqueuePdf, istDatum, istUhrzeit, stripImage } from './shared'
 import { viewHelpers } from '../../views/helpers'
+import { loadUser } from '../../services/users'
+import { cleanText, positiveInt } from '../../utils/format'
+
+/** Bildzeilen für Editor/Detailseite: numerische id + Fassungs-Token v für
+ *  cachebare Bild-URLs (imageVersion). */
+function withVersion(rows: mysql.RowDataPacket[]) {
+  return rows.map((i) => ({ ...(i as Record<string, unknown>), id: Number(i.id), v: imageVersion(i.filename) }))
+}
 
 export default async function editorRoutes(app: FastifyInstance) {
   // Eigene, noch nicht versendete Anzeigen (Entwürfe) mit Koordinaten – für die
@@ -81,14 +89,14 @@ export default async function editorRoutes(app: FastifyInstance) {
          FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
       [report.id]
     )
-    const images = imageRows.map((i) => ({ ...(i as Record<string, unknown>), id: Number(i.id), v: imageVersion(i.filename) }))
+    const images = withVersion(imageRows)
     const firstImageUrl = images.length ? `/anzeige/${az}/image/${images[0].id}/thumb.jpg?v=${images[0].v}` : null
 
     // Review-Queue des Foto-Imports: "Entwurf X von N" mit Vor/Zurück-Navigation
     // über alle noch offenen Entwürfe desselben Batches.
-    const queueParam = Number((request.query as { queue?: string }).queue)
+    const queueParam = positiveInt((request.query as { queue?: string }).queue)
     const queue =
-      Number.isInteger(queueParam) && queueParam > 0 && queueParam === report.intake_batch_id
+      queueParam !== null && queueParam === report.intake_batch_id
         ? await loadQueueContext(queueParam, userId, az)
         : null
 
@@ -169,7 +177,7 @@ export default async function editorRoutes(app: FastifyInstance) {
       values.push(out.fahrzeug_marke)
     }
     if (typeof body.tatort === 'string') {
-      out.tatort = body.tatort.replace(/\s+/g, ' ').trim().slice(0, 500) || null
+      out.tatort = cleanText(body.tatort, 500)
       sets.push('tatort=?')
       values.push(out.tatort)
       // Koordinaten nur als gültiges Paar (Adressvorschlag gewählt); sonst
@@ -295,7 +303,7 @@ export default async function editorRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
-    if (report.status !== 'entwurf' || report.versand_status !== null) {
+    if (!isEditableDraft(report)) {
       return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
     }
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -321,7 +329,7 @@ export default async function editorRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send({ error: 'Anzeige nicht gefunden.' })
-    if (report.status !== 'entwurf' || report.versand_status !== null) {
+    if (!isEditableDraft(report)) {
       return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
     }
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
@@ -361,14 +369,14 @@ export default async function editorRoutes(app: FastifyInstance) {
     await enqueuePdf(report.id, userId)
 
     // Editor im Modal (Anzeigen-Liste) speichert per fetch und schließt dann.
-    if (String(request.headers.accept || '').includes('application/json')) {
+    if (wantsJson(request)) {
       return reply.send({ ok: true })
     }
 
     // In der Review-Queue des Foto-Imports: direkt zum nächsten offenen Entwurf,
     // nach dem letzten zurück zur Batch-Übersicht.
-    const queueId = Number(body.queue)
-    if (Number.isInteger(queueId) && queueId > 0 && queueId === report.intake_batch_id) {
+    const queueId = positiveInt(body.queue)
+    if (queueId !== null && queueId === report.intake_batch_id) {
       const queue = await loadQueueContext(queueId, userId, az)
       setFlash(reply, 'success', `Entwurf ${az} gespeichert.`)
       // Im Modal weiter im Modal (ohne embed käme die Navigation ins iframe).
@@ -377,8 +385,7 @@ export default async function editorRoutes(app: FastifyInstance) {
       return reply.redirect(`/import/${queueId}`)
     }
 
-    setFlash(reply, 'success', 'Entwurf gespeichert.')
-    return reply.redirect(`/anzeige/${az}`)
+    return flashRedirect(reply, 'success', 'Entwurf gespeichert.', `/anzeige/${az}`)
   })
 
   app.post('/anzeige/:az/discard', { preHandler: requireAuth }, async (request, reply) => {
@@ -394,7 +401,7 @@ export default async function editorRoutes(app: FastifyInstance) {
     await trashDrafts(userId, [reportId])
 
     // Foto-Dialog (photo-edit.js) verwirft per fetch.
-    if (String(request.headers.accept || '').includes('application/json')) return reply.send({ ok: true })
+    if (wantsJson(request)) return reply.send({ ok: true })
     setFlash(reply, 'success', 'Entwurf in den Papierkorb verschoben.')
     // Import-Entwürfe zurück zur Batch-Übersicht, sonst zur Anzeigenliste.
     return reply.redirect(report.intake_batch_id ? `/import/${report.intake_batch_id}` : '/anzeigen')
@@ -410,7 +417,7 @@ export default async function editorRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.status(409).send({ ok: false })
     const bereit = !report.bereit_at
     await pool.execute('UPDATE reports SET bereit_at = ? WHERE id = ?', [bereit ? new Date() : null, report.id])
-    if ((request.headers.accept || '').includes('application/json')) return { ok: true, bereit }
+    if (wantsJson(request)) return { ok: true, bereit }
     return reply.redirect('/anzeigen')
   })
 
@@ -435,7 +442,7 @@ export default async function editorRoutes(app: FastifyInstance) {
          FROM report_replies WHERE report_id = ? AND direction = 'in'`,
       [report.id]
     )
-    const queueParam = Number((request.query as { queue?: string }).queue)
+    const queueParam = positiveInt((request.query as { queue?: string }).queue)
     const html = await ejs.renderFile(
       path.join(__dirname, '../../views/partials/report-row.ejs'),
       {
@@ -449,14 +456,14 @@ export default async function editorRoutes(app: FastifyInstance) {
           unread_reply_count: Number(counts[0]?.unread_reply_count) || 0,
           versand_warte: report.status === 'eingereicht' ? (await versandWartezeiten([report.id])).get(report.id) || null : null,
         },
-        imgs: images.map((i) => ({ id: i.id, v: imageVersion(i.filename), ok: i.geprueft_at !== null, plate: i.detected_plate || null })),
+        imgs: images.map((i) => stripImage(i)),
         // ejs.renderFile kennt den defaultContext von @fastify/view (server.ts)
         // nicht – Helfer, die report-row.ejs nutzt, hier explizit mitgeben.
         h: viewHelpers,
         verjaehrung,
         verstossGesperrt,
         fahrzeugTypen: FAHRZEUG_TYPEN,
-        queueId: Number.isInteger(queueParam) && queueParam > 0 ? queueParam : null,
+        queueId: queueParam,
       }
     )
     return reply.type('text/html; charset=utf-8').send(html)
@@ -476,7 +483,7 @@ export default async function editorRoutes(app: FastifyInstance) {
       'SELECT id, filename, original_filename FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
       [report.id]
     )
-    const images = imageRows.map((i) => ({ ...(i as Record<string, unknown>), id: Number(i.id), v: imageVersion(i.filename) }))
+    const images = withVersion(imageRows)
 
     // Nachrichtenverlauf (Anzeige-Mail, Antworten des Amts, eigene Nachrichten)
     // + Anhänge; Ansehen der Seite = gelesen.
@@ -552,12 +559,10 @@ export default async function editorRoutes(app: FastifyInstance) {
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send('Anzeige nicht gefunden.')
     if (report.status !== 'versendet') {
-      setFlash(reply, 'error', 'Nachrichten sind erst nach dem Versand der Anzeige möglich.')
-      return reply.redirect(`/anzeige/${az}`)
+      return flashRedirect(reply, 'error', 'Nachrichten sind erst nach dem Versand der Anzeige möglich.', `/anzeige/${az}`)
     }
     if (!text) {
-      setFlash(reply, 'error', 'Bitte einen Nachrichtentext eingeben.')
-      return reply.redirect(`/anzeige/${az}`)
+      return flashRedirect(reply, 'error', 'Bitte einen Nachrichtentext eingeben.', `/anzeige/${az}`)
     }
 
     // Threading: auf die letzte Nachricht des Amts antworten (sonst auf die
@@ -574,9 +579,9 @@ export default async function editorRoutes(app: FastifyInstance) {
       ...thread.map((m) => m.message_id),
     ].filter((x): x is string => !!x && !x.startsWith('out:') && !x.startsWith('sha256:'))
 
-    const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id = ?', [userId])
+    const user = (await loadUser(userId))!
     try {
-      const sent = await MailService.sendUserReply(report, users[0], text, {
+      const sent = await MailService.sendUserReply(report, user, text, {
         inReplyTo,
         references: [...new Set(references)].slice(-10),
       })
@@ -594,7 +599,7 @@ export default async function editorRoutes(app: FastifyInstance) {
       setFlash(
         reply,
         'success',
-        users[0].cc_self === 0
+        user.cc_self === 0
           ? 'Nachricht ans Ordnungsamt gesendet.'
           : 'Nachricht ans Ordnungsamt gesendet (du bist in Kopie).'
       )

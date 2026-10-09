@@ -15,11 +15,14 @@ import { ALLE_VARIANTEN, formularHilfen } from '../../services/portalFfm'
 import { verstossSperren } from '../../services/portale'
 import { cachedMailVariant } from '../../services/pixelate'
 import { processReportImageDerivatives } from '../../services/intakeImageProcessing'
-import { UPLOAD_DIR, PDF_DIR } from '../../services/drafts'
+import { evidenceImageRows, pdfPath, reportDir } from '../../services/drafts'
 import { MailService } from '../../services/mail'
 import { adminEmails } from '../../config/admin'
 import { enqueueJob, registerJob } from '../../services/jobs'
 import { logger } from '../../services/logger'
+import { loadUser } from '../../services/users'
+import { imageVersion } from '../../services/images'
+import { cleanText } from '../../utils/format'
 
 // Re-Export für bestehende Importe (Views/Tests beziehen die Liste über reports.ts).
 export { VERSTOSS_ARTEN }
@@ -72,6 +75,30 @@ export async function loadReportByAktenzeichen(
   return rows[0]
 }
 
+/** Foto einer eigenen Anzeige (per Aktenzeichen) samt `report_id`.
+ *  draftOnly: nur solange die Anzeige ein Entwurf ist; unsent: zusätzlich ohne
+ *  laufenden/unklaren Versand. Bewusst kein `ri.*`: analyse_json (MEDIUMTEXT)
+ *  bräuchte hier niemand, und die Bild-/Vorschau-Routen laufen sehr oft.
+ *  imageId wird unverändert gebunden (manche Aufrufer reichen den Pfad-String,
+ *  andere Number() – das bleibt, wie es war). */
+export async function loadOwnedImage(
+  az: string,
+  imageId: string | number,
+  userId: number,
+  opts: { draftOnly?: boolean; unsent?: boolean } = {}
+): Promise<mysql.RowDataPacket | undefined> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT ri.filename, ri.mimetype, ri.original_filename, ri.original_mimetype, ri.detected_plate,
+            ri.kennzeichen_box, ri.kennzeichen_keins, r.id AS report_id
+       FROM report_images ri JOIN reports r ON r.id = ri.report_id
+      WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?` +
+      (opts.draftOnly ? " AND r.status = 'entwurf'" : '') +
+      (opts.unsent ? ' AND r.versand_status IS NULL' : ''),
+    [imageId, az, userId]
+  )
+  return rows[0]
+}
+
 /** Kontext der Review-Queue eines Foto-Imports: Position des aktuellen
  *  Entwurfs sowie vorheriger/nächster noch offener Entwurf des Batches. */
 export async function loadQueueContext(
@@ -111,12 +138,11 @@ export const VERSTOSS_SPERREN = verstossSperren(VERSTOSS_ARTEN)
  *  diese Felder nichts leeren. Ungültige Werte ⇒ NULL. */
 export function strukturFelder(body: Record<string, unknown>): Record<string, string | null> {
   const out: Record<string, string | null> = {}
-  const text = (v: unknown, max: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max) || null
   if (typeof body.fahrzeug_typ === 'string') {
     out.fahrzeug_typ = (FAHRZEUG_TYPEN as readonly string[]).includes(body.fahrzeug_typ) ? body.fahrzeug_typ : null
   }
-  if (typeof body.fahrzeug_farbe === 'string') out.fahrzeug_farbe = text(body.fahrzeug_farbe, 40)
-  if (typeof body.fahrzeug_modell === 'string') out.fahrzeug_modell = text(body.fahrzeug_modell, 60)
+  if (typeof body.fahrzeug_farbe === 'string') out.fahrzeug_farbe = cleanText(body.fahrzeug_farbe, 40)
+  if (typeof body.fahrzeug_modell === 'string') out.fahrzeug_modell = cleanText(body.fahrzeug_modell, 60)
   if (typeof body.verstoss_variante === 'string') {
     out.verstoss_variante = ALLE_VARIANTEN.has(body.verstoss_variante) ? body.verstoss_variante : null
   }
@@ -263,6 +289,48 @@ export async function mostUsedVerstoesse(limit = 12): Promise<string[]> {
   return out
 }
 
+/** Foto-Kennzahlen je Anzeige für die Tabellen-Listen (Duplikat-Hinweise,
+ *  Tatzeit aus Foto, GPS-Hinweis in report-row.ejs). `alias` = Tabelle bzw.
+ *  Alias der reports-Zeile in der äußeren Abfrage. Die Einzelzeile
+ *  (editor.ts, /listenzeile) rechnet dieselben Werte in JS nach. */
+export function photoStatColumns(alias: string): string {
+  return `(SELECT DATE_FORMAT(MIN(pt.captured_at), '%Y-%m-%d %H:%i') FROM report_images pt WHERE pt.report_id = ${alias}.id) AS photo_time_min,
+              (SELECT GROUP_CONCAT(DISTINCT dp.detected_plate ORDER BY dp.detected_plate SEPARATOR '|') FROM report_images dp WHERE dp.report_id = ${alias}.id AND dp.detected_plate IS NOT NULL AND dp.detected_plate <> '') AS detected_plates,
+              (SELECT COUNT(*) FROM report_images gi WHERE gi.report_id = ${alias}.id AND gi.gps_lat IS NOT NULL AND gi.gps_lon IS NOT NULL) AS photo_gps_count`
+}
+
+/** Ein Foto der Thumbnail-Leiste in report-row.ejs. */
+export type StripImage = { id: number; v: string; ok: boolean; plate: string | null; zeit?: string | null }
+
+export function stripImage(img: mysql.RowDataPacket): StripImage {
+  return { id: img.id, v: imageVersion(img.filename), ok: img.geprueft_at !== null, plate: img.detected_plate || null }
+}
+
+/** Thumbnail-Leisten aller Anzeigen, die `where` (über Alias r = reports)
+ *  trifft, gruppiert nach report_id. zeit: Aufnahmeuhrzeit mitliefern
+ *  (data-zeit, nur die Anzeigenliste nutzt sie). */
+export async function thumbStrips(
+  where: string,
+  params: (string | number)[],
+  opts: { zeit?: boolean } = {}
+): Promise<Record<number, StripImage[]>> {
+  const [images] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT ri.id, ri.report_id, ri.filename, ri.geprueft_at, ri.detected_plate${
+      opts.zeit ? ", DATE_FORMAT(ri.captured_at, '%H:%i') AS zeit" : ''
+    }
+       FROM report_images ri
+       JOIN reports r ON r.id = ri.report_id
+      WHERE ${where}
+      ORDER BY ri.report_id, ri.sort_order, ri.id`,
+    params
+  )
+  const byReport: Record<number, StripImage[]> = {}
+  for (const img of images) {
+    ;(byReport[img.report_id] ??= []).push(opts.zeit ? { ...stripImage(img), zeit: img.zeit || null } : stripImage(img))
+  }
+  return byReport
+}
+
 /** Profil vollständig? Das Ordnungsamt bearbeitet anonyme Anzeigen nicht –
  *  Name und Anschrift des Anzeigenerstatters müssen im PDF stehen. */
 export async function isProfileComplete(userId: number): Promise<boolean> {
@@ -287,7 +355,7 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
   if (!hasPdfForm(getCity(report.city))) {
     if (report.pdf_filename) {
       try {
-        await fs.rm(path.join(PDF_DIR, String(userId), report.pdf_filename), { force: true })
+        await fs.rm(pdfPath(userId, report.pdf_filename), { force: true })
       } catch {
         /* egal */
       }
@@ -296,19 +364,10 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
     return
   }
 
-  const [uRows] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT * FROM users WHERE id = ?',
-    [userId]
-  )
-  const user = uRows[0]
-  const [imgRows] = await pool.execute<mysql.RowDataPacket[]>(
-    `SELECT filename, mimetype,
-            DATE_FORMAT(captured_at, '%d.%m.%Y, %H:%i') AS captured_at
-       FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
-    [reportId]
-  )
+  const user = (await loadUser(userId))!
+  const imgRows = await evidenceImageRows(reportId)
 
-  const dir = path.join(UPLOAD_DIR, String(userId), String(reportId))
+  const dir = reportDir(userId, reportId)
   const images: ReportImage[] = []
   for (const row of imgRows) {
     try {
@@ -326,7 +385,7 @@ export async function regeneratePdf(reportId: string | number, userId: number): 
   // Altes PDF entfernen, damit keine verwaisten Dateien liegen bleiben.
   if (report.pdf_filename) {
     try {
-      await fs.rm(path.join(PDF_DIR, String(userId), report.pdf_filename), { force: true })
+      await fs.rm(pdfPath(userId, report.pdf_filename), { force: true })
     } catch {
       /* egal */
     }

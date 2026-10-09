@@ -37,6 +37,7 @@ import { prewarmPublicImages } from './publicImages'
 import { versandBestaetigungEinreihen } from './versandBestaetigung'
 import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 import { versandPlatzBelegen, versandPlatzFreigeben } from './versandTakt'
+import { loadUser } from './users'
 
 export const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
@@ -124,8 +125,7 @@ async function checkStartbar(report: mysql.RowDataPacket): Promise<void> {
   if (!(await isProfileComplete(report.user_id))) throw new PortalError('Das Nutzerprofil ist unvollständig.')
   if (isVerjaehrt(report)) throw new PortalError('Die Tat ist verjährt.')
   if (!adapter.versendbar(report.verstoss_art)) throw new PortalError('Diesen Tatbestand bietet das Portal der Stadt nicht an.')
-  const [profil] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
-  const fehlt = adapter.problem(report, profil[0] ?? null)
+  const fehlt = adapter.problem(report, (await loadUser(report.user_id)) ?? null)
   if (fehlt) throw new PortalError(fehlt)
   if (erstMorgen(adapter, report)) throw new PortalAbMorgenError('Das Portal nimmt nur Taten vor dem heutigen Tag an – bitte ab morgen senden.')
 }
@@ -153,12 +153,12 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
   if (!claim.affectedRows) throw new PortalError('Die Anzeige wird bereits versendet.')
 
   try {
-    const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
+    const user = (await loadUser(report.user_id))!
     const [zeiten] = await pool.execute<mysql.RowDataPacket[]>(
       "SELECT DATE_FORMAT(MAX(captured_at), '%Y-%m-%d %H:%i') AS bis FROM report_images WHERE report_id=?",
       [reportId]
     )
-    const payload = adapter.payload(report, users[0], zeiten[0]?.bis ?? null)
+    const payload = adapter.payload(report, user, zeiten[0]?.bis ?? null)
     const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id, filename, mimetype, detected_plate, analyse_json FROM report_images WHERE report_id=? ORDER BY sort_order, id',
       [reportId]

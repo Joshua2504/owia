@@ -6,6 +6,7 @@ import { viewData } from '../middleware/auth'
 import { MailService } from '../services/mail'
 import { verifyCaptcha } from '../services/captcha'
 import { consumeMagicLink, consumeLoginCode } from '../services/loginTokens'
+import { appUrl } from '../config/app'
 
 const CODE_TTL_MINUTES = 15
 // „Angemeldet bleiben": Cookie-Lebensdauer, sonst gilt der Default aus server.ts.
@@ -17,11 +18,6 @@ export function normalizeEmail(email: string): string {
 
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-}
-
-function baseUrl(request: FastifyRequest): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '')
-  return `${request.protocol}://${request.headers.host}`
 }
 
 // Rücksprung nach dem Login: Wer einen eigenen, noch offenen Sticker mit der
@@ -159,7 +155,7 @@ export default async function authRoutes(app: FastifyInstance) {
       [normalizedEmail, code, token, rememberFlag, CODE_TTL_MINUTES]
     )
 
-    const magicLink = `${baseUrl(request)}/login/link/${token}`
+    const magicLink = `${appUrl(request)}/login/link/${token}`
     try {
       await MailService.sendLoginCode(normalizedEmail, code, magicLink)
     } catch (err) {

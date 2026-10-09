@@ -26,6 +26,32 @@ export function reportDir(userId: number, reportId: number | string): string {
   return path.join(UPLOAD_DIR, String(userId), String(reportId))
 }
 
+/** Ablage der Fotos eines Sammel-Imports, bevor sie Entwürfen zugeordnet
+ *  werden (routes/intake.ts; Datenexport und Hash-Backfill lesen sie auch). */
+export function intakeDir(userId: number | string, batchId: number | string): string {
+  return path.join(UPLOAD_DIR, String(userId), 'intake', String(batchId))
+}
+
+/** PDF-Verzeichnis eines Nutzers. */
+export function pdfDir(userId: number | string): string {
+  return path.join(PDF_DIR, String(userId))
+}
+
+/** Pfad eines erzeugten Anzeigen-PDFs (reports.pdf_filename). Getrennt von
+ *  pdfDir, damit ein fehlender Dateiname nie still zum Verzeichnis wird. */
+export function pdfPath(userId: number | string, filename: string): string {
+  return path.join(PDF_DIR, String(userId), filename)
+}
+
+/** Noch bearbeitbarer Entwurf: Status 'entwurf' und kein Versand-Claim
+ *  (versand_status gesetzt = Versand läuft oder ist ungeklärt, siehe
+ *  services/reportDispatch.ts) – JS-Gegenstück zu
+ *  `status = 'entwurf' AND versand_status IS NULL` in den SQL-Guards.
+ *  Strikter Vergleich mit null wie bisher an allen Stellen. */
+export function isEditableDraft(r: Record<string, unknown>): boolean {
+  return r.status === 'entwurf' && r.versand_status === null
+}
+
 export type DraftFields = {
   tattag?: string | null // 'YYYY-MM-DD'
   tattagBis?: string | null // Ende an einem anderen Tag (über Mitternacht)
@@ -115,7 +141,7 @@ export async function deleteDraft(
   }
   if (report.pdf_filename) {
     try {
-      await fs.rm(path.join(PDF_DIR, String(userId), report.pdf_filename), { force: true })
+      await fs.rm(pdfPath(userId, report.pdf_filename), { force: true })
     } catch {
       /* egal */
     }
@@ -184,6 +210,37 @@ export type ImageRowMeta = {
   gpsLat?: number | null
   gpsLon?: number | null
   sha256?: string | null // Hash des Original-Uploads (services/photoDedup.ts)
+}
+
+/** Anzahl Fotos einer Anzeige (für das Limit MAX_IMAGES in routes/reports/shared.ts;
+ *  Aufrufer, die parallel hochladen, zählen unter withIntakeUploadLock). */
+export async function imageCount(reportId: number): Promise<number> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
+    [reportId]
+  )
+  return Number(rows[0].c)
+}
+
+/** Beweisfotos in Versandreihenfolge mit deutsch formatierter Aufnahmezeit
+ *  ("10.07.2026, 14:30") – für PDF-Fotoseiten, Mail-Anhänge und die
+ *  Versandbestätigung. */
+export async function evidenceImageRows(reportId: number | string): Promise<mysql.RowDataPacket[]> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT filename, mimetype, DATE_FORMAT(captured_at, '%d.%m.%Y, %H:%i') AS captured_at
+       FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
+    [reportId]
+  )
+  return rows
+}
+
+/** sort_order für ein neues Foto: ans Ende der bisherigen Reihenfolge. */
+export async function nextSortOrder(reportId: number): Promise<number> {
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
+    [reportId]
+  )
+  return Number(rows[0].next)
 }
 
 /** Bild-Row zu einem Entwurf anlegen (Dateien liegen bereits auf Platte). */

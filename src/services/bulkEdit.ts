@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { VERSTOSS_ARTEN } from '../config/verstoss'
 import { verstossGesperrt } from './portale'
+import { isEditableDraft } from './drafts'
 
 // Kurzlebige, signierte Vorschau: Änderungen nach der Vorschau werden nicht
 // überschrieben. Ein Neustart macht offene Vorschauen bewusst ungültig.
@@ -29,7 +30,7 @@ export async function previewBulkEdit(userId: number, body: Record<string, unkno
   const changes: Change[] = []
   const items = azList.map(az => {
     const row = rows.find(r => r.aktenzeichen === az)
-    if (!row || row.status !== 'entwurf' || row.versand_status !== null) return { az, reason: 'Nicht bearbeitbar oder nicht gefunden.' }
+    if (!row || !isEditableDraft(row)) return { az, reason: 'Nicht bearbeitbar oder nicht gefunden.' }
     const offense = row.verstoss_art as string | null
     const left = row.fahrzeug_verlassen === null ? null : Number(row.fahrzeug_verlassen)
     let nextOffense = offenseMode === 'keep' || (body.overwrite !== true && !!offense) ? offense : offenseMode === 'clear' ? null : body.offense as string

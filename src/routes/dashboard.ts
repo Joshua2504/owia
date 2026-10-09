@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
-import { imageVersion } from '../services/images'
+import { photoStatColumns, thumbStrips } from './reports/shared'
 import { findDuplicateGroups } from '../services/duplicates'
 import { versandWartezeiten } from '../services/versandWarte'
 
@@ -42,9 +42,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
               tatort, tatort_lat, tatort_lon, verstoss_art, status, versand_status, bereit_at, created_at, city,
               fahrzeug_marke, fahrzeug_typ, fahrzeug_modell, fahrzeug_farbe, verstoss_variante,
               beschreibung, fahrzeug_verlassen, behinderung, behinderung_text,
-              (SELECT DATE_FORMAT(MIN(pt.captured_at), '%Y-%m-%d %H:%i') FROM report_images pt WHERE pt.report_id = reports.id) AS photo_time_min,
-              (SELECT GROUP_CONCAT(DISTINCT dp.detected_plate ORDER BY dp.detected_plate SEPARATOR '|') FROM report_images dp WHERE dp.report_id = reports.id AND dp.detected_plate IS NOT NULL AND dp.detected_plate <> '') AS detected_plates,
-              (SELECT COUNT(*) FROM report_images gi WHERE gi.report_id = reports.id AND gi.gps_lat IS NOT NULL AND gi.gps_lon IS NOT NULL) AS photo_gps_count,
+              ${photoStatColumns('reports')},
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in') AS reply_count,
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in' AND rr.read_at IS NULL) AS unread_reply_count
        FROM reports WHERE user_id = ? AND status <> 'papierkorb' ORDER BY ${orderBy}`,
@@ -52,19 +50,7 @@ export default async function dashboardRoutes(app: FastifyInstance) {
     )
 
     // Foto-IDs pro Anzeige für die Thumbnail-Leiste (gemeinsames Tabellen-Partial).
-    const [images] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.id, ri.report_id, ri.filename, ri.geprueft_at, ri.detected_plate,
-              DATE_FORMAT(ri.captured_at, '%H:%i') AS zeit
-         FROM report_images ri
-         JOIN reports r ON r.id = ri.report_id
-        WHERE r.user_id = ? AND r.status <> 'papierkorb'
-        ORDER BY ri.report_id, ri.sort_order, ri.id`,
-      [userId]
-    )
-    const imagesByReport: Record<number, { id: number; v: string; ok: boolean; plate: string | null; zeit: string | null }[]> = {}
-    for (const img of images) {
-      ;(imagesByReport[img.report_id] ??= []).push({ id: img.id, v: imageVersion(img.filename), ok: img.geprueft_at !== null, plate: img.detected_plate || null, zeit: img.zeit || null })
-    }
+    const imagesByReport = await thumbStrips("r.user_id = ? AND r.status <> 'papierkorb'", [userId], { zeit: true })
 
     // Eingereichte Anzeigen: Countdown bis zum Versand (report-row.ejs).
     const warte = await versandWartezeiten(reports.filter((r) => r.status === 'eingereicht').map((r) => Number(r.id)))

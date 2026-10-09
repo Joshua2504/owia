@@ -40,14 +40,14 @@ import { unlockedCities } from './config/cities'
 import { startSelbsttestPlan } from './services/portalSelbsttest'
 import { startInboxPolling, processInboundMail } from './services/mailInbox'
 import { failStalePlateAnalyses } from './services/plateAnalysis'
-import { viewData } from './middleware/auth'
+import { viewData, wantsJson } from './middleware/auth'
 import { PdfService } from './services/pdf'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import { initDb } from './db/init'
 import { MySQLSessionStore } from './db/session-store'
 import { pool } from './db/connection'
-import { purgeTrash } from './services/drafts'
+import { purgeTrash, PDF_DIR, UPLOAD_DIR } from './services/drafts'
 import { fillMissingTatorte } from './services/tatortFill'
 import { verstossGesperrt } from './services/portale'
 
@@ -83,10 +83,7 @@ async function main() {
   // Lauter Selbsttest: sind die Daten-Verzeichnisse beschreibbar? Häufige
   // Ursache für "PDF wird nicht erzeugt" in Produktion sind falsche Rechte
   // auf den gemounteten Volumes – das soll direkt beim Start im Log stehen.
-  for (const dir of [
-    path.join(process.cwd(), 'data', 'pdfs'),
-    path.join(process.cwd(), 'data', 'uploads'),
-  ]) {
+  for (const dir of [PDF_DIR, UPLOAD_DIR]) {
     try {
       await fs.mkdir(dir, { recursive: true })
       const probe = path.join(dir, '.write-probe')
@@ -343,7 +340,6 @@ async function main() {
   // Nur echte 5xx werden als error geloggt. Wer JSON akzeptiert, bekommt JSON.
   app.setErrorHandler((err: FastifyError, req, reply) => {
     const status = typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500
-    const wantsJson = String(req.headers.accept || '').includes('application/json')
     if (status >= 500) app.log.error({ err, url: req.url }, 'Unbehandelter Fehler')
     else req.log.info({ status, msg: err.message, url: req.url }, 'Client-Fehler')
     if (status === 429) return reply.status(429).send('Zu viele Anfragen – bitte kurz warten.')
@@ -353,10 +349,10 @@ async function main() {
         413: 'Die Datei ist zu groß.', 415: 'Dieses Format wird nicht unterstützt.',
       }
       const message = texte[status] || err.message || 'Ungültige Anfrage.'
-      if (wantsJson) return reply.status(status).send({ error: message })
+      if (wantsJson(req)) return reply.status(status).send({ error: message })
       return reply.status(status).view('/error.ejs', viewData(req, { title: 'Fehler', statusCode: status, message }))
     }
-    if (wantsJson) return reply.status(500).send({ error: 'Interner Fehler.' })
+    if (wantsJson(req)) return reply.status(500).send({ error: 'Interner Fehler.' })
     return reply.status(500).view('/error.ejs', viewData(req, { title: 'Fehler', statusCode: 500 }))
   })
 

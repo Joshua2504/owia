@@ -9,6 +9,8 @@ import { pool } from '../db/connection'
 import { enqueueJob, registerJob } from './jobs'
 import { MailService } from './mail'
 import { repliesDir } from './mailInbox'
+import { loadUser } from './users'
+import { evidenceImageRows } from './drafts'
 
 export async function versandBestaetigungEinreihen(reportId: number): Promise<void> {
   await enqueueJob('mail.versand-bestaetigung', { reportId }, { key: `versand-bestaetigung:${reportId}` })
@@ -20,8 +22,7 @@ registerJob('mail.versand-bestaetigung', async ({ reportId }) => {
   )
   const report = reports[0]
   if (!report) return
-  const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id=?', [report.user_id])
-  const user = users[0]
+  const user = await loadUser(report.user_id)
   if (!user?.email) return
   // Die ausgehende Nachricht (Mailtext ans Amt bzw. Portal-Protokoll) samt Anhängen.
   const [sent] = await pool.execute<mysql.RowDataPacket[]>(
@@ -29,11 +30,7 @@ registerJob('mail.versand-bestaetigung', async ({ reportId }) => {
       WHERE report_id=? AND direction='out' AND message_id=? LIMIT 1`,
     [reportId, report.sent_message_id]
   )
-  const [images] = await pool.execute<mysql.RowDataPacket[]>(
-    `SELECT DATE_FORMAT(captured_at, '%d.%m.%Y, %H:%i') AS captured_at
-       FROM report_images WHERE report_id=? ORDER BY sort_order, id`,
-    [reportId]
-  )
+  const images = await evidenceImageRows(reportId)
   const belege: { filename: string; content: Buffer; contentType: string }[] = []
   if (sent[0]) {
     const [atts] = await pool.execute<mysql.RowDataPacket[]>(

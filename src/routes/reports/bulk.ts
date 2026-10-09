@@ -3,10 +3,10 @@
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../../db/connection'
-import { requireAuth, viewData, setFlash } from '../../middleware/auth'
+import { requireAuth, viewData, setFlash, flashRedirect } from '../../middleware/auth'
 import { VERSTOSS_ARTEN } from '../../config/verstoss'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, KENNZEICHEN_LAENDER } from '../../config/fahrzeug'
-import { deleteDraft, trashDrafts, restoreDrafts, purgeTrash, PAPIERKORB_TAGE } from '../../services/drafts'
+import { deleteDraft, isEditableDraft, trashDrafts, restoreDrafts, purgeTrash, PAPIERKORB_TAGE } from '../../services/drafts'
 import { previewBulkEdit, applyBulkEdit, BulkEditInputError } from '../../services/bulkEdit'
 import { loadReportByAktenzeichen, FORMULAR_HILFEN, VERSTOSS_SPERREN, mostUsedVerstoesse, enqueuePdf } from './shared'
 import { moveImages } from './images'
@@ -57,8 +57,7 @@ export default async function bulkRoutes(app: FastifyInstance) {
       .slice(0, 200)
 
     if (azList.length === 0) {
-      setFlash(reply, 'error', 'Keine Entwürfe ausgewählt.')
-      return reply.redirect('/anzeigen')
+      return flashRedirect(reply, 'error', 'Keine Entwürfe ausgewählt.', '/anzeigen')
     }
 
     const placeholders = azList.map(() => '?').join(',')
@@ -72,13 +71,11 @@ export default async function bulkRoutes(app: FastifyInstance) {
       [...azList, userId]
     )
     if (drafts.length === 0) {
-      setFlash(reply, 'error', 'Keine löschbaren Entwürfe in der Auswahl.')
-      return reply.redirect('/anzeigen')
+      return flashRedirect(reply, 'error', 'Keine löschbaren Entwürfe in der Auswahl.', '/anzeigen')
     }
 
     await trashDrafts(userId, drafts.map((d) => d.id))
-    setFlash(reply, 'success', `${drafts.length} ${drafts.length === 1 ? 'Entwurf' : 'Entwürfe'} in den Papierkorb verschoben.`)
-    return reply.redirect('/anzeigen')
+    return flashRedirect(reply, 'success', `${drafts.length} ${drafts.length === 1 ? 'Entwurf' : 'Entwürfe'} in den Papierkorb verschoben.`, '/anzeigen')
   })
 
   // Papierkorb: gelöschte Entwürfe, wiederherstellbar bis zum automatischen
@@ -143,20 +140,18 @@ export default async function bulkRoutes(app: FastifyInstance) {
     const azList = [...new Set((Array.isArray(body.az) ? body.az : body.az ? [body.az] : []).map(String))].slice(0, 20)
     const targetAz = String(body.target || '')
     if (!azList.includes(targetAz) || azList.length < 2) {
-      setFlash(reply, 'error', 'Bitte mindestens zwei Entwürfe und ein Ziel wählen.')
-      return reply.redirect(back)
+      return flashRedirect(reply, 'error', 'Bitte mindestens zwei Entwürfe und ein Ziel wählen.', back)
     }
     const target = await loadReportByAktenzeichen(targetAz, userId)
-    if (!target || target.status !== 'entwurf' || target.versand_status !== null) {
-      setFlash(reply, 'error', 'Ziel-Anzeige ist kein Entwurf.')
-      return reply.redirect(back)
+    if (!target || !isEditableDraft(target)) {
+      return flashRedirect(reply, 'error', 'Ziel-Anzeige ist kein Entwurf.', back)
     }
 
     let merged = 0
     for (const az of azList) {
       if (az === targetAz) continue
       const source = await loadReportByAktenzeichen(az, userId)
-      if (!source || source.status !== 'entwurf' || source.versand_status !== null) continue
+      if (!source || !isEditableDraft(source)) continue
       const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
         'SELECT id FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
         [source.id]
@@ -164,8 +159,7 @@ export default async function bulkRoutes(app: FastifyInstance) {
       if (imgs.length) {
         const res = await moveImages(userId, az, imgs.map((i) => Number(i.id)), { targetAz })
         if (res.status !== 200) {
-          setFlash(reply, 'error', `${az}: ${String(res.body.error || 'Zusammenführen fehlgeschlagen.')}`)
-          return reply.redirect(back)
+          return flashRedirect(reply, 'error', `${az}: ${String(res.body.error || 'Zusammenführen fehlgeschlagen.')}`, back)
         }
       }
       // Leere Felder des Ziels ergänzen; am selben Tag den Zeitraum erweitern.
@@ -202,9 +196,8 @@ export default async function bulkRoutes(app: FastifyInstance) {
       merged++
     }
     await enqueuePdf(target.id, userId)
-    setFlash(reply, 'success', merged
+    return flashRedirect(reply, 'success', merged
       ? `${merged + 1} Entwürfe in ${targetAz} zusammengeführt.`
-      : 'Nichts zusammengeführt.')
-    return reply.redirect(back)
+      : 'Nichts zusammengeführt.', back)
   })
 }

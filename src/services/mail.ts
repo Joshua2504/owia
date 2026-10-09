@@ -4,7 +4,7 @@ import nodemailer from 'nodemailer'
 import mysql from 'mysql2/promise'
 import { getCity, hasPdfForm } from '../config/cities'
 import { pool } from '../db/connection'
-import { reportDir } from './drafts'
+import { evidenceImageRows, pdfPath, reportDir } from './drafts'
 import { cachedMailVariant, jpegFassung, readOrientation } from './pixelate'
 import { renderTatortMap } from './staticmap'
 import { recipientEmailForReport } from './districts'
@@ -13,6 +13,8 @@ import { assertProductionMailConfig } from '../config/mail'
 import { adminEmails } from '../config/admin'
 import { strasseMitNummer } from '../config/person'
 import { fahrzeugBeschreibung } from '../config/fahrzeug'
+import { appUrl } from '../config/app'
+import { hhmm } from '../utils/format'
 
 function createTransport() {
   assertProductionMailConfig()
@@ -51,10 +53,25 @@ function formatTatzeit(report: mysql.RowDataPacket): { tattag: string; tatzeit: 
     : ''
   // Tatzeitraum über Mitternacht: Tattag als Datumsbereich ausgeben.
   const tattag = tattagBis && tattagBis !== tattagVon ? `${tattagVon} – ${tattagBis}` : tattagVon
-  const von = report.tatzeit_von ? String(report.tatzeit_von).slice(0, 5) : ''
-  const bis = report.tatzeit_bis ? String(report.tatzeit_bis).slice(0, 5) : ''
+  const von = hhmm(report.tatzeit_von)
+  const bis = hhmm(report.tatzeit_bis)
   const tatzeit = von && bis ? `${von} – ${bis} Uhr` : von ? `${von} Uhr` : bis ? `${bis} Uhr` : ''
   return { tattag, tatzeit }
+}
+
+/** Absender für Systemmails an Nutzer/Admins (Login, Hinweise, Newsletter). */
+function systemFrom(): string {
+  return `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`
+}
+
+/** Schlusszeilen der Systemmails an Nutzer (Leerzeile + Gruß + Absender). */
+const GRUSS = ['', 'Viele Grüße', 'OWiA-Anzeiger']
+
+/** Kennzeichen, ausländische mit Länderkennung: "B AB 123" bzw. "W 12345 (A)". */
+function kennzeichenMitLand(report: mysql.RowDataPacket): string {
+  return `${report.kennzeichen}${
+    report.kennzeichen_land && report.kennzeichen_land !== 'D' ? ` (${report.kennzeichen_land})` : ''
+  }`
 }
 
 /** Absender für Mails ans Amt: Name des erstattenden Nutzers statt App-Name. */
@@ -95,9 +112,7 @@ export function buildReportMail(
     'hiermit erstatte ich Anzeige wegen folgender Ordnungswidrigkeit:',
     '',
     report.aktenzeichen ? `Aktenzeichen: ${report.aktenzeichen}` : '',
-    `Kennzeichen:  ${report.kennzeichen}${
-      report.kennzeichen_land && report.kennzeichen_land !== 'D' ? ` (${report.kennzeichen_land})` : ''
-    }`,
+    `Kennzeichen:  ${kennzeichenMitLand(report)}`,
     `Fahrzeug:     ${fahrzeugBeschreibung(report) || '—'}`,
     `Tattag:       ${tattag}`,
     `Tatzeit:      ${tatzeit || '—'}`,
@@ -149,11 +164,7 @@ async function buildEvidenceAttachments(
   // Je Beweisfoto eine Zeile "Beweisfoto-N.jpg – aufgenommen: …" für den Mailtext.
   const photoLines: string[] = []
 
-  const [images] = await pool.execute<mysql.RowDataPacket[]>(
-    `SELECT filename, mimetype, DATE_FORMAT(captured_at, '%d.%m.%Y, %H:%i') AS captured_at
-       FROM report_images WHERE report_id = ? ORDER BY sort_order, id`,
-    [report.id]
-  )
+  const images = await evidenceImageRows(report.id)
   const dir = reportDir(Number(user.id), Number(report.id))
   let n = 0
   for (const img of images) {
@@ -261,7 +272,7 @@ export const MailService = {
   ): Promise<void> {
     const transport = createTransport()
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to: email,
       subject: `Dein Anmeldecode: ${code}`,
       text: [
@@ -315,7 +326,7 @@ export const MailService = {
       attachments = [
         {
           filename: report.pdf_filename,
-          path: path.join(process.cwd(), 'data/pdfs', String(user.id), report.pdf_filename),
+          path: pdfPath(user.id, report.pdf_filename),
           contentType: 'application/pdf',
         },
       ]
@@ -388,9 +399,9 @@ export const MailService = {
     report: mysql.RowDataPacket
   ): Promise<void> {
     const transport = createTransport()
-    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    const base = appUrl()
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to: user.email,
       subject: `Antwort zu deiner Anzeige ${report.aktenzeichen}`,
       text: [
@@ -400,9 +411,7 @@ export const MailService = {
         '',
         'Du kannst sie hier lesen:',
         `${base}/anzeige/${report.aktenzeichen}`,
-        '',
-        'Viele Grüße',
-        'OWiA-Anzeiger',
+        ...GRUSS,
       ].join('\n'),
     })
   },
@@ -421,7 +430,7 @@ export const MailService = {
     }
   ): Promise<void> {
     const transport = createTransport()
-    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    const base = appUrl()
     const city = getCity(report.city)
     const { tattag, tatzeit } = formatTatzeit(report)
     const portal = report.versand_art === 'portal'
@@ -443,9 +452,7 @@ export const MailService = {
       versand.betreff ? `Betreff:      ${versand.betreff}` : undefined,
       '',
       '--- Angaben der Anzeige ---',
-      `Kennzeichen:  ${report.kennzeichen}${
-        report.kennzeichen_land && report.kennzeichen_land !== 'D' ? ` (${report.kennzeichen_land})` : ''
-      }`,
+      `Kennzeichen:  ${kennzeichenMitLand(report)}`,
       `Fahrzeug:     ${fahrzeugBeschreibung(report) || '—'}`,
       `Tattag:       ${tattag}`,
       `Tatzeit:      ${tatzeit || '—'}`,
@@ -464,14 +471,12 @@ export const MailService = {
       '',
       'Alle Details und spätere Antworten des Amts findest du hier:',
       `${base}/anzeige/${report.aktenzeichen}`,
-      '',
-      'Viele Grüße',
-      'OWiA-Anzeiger',
+      ...GRUSS,
     ]
       .filter((line) => line !== undefined)
       .join('\n')
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to: user.email,
       subject: `Versendet: Anzeige ${report.aktenzeichen} – Kfz ${report.kennzeichen}`,
       text,
@@ -486,7 +491,7 @@ export const MailService = {
     if (!to.length) return
     const transport = createTransport()
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to: to.join(', '),
       subject,
       text,
@@ -497,7 +502,7 @@ export const MailService = {
   async sendEmailChangeConfirmation(newEmail: string, link: string): Promise<void> {
     const transport = createTransport()
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to: newEmail,
       subject: 'Neue E-Mail-Adresse bestätigen',
       text: [
@@ -509,9 +514,7 @@ export const MailService = {
         link,
         '',
         'Der Link ist 1 Stunde gültig. Wenn du das nicht warst, ignoriere diese E-Mail.',
-        '',
-        'Viele Grüße',
-        'OWiA-Anzeiger',
+        ...GRUSS,
       ].join('\n'),
     })
   },
@@ -520,7 +523,7 @@ export const MailService = {
   async sendNewsletterConfirmation(to: string, confirmLink: string): Promise<void> {
     const transport = createTransport()
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to,
       subject: 'Newsletter-Anmeldung bestätigen',
       text: [
@@ -534,9 +537,7 @@ export const MailService = {
         '',
         'Der Link ist 48 Stunden gültig. Wenn du das nicht warst, ignoriere',
         'diese E-Mail – ohne Bestätigung bekommst du keine weiteren Nachrichten.',
-        '',
-        'Viele Grüße',
-        'OWiA-Anzeiger',
+        ...GRUSS,
       ].join('\n'),
     })
   },
@@ -550,7 +551,7 @@ export const MailService = {
   ): Promise<void> {
     const transport = createTransport()
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to,
       subject,
       text: [
@@ -582,7 +583,7 @@ export const MailService = {
   ): Promise<void> {
     if (!adminAddresses.length) return
     const transport = createTransport()
-    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    const base = appUrl()
 
     // Zusatzangaben (Profil des Erstatters, Fotoanzahl, Länge der Warteschlange)
     // best-effort nachladen – sie machen die Mail reichhaltiger, dürfen den
@@ -604,13 +605,7 @@ export const MailService = {
 
     const { tattag, tatzeit } = formatTatzeit(report)
     const city = getCity(report.city)
-    const kennzeichen = report.kennzeichen
-      ? `${report.kennzeichen}${
-          report.kennzeichen_land && report.kennzeichen_land !== 'D'
-            ? ` (${report.kennzeichen_land})`
-            : ''
-        }`
-      : '—'
+    const kennzeichen = report.kennzeichen ? kennzeichenMitLand(report) : '—'
     const profil = extra
       ? [
           [extra.vorname, extra.nachname].filter(Boolean).join(' '),
@@ -688,7 +683,7 @@ export const MailService = {
       .join('\n')
 
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to: adminAddresses.join(','),
       subject: `Neue Anzeige zur Prüfung: ${report.aktenzeichen} – ${verstoss}${
         wieder ? ' (erneut eingereicht)' : ''
@@ -704,9 +699,9 @@ export const MailService = {
     grund: string
   ): Promise<void> {
     const transport = createTransport()
-    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    const base = appUrl()
     await transport.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || 'OWiA-Anzeiger'}" <${process.env.MAIL_FROM}>`,
+      from: systemFrom(),
       to: user.email,
       subject: `Anzeige ${report.aktenzeichen}: Rückfrage aus der Prüfung`,
       text: [
@@ -718,9 +713,7 @@ export const MailService = {
         '',
         'Die Anzeige ist wieder ein Entwurf – bitte passe sie an und reiche sie erneut ein:',
         `${base}/anzeige/${report.aktenzeichen}`,
-        '',
-        'Viele Grüße',
-        'OWiA-Anzeiger',
+        ...GRUSS,
       ].join('\n'),
     })
   },

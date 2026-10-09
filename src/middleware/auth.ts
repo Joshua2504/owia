@@ -64,3 +64,14 @@ export function viewData(
     ...extra,
   }
 }
+
+/** Flash-Meldung setzen und weiterleiten – das Standard-Ende eines Formular-POSTs. */
+export function flashRedirect(reply: FastifyReply, type: Flash['type'], message: string, url: string): FastifyReply {
+  setFlash(reply, type, message)
+  return reply.redirect(url)
+}
+
+/** Fetch-Aufrufe aus dem Frontend (fetchJson) erwarten JSON statt Redirect/HTML. */
+export function wantsJson(request: FastifyRequest): boolean {
+  return String(request.headers.accept || '').includes('application/json')
+}

@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
-import { requireAuth, setFlash, viewData } from '../middleware/auth'
+import { requireAuth, setFlash, flashRedirect, viewData } from '../middleware/auth'
 import { getCity } from '../config/cities'
 import {
   STICKER_DEFAULT_VORLAGE, STICKER_LOESEN_MINUTEN, STICKER_MAX_SEITEN, STICKER_VORLAGEN,
@@ -10,6 +10,7 @@ import {
   unlinkCode, voidOpenCodes, AUFDRUCK_MAX, formatEuro, geldArt,
 } from '../services/stickers'
 import { VERSTOESSE, VERSTOSS_HAEUFIG, regelsatzEuro, tbnrAusLabel } from '../config/verstoss'
+import { appUrl } from '../config/app'
 
 /** Auswahl für Fall-Sticker: alle Tatbestände mit Regelsatz, häufige oben. */
 type StickerVerstoss = { tbnr: string; text: string; euro: number; betrag: string }
@@ -32,11 +33,6 @@ const STICKER_HAEUFIG: StickerVerstoss[] = VERSTOSS_HAEUFIG
 // Kein Kennzeichen, kein Aktenzeichen, keine Uhrzeit, kein Adresstext, nichts
 // über die anzeigende Person – der Aufkleber verrät schon genug darüber, dass
 // jemand vor Ort war.
-
-function baseUrl(request: FastifyRequest): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '')
-  return `${request.protocol}://${request.headers.host}`
-}
 
 /** Vorschlag fürs Formular: Format + Druckversatz des letzten Batches. */
 async function lastLayout(userId: number): Promise<StickerLayout> {
@@ -124,18 +120,15 @@ export default async function stickerRoutes(app: FastifyInstance) {
     const body = (request.body || {}) as Record<string, unknown>
     const layout = parseLayout(body)
     if (typeof layout === 'string') {
-      setFlash(reply, 'error', layout)
-      return reply.redirect('/sticker')
+      return flashRedirect(reply, 'error', layout, '/sticker')
     }
     const seiten = Number(body.seiten)
     const result = await createBatch(userId, layout, seiten)
     if ('error' in result) {
-      setFlash(reply, 'error', result.error)
-      return reply.redirect('/sticker')
+      return flashRedirect(reply, 'error', result.error, '/sticker')
     }
-    setFlash(reply, 'success',
-      `${seiten * perPage(layout)} Sticker auf ${seiten} ${seiten === 1 ? 'Bogen' : 'Bögen'} erzeugt – jetzt das PDF herunterladen und drucken.`)
-    return reply.redirect(`/sticker#batch-${result.batchId}`)
+    return flashRedirect(reply, 'success',
+      `${seiten * perPage(layout)} Sticker auf ${seiten} ${seiten === 1 ? 'Bogen' : 'Bögen'} erzeugt – jetzt das PDF herunterladen und drucken.`, `/sticker#batch-${result.batchId}`)
   })
 
   // PDF eines Batches – immer dieselben Codes, beliebig oft. Druckversatz und
@@ -158,7 +151,7 @@ export default async function stickerRoutes(app: FastifyInstance) {
         await pool.execute('UPDATE sticker_batches SET layout = ? WHERE id = ?', [JSON.stringify(layout), batch.id])
       }
     }
-    const pdf = await renderBatchPdf(await batchCodes(batch.id), layout, baseUrl(request))
+    const pdf = await renderBatchPdf(await batchCodes(batch.id), layout, appUrl(request))
     return reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `inline; filename="owia-sticker-${batch.id}.pdf"`)
@@ -170,7 +163,7 @@ export default async function stickerRoutes(app: FastifyInstance) {
   app.get('/sticker/kalibrierung.pdf', { preHandler: requireAuth }, async (request, reply) => {
     const layout = parseLayout(request.query as Record<string, unknown>)
     if (typeof layout === 'string') return reply.status(400).send(layout)
-    const pdf = await renderCalibrationPdf(layout, baseUrl(request))
+    const pdf = await renderCalibrationPdf(layout, appUrl(request))
     return reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', 'inline; filename="owia-sticker-testseite.pdf"')
@@ -180,8 +173,7 @@ export default async function stickerRoutes(app: FastifyInstance) {
   app.post('/sticker/:id/entwerten', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
     const n = await voidOpenCodes(userId, Number((request.params as { id: string }).id))
-    setFlash(reply, 'success', n ? `${n} offene Sticker entwertet.` : 'Keine offenen Sticker in diesem Batch.')
-    return reply.redirect('/sticker')
+    return flashRedirect(reply, 'success', n ? `${n} offene Sticker entwertet.` : 'Keine offenen Sticker in diesem Batch.', '/sticker')
   })
 
   // -------------------------------------------------------------------------
@@ -195,8 +187,7 @@ export default async function stickerRoutes(app: FastifyInstance) {
     const back = `/anzeige/${az}`
     const code = normalizeCode((request.body as { code?: string } | undefined)?.code)
     if (!code) {
-      setFlash(reply, 'error', 'Das ist kein gültiger Sticker-Code (8 Zeichen, z. B. 7KQ2-XM9P).')
-      return reply.redirect(back)
+      return flashRedirect(reply, 'error', 'Das ist kein gültiger Sticker-Code (8 Zeichen, z. B. 7KQ2-XM9P).', back)
     }
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id FROM reports WHERE aktenzeichen = ? AND user_id = ?',
@@ -225,10 +216,9 @@ export default async function stickerRoutes(app: FastifyInstance) {
     const code = normalizeCode((request.params as { code: string }).code)
     if (!code) return reply.status(404).send('Nicht gefunden.')
     const ok = await unlinkCode(userId, code)
-    setFlash(reply, ok ? 'success' : 'error', ok
+    return flashRedirect(reply, ok ? 'success' : 'error', ok
       ? `Verknüpfung von Sticker ${formatCode(code)} gelöst – er ist wieder frei.`
-      : `Die Verknüpfung lässt sich nur in den ersten ${STICKER_LOESEN_MINUTEN} Minuten lösen.`)
-    return reply.redirect(backTo(request, `/S/${code}`))
+      : `Die Verknüpfung lässt sich nur in den ersten ${STICKER_LOESEN_MINUTEN} Minuten lösen.`, backTo(request, `/S/${code}`))
   })
 
   // -------------------------------------------------------------------------

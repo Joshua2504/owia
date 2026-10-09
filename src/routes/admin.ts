@@ -4,10 +4,9 @@
 import { isVerjaehrt } from '../services/verjaehrung'
 import { FastifyBaseLogger, FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
-import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
-import { requireAdmin, viewData, setFlash } from '../middleware/auth'
+import { requireAdmin, viewData, setFlash, flashRedirect } from '../middleware/auth'
 import { MailService } from '../services/mail'
 import { dispatchReport, ReportPreparationError } from '../services/reportDispatch'
 import { replyAttachmentPath, repliesDir } from '../services/mailInbox'
@@ -17,8 +16,9 @@ import { deleteUser, UserDeleteError } from '../services/userDelete'
 import { isAdminEmail } from '../config/admin'
 import { enqueueJob, registerJob, recentJobs } from '../services/jobs'
 import { usesPortal, enqueuePortalStart } from '../services/portalDispatch'
-
-const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
+import { appUrl } from '../config/app'
+import { loadUser } from '../services/users'
+import { pdfPath } from '../services/drafts'
 
 /** Eingereichte/versendete Anzeige inkl. Nutzer laden (Admin-Sicht, nutzerübergreifend). */
 async function loadReportWithUser(
@@ -30,11 +30,9 @@ async function loadReportWithUser(
   )
   const report = rows[0]
   if (!report) return null
-  const [users] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM users WHERE id = ?', [
-    report.user_id,
-  ])
-  if (!users[0]) return null
-  return { report, user: users[0] }
+  const user = await loadUser(report.user_id)
+  if (!user) return null
+  return { report, user }
 }
 
 /** Admin-Freigabe einer eingereichten Anzeige: Prüfungen, PDF neu, Mail an das
@@ -165,8 +163,7 @@ export default async function adminRoutes(app: FastifyInstance) {
       [az]
     )
     if (!reports[0]) {
-      setFlash(reply, 'error', `Keine Anzeige mit Aktenzeichen „${az}" gefunden.`)
-      return reply.redirect('/admin/anzeigen')
+      return flashRedirect(reply, 'error', `Keine Anzeige mit Aktenzeichen „${az}" gefunden.`, '/admin/anzeigen')
     }
 
     const [result] = await pool.execute<mysql.ResultSetHeader>(
@@ -176,8 +173,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (result.affectedRows === 1) {
       await enqueueJob('mail.reply-notification', { reportId: reports[0].id })
     }
-    setFlash(reply, 'success', `Antwort der Anzeige ${az} zugeordnet.`)
-    return reply.redirect('/admin/anzeigen')
+    return flashRedirect(reply, 'success', `Antwort der Anzeige ${az} zugeordnet.`, '/admin/anzeigen')
   })
 
   // Nicht zugeordnete Antwort verwerfen (Spam/Fehlzustellung): Zeile samt
@@ -219,9 +215,8 @@ export default async function adminRoutes(app: FastifyInstance) {
       .map(Number)
       .filter((n) => Number.isInteger(n) && n > 0)
     const removed = await discardUnmatchedReplies(ids)
-    setFlash(reply, removed ? 'success' : 'error',
-      removed ? `${removed} Antwort(en) verworfen.` : 'Keine Antwort markiert.')
-    return reply.redirect('/admin/anzeigen#antworten')
+    return flashRedirect(reply, removed ? 'success' : 'error',
+      removed ? `${removed} Antwort(en) verworfen.` : 'Keine Antwort markiert.', '/admin/anzeigen#antworten')
   })
 
   // Anhang einer (auch nicht zugeordneten) Antwort ansehen (Admin).
@@ -252,7 +247,7 @@ export default async function adminRoutes(app: FastifyInstance) {
 
     try {
       const buffer = await fs.readFile(
-        path.join(PDF_DIR, String(loaded.report.user_id), loaded.report.pdf_filename)
+        pdfPath(loaded.report.user_id, loaded.report.pdf_filename)
       )
       return reply
         .header('Content-Type', 'application/pdf')
@@ -274,19 +269,16 @@ export default async function adminRoutes(app: FastifyInstance) {
       const az = loaded.report.aktenzeichen
       const { problem, abMorgen } = await enqueuePortalStart(Number(loaded.report.id))
       if (problem) {
-        setFlash(reply, 'error', `Anzeige ${az}: ${problem}`)
-        return reply.redirect('/admin/anzeigen')
+        return flashRedirect(reply, 'error', `Anzeige ${az}: ${problem}`, '/admin/anzeigen')
       }
-      setFlash(reply, 'success', abMorgen
+      return flashRedirect(reply, 'success', abMorgen
         ? `Anzeige ${az}: Tat von heute – der Portal-Versand startet automatisch nach Mitternacht.`
-        : `Anzeige ${az}: Portal-Versand gestartet.`)
-      return reply.redirect(`/versand?az=${encodeURIComponent(az)}`)
+        : `Anzeige ${az}: Portal-Versand gestartet.`, `/versand?az=${encodeURIComponent(az)}`)
     }
 
     await enqueueJob('report.dispatch', { reportId: loaded.report.id, aktenzeichen: loaded.report.aktenzeichen },
       { key: `report.dispatch:${loaded.report.id}`, maxAttempts: 1 })
-    setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen}: Versand läuft im Hintergrund.`)
-    return reply.redirect('/admin/anzeigen')
+    return flashRedirect(reply, 'success', `Anzeige ${loaded.report.aktenzeichen}: Versand läuft im Hintergrund.`, '/admin/anzeigen')
   })
 
   // Ablehnen: zurück in den Entwurf, Begründung speichern + Nutzer informieren.
@@ -294,8 +286,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const grund = String((request.body as { grund?: string })?.grund || '').trim()
     if (!grund) {
-      setFlash(reply, 'error', 'Bitte eine Begründung angeben.')
-      return reply.redirect('/admin/anzeigen')
+      return flashRedirect(reply, 'error', 'Bitte eine Begründung angeben.', '/admin/anzeigen')
     }
 
     const loaded = await loadReportWithUser(id)
@@ -307,12 +298,10 @@ export default async function adminRoutes(app: FastifyInstance) {
       [grund, loaded.report.id]
     )
     if (!rejected.affectedRows) {
-      setFlash(reply, 'error', 'Die Anzeige wird bereits versendet oder wurde inzwischen geändert.')
-      return reply.redirect('/admin/anzeigen')
+      return flashRedirect(reply, 'error', 'Die Anzeige wird bereits versendet oder wurde inzwischen geändert.', '/admin/anzeigen')
     }
     await enqueueJob('mail.report-rejected', { reportId: loaded.report.id, grund })
-    setFlash(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} abgelehnt – der Nutzer wurde informiert.`)
-    return reply.redirect('/admin/anzeigen')
+    return flashRedirect(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} abgelehnt – der Nutzer wurde informiert.`, '/admin/anzeigen')
   })
 
   // ---------------------------------------------------------------------------
@@ -390,23 +379,19 @@ export default async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/benutzer/:id/delete', { preHandler: requireAdmin }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (id === request.session.userId) {
-      setFlash(reply, 'error', 'Das eigene Konto kann hier nicht gelöscht werden.')
-      return reply.redirect(`/admin/benutzer/${id}`)
+      return flashRedirect(reply, 'error', 'Das eigene Konto kann hier nicht gelöscht werden.', `/admin/benutzer/${id}`)
     }
     const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT email FROM users WHERE id = ?', [id])
     if (rows[0] && isAdminEmail(rows[0].email)) {
-      setFlash(reply, 'error', 'Admin-Konten können nicht gelöscht werden.')
-      return reply.redirect(`/admin/benutzer/${id}`)
+      return flashRedirect(reply, 'error', 'Admin-Konten können nicht gelöscht werden.', `/admin/benutzer/${id}`)
     }
     try {
       const { email } = await deleteUser(id)
       app.log.info({ userId: id, by: request.session.userId }, 'Benutzer durch Admin gelöscht')
-      setFlash(reply, 'success', `Benutzer ${email} wurde mit allen Daten gelöscht.`)
-      return reply.redirect('/admin/benutzer')
+      return flashRedirect(reply, 'success', `Benutzer ${email} wurde mit allen Daten gelöscht.`, '/admin/benutzer')
     } catch (err) {
       if (!(err instanceof UserDeleteError)) throw err
-      setFlash(reply, 'error', err.message)
-      return reply.redirect(rows[0] ? `/admin/benutzer/${id}` : '/admin/benutzer')
+      return flashRedirect(reply, 'error', err.message, rows[0] ? `/admin/benutzer/${id}` : '/admin/benutzer')
     }
   })
 
@@ -440,24 +425,21 @@ export default async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/newsletter/announce', { preHandler: requireAdmin }, async (request, reply) => {
     const { subject, text } = (request.body || {}) as { subject?: string; text?: string }
     if (!subject?.trim() || !text?.trim()) {
-      setFlash(reply, 'error', 'Betreff und Text dürfen nicht leer sein.')
-      return reply.redirect('/admin/newsletter')
+      return flashRedirect(reply, 'error', 'Betreff und Text dürfen nicht leer sein.', '/admin/newsletter')
     }
 
     const [subscribers] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT email, token FROM newsletter_subscribers WHERE confirmed_at IS NOT NULL'
     )
-    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
 
     for (const sub of subscribers) {
       await enqueueJob('mail.newsletter', {
         email: sub.email,
         subject: subject.trim(),
         text,
-        unsubscribeUrl: `${appUrl}/newsletter/abmelden/${sub.token}`,
+        unsubscribeUrl: `${appUrl()}/newsletter/abmelden/${sub.token}`,
       })
     }
-    setFlash(reply, 'success', `Ankündigung an ${subscribers.length} Abonnenten wird im Hintergrund versendet.`)
-    return reply.redirect('/admin/newsletter')
+    return flashRedirect(reply, 'success', `Ankündigung an ${subscribers.length} Abonnenten wird im Hintergrund versendet.`, '/admin/newsletter')
   })
 }

@@ -6,13 +6,13 @@ import path from 'path'
 import fs from 'fs/promises'
 import { ZipArchive } from 'archiver'
 import { pool } from '../db/connection'
-import { requireAuth, viewData, setFlash } from '../middleware/auth'
-import { reportDir, UPLOAD_DIR } from '../services/drafts'
+import { requireAuth, viewData, setFlash, flashRedirect } from '../middleware/auth'
+import { intakeDir, pdfDir, pdfPath, reportDir } from '../services/drafts'
 import { replyAttachmentPath } from '../services/mailInbox'
 import { MailService } from '../services/mail'
 import { adminEmails } from '../config/admin'
-
-const PDF_DIR = path.join(process.cwd(), 'data', 'pdfs')
+import { appUrl } from '../config/app'
+import { cleanText } from '../utils/format'
 
 /** Dateinamen für den ZIP-Export bereinigen. */
 function safeName(name: string): string {
@@ -48,23 +48,21 @@ export default async function settingsRoutes(app: FastifyInstance) {
   app.post('/einstellungen', { preHandler: requireAuth }, async (request, reply) => {
     const { vorname, nachname, strasse, hausnummer, plz, ort, telefon, cc_self, anrede } =
       request.body as Record<string, string>
-    const clean = (v: unknown, max: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max) || null
 
     await pool.execute(
       `UPDATE users SET anrede=?, vorname=?, nachname=?, strasse=?, hausnummer=?, plz=?, ort=?, telefon=?, cc_self=?
        WHERE id = ?`,
       [
         ANREDEN.some((a) => a.value === anrede) ? anrede : null,
-        clean(vorname, 100), clean(nachname, 100), clean(strasse, 255), clean(hausnummer, 20),
-        clean(plz, 10), clean(ort, 100), clean(telefon, 50),
+        cleanText(vorname, 100), cleanText(nachname, 100), cleanText(strasse, 255), cleanText(hausnummer, 20),
+        cleanText(plz, 10), cleanText(ort, 100), cleanText(telefon, 50),
         cc_self ? 1 : 0, request.session.userId as number,
       ]
     )
 
     const name = [vorname, nachname].filter(Boolean).join(' ')
     request.session.userName = name || request.session.userEmail
-    setFlash(reply, 'success', 'Einstellungen gespeichert.')
-    return reply.redirect('/einstellungen')
+    return flashRedirect(reply, 'success', 'Einstellungen gespeichert.', '/einstellungen')
   })
 
   // E-Mail-Adresse ändern (Schritt 1): Bestätigungslink an die NEUE Adresse.
@@ -79,23 +77,20 @@ export default async function settingsRoutes(app: FastifyInstance) {
       .trim()
       .toLowerCase()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(neu)) {
-      setFlash(reply, 'error', 'Bitte eine gültige E-Mail-Adresse eingeben.')
-      return reply.redirect('/einstellungen')
+      return flashRedirect(reply, 'error', 'Bitte eine gültige E-Mail-Adresse eingeben.', '/einstellungen')
     }
     // Admin-Adressen sind tabu: Admin-Rechte hängen an der E-Mail (isAdminEmail),
     // eine noch nie eingeloggte ADMIN_EMAILS-Adresse wäre sonst per Wechsel
     // übernehmbar (der users-Check unten greift dann nicht).
     if (adminEmails().includes(neu)) {
-      setFlash(reply, 'error', 'Diese E-Mail-Adresse kann nicht verwendet werden.')
-      return reply.redirect('/einstellungen')
+      return flashRedirect(reply, 'error', 'Diese E-Mail-Adresse kann nicht verwendet werden.', '/einstellungen')
     }
     const [taken] = await pool.execute<mysql.RowDataPacket[]>(
       'SELECT id FROM users WHERE email = ?',
       [neu]
     )
     if (taken.length) {
-      setFlash(reply, 'error', 'Diese E-Mail-Adresse wird bereits verwendet.')
-      return reply.redirect('/einstellungen')
+      return flashRedirect(reply, 'error', 'Diese E-Mail-Adresse wird bereits verwendet.', '/einstellungen')
     }
 
     const token = crypto.randomBytes(32).toString('hex')
@@ -104,7 +99,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
               email_change_expires=DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id=?`,
       [neu, token, userId]
     )
-    const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    const base = appUrl()
     try {
       await MailService.sendEmailChangeConfirmation(neu, `${base}/einstellungen/email/bestaetigen/${token}`)
       setFlash(reply, 'success', `Bestätigungslink an ${neu} gesendet – bitte dort klicken.`)
@@ -126,14 +121,12 @@ export default async function settingsRoutes(app: FastifyInstance) {
     )
     const user = rows[0]
     if (!user) {
-      setFlash(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen.')
-      return reply.redirect('/login')
+      return flashRedirect(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen.', '/login')
     }
     // Defensiv auch beim Einlösen prüfen: ein schwebender Wechsel könnte von
     // vor der Admin-Sperre in Schritt 1 stammen.
     if (adminEmails().includes(String(user.email_change_neu).toLowerCase())) {
-      setFlash(reply, 'error', 'Diese E-Mail-Adresse kann nicht verwendet werden.')
-      return reply.redirect('/login')
+      return flashRedirect(reply, 'error', 'Diese E-Mail-Adresse kann nicht verwendet werden.', '/login')
     }
     // Adresse könnte inzwischen vergeben sein (Race) – Unique-Kollision abfangen.
     try {
@@ -143,16 +136,14 @@ export default async function settingsRoutes(app: FastifyInstance) {
         [user.id]
       )
     } catch {
-      setFlash(reply, 'error', 'Diese E-Mail-Adresse wird inzwischen bereits verwendet.')
-      return reply.redirect('/login')
+      return flashRedirect(reply, 'error', 'Diese E-Mail-Adresse wird inzwischen bereits verwendet.', '/login')
     }
     // Falls der Bestätigende gerade als dieser Nutzer angemeldet ist: Session aktualisieren.
     if (request.session.userId === user.id) {
       request.session.userEmail = user.email_change_neu
       await request.session.save()
     }
-    setFlash(reply, 'success', 'E-Mail-Adresse geändert – bitte künftig damit anmelden.')
-    return reply.redirect(request.session.userId === user.id ? '/einstellungen' : '/login')
+    return flashRedirect(reply, 'success', 'E-Mail-Adresse geändert – bitte künftig damit anmelden.', request.session.userId === user.id ? '/einstellungen' : '/login')
   })
 
   // Konto schließen & anonymisieren (DSGVO Art. 17): Statt die Anzeigen hart zu
@@ -165,8 +156,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
     const bestaetigung = String((request.body as { bestaetigung?: string })?.bestaetigung || '').trim()
     if (bestaetigung !== 'LÖSCHEN') {
-      setFlash(reply, 'error', 'Bitte zur Bestätigung das Wort LÖSCHEN eingeben.')
-      return reply.redirect('/einstellungen')
+      return flashRedirect(reply, 'error', 'Bitte zur Bestätigung das Wort LÖSCHEN eingeben.', '/einstellungen')
     }
 
     // Dieselben Anzeigen-Zeilen wie beim Versand-Claim sperren. Dadurch kann
@@ -179,8 +169,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
       )
       if (dispatches.some(report => report.versand_status !== null)) {
         await conn.rollback()
-        setFlash(reply, 'error', 'Eine Anzeige wird noch versendet oder ihr Versand muss geklärt werden. Bitte danach das Konto schließen.')
-        return reply.redirect('/einstellungen')
+        return flashRedirect(reply, 'error', 'Eine Anzeige wird noch versendet oder ihr Versand muss geklärt werden. Bitte danach das Konto schließen.', '/einstellungen')
       }
       // 1) Nachrichtenverlauf (Ordnungsamt-Korrespondenz + eigene Mails) samt
       //    Anhängen löschen – enthält Absenderadresse/Signatur des Erstatters.
@@ -208,7 +197,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
 
       // 2) Erzeugte PDFs löschen – das amtliche Formular enthält Name/Anschrift/
       //    E-Mail des Erstatters. Die Sach-Anzeige (Fotos, Tatort) bleibt erhalten.
-      await fs.rm(path.join(PDF_DIR, String(userId)), { recursive: true, force: true })
+      await fs.rm(pdfDir(userId), { recursive: true, force: true })
       await conn.execute('UPDATE reports SET pdf_filename = NULL, versand_ergebnis = NULL WHERE user_id = ?', [userId])
 
       // 3) users-Zeile scrubben (Profil leeren, E-Mail durch eindeutigen
@@ -311,7 +300,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
     for (const r of reports) {
       const dir = `anzeigen/${safeName(r.aktenzeichen || String(r.id))}`
       if (r.pdf_filename) {
-        files.push({ zipPath: `${dir}/${safeName(r.pdf_filename)}`, absPath: path.join(PDF_DIR, String(userId), r.pdf_filename) })
+        files.push({ zipPath: `${dir}/${safeName(r.pdf_filename)}`, absPath: pdfPath(userId, r.pdf_filename) })
       }
     }
     for (const i of images) {
@@ -334,7 +323,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
       p.datei = `foto-import/batch-${p.batch_id}/${safeName(p.upload_name || p.filename)}`
       files.push({
         zipPath: p.datei,
-        absPath: path.join(UPLOAD_DIR, String(userId), 'intake', String(p.batch_id), p.filename),
+        absPath: path.join(intakeDir(userId, p.batch_id), p.filename),
       })
     }
 

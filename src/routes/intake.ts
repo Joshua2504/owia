@@ -8,27 +8,22 @@ import mysql from 'mysql2/promise'
 import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../db/connection'
-import { requireAuth, viewData, setFlash } from '../middleware/auth'
-import { imageVersion } from '../services/images'
+import { requireAuth, viewData, setFlash, flashRedirect } from '../middleware/auth'
 import { processIntakeRaw, processIntakeThumbnail, withIntakeUploadLock, loadThumbnail } from '../services/intakeImageProcessing'
 import crypto from 'node:crypto'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
 import { findDuplicateGroups } from '../services/duplicates'
-import { createDraft, DraftLimitError, deleteDraft, reportDir, insertImageRow, UPLOAD_DIR } from '../services/drafts'
+import { createDraft, DraftLimitError, deleteDraft, reportDir, intakeDir, insertImageRow, imageCount, nextSortOrder } from '../services/drafts'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { reverseGeocode } from '../services/geocode'
 import { queueTatortFill } from '../services/tatortFill'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
 import { enqueueJob, registerJob } from '../services/jobs'
+import { MAX_IMAGES, photoStatColumns, thumbStrips } from './reports/shared'
 
 // Muss zur Chunk-Größe in public/js/import-upload.js passen und unter dem
 // globalen Multipart-Limit (files: 10, src/server.ts) bleiben.
 export const CHUNK_SIZE = 5
-const MAX_IMAGES_PER_REPORT = 10
-
-function intakeDir(userId: number, batchId: number | string): string {
-  return path.join(UPLOAD_DIR, String(userId), 'intake', String(batchId))
-}
 
 type BatchRow = mysql.RowDataPacket & { id: number; status: string }
 
@@ -170,8 +165,8 @@ async function groupIntakeBatch(payload: { batchId: number; userId: number }, lo
             : null
 
         // Mehr als MAX_IMAGES Fotos -> chronologisch in mehrere Entwürfe teilen.
-        for (let i = 0; i < incident.photoIds.length; i += MAX_IMAGES_PER_REPORT) {
-          const chunkIds = incident.photoIds.slice(i, i + MAX_IMAGES_PER_REPORT)
+        for (let i = 0; i < incident.photoIds.length; i += MAX_IMAGES) {
+          const chunkIds = incident.photoIds.slice(i, i + MAX_IMAGES)
           const draft = await createDraft(userId, {
             tattag: incident.day,
             tattagBis: incident.dayTo,
@@ -374,9 +369,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
               r.tatort, r.tatort_lat, r.tatort_lon, r.verstoss_art, r.kennzeichen, r.kennzeichen_land,
               r.fahrzeug_marke, r.fahrzeug_typ, r.fahrzeug_modell, r.fahrzeug_farbe, r.verstoss_variante,
               r.beschreibung, r.fahrzeug_verlassen, r.behinderung, r.behinderung_text,
-              (SELECT DATE_FORMAT(MIN(pt.captured_at), '%Y-%m-%d %H:%i') FROM report_images pt WHERE pt.report_id = r.id) AS photo_time_min,
-              (SELECT GROUP_CONCAT(DISTINCT dp.detected_plate ORDER BY dp.detected_plate SEPARATOR '|') FROM report_images dp WHERE dp.report_id = r.id AND dp.detected_plate IS NOT NULL AND dp.detected_plate <> '') AS detected_plates,
-              (SELECT COUNT(*) FROM report_images gi WHERE gi.report_id = r.id AND gi.gps_lat IS NOT NULL AND gi.gps_lon IS NOT NULL) AS photo_gps_count,
+              ${photoStatColumns('r')},
               DATE_FORMAT(r.tattag, '%d.%m.%Y') AS tattag_fmt,
               TIME_FORMAT(r.tatzeit_von, '%H:%i') AS von_fmt,
               TIME_FORMAT(r.tatzeit_bis, '%H:%i') AS bis_fmt,
@@ -387,20 +380,10 @@ export default async function intakeRoutes(app: FastifyInstance) {
       [batch.id, userId]
     )
     // Alle Fotos der Batch-Entwürfe für die Thumbnail-Leisten (Drag & Drop).
-    const [draftImages] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.id, ri.report_id, ri.filename, ri.geprueft_at, ri.detected_plate
-         FROM report_images ri
-         JOIN reports r ON r.id = ri.report_id
-        WHERE r.intake_batch_id = ? AND r.user_id = ? AND r.status <> 'papierkorb'
-        ORDER BY ri.report_id, ri.sort_order, ri.id`,
+    const imagesByReport = await thumbStrips(
+      "r.intake_batch_id = ? AND r.user_id = ? AND r.status <> 'papierkorb'",
       [batch.id, userId]
     )
-    const imagesByReport = new Map<number, { id: number; v: string; ok: boolean; plate: string | null }[]>()
-    for (const img of draftImages) {
-      const list = imagesByReport.get(img.report_id) ?? []
-      list.push({ id: img.id, v: imageVersion(img.filename), ok: img.geprueft_at !== null, plate: img.detected_plate || null })
-      imagesByReport.set(img.report_id, list)
-    }
 
     const unassigned = await loadPhotos(batch.id, true)
     const openDrafts = drafts.filter((d) => d.status === 'entwurf')
@@ -413,7 +396,7 @@ export default async function intakeRoutes(app: FastifyInstance) {
       batch,
       skippedCount,
       drafts,
-      imagesByReport: Object.fromEntries(imagesByReport),
+      imagesByReport,
       duplicateGroups: findDuplicateGroups(drafts as any),
       mergeBack: `/import/${batch.id}`,
       unassigned,
@@ -522,26 +505,18 @@ export default async function intakeRoutes(app: FastifyInstance) {
       )
       if (!reports[0]) return reply.status(404).send({ error: 'Entwurf nicht gefunden.' })
       reportId = reports[0].id
-      const [cnt] = await pool.execute<mysql.RowDataPacket[]>(
-        'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
-        [reportId]
-      )
-      if (Number(cnt[0].c) >= MAX_IMAGES_PER_REPORT) {
-        return reply.status(400).send({ error: `Maximal ${MAX_IMAGES_PER_REPORT} Bilder pro Anzeige.` })
+      if ((await imageCount(reportId)) >= MAX_IMAGES) {
+        return reply.status(400).send({ error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` })
       }
     }
 
     await movePhotoFiles(userId, batch.id, reportId, photo.filename, photo.original_filename)
-    const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
-      [reportId]
-    )
     const imageId = await insertImageRow(reportId, {
       filename: photo.filename,
       mimetype: photo.mimetype,
       originalFilename: photo.original_filename,
       originalMimetype: photo.original_mimetype,
-      sortOrder: Number(maxRows[0].next),
+      sortOrder: await nextSortOrder(reportId),
       capturedAt: photo.captured_at,
       gpsLat: photo.gps_lat !== null ? Number(photo.gps_lat) : null,
       gpsLon: photo.gps_lon !== null ? Number(photo.gps_lon) : null,
@@ -620,7 +595,6 @@ export default async function intakeRoutes(app: FastifyInstance) {
     if (keptCount > 0) {
       msg += ` ${keptCount} bereits eingereichte ${keptCount === 1 ? 'Anzeige bleibt' : 'Anzeigen bleiben'} erhalten.`
     }
-    setFlash(reply, 'success', msg)
-    return reply.redirect('/import')
+    return flashRedirect(reply, 'success', msg, '/import')
   })
 }

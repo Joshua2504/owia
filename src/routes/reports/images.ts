@@ -11,12 +11,12 @@ import { requireAuth } from '../../middleware/auth'
 import { queueTatortFill } from '../../services/tatortFill'
 import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage } from '../../services/images'
 import { processReportImage, processReportImageDerivatives, loadThumbnail, withIntakeUploadLock } from '../../services/intakeImageProcessing'
-import { createDraft, reportDir, UPLOAD_DIR } from '../../services/drafts'
+import { createDraft, isEditableDraft, reportDir, insertImageRow, imageCount, nextSortOrder } from '../../services/drafts'
 import { alprEnabled, recognizePlate } from '../../services/alpr'
 import { queuePlateAnalysis, queueAnalyseOnly, plateCropName, bestPlateForReport, prefillReportPlate, bestFahrzeugForReport, prefillReportFahrzeug } from '../../services/plateAnalysis'
 import { photoSha256, findExistingPhoto } from '../../services/photoDedup'
 import { parseKennzeichenBox } from '../../services/dritte'
-import { MAX_IMAGES, loadReportByAktenzeichen, enqueuePdf } from './shared'
+import { MAX_IMAGES, loadReportByAktenzeichen, loadOwnedImage, enqueuePdf } from './shared'
 
 /** Abgeleitete Dateien (Vorschaubild, Versandfassung) im Worker-Thread
  *  berechnen. jpeg-js dekodiert synchron – im HTTP-Prozess blockierte das bei
@@ -51,20 +51,18 @@ export async function saveImageToReport(
   queueDerivatives(dir, filename, p.mimetype)
 
   // Neues Bild ans Ende der Sortierreihenfolge hängen.
-  const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
-    [reportId]
-  )
-  const sortOrder = Number(maxRows[0].next)
-  const [result] = await pool.execute<mysql.ResultSetHeader>(
-    `INSERT INTO report_images
-       (report_id, filename, mimetype, original_filename, original_mimetype, sort_order,
-        captured_at, gps_lat, gps_lon, sha256)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [reportId, filename, p.mimetype, originalFilename, p.originalMimetype, sortOrder,
-     meta.capturedAt, meta.lat, meta.lon, sha256]
-  )
-  return { id: result.insertId, filename, mimetype: p.mimetype, capturedAt: meta.capturedAt }
+  const id = await insertImageRow(reportId, {
+    filename,
+    mimetype: p.mimetype,
+    originalFilename,
+    originalMimetype: p.originalMimetype,
+    sortOrder: await nextSortOrder(reportId),
+    capturedAt: meta.capturedAt,
+    gpsLat: meta.lat,
+    gpsLon: meta.lon,
+    sha256,
+  })
+  return { id, filename, mimetype: p.mimetype, capturedAt: meta.capturedAt }
 }
 
 /** Bild-URLs mit ?v=<Fassung> (imageVersion) ändern sich bei jeder neuen
@@ -97,11 +95,7 @@ export default async function imageRoutes(app: FastifyInstance) {
         // Zwei parallele Uploads sahen sonst denselben Zählerstand und
         // kamen gemeinsam über MAX_IMAGES.
         const voll = await withIntakeUploadLock(userId, async () => {
-          const [cntRows] = await pool.execute<mysql.RowDataPacket[]>(
-            'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
-            [reportId]
-          )
-          return Number(cntRows[0].c) >= MAX_IMAGES
+          return (await imageCount(reportId)) >= MAX_IMAGES
         })
         if (voll) {
           errors.push(`Maximal ${MAX_IMAGES} Bilder pro Anzeige.`)
@@ -137,14 +131,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.original_filename, r.id AS report_id
-       FROM report_images ri
-       JOIN reports r ON r.id = ri.report_id
-       WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
-      [imageId, az, userId]
-    )
-    const img = rows[0]
+    const img = await loadOwnedImage(az, imageId, userId, { draftOnly: true })
     if (!img) return reply.status(404).send({ error: 'not found' })
 
     await pool.execute('DELETE FROM report_images WHERE id = ?', [imageId])
@@ -174,14 +161,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.original_filename, ri.detected_plate, r.id AS report_id
-       FROM report_images ri
-       JOIN reports r ON r.id = ri.report_id
-       WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
-      [imageId, az, userId]
-    )
-    const old = rows[0]
+    const old = await loadOwnedImage(az, imageId, userId, { draftOnly: true })
     if (!old) return reply.status(404).send({ error: 'not found' })
 
     let prepared: PreparedImage | null = null
@@ -264,13 +244,7 @@ export default async function imageRoutes(app: FastifyInstance) {
   app.post('/anzeige/:az/images/:imageId/original', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.mimetype, ri.original_filename, ri.original_mimetype, ri.detected_plate, r.id AS report_id
-         FROM report_images ri JOIN reports r ON r.id = ri.report_id
-        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf' AND r.versand_status IS NULL`,
-      [Number(imageId), az, userId]
-    )
-    const old = rows[0]
+    const old = await loadOwnedImage(az, Number(imageId), userId, { draftOnly: true, unsent: true })
     if (!old) return reply.status(409).send({ error: 'Nur Fotos von Entwürfen lassen sich zurücksetzen.' })
     if (!old.original_filename || old.filename === old.original_filename) {
       return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` }, unveraendert: true })
@@ -338,17 +312,13 @@ export default async function imageRoutes(app: FastifyInstance) {
     const keins = body.keins === true
     const box = keins ? null : parseKennzeichenBox(Array.isArray(body.box) ? body.box.map((v) => Math.round(Number(v) * 1e4) / 1e4) : null)
     if (!keins && !box) return reply.status(400).send({ error: 'Bitte das Kennzeichen auf dem Foto markieren.' })
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, r.id AS report_id FROM report_images ri JOIN reports r ON r.id = ri.report_id
-        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ? AND r.status = 'entwurf'`,
-      [Number(imageId), az, userId]
-    )
-    if (!rows[0]) return reply.status(404).send({ error: 'not found' })
+    const img = await loadOwnedImage(az, Number(imageId), userId, { draftOnly: true })
+    if (!img) return reply.status(404).send({ error: 'not found' })
     await pool.execute('UPDATE report_images SET kennzeichen_box=?, kennzeichen_keins=? WHERE id=?', [
       box ? JSON.stringify(box) : null, keins ? 1 : 0, Number(imageId),
     ])
     // Kartenfassung neu rechnen lassen.
-    await fs.rm(path.join(reportDir(userId, rows[0].report_id), `${rows[0].filename}.pixel.jpg`), { force: true }).catch(() => {})
+    await fs.rm(path.join(reportDir(userId, img.report_id), `${img.filename}.pixel.jpg`), { force: true }).catch(() => {})
     return reply.send({ ok: true })
   })
 
@@ -359,12 +329,8 @@ export default async function imageRoutes(app: FastifyInstance) {
   app.post('/anzeige/:az/images/:imageId/geprueft', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
-    const [marks] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.kennzeichen_box, ri.kennzeichen_keins FROM report_images ri JOIN reports r ON r.id = ri.report_id
-        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
-      [Number(imageId), az, userId]
-    )
-    if (marks[0] && !marks[0].kennzeichen_keins && !parseKennzeichenBox(marks[0].kennzeichen_box)) {
+    const mark = await loadOwnedImage(az, Number(imageId), userId)
+    if (mark && !mark.kennzeichen_keins && !parseKennzeichenBox(mark.kennzeichen_box)) {
       return reply.status(400).send({ error: 'Bitte zuerst das Kennzeichen auf dem Foto markieren.' })
     }
     const [res] = await pool.execute<mysql.ResultSetHeader>(
@@ -441,7 +407,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send({ error: 'not found' })
-    if (report.status !== 'entwurf' || report.versand_status !== null) return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
+    if (!isEditableDraft(report)) return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
     const [cnt] = await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS c, COALESCE(MAX(sort_order), 0) AS m FROM report_images WHERE report_id = ?', [report.id])
     if (Number(cnt[0].c) >= MAX_IMAGES) return reply.status(409).send({ error: `Höchstens ${MAX_IMAGES} Fotos je Anzeige.` })
     const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM report_images WHERE id = ? AND report_id = ?', [Number(imageId), report.id])
@@ -521,20 +487,13 @@ export default async function imageRoutes(app: FastifyInstance) {
     const userId = request.session.userId as number
     const wantOriginal = (request.query as { original?: string }).original === '1'
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.mimetype, ri.original_filename, ri.original_mimetype, r.id AS report_id
-       FROM report_images ri
-       JOIN reports r ON r.id = ri.report_id
-       WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
-      [imageId, az, userId]
-    )
-    const image = rows[0]
+    const image = await loadOwnedImage(az, imageId, userId)
     if (!image) return reply.status(404).send('Bild nicht gefunden.')
 
     const filename = wantOriginal ? image.original_filename : image.filename
     const mimetype = wantOriginal ? image.original_mimetype : image.mimetype
 
-    const imagePath = path.join(UPLOAD_DIR, String(userId), String(image.report_id), filename)
+    const imagePath = path.join(reportDir(userId, image.report_id), filename)
     try {
       const buffer = await fs.readFile(imagePath)
       const reply2 = reply
@@ -555,14 +514,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, ri.mimetype, r.id AS report_id
-         FROM report_images ri
-         JOIN reports r ON r.id = ri.report_id
-        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
-      [imageId, az, userId]
-    )
-    const image = rows[0]
+    const image = await loadOwnedImage(az, imageId, userId)
     if (!image) return reply.status(404).send('Bild nicht gefunden.')
 
     try {
@@ -586,14 +538,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT ri.filename, r.id AS report_id
-         FROM report_images ri
-         JOIN reports r ON r.id = ri.report_id
-        WHERE ri.id = ? AND r.aktenzeichen = ? AND r.user_id = ?`,
-      [imageId, az, userId]
-    )
-    const image = rows[0]
+    const image = await loadOwnedImage(az, imageId, userId)
     if (!image) return reply.status(404).send('Bild nicht gefunden.')
 
     try {
@@ -626,7 +571,7 @@ export async function moveImages(
 
   const source = await loadReportByAktenzeichen(az, userId)
   if (!source) return { status: 404, body: { error: 'not found' } }
-  if (source.status !== 'entwurf' || source.versand_status !== null) return { status: 409, body: { error: 'not a draft' } }
+  if (!isEditableDraft(source)) return { status: 409, body: { error: 'not a draft' } }
 
   const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
     `SELECT id, filename, original_filename,
@@ -657,14 +602,10 @@ export async function moveImages(
   } else {
     const target = await loadReportByAktenzeichen(dest.targetAz as string, userId)
     if (!target) return { status: 404, body: { error: 'Ziel-Entwurf nicht gefunden.' } }
-    if (target.status !== 'entwurf' || target.versand_status !== null) {
+    if (!isEditableDraft(target)) {
       return { status: 409, body: { error: 'Ziel-Anzeige ist kein Entwurf mehr.' } }
     }
-    const [cntRows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
-      [target.id]
-    )
-    if (Number(cntRows[0].c) + imgs.length > MAX_IMAGES) {
+    if ((await imageCount(target.id)) + imgs.length > MAX_IMAGES) {
       return { status: 400, body: { error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` } }
     }
     targetId = target.id
@@ -674,11 +615,7 @@ export async function moveImages(
   const from = reportDir(userId, source.id)
   const to = reportDir(userId, targetId)
   await fs.mkdir(to, { recursive: true })
-  const [maxRows] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
-    [targetId]
-  )
-  let sortOrder = Number(maxRows[0].next)
+  let sortOrder = await nextSortOrder(targetId)
   // Reihenfolge: erst kopieren, dann DB umhängen, zuletzt Quellen löschen.
   // Ein Abbruch nach dem Kopieren lässt die DB auf den alten (noch
   // vorhandenen) Ort zeigen; ein Abbruch nach dem DB-Schreiben hinterlässt

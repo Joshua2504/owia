@@ -4,6 +4,7 @@ import { viewData } from '../middleware/auth'
 import { pool } from '../db/connection'
 import { regelsatzEuro } from '../config/verstoss'
 import { logger } from '../services/logger'
+import { appUrl } from '../config/app'
 
 // Frankfurt-Landingpage: Keyword in der URL („falschparker melden frankfurt").
 // Auch in Sitemap/robots.txt (routes/public.ts) und in den Links von Footer/Startseite.
@@ -66,7 +67,7 @@ export default async function legalRoutes(app: FastifyInstance) {
   // Alte Adresse (bis 09.10.2026) dauerhaft umleiten – Links/Ranking bleiben.
   app.get('/falschparker-melden', (_request, reply) => reply.redirect(LANDING_FFM, 301))
   app.get(LANDING_FFM, async (request, reply) => {
-    const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '')
+    const base = appUrl()
     const bussgelder = BUSSGELD_BEISPIELE
       .map(([label, ohne, mit]) => ({ label, ohne: regelsatzEuro(ohne), mit: mit ? regelsatzEuro(mit) : null }))
       .filter((b) => b.ohne !== null)
@@ -77,8 +78,8 @@ export default async function legalRoutes(app: FastifyInstance) {
         pageTitle: 'Falschparker melden in Frankfurt: Nummern & Online-Anzeige',
         metaDescription:
           'Falschparker in Frankfurt melden: Verkehrspolizei 069 212-36360, nachts 069 212-44044 – oder kostenlos online anzeigen. Gehweg, Radweg, Feuerwehrzufahrt.',
-        canonical: `${appUrl}${LANDING_FFM}`,
-        appUrl,
+        canonical: `${base}${LANDING_FFM}`,
+        appUrl: base,
         bussgelder,
         ffm: await frankfurtKennzahlen(),
         stand: STAND,

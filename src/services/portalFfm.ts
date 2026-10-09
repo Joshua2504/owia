@@ -21,6 +21,7 @@ import mysql from 'mysql2/promise'
 import { tbnrAusLabel, VERSTOESSE } from '../config/verstoss'
 import { portalAnrede } from '../config/person'
 import { fahrzeugTyp, portalMarke, KENNZEICHEN_LAENDER } from '../config/fahrzeug'
+import { hhmm, localIsoDate } from '../utils/format'
 
 export type PathEl = { pick?: string[]; ask?: string[]; optional?: boolean; hint?: string; manual?: boolean }
 
@@ -317,16 +318,10 @@ export interface PortalPayload {
   email: string
 }
 
-export const hhmm = (t: unknown) => (t ? String(t).slice(0, 5) : '')
 export const ddmmyyyy = (d: unknown) => {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d instanceof Date ? isoDate(d) : String(d ?? ''))
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d instanceof Date ? localIsoDate(d) : String(d ?? ''))
   return m ? `${m[3]}.${m[2]}.${m[1]}` : ''
 }
-function isoDate(d: Date): string {
-  // mysql2 liefert DATE als lokale Mitternacht – lokal formatieren, nicht UTC.
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 /** Tatort für das Portalfeld „Straße und Hausnummer, eventuell Konkretisierung".
  *  Ein eigenes Feld für ergänzende Angaben zeigt das öffentliche Formular nicht
  *  (V.Z.Zustimmung.ErgAngaben bleibt unsichtbar, Stand 10/2026) – Zusätze wie
@@ -364,7 +359,7 @@ export function portalTatzeit(r: Record<string, any>, letztesFoto?: string | nul
 
 export function isoOf(d: unknown): string {
   if (!d) return ''
-  return d instanceof Date ? isoDate(d) : String(d).slice(0, 10)
+  return d instanceof Date ? localIsoDate(d) : String(d).slice(0, 10)
 }
 
 export class PortalDatenFehler extends Error {}
@@ -372,7 +367,7 @@ export class PortalDatenFehler extends Error {}
 /** Das Portal nimmt nur Tattage VOR heute an („Datum muss kleiner als <heute>
  *  sein"). Anzeigen vom selben Tag sind erst ab morgen versendbar. */
 export function erstAbMorgen(r: Record<string, any>, heute = berlinHeute()): boolean {
-  const tag = r.tattag instanceof Date ? isoDate(r.tattag) : String(r.tattag || '').slice(0, 10)
+  const tag = r.tattag instanceof Date ? localIsoDate(r.tattag) : String(r.tattag || '').slice(0, 10)
   return !!tag && tag >= heute
 }
 
