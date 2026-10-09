@@ -1,7 +1,8 @@
 // Live-Versand über Online-Portale (Frankfurt: ekom21). Die Seite /versand
 // zeigt die eingereichten Portal-Anzeigen und den Browser des Portal-Dienstes
-// live (Einzelbilder, ~4/s). Eingriffe (Klick/Tippen ins Live-Bild) gehen an
+// live (MJPEG-Stream, Fallback Einzelbilder). Eingriffe (Klick/Tippen ins Live-Bild) gehen an
 // den Dienst durch. Logik und DB-Zustände: services/portalDispatch.ts.
+import { Readable } from 'node:stream'
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
@@ -12,7 +13,7 @@ import { fahrzeugBeschreibung } from '../config/fahrzeug'
 import { portalFuer, erstMorgen } from '../services/portale'
 import {
   startPortalRun, submitPortalRun, cancelPortalRun, resolveUncertain, currentRunId, runStatus,
-  lastKnownStatus, proxy, portalHealthy, PortalError, PortalUnerreichbarError, wartendeStarts,
+  lastKnownStatus, proxy, PORTAL_URL, portalHealthy, PortalError, PortalUnerreichbarError, wartendeStarts,
 } from '../services/portalDispatch'
 import { letzterSelbsttest, enqueueSelbsttest } from '../services/portalSelbsttest'
 import { versandWartezeiten } from '../services/versandWarte'
@@ -196,6 +197,21 @@ export default async function portalRoutes(app: FastifyInstance) {
     reply.header('Cache-Control', 'no-store')
     reply.header('X-Frame-No', res.headers.get('x-frame-no') || '0')
     return reply.type('image/jpeg').send(Buffer.from(await res.arrayBuffer()))
+  })
+
+  // Live-Bild als MJPEG-Stream: jedes Screencast-Bild geht sofort durch,
+  // statt dass der Browser einzeln nachfragt. Läuft bis zum Ende des Laufs.
+  app.get('/versand/:id/stream', { preHandler: requireAdmin, config: { rateLimit: false } }, async (request, reply) => {
+    const runId = await currentRunId(reportIdOf(request))
+    if (!runId) return reply.status(204).send()
+    const ctrl = new AbortController()
+    request.raw.on('close', () => ctrl.abort())
+    const res = await fetch(`${PORTAL_URL}/runs/${encodeURIComponent(runId)}/stream`, { signal: ctrl.signal }).catch(() => null)
+    if (!res || res.status !== 200 || !res.body) return reply.status(204).send()
+    reply.header('Cache-Control', 'no-store')
+    reply.header('X-Accel-Buffering', 'no')
+    reply.type(res.headers.get('content-type') || 'multipart/x-mixed-replace')
+    return reply.send(Readable.fromWeb(res.body as any).on('error', () => {}))
   })
 
   app.post('/versand/:id/input', { preHandler: requireAdmin, config: { rateLimit: false } }, async (request, reply) => {

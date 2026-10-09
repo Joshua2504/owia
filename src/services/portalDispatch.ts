@@ -37,7 +37,7 @@ import { prewarmPublicImages } from './publicImages'
 import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 import { versandPlatzBelegen, versandPlatzFreigeben } from './versandTakt'
 
-const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
+export const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
 export class PortalError extends Error {}
 /** Portal-Dienst ist belegt (immer nur ein Lauf gleichzeitig, MAX_ACTIVE in

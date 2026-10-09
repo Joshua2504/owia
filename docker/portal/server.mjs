@@ -66,6 +66,7 @@ function createRun(payload, files, dir) {
     log: [],
     frame: null,
     frameNo: 0,
+    watchers: new Set(), // offene MJPEG-Streams (GET /runs/:id/stream)
     summary: null,
     result: null,
     error: null,
@@ -120,11 +121,28 @@ function createRun(payload, files, dir) {
   return run
 }
 
+const BOUNDARY = 'owiaframe'
+function writePart(res, buf) {
+  res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${buf.length}\r\n\r\n`)
+  res.write(buf)
+  res.write('\r\n')
+}
+// Neues Bild an alle offenen Streams. Hängt ein Zuschauer hinterher (Puffer
+// voll), wird dieses Bild für ihn übersprungen statt sich zu stauen.
+function pushFrame(run) {
+  for (const res of run.watchers) if (!res.writableNeedDrain && run.frame) writePart(res, run.frame)
+}
+function endWatchers(run) {
+  for (const res of run.watchers) res.end()
+  run.watchers.clear()
+}
+
 async function startScreencast(run) {
   const { page } = run
   const setFrame = (buf) => {
     run.frame = buf
     run.frameNo++
+    pushFrame(run)
   }
   try {
     const cdp = await run.ctx.newCDPSession(page)
@@ -153,7 +171,9 @@ async function finish(run) {
   try {
     if (run.page && !run.page.isClosed()) run.frame = await run.page.screenshot({ type: 'jpeg', quality: 70 }).catch(() => run.frame)
     run.frameNo++
+    pushFrame(run)
   } catch { /* egal */ }
+  endWatchers(run)
   await run.ctx?.close().catch(() => {})
   run.ctx = null
   run.page = null
@@ -327,6 +347,19 @@ async function handle(req, res) {
     if (!run.frame) return send(res, 204, '')
     res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'X-Frame-No': String(run.frameNo) })
     return res.end(run.frame)
+  }
+
+  if (req.method === 'GET' && action === 'stream') {
+    res.writeHead(200, {
+      'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}`,
+      'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no',
+    })
+    if (run.frame) writePart(res, run.frame)
+    if (run.finishedAt) return res.end()
+    run.watchers.add(res)
+    req.on('close', () => run.watchers.delete(res))
+    return
   }
 
   if (req.method === 'GET' && action === 'artifact') {

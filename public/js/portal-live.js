@@ -163,7 +163,8 @@
     markActive()
     if (!this.statusTimer) this.statusTimer = setInterval(function () { self.poll() }, 1000)
     if (this.frameTimer) clearInterval(this.frameTimer)
-    this.frameTimer = setInterval(function () { self.loadFrame() }, 300)
+    this.frameTimer = null
+    this.openStream()
     this.poll()
   }
 
@@ -262,7 +263,8 @@
     var self = this
     var id = this.current.id
     finished[id] = true
-    // Letztes Bild noch holen, dann das Bild-Polling einstellen.
+    // Letztes Bild noch holen (der Stream endet mit dem Lauf), dann das
+    // Bild-Polling einstellen, falls es als Ersatz lief.
     setTimeout(function () {
       if (self.current && self.current.id === id && self.frameTimer && ACTIVE.indexOf(self.state) < 0) {
         clearInterval(self.frameTimer)
@@ -276,6 +278,31 @@
       updateCount()
     }
     if (wasActive && optNext.checked && (st === 'done' || st === 'failed')) setTimeout(function () { startNext(self) }, 1500)
+  }
+
+  // Live-Bild als MJPEG-Stream (/versand/:id/stream) – das <img> zeigt jedes
+  // neue Bild sofort. Gibt es (noch) keinen Lauf oder bricht die Verbindung
+  // ab, nach 1 s neu verbinden; scheitert das wiederholt, Einzelbild-Polling.
+  Slot.prototype.openStream = function () {
+    var self = this
+    var id = this.current.id
+    clearTimeout(this.streamRetry)
+    this.streamFails = this.streamFails || 0
+    this.img.onload = function () {
+      self.streamFails = 0
+      self.img.hidden = false
+      self.empty.hidden = true
+    }
+    this.img.onerror = function () {
+      if (!self.current || self.current.id !== id) return
+      if (self.state && ACTIVE.indexOf(self.state) < 0) return
+      if (++self.streamFails > 5 && !self.frameTimer) {
+        self.frameTimer = setInterval(function () { self.loadFrame() }, 300)
+        return
+      }
+      self.streamRetry = setTimeout(function () { if (self.current && self.current.id === id && !self.frameTimer) self.openStream() }, 1000)
+    }
+    this.img.src = '/versand/' + id + '/stream?n=' + Date.now()
   }
 
   Slot.prototype.loadFrame = function () {
