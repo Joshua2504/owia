@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { isAdminEmail } from '../config/admin'
+import { appPlatform } from '../config/mobileApp'
 
 // Flash-Meldungen laufen über ein kurzlebiges Cookie statt über die Session:
 // parallele Requests (Bilder, PDF-iframe, Karten-Tiles) können sonst eine
@@ -60,6 +61,8 @@ export function viewData(
     isAdmin: isAdminEmail(request.session.userEmail),
     // Für die aktive Markierung in der Navigation (layout.ejs).
     currentPath: request.url.split('?')[0],
+    // 'android' | 'ios' in der nativen App (config/mobileApp.ts), sonst null.
+    appPlatform: appPlatform(request),
     flash,
     ...extra,
   }

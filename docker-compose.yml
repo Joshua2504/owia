@@ -83,6 +83,12 @@ services:
       ALPR_MIN_CONFIDENCE: ${ALPR_MIN_CONFIDENCE:-}
       PORTAL_URL: ${PORTAL_URL:-}
       JOB_TIMEOUT_MS: ${JOB_TIMEOUT_MS:-}
+      # Native Apps (src/config/mobileApp.ts, mobile/): Universal/App Links + Demo-Konto der Store-Prüfung.
+      APP_ID: ${APP_ID:-}
+      APP_IOS_TEAM_ID: ${APP_IOS_TEAM_ID:-}
+      APP_ANDROID_SHA256: ${APP_ANDROID_SHA256:-}
+      APP_REVIEW_EMAIL: ${APP_REVIEW_EMAIL:-}
+      APP_REVIEW_CODE: ${APP_REVIEW_CODE:-}
       # Shell-Default im command oben: unset ⇒ "watch" (Dev), leer ⇒ kein watch (Prod).
       TSX_WATCH: ${TSX_WATCH-watch}
     # Speichergrenze: Ein Riesenbild oder ein Leck darf nicht den ganzen Host

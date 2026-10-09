@@ -2,7 +2,9 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0<%= locals.bare ? ', viewport-fit=cover' : '' %>">
+  <%# viewport-fit=cover: Vollbild-Seiten und die native App (config/mobileApp.ts)
+      zeichnen bis unter Statusleiste/Notch – die Abstände setzt app.css (.is-app). %>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0<%= (locals.bare || locals.appPlatform) ? ', viewport-fit=cover' : '' %>">
   <%# Theme vor dem ersten Rendern (kein Aufblitzen) – deshalb synchron und als
       erstes; common.js liefert window.OWIA für alle Seiten-Skripte, auch für
       die, die Views ohne defer mitten im Body laden. Keine Inline-Scripts:
@@ -42,7 +44,7 @@
 <%# bare: Vollbild-Seiten wie die Kamera (/kamera) – ebenfalls ohne Navigation. %>
 <% const _bare = !!locals.bare %>
 <% const _embed = !!locals.embed || _bare %>
-<body class="<%= _bare ? 'is-embed is-bare' : (_embed ? 'is-embed' : '') %>"<%= isAdmin ? ' data-admin' : '' %><%= currentUser ? ' data-user' : '' %>>
+<body class="<%= [_bare ? 'is-embed is-bare' : (_embed ? 'is-embed' : ''), locals.appPlatform ? `is-app is-app-${locals.appPlatform}` : ''].filter(Boolean).join(' ') %>"<%= isAdmin ? ' data-admin' : '' %><%= currentUser ? ' data-user' : '' %>>
   <% if (!_embed) { %>
   <%
     // Aktive Seite in der Navigation: Präfix-Vergleich auf den Pfad (viewData).
@@ -165,6 +167,8 @@
   <%# layout.js: Service Worker, Flash, Cookie-Hinweis, Theme-Umschalter und
       die data-confirm-Rückfragen (Ersatz für onsubmit/onclick="return confirm"). %>
   <script src="/public/js/layout.js"></script>
+  <%# Native App: Deep Links aus Mails/QR-Codes in der WebView öffnen (app-bridge.js). %>
+  <% if (locals.appPlatform) { %><script src="/public/js/app-bridge.js"></script><% } %>
   <script src="/public/vendor/bootstrap.bundle.min.js"></script>
   <script src="/public/js/address-autocomplete.js"></script>
   <%# Alle Auswahllisten (select.form-select) durchsuchbar machen. %>

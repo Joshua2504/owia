@@ -7,6 +7,7 @@ import { MailService } from '../services/mail'
 import { verifyCaptcha } from '../services/captcha'
 import { consumeMagicLink, consumeLoginCode } from '../services/loginTokens'
 import { appUrl } from '../config/app'
+import { isReviewAccount, reviewCodeMatches } from '../config/mobileApp'
 
 const CODE_TTL_MINUTES = 15
 // „Angemeldet bleiben": Cookie-Lebensdauer, sonst gilt der Default aus server.ts.
@@ -140,6 +141,16 @@ export default async function authRoutes(app: FastifyInstance) {
     }
 
     const normalizedEmail = normalizeEmail(email)
+
+    // Demo-Konto der Store-Prüfung (config/mobileApp.ts): fester Code statt
+    // Mail – die Prüfer haben kein Postfach dieser Adresse.
+    if (isReviewAccount(normalizedEmail)) {
+      return reply.view('/auth/verify.ejs', viewData(request, {
+        title: 'Code eingeben',
+        email: normalizedEmail,
+      }))
+    }
+
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
     const token = crypto.randomBytes(32).toString('hex')
 
@@ -186,6 +197,16 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.redirect('/login')
     }
     const normalizedEmail = normalizeEmail(email)
+
+    if (isReviewAccount(normalizedEmail)) {
+      if (!reviewCodeMatches(normalizedEmail, code)) {
+        return reply.view('/auth/verify.ejs', viewData(request, {
+          title: 'Code eingeben', email: normalizedEmail, error: 'Der Code ist ungültig.',
+        }))
+      }
+      await loginUserByEmail(request, normalizedEmail, true)
+      return reply.redirect(afterLogin(request, reply))
+    }
 
     const result = await consumeLoginCode(normalizedEmail, code)
     if (!result.token) {

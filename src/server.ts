@@ -52,6 +52,7 @@ import { fillMissingTatorte } from './services/tatortFill'
 import { verstossGesperrt } from './services/portale'
 import { zaehleAufruf } from './services/aufrufe'
 import aufrufeRoutes from './routes/aufrufe'
+import mobileAppRoutes from './routes/mobileApp'
 
 // trustProxy: hinter Caddy sonst falsches Protokoll (secure-Cookies) und
 // Docker-interne IPs statt Client-IPs in Logs und Rate-Limits. Nur Loopback
@@ -237,6 +238,7 @@ async function main() {
   await app.register(adminRoutes)
   await app.register(aufrufeRoutes)
   await app.register(portalRoutes)
+  await app.register(mobileAppRoutes)
 
   // Antworten des Ordnungsamts aus dem Versand-Postfach abrufen (IMAP).
   startInboxPolling(app.log)

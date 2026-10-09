@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">OWiA</string>
+    <string name="title_activity_main">OWiA</string>
+    <string name="package_name">net.owia.app</string>
+    <string name="custom_url_scheme">net.owia.app</string>
+    <string name="download_started">Download gestartet: %1$s</string>
+    <string name="download_failed">Download nicht möglich.</string>
+</resources>

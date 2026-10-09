@@ -33,6 +33,7 @@ rsync -az --delete \
   --exclude='.env' \
   --exclude='data/' \
   --exclude='node_modules/' \
+  --exclude='mobile/' \
   "$SRC"/ "$DEPLOY_TARGET"/
 
 echo "==> Stack neu starten"

@@ -1,0 +1,25 @@
+{
+  "name": "owia-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native Hülle (Capacitor) für OWiA – Android und iOS",
+  "scripts": {
+    "prepare-www": "node scripts/prepare-www.mjs",
+    "sync": "npm run prepare-www && cap sync",
+    "assets": "capacitor-assets generate --ios --android --assetPath assets --iconBackgroundColor '#212529' --iconBackgroundColorDark '#212529' --splashBackgroundColor '#212529' --splashBackgroundColorDark '#212529'",
+    "android:debug": "npm run sync -- android && cd android && ./gradlew assembleDebug",
+    "android:release": "npm run sync -- android && cd android && ./gradlew bundleRelease",
+    "ios:open": "npm run sync -- ios && cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/splash-screen": "8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.5.3"
+  }
+}

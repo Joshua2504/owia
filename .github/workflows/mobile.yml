@@ -1,0 +1,192 @@
+name: Mobile Apps
+
+# Native Hüllen unter mobile/ (Capacitor, Anleitung docs/MOBILE-APPS.md).
+#
+# Bei jedem Push auf mobile/** baut Android ein Debug-APK, iOS einen
+# unsignierten Simulator-Build (nur wenn IOS_ENABLED gesetzt ist). Signieren
+# und Hochladen laufen nur per Hand (workflow_dispatch) und nur, wenn die
+# Secrets vorhanden sind – ohne Secrets bleibt der Workflow grün.
+#
+# Repository-Variablen (Settings → Secrets and variables → Actions → Variables):
+#   IOS_ENABLED       'true', sobald ein macOS-Runner bereitsteht
+#   IOS_RUNNER        JSON für runs-on, z. B. '["self-hosted","macOS"]'
+#                     (Standard: '"macos-latest"', der GitHub-Runner)
+#   PLAY_TRACK        Ziel-Track bei Google Play (Standard: internal)
+#   PLAY_STATUS       Status des Releases (Standard: draft – Pflicht, solange
+#                     die App in der Play Console noch nicht veröffentlicht ist)
+# Secrets:
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+#   ANDROID_KEY_PASSWORD        Upload-Schlüssel (keytool, siehe Anleitung)
+#   PLAY_SERVICE_ACCOUNT_JSON   Dienstkonto mit Release-Rechten in der Play Console
+#   APPLE_TEAM_ID               10-stellige Team-ID
+#   ASC_KEY_ID, ASC_ISSUER_ID,
+#   ASC_KEY_P8_BASE64           App-Store-Connect-API-Schlüssel (Rolle Admin –
+#                               nötig für die Cloud-Signierung durch Xcode)
+
+on:
+  push:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile.yml'
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Versionsname (z. B. 1.0.0)'
+        required: true
+        default: '1.0.0'
+      upload:
+        description: 'Hochladen (Play: Track aus PLAY_TRACK, Apple: TestFlight)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERSION_NAME: ${{ inputs.version_name || '1.0.0' }}
+  # Store-Uploads verlangen streng steigende Build-Nummern; die Lauf-Nummer
+  # dieses Workflows steigt bei jedem Lauf.
+  BUILD_NUMBER: ${{ github.run_number }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - run: npm ci
+      - run: npm run sync -- android
+
+      - name: Debug-APK
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon assembleDebug -PowiaVersionCode=$BUILD_NUMBER -PowiaVersionName=$VERSION_NAME
+      - uses: actions/upload-artifact@v4
+        with:
+          name: owia-android-debug-${{ env.VERSION_NAME }}-${{ env.BUILD_NUMBER }}
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+      - name: Signiertes Release-Bundle (AAB)
+        if: github.event_name == 'workflow_dispatch' && env.HAS_KEYSTORE == 'true'
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          OWIA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          OWIA_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          OWIA_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export OWIA_ANDROID_KEYSTORE="$RUNNER_TEMP/upload.jks"
+          ./gradlew --no-daemon bundleRelease -PowiaVersionCode=$BUILD_NUMBER -PowiaVersionName=$VERSION_NAME
+          rm -f "$RUNNER_TEMP/upload.jks"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && env.HAS_KEYSTORE == 'true'
+        with:
+          name: owia-android-release-${{ env.VERSION_NAME }}-${{ env.BUILD_NUMBER }}
+          path: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      # Die allererste Version muss einmal von Hand in der Play Console hochgeladen
+      # werden (die API kennt die App vorher nicht), danach geht es hier.
+      - name: Google Play
+        if: github.event_name == 'workflow_dispatch' && inputs.upload && env.HAS_KEYSTORE == 'true' && env.HAS_PLAY == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: net.owia.app
+          releaseFiles: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          track: ${{ vars.PLAY_TRACK || 'internal' }}
+          status: ${{ vars.PLAY_STATUS || 'draft' }}
+
+  ios:
+    if: vars.IOS_ENABLED == 'true'
+    runs-on: ${{ fromJSON(vars.IOS_RUNNER || '"macos-latest"') }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      HAS_ASC: ${{ secrets.ASC_KEY_P8_BASE64 != '' && secrets.APPLE_TEAM_ID != '' }}
+      PROJECT: ios/App/App.xcodeproj
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run sync -- ios
+      - run: xcodebuild -version
+
+      - name: Simulator-Build (unsigniert)
+        run: |
+          xcodebuild -project "$PROJECT" -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 40
+          test "${PIPESTATUS[0]}" -eq 0
+
+      # Signierung macht Xcode selbst über den API-Schlüssel (Cloud-Signierung,
+      # -allowProvisioningUpdates): kein Zertifikat, kein Profil im Repo oder
+      # Schlüsselbund nötig. Ohne Upload entsteht nur die IPA als Artefakt.
+      - name: Archiv + Export (signiert)
+        if: github.event_name == 'workflow_dispatch' && env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          DESTINATION: ${{ inputs.upload && 'upload' || 'export' }}
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          echo "$ASC_KEY_P8_BASE64" | base64 -d > "$KEY"
+          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild -project "$PROJECT" -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/OWiA.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            "${AUTH[@]}" archive | tail -n 40
+          test "${PIPESTATUS[0]}" -eq 0
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>$DESTINATION</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/OWiA.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            "${AUTH[@]}" | tail -n 40
+          test "${PIPESTATUS[0]}" -eq 0
+          rm -f "$KEY"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && env.HAS_ASC == 'true' && !inputs.upload
+        with:
+          name: owia-ios-${{ env.VERSION_NAME }}-${{ env.BUILD_NUMBER }}
+          path: ${{ runner.temp }}/export/*.ipa
+          retention-days: 30

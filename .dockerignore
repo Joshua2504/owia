@@ -4,3 +4,4 @@ dist/
 .env
 *.pdf
 .git/
+mobile/

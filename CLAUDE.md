@@ -116,6 +116,14 @@ Leaflet-Helfer (Kacheln, Icons, Stadtgrenzen, `loadLeaflet`) in
 `public/js/map-common.js` als `OWIA.map` – von jeder View einzubinden, die
 Karten-Skripte lädt.
 
+**Native Apps** (`mobile/`, Capacitor; Anleitung `docs/MOBILE-APPS.md`): Die
+Apps laden die Website in einer WebView, der Server erkennt sie am User-Agent
+(`config/mobileApp.ts` → `appPlatform` in `viewData`). Dann setzt `layout.ejs`
+`viewport-fit=cover` + Klasse `is-app` und bindet `public/js/app-bridge.js` ein.
+Neue Vollbild-/fixe Elemente brauchen `env(safe-area-inset-*)`. Pfade für
+Universal/App Links: `APP_LINK_PATHS` ↔ AndroidManifest. `mobile/` wird nicht
+nach Prod deployt (deploy.sh, .dockerignore).
+
 **Sicherheitsringe (server.ts):** Session-Cookie `sameSite=lax` **plus**
 Fetch-Metadata-Prüfung (`Sec-Fetch-Site` ≠ cross-site für POST/PUT/PATCH/
 DELETE) statt CSRF-Token; Abmelden nur per POST; `trustProxy` nur für

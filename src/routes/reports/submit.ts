@@ -20,6 +20,7 @@ import { enqueuePortalStart } from '../../services/portalDispatch'
 import { previewReportMail } from '../../services/mail'
 import { loadReportByAktenzeichen, isProfileComplete, regeneratePdf, enqueuePdf, countUncheckedImages, uncheckedMessage } from './shared'
 import { loadUser } from '../../services/users'
+import { isReviewAccount } from '../../config/mobileApp'
 import { hhmm } from '../../utils/format'
 
 export default async function submitRoutes(app: FastifyInstance) {
@@ -182,6 +183,11 @@ export async function submitDraft(
 ): Promise<SubmitOutcome> {
   const az = report.aktenzeichen as string
   if (report.status !== 'entwurf') return { ok: false, status: 409, message: 'Die Anzeige ist bereits eingereicht.', redirect: `/anzeige/${az}` }
+  // Demo-Konto der Store-Prüfung (config/mobileApp.ts): darf alles ausprobieren,
+  // aber nichts erreicht eine Behörde – auch kein Admin-Sofortversand.
+  if (isReviewAccount((await loadUser(userId))?.email)) {
+    return { ok: false, status: 422, message: 'Demo-Konto: Anzeigen werden hier nicht eingereicht und an keine Behörde übermittelt.', redirect: `/anzeige/${az}` }
+  }
   const problems = await submitProblems(report, userId)
   if (problems.length) {
     const p = problems[0]

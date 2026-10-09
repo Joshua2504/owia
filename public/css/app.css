@@ -1809,6 +1809,22 @@ body.is-bare { overflow: hidden; overscroll-behavior: none; background: #000; }
 .aufrufe-zeile { display: grid; grid-template-columns: minmax(0, 1fr) 35% 3.5rem; gap: .5rem; align-items: center; padding: .15rem 0; }
 .aufrufe-weg { grid-template-columns: minmax(0, 1.6fr) 25% 3.5rem; }
 
+/* ---------------------------------------------------------------------------
+   Native App (Capacitor-Hülle, mobile/; Erkennung config/mobileApp.ts): Die
+   WebView zeichnet mit viewport-fit=cover bis unter Statusleiste, Notch und
+   Home-Indikator. Die Navigation schiebt ihren Inhalt unter die Statusleiste
+   (ihr Glas-Hintergrund füllt den Bereich); ihre Höhe inklusive Abstand
+   misst layout.js als --owia-nav-h. Die Vollbild-Seiten (.is-bare, Kamera)
+   rechnen schon selbst mit env(safe-area-inset-*).
+   --------------------------------------------------------------------------- */
+.is-app:not(.is-embed) .site-nav { padding-top: calc(var(--bs-navbar-padding-y) + env(safe-area-inset-top, 0px)); }
+/* Querformat: Notch links/rechts (Bootstrap-Abstände sind !important, daher am body). */
+body.is-app:not(.is-embed) { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.is-app .site-footer { padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px)); }
+/* Kein Text-Markieren per Langdruck auf Bedienelementen – fühlt sich in einer
+   App falsch an; Eingabefelder und Inhalte bleiben markierbar. */
+.is-app .btn, .is-app .nav-link, .is-app .navbar-brand { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
 /* Startseite: automatisch ausgefüllte Felder + Hinweis „lokal analysiert". */
 .auto-field { display: flex; gap: .75rem; align-items: flex-start; padding: .9rem 1rem; border-radius: var(--bs-border-radius-lg);
   background: var(--owia-surface); border: 1px solid var(--bs-border-color-translucent); box-shadow: var(--owia-shadow-sm); font-size: .9rem; line-height: 1.45; }

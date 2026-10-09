@@ -45,6 +45,9 @@ import {
 } from '../src/services/stickers'
 import { ENTWUERFE } from '../src/services/stickerEntwuerfe'
 import { setze, satzFonts } from '../src/services/stickerSatz'
+import mobileAppRoutes from '../src/routes/mobileApp'
+import { appPlatform, isReviewAccount, reviewCodeMatches } from '../src/config/mobileApp'
+import { submitDraft } from '../src/routes/reports/submit'
 
 // Harte Schranke: Diese Suite darf niemals auf einer vorhandenen DB laufen.
 if (process.env.OWIA_TEST_ONLY !== '1' || process.env.DB_NAME !== 'owia_test' || process.env.DB_HOST !== 'db') {
@@ -1430,4 +1433,72 @@ test('Aufrufe: nur Navigationen, Routen-Muster statt URL, Herkunft ohne Personen
     assert.match(seite, /google\.com/)
     assert.doesNotMatch(seite, /OWiA-0000/)
   } finally { await app.close() }
+})
+
+// Setzt Umgebungsvariablen für die Dauer eines Tests und stellt sie danach wieder her.
+function envSichern(keys: string[]): () => void {
+  const alt = Object.fromEntries(keys.map(k => [k, process.env[k]]))
+  return () => { for (const k of keys) { if (alt[k] === undefined) delete process.env[k]; else process.env[k] = alt[k] } }
+}
+
+test('Native App: Erkennung am User-Agent, Domain-Verknüpfung nur mit Konfiguration', async () => {
+  const req = (ua: string) => ({ headers: { 'user-agent': ua } }) as unknown as Parameters<typeof appPlatform>[0]
+  assert.equal(appPlatform(req('Mozilla/5.0 (Linux; Android 15) Chrome/140 Mobile Safari/537.36 OWiA-App/android')), 'android')
+  assert.equal(appPlatform(req('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) AppleWebKit/605.1.15 OWiA-App/ios')), 'ios')
+  assert.equal(appPlatform(req('Mozilla/5.0 (iPhone) Safari/604.1')), null)
+
+  const restore = envSichern(['APP_IOS_TEAM_ID', 'APP_ANDROID_SHA256'])
+  const app = Fastify()
+  await app.register(mobileAppRoutes)
+  try {
+    delete process.env.APP_IOS_TEAM_ID
+    delete process.env.APP_ANDROID_SHA256
+    assert.equal((await app.inject({ method: 'GET', url: '/.well-known/apple-app-site-association' })).statusCode, 404)
+    assert.equal((await app.inject({ method: 'GET', url: '/.well-known/assetlinks.json' })).statusCode, 404)
+
+    process.env.APP_IOS_TEAM_ID = 'ABCDE12345'
+    const fp = Array.from({ length: 32 }, (_, i) => i.toString(16).padStart(2, '0').toUpperCase()).join(':')
+    // Ungültige Einträge fallen still heraus, gültige bleiben.
+    process.env.APP_ANDROID_SHA256 = `kaputt, ${fp.toLowerCase()}`
+    const aasa = await app.inject({ method: 'GET', url: '/.well-known/apple-app-site-association' })
+    assert.equal(aasa.statusCode, 200)
+    assert.match(String(aasa.headers['content-type']), /application\/json/)
+    const details = aasa.json().applinks.details[0]
+    assert.deepEqual(details.appIDs, ['ABCDE12345.net.owia.app'])
+    assert.ok(details.components.some((c: { '/': string }) => c['/'] === '/login/link/*'))
+    const links = (await app.inject({ method: 'GET', url: '/.well-known/assetlinks.json' })).json()
+    assert.equal(links[0].target.package_name, 'net.owia.app')
+    assert.deepEqual(links[0].target.sha256_cert_fingerprints, [fp])
+  } finally {
+    restore()
+    await app.close()
+  }
+})
+
+test('Demo-Konto der Store-Prüfung: fester Code, Einreichen gesperrt', async () => {
+  const restore = envSichern(['APP_REVIEW_EMAIL', 'APP_REVIEW_CODE'])
+  try {
+    process.env.APP_REVIEW_EMAIL = 'Review@Example.invalid'
+    process.env.APP_REVIEW_CODE = '12345' // zu kurz ⇒ aus
+    assert.equal(isReviewAccount('review@example.invalid'), false)
+    process.env.APP_REVIEW_CODE = '424242'
+    assert.equal(isReviewAccount(' review@example.invalid '), true)
+    assert.equal(isReviewAccount('user@example.invalid'), false)
+    assert.equal(reviewCodeMatches('review@example.invalid', '000000'), false)
+    assert.equal(reviewCodeMatches('user@example.invalid', '424242'), false)
+    assert.equal(reviewCodeMatches('review@example.invalid', '424242'), true)
+
+    const [created] = await pool.execute<mysql.ResultSetHeader>(
+      `INSERT INTO users(email, vorname, nachname, strasse, hausnummer, plz, ort)
+       VALUES ('review@example.invalid', 'App', 'Review', 'Testweg', '1', '63628', 'Testort')`
+    )
+    const id = await report(created.insertId)
+    await pool.execute("UPDATE reports SET status='entwurf' WHERE id=?", [id])
+    const row = (await query('SELECT * FROM reports WHERE id=?', [id]))[0]
+    const outcome = await submitDraft(row, created.insertId, { sofort: true })
+    assert.equal(outcome.ok, false)
+    assert.equal((await query('SELECT status FROM reports WHERE id=?', [id]))[0].status, 'entwurf')
+  } finally {
+    restore()
+  }
 })
