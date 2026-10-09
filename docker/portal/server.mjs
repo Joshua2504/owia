@@ -127,13 +127,31 @@ function writePart(res, buf) {
   res.write(buf)
   res.write('\r\n')
 }
-// Neues Bild an alle offenen Streams. Hängt ein Zuschauer hinterher (Puffer
-// voll), wird dieses Bild für ihn übersprungen statt sich zu stauen.
+// Neues Bild an alle offenen Streams, höchstens ~15/s je Zuschauer (der
+// Screencast liefert bis zu 50/s). Ein zurückgehaltenes Bild wird nachgereicht,
+// damit das letzte immer ankommt. Hängt ein Zuschauer hinterher (Puffer voll),
+// wird übersprungen statt gestaut.
+const STREAM_MIN_MS = 66
+function sendTo(run, w) {
+  w.timer = null
+  if (!run.frame || w.res.writableNeedDrain) return
+  w.last = Date.now()
+  writePart(w.res, run.frame)
+}
 function pushFrame(run) {
-  for (const res of run.watchers) if (!res.writableNeedDrain && run.frame) writePart(res, run.frame)
+  for (const w of run.watchers) {
+    if (w.timer) continue
+    const wait = w.last + STREAM_MIN_MS - Date.now()
+    if (wait <= 0) sendTo(run, w)
+    else w.timer = setTimeout(() => sendTo(run, w), wait)
+  }
 }
 function endWatchers(run) {
-  for (const res of run.watchers) res.end()
+  for (const w of run.watchers) {
+    clearTimeout(w.timer)
+    if (run.frame) writePart(w.res, run.frame)
+    w.res.end()
+  }
   run.watchers.clear()
 }
 
@@ -171,7 +189,6 @@ async function finish(run) {
   try {
     if (run.page && !run.page.isClosed()) run.frame = await run.page.screenshot({ type: 'jpeg', quality: 70 }).catch(() => run.frame)
     run.frameNo++
-    pushFrame(run)
   } catch { /* egal */ }
   endWatchers(run)
   await run.ctx?.close().catch(() => {})
@@ -357,8 +374,9 @@ async function handle(req, res) {
     })
     if (run.frame) writePart(res, run.frame)
     if (run.finishedAt) return res.end()
-    run.watchers.add(res)
-    req.on('close', () => run.watchers.delete(res))
+    const w = { res, last: Date.now(), timer: null }
+    run.watchers.add(w)
+    req.on('close', () => { clearTimeout(w.timer); run.watchers.delete(w) })
     return
   }
 
