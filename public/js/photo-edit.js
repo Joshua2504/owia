@@ -759,6 +759,10 @@
   // Überblick, was schon geprüft ist, und Sprung zu einem beliebigen Foto.
   function renderStrip() {
     var strip = dlg.querySelector('.photo-edit-strip')
+    // Bisherige Bilder je Foto merken: gleiche URL → Element wiederverwenden,
+    // neue URL → altes Bild stehen lassen, bis das neue geladen ist (kein Schwarz-Flackern).
+    var alteBilder = {}
+    strip.querySelectorAll('img[data-put]').forEach(function (im) { alteBilder[im.getAttribute('data-put')] = im })
     strip.replaceChildren()
     var thumbs = state.thumbs || []
     // Bei Anzeigen immer sichtbar – unten die Kachel „+ Fotos" (addPhotos).
@@ -774,9 +778,20 @@
       b.draggable = true
       b.setAttribute('data-strip-index', String(i))
       b.title = 'Foto ' + (i + 1) + (t.getAttribute('data-geprueft') === '1' ? ' – geprüft' : ' – ungeprüft')
-      var img = el('img')
-      img.src = frisch(t.getAttribute('src'), t.getAttribute('data-photo-edit'))
+      var put = t.getAttribute('data-photo-edit')
+      var url = frisch(t.getAttribute('src'), put)
+      var img = alteBilder[put] || el('img')
       img.alt = ''
+      img.setAttribute('data-put', put)
+      if (!img.getAttribute('src')) img.src = url
+      else if (img.getAttribute('data-want') !== url && img.getAttribute('src') !== url) {
+        img.setAttribute('data-want', url)
+        var pre = new Image()
+        pre.onload = pre.onerror = function () {
+          if (img.getAttribute('data-want') === url) { img.src = url; img.removeAttribute('data-want') }
+        }
+        pre.src = url
+      }
       b.appendChild(img)
       b.appendChild(el('span', 'thumb-check', t.getAttribute('data-geprueft') === '1' ? '✓' : '?'))
       b.appendChild(el('span', 'photo-edit-tile-no', String(i + 1)))
