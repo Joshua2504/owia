@@ -19,7 +19,8 @@ const _crumbs = [['Startseite', '/'], ['Ratgeber', '/ratgeber'], ['Bußgeldkatal
       <%- include('../partials/seo-cta') %>
     </header>
 
-    <div class="mb-4">
+    <%# Klebt beim Scrollen unter der Leiste (app.css .katalog-suche) – 424 Zeilen. %>
+    <div class="mb-4 katalog-suche">
       <label for="katalog-suche" class="form-label fw-semibold">Tatbestand suchen</label>
       <input type="search" id="katalog-suche" class="form-control" placeholder="z. B. Gehweg, Radweg, 141174, zweite Reihe …"
              autocomplete="off" data-katalog-suche>
@@ -40,7 +41,7 @@ const _crumbs = [['Startseite', '/'], ['Ratgeber', '/ratgeber'], ['Bußgeldkatal
           <p class="small mb-2"><a href="/<%= g.thema.slug %>"><%= g.thema.icon %> Ratgeber: <%= g.thema.kurz %> – was tun?</a></p>
         <% } %>
         <div class="table-responsive">
-          <table class="table table-sm align-middle seo-table">
+          <table class="table table-sm align-middle seo-table katalog-table">
             <thead><tr><th scope="col" class="text-nowrap">TBNR</th><th scope="col">Tatbestand</th><th scope="col" class="text-end">Regelsatz</th></tr></thead>
             <tbody>
               <% for (const z of g.zeilen) { %>

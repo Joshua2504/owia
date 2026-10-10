@@ -4,10 +4,18 @@
 // Bilder unter /anzeige*, /import* usw.: Beweisfotos und personenbezogene
 // Inhalte gehören nicht in den Cache-Storage des Browsers.
 // Cache-Name bei Asset-Änderungen hochzählen, damit alte Dateien nicht hängen.
-var CACHE = 'owia-static-v1'
+var CACHE = 'owia-static-v2'
 
-self.addEventListener('install', function () {
+// Offline-Ersatzseite samt allem, was sie zum Anzeigen braucht. Statisch und
+// ohne Nutzerdaten – Seiteninhalte selbst werden weiterhin nie gecacht.
+var OFFLINE_URL = '/public/offline.html'
+var OFFLINE_ASSETS = [OFFLINE_URL, '/public/js/offline.js', '/public/js/theme-init.js', '/public/css/app.css', '/public/vendor/bootstrap.min.css']
+
+self.addEventListener('install', function (event) {
   self.skipWaiting()
+  event.waitUntil(
+    caches.open(CACHE).then(function (cache) { return cache.addAll(OFFLINE_ASSETS) }).catch(function () {})
+  )
 })
 
 self.addEventListener('activate', function (event) {
@@ -22,6 +30,16 @@ self.addEventListener('activate', function (event) {
 
 self.addEventListener('fetch', function (event) {
   var url = new URL(event.request.url)
+  // Seitenaufrufe: immer übers Netz (kein Cachen von Seiten!); nur wenn das
+  // scheitert (offline), die Ersatzseite statt der Browser-Fehlerseite.
+  if (event.request.mode === 'navigate' && event.request.method === 'GET') {
+    event.respondWith(
+      fetch(event.request).catch(function () {
+        return caches.match(OFFLINE_URL).then(function (hit) { return hit || Response.error() })
+      })
+    )
+    return
+  }
   var cacheable =
     event.request.method === 'GET' &&
     url.origin === self.location.origin &&

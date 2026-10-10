@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- Offline-Ersatzseite: liefert der Service Worker (public/sw.js), wenn eine
+       Seite ohne Netz nicht geladen werden kann. Statisch, ohne Nutzerdaten;
+       offline.js lädt neu, sobald das Netz zurück ist. -->
+  <title>Keine Verbindung – OWiA-Anzeiger</title>
+  <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+  <script src="/public/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/public/vendor/bootstrap.min.css">
+  <link rel="stylesheet" href="/public/css/app.css">
+</head>
+<body class="offline-page">
+  <main class="offline-box">
+    <div class="offline-icon" aria-hidden="true">📡</div>
+    <h1 class="h4">Keine Verbindung</h1>
+    <p class="text-body-secondary">
+      Der OWiA-Anzeiger braucht Internet. Bereits hochgeladene Fotos und
+      Entwürfe sind sicher auf dem Server gespeichert.
+    </p>
+    <form method="get" class="d-grid">
+      <button type="submit" class="btn btn-primary btn-lg">Erneut versuchen</button>
+    </form>
+    <p class="small text-body-secondary mt-3 mb-0" id="offline-auto">Lädt automatisch neu, sobald das Netz wieder da ist.</p>
+  </main>
+  <script src="/public/js/offline.js"></script>
+</body>
+</html>

@@ -213,7 +213,7 @@ const versandLabel = {
               § 164 StGB). Bitte reiche nur wahrheitsgemäße Angaben ein.
             </p>
           </div>
-          <form method="post" action="/anzeige/<%= report.aktenzeichen %>/submit"
+          <form method="post" action="/anzeige/<%= report.aktenzeichen %>/submit" class="submit-actions"
                 data-confirm="Anzeige jetzt zur Prüfung einreichen?&#10;&#10;Mit dem Einreichen bestätigst du die Richtigkeit deiner Angaben – wissentlich falsche Anzeigen sind strafbar (§ 164 StGB).">
             <button type="submit" class="btn btn-success" <%= complete && locals.profileComplete && !locals.verjaehrt ? '' : 'disabled' %>>
               ✓ Einreichen
@@ -238,7 +238,7 @@ const versandLabel = {
               Ordnungsamt<%= locals.ccSelf ? ' – du erhältst die E-Mail in Kopie' : '' %>.
             </p>
           </div>
-          <form method="post" action="/anzeige/<%= report.aktenzeichen %>/withdraw"
+          <form method="post" action="/anzeige/<%= report.aktenzeichen %>/withdraw" class="submit-actions"
                 data-confirm="Anzeige zurückziehen und wieder bearbeiten?">
             <button type="submit" class="btn btn-outline-secondary">Zurückziehen &amp; bearbeiten</button>
           </form>

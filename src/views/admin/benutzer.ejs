@@ -14,7 +14,8 @@ const active = users.filter((u) => !u.anonymized_at)
 
 <div class="card shadow-sm">
   <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0">
+    <%# table-stack (app.css): auf dem Handy je Konto eine Karte, Spaltenname aus data-label. %>
+    <table class="table table-sm table-hover align-middle mb-0 table-stack">
       <thead class="table-light">
         <tr>
           <th>E-Mail</th>
@@ -31,7 +32,7 @@ const active = users.filter((u) => !u.anonymized_at)
       <tbody>
         <% for (const u of users) { %>
           <tr class="<%= u.anonymized_at ? 'text-muted' : '' %>">
-            <td>
+            <td data-label="E-Mail">
               <% if (u.anonymized_at) { %>
                 <span class="badge text-bg-secondary">Konto geschlossen</span>
                 <div class="small text-muted"><a href="/admin/benutzer/<%= u.id %>" class="text-muted"><%= u.email %></a></div>
@@ -39,14 +40,14 @@ const active = users.filter((u) => !u.anonymized_at)
                 <a href="/admin/benutzer/<%= u.id %>" class="text-decoration-none"><%= u.email %></a>
               <% } %>
             </td>
-            <td><%= [u.vorname, u.nachname].filter(Boolean).join(' ') || '—' %></td>
-            <td><%= [u.plz, u.ort].filter(Boolean).join(' ') || '—' %></td>
-            <td class="text-nowrap"><%= u.created_fmt || '—' %></td>
-            <td class="text-end"><%= Number(u.drafts) || 0 %></td>
-            <td class="text-end"><%= Number(u.submitted) || 0 %></td>
-            <td class="text-end"><%= Number(u.sent) || 0 %></td>
-            <td class="text-end"><%= imagesByUser[u.id] || 0 %></td>
-            <td class="text-nowrap"><%= u.last_report_fmt || '—' %></td>
+            <td data-label="Name"><%= [u.vorname, u.nachname].filter(Boolean).join(' ') || '—' %></td>
+            <td data-label="Ort"><%= [u.plz, u.ort].filter(Boolean).join(' ') || '—' %></td>
+            <td class="text-nowrap" data-label="Registriert"><%= u.created_fmt || '—' %></td>
+            <td class="text-end" data-label="Entwürfe"><%= Number(u.drafts) || 0 %></td>
+            <td class="text-end" data-label="Eingereicht"><%= Number(u.submitted) || 0 %></td>
+            <td class="text-end" data-label="Versendet"><%= Number(u.sent) || 0 %></td>
+            <td class="text-end" data-label="Fotos"><%= imagesByUser[u.id] || 0 %></td>
+            <td class="text-nowrap" data-label="Letzte Anzeige"><%= u.last_report_fmt || '—' %></td>
           </tr>
         <% } %>
       </tbody>

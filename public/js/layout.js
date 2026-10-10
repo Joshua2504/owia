@@ -102,6 +102,91 @@
       if (ok) { el.dataset.confirmed = '1'; el.click() }
     })
   })
+  // Ladebalken beim Seitenwechsel: Ohne ihn wirkt ein Tipp auf dem Handy bei
+  // langsamer Verbindung, als wäre nichts passiert. Erscheint erst nach kurzer
+  // Verzögerung (schnelle Seiten blitzen nicht) und verschwindet spätestens
+  // nach 10 s – Downloads (PDF, Export) verlassen die Seite ja nie.
+  ;(function () {
+    var bar = document.createElement('div')
+    bar.className = 'nav-progress'
+    bar.setAttribute('aria-hidden', 'true')
+    document.body.appendChild(bar)
+    var timer = null, stop = null
+    function start() {
+      clearTimeout(timer); clearTimeout(stop)
+      timer = setTimeout(function () { bar.classList.add('is-on') }, 150)
+      stop = setTimeout(done, 10000)
+    }
+    function done() {
+      clearTimeout(timer); clearTimeout(stop)
+      bar.classList.remove('is-on')
+    }
+    window.addEventListener('pageshow', done)
+    document.addEventListener('visibilitychange', function () { if (document.hidden) done() })
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('a[href]')
+      if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      if (a.target && a.target !== '_self') return
+      if (a.hasAttribute('download') || a.hasAttribute('data-bs-toggle')) return
+      var url = new URL(a.href, location.href)
+      if (url.origin !== location.origin) return
+      if (url.pathname === location.pathname && url.search === location.search) return // Anker/gleiche Seite
+      if (/\/(pdf|export)(\b|$)|attachment|original=1|\.(pdf|zip|jpg|png)$/.test(url.pathname + url.search)) return
+      // Erst nach den übrigen Klick-Handlern entscheiden (Modal, Rückfrage …).
+      setTimeout(function () { if (!e.defaultPrevented) start() }, 0)
+    })
+    document.addEventListener('submit', function (e) {
+      var f = e.target
+      if (f.target && f.target !== '_self') return
+      setTimeout(function () { if (!e.defaultPrevented) start() }, 0)
+    })
+  })()
+
+  // Ziehen zum Aktualisieren – nur in der installierten App (PWA/native
+  // Hülle), wo der Browser das nicht selbst anbietet. Ganz oben auf der Seite
+  // nach unten ziehen; nicht in Dialogen, Sheets, Karten oder Eingabefeldern.
+  ;(function () {
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone
+    if (!standalone && !document.body.classList.contains('is-app')) return
+    if (document.body.classList.contains('is-embed')) return
+    var THRESHOLD = 70
+    var ind = document.createElement('div')
+    ind.className = 'ptr'
+    ind.setAttribute('aria-hidden', 'true')
+    ind.innerHTML = '<span class="ptr-icon">↻</span>'
+    document.body.appendChild(ind)
+    var startY = null, pull = 0
+    document.addEventListener('touchstart', function (e) {
+      startY = null
+      if (window.scrollY > 0 || e.touches.length !== 1) return
+      var t = e.target
+      if (t.closest && t.closest('dialog, .offcanvas, .modal, .leaflet-container, input, textarea, select, [contenteditable], .photo-edit-dialog, [data-no-ptr]')) return
+      if (document.querySelector('dialog[open], .offcanvas.show, .modal.show')) return
+      startY = e.touches[0].clientY
+      pull = 0
+    }, { passive: true })
+    document.addEventListener('touchmove', function (e) {
+      if (startY === null) return
+      var dy = e.touches[0].clientY - startY
+      if (dy <= 0 || window.scrollY > 0) { pull = 0; ind.classList.remove('is-pulling', 'is-ready'); return }
+      pull = Math.min(120, dy * 0.5)
+      ind.classList.add('is-pulling')
+      ind.classList.toggle('is-ready', pull >= THRESHOLD)
+      ind.style.setProperty('--ptr', pull + 'px')
+    }, { passive: true })
+    document.addEventListener('touchend', function () {
+      if (startY === null) return
+      startY = null
+      if (pull >= THRESHOLD) {
+        ind.classList.add('is-loading')
+        location.reload()
+        return
+      }
+      ind.classList.remove('is-pulling', 'is-ready')
+      ind.style.removeProperty('--ptr')
+    })
+  })()
+
   // „Mehr"-Sheet (layout.ejs #app-mehr): nach unten wischen schließt es –
   // wie ein natives Bottom-Sheet. Nur am Griff/Kopf oder wenn der Inhalt
   // ganz oben steht, sonst würde Scrollen im Sheet es schließen.

@@ -2160,3 +2160,74 @@ html { -webkit-tap-highlight-color: transparent; }
   .form-check:not(.form-switch) > .form-check-label { padding-top: .1em; }
   .form-switch .form-check-input { width: 2.6em; height: 1.4em; margin-top: 0; }
 }
+
+/* --- Ratgeber/SEO auf dem Handy ------------------------------------------- */
+@media (max-width: 575.98px) {
+  .seo-page .hero .lead { font-size: 1.05rem; line-height: 1.5; }
+  .seo-page .hero h1 { font-size: 1.85rem; }
+  /* Bußgeldkatalog: Zeile als Block – TBNR und Betrag oben, Text darunter
+     (die Betragsspalte lief sonst rechts aus dem Bild). */
+  .katalog-table thead { display: none; }
+  .katalog-table tr { display: grid; grid-template-columns: 1fr auto; gap: .1rem .75rem; padding: .6rem 0; border-bottom: 1px solid var(--bs-border-color-translucent); }
+  .katalog-table tr[hidden] { display: none; }
+  .katalog-table td { display: block; border: 0; padding: 0 !important; }
+  .katalog-table td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .katalog-table td:nth-child(3) { grid-column: 2; grid-row: 1; }
+}
+@media (max-width: 991.98px) {
+  .katalog-suche { position: sticky; top: var(--owia-nav-h, 0px); z-index: 5; margin-inline: -.75rem; padding: .5rem .75rem; background: var(--owia-page-bg); }
+  .katalog-suche .form-label { display: none; }
+}
+
+/* Offline-Ersatzseite (public/offline.html, Service Worker). */
+.offline-page { min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem; padding-top: max(1.5rem, env(safe-area-inset-top)); }
+.offline-box { width: 100%; max-width: 24rem; text-align: center; }
+.offline-icon { display: grid; place-items: center; width: 4.5rem; height: 4.5rem; margin: 0 auto 1rem; border-radius: 1.25rem; font-size: 2rem; background: var(--bs-primary-bg-subtle); }
+
+/* Ladebalken beim Seitenwechsel (layout.js): dünn an der Unterkante der Leiste. */
+.nav-progress {
+  position: fixed; left: 0; top: calc(var(--owia-nav-h, 0px) - 2px); z-index: 1100; height: 3px; width: 0;
+  background: linear-gradient(90deg, var(--owia-accent), #7c3aed); border-radius: 0 3px 3px 0;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.nav-progress.is-on { opacity: 1; animation: nav-progress 8s cubic-bezier(.1, .7, .2, 1) forwards; }
+@keyframes nav-progress { from { width: 0; } 10% { width: 35%; } to { width: 92%; } }
+body.is-embed .nav-progress, body.is-bare .nav-progress { top: 0; }
+
+/* Ziehen zum Aktualisieren (layout.js, nur installierte App). */
+.ptr {
+  position: fixed; left: 50%; top: calc(var(--owia-nav-h, 0px) + 6px); z-index: 1025; width: 2.5rem; height: 2.5rem; margin-left: -1.25rem;
+  display: grid; place-items: center; border-radius: 50%; background: var(--owia-surface); color: var(--bs-secondary-color);
+  box-shadow: var(--owia-shadow); font-size: 1.3rem; font-weight: 700; pointer-events: none;
+  opacity: 0; transform: translateY(calc(var(--ptr, 0px) - 3rem)); transition: opacity .15s;
+}
+.ptr.is-pulling { opacity: 1; transition: none; }
+.ptr-icon { display: block; transform: rotate(calc(var(--ptr, 0px) * 3deg)); }
+.ptr.is-ready { color: var(--owia-accent); }
+.ptr.is-loading { opacity: 1; color: var(--owia-accent); }
+.ptr.is-loading .ptr-icon { animation: ptr-spin .7s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .nav-progress.is-on { animation: none; width: 70%; } }
+
+/* Tabellen als Karten auf dem Handy (.table-stack, z. B. admin/benutzer.ejs):
+   erste Zelle ist der Kartentitel, die übrigen „Beschriftung … Wert"
+   (Beschriftung aus data-label). */
+@media (max-width: 767.98px) {
+  .table-stack thead { display: none; }
+  .table-stack, .table-stack > tbody, .table-stack > tbody > tr, .table-stack > tbody > tr > td { display: block; width: auto; }
+  .table-stack > tbody > tr { padding: .7rem var(--bs-card-spacer-x, 1rem); border-bottom: 1px solid var(--bs-border-color-translucent); }
+  .table-stack > tbody > tr > td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .12rem 0; border: 0; text-align: right !important; white-space: normal !important; }
+  .table-stack > tbody > tr > td::before { content: attr(data-label); flex: 0 0 auto; color: var(--bs-secondary-color); font-size: .8rem; text-align: left; }
+  .table-stack > tbody > tr > td:first-child { display: block; text-align: left !important; font-weight: 600; margin-bottom: .2rem; overflow-wrap: anywhere; }
+  .table-stack > tbody > tr > td:first-child::before { content: none; }
+}
+
+/* Detailseite: Einreichen-/Zurückziehen-Knöpfe auf dem Handy volle Breite. */
+@media (max-width: 575.98px) {
+  .submit-actions { display: grid; gap: .5rem; width: 100%; }
+  .submit-actions .btn { width: 100%; margin: 0 !important; min-height: 2.9rem; }
+}
+@media (max-width: 575.98px) {
+  /* Live-Versand: Abstand/Selbsttest unter der Überschrift statt gequetscht daneben. */
+  .versand-tools { width: 100%; margin-left: 0 !important; flex-wrap: wrap; justify-content: space-between; }
+}
