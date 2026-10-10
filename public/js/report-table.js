@@ -233,11 +233,33 @@
     }
     // Auswahl-Häkchen über die Aktualisierung retten.
     var wasChecked = old.querySelector('.bulk-select:checked')
+    var wasOpen = old.classList.contains('is-open')
     old.replaceWith(row)
     if (wasChecked && row.querySelector('.bulk-select')) row.querySelector('.bulk-select').checked = true
+    if (wasOpen) setOpen(row, true)
     bindRow(row)
     document.dispatchEvent(new Event('reports:updated'))
   }
+
+  // Handy: Entwurfs-Karten sind zugeklappt (app.css .cell-summary); Tippen auf
+  // die Zusammenfassung klappt die Inline-Felder auf. Beim Zuklappen die Zeile
+  // frisch holen, damit die Zusammenfassung die gerade getippten Werte zeigt.
+  function setOpen(row, open) {
+    row.classList.toggle('is-open', open)
+    var btn = row.querySelector('[data-draft-toggle]')
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+  }
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-draft-toggle]')
+    if (!btn) return
+    var row = btn.closest('tr')
+    var open = !row.classList.contains('is-open')
+    setOpen(row, open)
+    if (!open) {
+      if (row.getBoundingClientRect().top < 0) row.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      window.reportTableRefresh(row.getAttribute('data-az')).catch(function () {})
+    }
+  })
 
   // Doppel-Anzeigen-Hinweis (report-table.ejs): Klick auf ein Aktenzeichen
   // springt zur Zeile und hebt sie kurz hervor.

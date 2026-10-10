@@ -49,9 +49,10 @@
       '<div class="photo-edit-head">' +
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
-      '<button type="button" class="btn btn-sm btn-outline-light" data-act="move-menu" title="Foto(s) in eine neue oder andere Anzeige verschieben – mehrere über die Häkchen an den Kacheln">↗ Verschieben</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="move-menu" title="Foto(s) in eine neue oder andere Anzeige verschieben – mehrere über die Häkchen an den Kacheln" aria-label="Verschieben">↗<span class="pe-lbl"> Verschieben</span></button>' +
       '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen">🗑</button>' +
-      '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel">Schließen</button>' +
+      // Handy: Knöpfe nur als Symbol (app.css .pe-lbl/.pe-x), damit der Kopf einzeilig bleibt.
+      '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel" aria-label="Schließen"><span class="pe-x" aria-hidden="true">✕</span><span class="pe-lbl">Schließen</span></button>' +
       '<button type="button" class="btn btn-sm btn-success" data-act="save" title="Enter">✓ Bestätigen</button>' +
       '</div>' +
       '</div>' +
@@ -2406,7 +2407,7 @@
   }
   function updateMoveLabel() {
     var n = state ? Object.keys(state.picked).length : 0
-    dlg.querySelector('[data-act=move-menu]').textContent = n ? '↗ ' + n + ' verschieben' : '↗ Verschieben'
+    dlg.querySelector('[data-act=move-menu]').innerHTML = n ? '↗ ' + n + '<span class="pe-lbl"> verschieben</span>' : '↗<span class="pe-lbl"> Verschieben</span>'
   }
   function toggleMoveMenu() {
     var s = state

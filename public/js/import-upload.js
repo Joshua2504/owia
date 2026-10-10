@@ -18,9 +18,63 @@
   var stats = document.getElementById('intake-stats')
   var errorsBox = document.getElementById('intake-errors')
 
+  // Ablagefläche (upload.ejs #intake-drop): Anzahl + Größe und ein paar
+  // Vorschaubilder der Auswahl; Drag & Drop setzt die Dateien ins Input.
+  var drop = document.getElementById('intake-drop')
+  var selection = document.getElementById('intake-selection')
+  var previews = document.getElementById('intake-previews')
+  var previewUrls = []
+  function showSelection() {
+    var files = Array.prototype.slice.call(input.files || [])
+    previewUrls.forEach(function (u) { URL.revokeObjectURL(u) })
+    previewUrls = []
+    if (drop) drop.classList.toggle('has-files', files.length > 0)
+    if (selection) {
+      var bytes = files.reduce(function (sum, f) { return sum + f.size }, 0)
+      selection.textContent = files.length
+        ? files.length + ' Foto' + (files.length === 1 ? '' : 's') + ' ausgewählt · ' + fmtBytes(bytes)
+        : 'Fotos auswählen'
+    }
+    if (!previews) return
+    previews.innerHTML = ''
+    // HEIC kann der Browser meist nicht anzeigen – dann nur die Zahl.
+    var shown = files.filter(function (f) { return /^image\/(jpeg|png|webp|gif)$/.test(f.type) }).slice(0, 8)
+    shown.forEach(function (f) {
+      var img = document.createElement('img')
+      var url = URL.createObjectURL(f)
+      previewUrls.push(url)
+      img.src = url
+      img.alt = ''
+      img.decoding = 'async'
+      previews.appendChild(img)
+    })
+    if (files.length > shown.length && shown.length) {
+      var more = document.createElement('span')
+      more.className = 'drop-zone-more'
+      more.textContent = '+' + (files.length - shown.length)
+      previews.appendChild(more)
+    }
+    previews.hidden = shown.length === 0
+  }
+  if (drop) {
+    ;['dragenter', 'dragover'].forEach(function (t) {
+      drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('is-over') })
+    })
+    ;['dragleave', 'drop'].forEach(function (t) {
+      drop.addEventListener(t, function () { drop.classList.remove('is-over') })
+    })
+    drop.addEventListener('drop', function (e) {
+      e.preventDefault()
+      if (!e.dataTransfer || !e.dataTransfer.files.length) return
+      input.files = e.dataTransfer.files
+      input.dispatchEvent(new Event('change'))
+    })
+  }
+
   input.addEventListener('change', function () {
     var n = input.files ? input.files.length : 0
     startBtn.disabled = n === 0
+    showSelection()
     if (n > SOFT_CAP) {
       showErrors(['Mehr als ' + SOFT_CAP + ' Fotos ausgewählt – der Upload kann eine Weile dauern.'])
     } else {

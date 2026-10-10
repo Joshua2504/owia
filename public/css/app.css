@@ -1904,7 +1904,6 @@ html { -webkit-tap-highlight-color: transparent; }
   /* Seitenköpfe: steht der Titel oben in der Leiste, entfällt die Überschrift
      (nur die Aktionen bleiben); Doppelungen zur Tab-Leiste (.tabbar-dup) auch. */
   .has-tabbar .page-head { margin-bottom: 1rem; }
-  body.has-tabbar:has(.site-page-title) .page-head > h2:first-child { display: none; }
   .has-tabbar .tabbar-dup { display: none !important; }
 }
 
@@ -1982,3 +1981,182 @@ html { -webkit-tap-highlight-color: transparent; }
 /* SEO-/Ratgeberseiten: verlinkte Karten (views/ratgeber/*.ejs) */
 .seo-link-card { color: inherit; transition: transform .12s ease, box-shadow .12s ease; }
 .seo-link-card:hover { color: inherit; transform: translateY(-1px); box-shadow: var(--owia-shadow); }
+
+/* ===========================================================================
+   Handy-Feinschliff (10.10.2026)
+   =========================================================================== */
+
+/* --- Anzeigen-Liste: Entwürfe als zugeklappte Karte ----------------------
+   Unter md zeigt eine Entwurfs-Karte Fotostreifen + Zusammenfassung
+   (.cell-summary, report-row.ejs) + Aktionen. Die Inline-Felder kommen erst
+   nach Tippen auf die Zusammenfassung (tr.is-open, report-table.js) – vorher
+   war jede Karte ein Formular mit elf Feldern und die Liste meterlang. */
+.cell-summary { display: none; }
+@media (max-width: 767.98px) {
+  .report-card { background: transparent; border: 0; box-shadow: none !important; }
+  .report-card > .report-filters { border: 0; padding: 0 0 .25rem; }
+  .report-table > tbody > tr {
+    margin: 0 0 .75rem; padding: .85rem .9rem; border-radius: var(--bs-border-radius-xl);
+    border-color: var(--bs-border-color-translucent); background: var(--owia-surface); box-shadow: var(--owia-shadow-sm);
+  }
+  .report-table tr[data-drop-az] .cell-summary { display: block; order: 4; }
+  .report-table tr[data-drop-az]:not(.is-open) :is(.cell-plate, .cell-time, .cell-place, .cell-offense) { display: none; }
+  .report-table tr[data-drop-az].is-open :is(.cell-plate, .cell-time, .cell-place, .cell-offense) { animation: owia-fade-in .18s ease-out; }
+
+  /* Fotos als waagerechter Streifen (wischen) statt Raster über mehrere Reihen. */
+  .report-table tr[data-drop-az] .report-photos {
+    display: flex; gap: .4rem; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
+    margin: 0 -.9rem; padding: 0 .9rem .1rem; scrollbar-width: none;
+  }
+  .report-table tr[data-drop-az] .report-photos::-webkit-scrollbar { display: none; }
+  .report-table tr[data-drop-az] .thumb-wrap { flex: 0 0 auto; scroll-snap-align: start; }
+  .report-table tr[data-drop-az] .report-photos .report-thumb { width: 7.25rem; height: 5.4rem; border-radius: .6rem; object-fit: cover; }
+  .report-table tr[data-drop-az] .thumb-check { right: 5px; bottom: 5px; min-width: 20px; height: 20px; line-height: 20px; border-radius: 10px; font-size: 12px; }
+
+  .draft-summary {
+    display: flex; flex-direction: column; gap: .3rem; width: 100%; padding: .6rem .75rem; text-align: left;
+    border: 1px solid var(--bs-border-color-translucent); border-radius: var(--bs-border-radius-lg);
+    background: var(--bs-tertiary-bg); color: var(--bs-body-color); font-size: .9rem; line-height: 1.3;
+  }
+  .draft-summary:active { background: var(--bs-secondary-bg); }
+  .draft-summary-line { display: flex; align-items: center; gap: .4rem; min-width: 0; white-space: nowrap; }
+  .draft-summary-line > .text-truncate { min-width: 0; }
+  .draft-summary-fz { color: var(--bs-secondary-color); overflow: hidden; text-overflow: ellipsis; }
+  .draft-summary-ico { flex: 0 0 auto; width: 1.1rem; text-align: center; font-size: .8rem; }
+  .draft-missing { color: #b45309; font-weight: 600; }
+  [data-bs-theme="dark"] .draft-missing { color: #fbbf24; }
+  .draft-summary-more { display: flex; align-items: center; justify-content: flex-end; gap: .3rem; margin-top: .1rem; font-size: .8rem; font-weight: 600; color: var(--owia-accent); }
+  .draft-chevron { display: inline-block; font-size: 1.1rem; line-height: 1; transform: rotate(90deg); transition: transform .15s; }
+  .draft-summary-close { display: none; }
+  tr.is-open .draft-summary-open { display: none; }
+  tr.is-open .draft-summary-close { display: inline; }
+  tr.is-open .draft-chevron { transform: rotate(-90deg); }
+  /* Aufgeklappt: Zusammenfassung schrumpft auf den Zuklappen-Griff. */
+  tr.is-open .draft-summary { background: none; border-style: dashed; padding: .35rem .75rem; }
+  tr.is-open .draft-summary-line { display: none; }
+
+  /* Kopfzeile der Karte: Aktenzeichen dezent, Status rechts. */
+  .report-table tr[data-drop-az] .cell-az .az-link { color: var(--bs-secondary-color); }
+  .report-table .cell-actions .btn { border-radius: var(--bs-border-radius-lg); }
+  .report-table tr[data-drop-az] .cell-actions > div > * { flex: 0 0 3.25rem; }
+  .report-table tr[data-drop-az] .cell-actions > div > [data-review-photos] { flex: 1 1 auto; }
+
+  /* Filter: Suche + Status-Chips in einer wischbaren Reihe. */
+  .report-filters { gap: .5rem; }
+  .report-filter-search { flex: 1 1 100%; }
+  .report-filter-search .form-control { border-radius: 999px; padding-left: 1rem; min-height: 2.75rem; }
+  .status-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; flex: 1 1 100%; margin: 0 -.25rem; padding: 0 .25rem; }
+  .status-chips::-webkit-scrollbar { display: none; }
+  .status-chips .btn { flex: 0 0 auto; min-height: 2.25rem; padding-inline: .9rem; background: var(--owia-surface); }
+  .status-chips .btn-check:checked + .btn { background: var(--owia-accent); border-color: var(--owia-accent); color: #fff; }
+}
+@keyframes owia-fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+/* Touch: kein grauer „Hover" an angetippten Tabellenzeilen (bleibt sonst kleben). */
+@media (hover: none) {
+  .table-hover > tbody > tr:hover > * { --bs-table-bg-state: transparent; }
+}
+
+/* iOS zoomt beim Fokus in jedes Feld unter 16 px hinein (und nicht wieder
+   heraus) – auf Touch-Geräten deshalb alle Eingaben mindestens 16 px, auch die
+   kompakten -sm-Felder der Liste und des Foto-Dialogs. */
+@media (pointer: coarse) {
+  input.form-control, textarea.form-control, select.form-select, .form-control-sm, .form-select-sm,
+  input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="number"], input[type="tel"], textarea, select {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* --- Editor (reports/edit.ejs): Foto-Karten auf dem Handy kompakt ---------
+   Zwei Karten nebeneinander lassen ~150 px je Karte: die Werkzeuge nur als
+   Symbol (Beschriftung .pc-label aus report-form.js), damit sie in eine Reihe
+   passen statt drei Reihen Knöpfe unter jedem Foto. */
+@media (max-width: 575.98px) {
+  .photo-card .pc-label { display: none; }
+  .photo-card-quick { flex-wrap: nowrap; }
+  .photo-card-quick .btn, .photo-card-actions .btn { min-height: 2.25rem; padding-left: .25rem; padding-right: .25rem; }
+  .photo-card-img { cursor: pointer; }
+  .photo-card-hints { font-size: .75rem; }
+}
+
+/* --- Detailseite (reports/show.ejs): Angaben als kompakte Liste ---------- */
+@media (max-width: 575.98px) {
+  .detail-list { --bs-gutter-x: 0; display: grid; grid-template-columns: minmax(6.5rem, 38%) minmax(0, 1fr); margin: -.25rem 0; }
+  .detail-list > dt, .detail-list > dd { width: auto; margin: 0; padding: .55rem 0; border-top: 1px solid var(--bs-border-color-translucent); }
+  .detail-list > dt { font-weight: 500; color: var(--bs-secondary-color); font-size: .875rem; padding-right: .75rem; }
+  .detail-list > dt:first-of-type, .detail-list > dt:first-of-type + dd { border-top: 0; }
+  .detail-list > dd { overflow-wrap: anywhere; }
+}
+/* Große Seitenüberschrift + Titel in der Leiste (layout.js): solange die
+   Überschrift sichtbar ist, zeigt die Leiste den Produktnamen. */
+@media (max-width: 991.98px) {
+  .has-tabbar .site-brand.title-off .site-page-title { display: none; }
+  .has-tabbar .site-brand.title-off .site-brand-text { display: inline; }
+  .has-tabbar .site-brand:not(.title-off) .site-page-title { animation: owia-fade-in .2s ease-out; }
+  /* „Nach oben" übernimmt der aktive Tab (layout.js) – der Knopf verdeckte Karten. */
+  .has-tabbar .back-to-top { display: none !important; }
+}
+
+/* --- Editor: Aktionsleiste auf dem Handy in einer Reihe ------------------ */
+@media (max-width: 575.98px) {
+  .editor-actions { flex-wrap: wrap; gap: .4rem; padding: .6rem .75rem calc(.6rem + env(safe-area-inset-bottom)); border-radius: 1rem 1rem 0 0; }
+  .editor-actions .ea-label { display: none; }
+  .editor-actions #btn-discard { flex: 0 0 3rem; }
+  .editor-actions #btn-save { flex: 1 1 0; }
+  .editor-actions #btn-submit { flex: 2 1 0; }
+  .editor-actions #save-status:empty { display: none; }
+  .editor-head .ea-label { display: none; }
+}
+.ea-short { display: none; }
+@media (max-width: 575.98px) { .editor-actions .ea-short { display: inline; } }
+
+/* --- Foto-Import (intake/upload.ejs) -------------------------------------- */
+.drop-zone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem;
+  min-height: 11rem; padding: 1.5rem 1rem; text-align: center; cursor: pointer;
+  border: 2px dashed rgba(var(--owia-accent-rgb), .35); border-radius: var(--bs-border-radius-xl);
+  background: rgba(var(--owia-accent-rgb), .04); transition: background-color .15s, border-color .15s, transform .1s;
+}
+.drop-zone:hover, .drop-zone.is-over { background: rgba(var(--owia-accent-rgb), .09); border-color: var(--owia-accent); }
+.drop-zone:active { transform: scale(.99); }
+.drop-zone:focus-within { outline: 3px solid rgba(var(--owia-accent-rgb), .35); outline-offset: 2px; }
+.drop-zone-icon { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 1rem; font-size: 1.6rem; background: var(--bs-primary-bg-subtle); margin-bottom: .25rem; }
+.drop-zone-title { font-weight: 650; font-size: 1.1rem; color: var(--bs-body-color); }
+.drop-zone-sub { font-size: .85rem; color: var(--bs-secondary-color); }
+.drop-zone.has-files { border-style: solid; border-color: rgba(var(--owia-accent-rgb), .5); }
+.drop-zone.has-files .drop-zone-title { color: var(--owia-accent); }
+.drop-zone-previews { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem; margin-top: .6rem; }
+.drop-zone-previews[hidden] { display: none; }
+.drop-zone-previews img, .drop-zone-more { width: 3.25rem; height: 3.25rem; border-radius: .5rem; object-fit: cover; }
+.drop-zone-more { display: grid; place-items: center; font-weight: 700; font-size: .85rem; background: var(--bs-secondary-bg); color: var(--bs-secondary-color); }
+.intake-buttons { display: flex; flex-wrap: wrap; gap: .5rem; }
+@media (max-width: 575.98px) {
+  .intake-buttons .btn { flex: 1 1 0; min-height: 2.9rem; }
+  .intake-buttons #intake-start { flex-grow: 1.4; }
+}
+.import-list { margin: 0 calc(-1 * var(--bs-card-spacer-x)) calc(-1 * var(--bs-card-spacer-y)); }
+.import-list .list-group-item { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; padding: .75rem var(--bs-card-spacer-x); background: transparent; }
+.import-list-main { flex: 1 1 10rem; min-width: 0; }
+.import-list-actions { display: flex; gap: .4rem; align-items: center; }
+
+/* --- Foto-Dialog (photo-edit.js) auf dem Handy: Kopf einzeilig ------------ */
+.pe-x { display: none; }
+.photo-edit-head { padding-top: max(.6rem, env(safe-area-inset-top, 0px)); }
+@media (max-width: 575.98px) {
+  .photo-edit-head { padding: max(.45rem, env(safe-area-inset-top, 0px)) .6rem .45rem; }
+  .photo-edit-head > .ms-auto { flex-wrap: nowrap; width: 100%; gap: .35rem; }
+  .photo-edit-head .photo-edit-status {
+    flex: 1 1 auto; min-width: 0; margin-right: auto; font-size: .75rem; line-height: 1.25; white-space: normal;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  }
+  .photo-edit-head .pe-lbl { display: none; }
+  .photo-edit-head .pe-x { display: inline; }
+  .photo-edit-head .btn { flex: 0 0 auto; min-height: 2.25rem; min-width: 2.25rem; }
+}
+
+/* Touch: Häkchen in Formularen etwas größer (Bootstrap: 1em ≈ 16 px). */
+@media (pointer: coarse) {
+  .form-check:not(.form-switch) { min-height: 1.75rem; padding-left: 2.1em; }
+  .form-check:not(.form-switch) > .form-check-input { width: 1.4em; height: 1.4em; margin-top: 0; margin-left: -2.1em; }
+  .form-check:not(.form-switch) > .form-check-label { padding-top: .1em; }
+  .form-switch .form-check-input { width: 2.6em; height: 1.4em; margin-top: 0; }
+}

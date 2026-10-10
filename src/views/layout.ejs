@@ -205,7 +205,7 @@
     <div class="offcanvas-body pt-0">
       <% const _gruppen = [
            [null, [['/sticker', '🏷️', 'Sticker'], ['/papierkorb', '🗑️', 'Papierkorb'], ['/einstellungen', '⚙️', 'Einstellungen']]],
-           isAdmin ? ['Admin', _adminLinks.map(([href, label]) => [href, '🛠️', label])] : null,
+           isAdmin ? ['Admin', _adminLinks.map(([href, label]) => [href, { '/admin/anzeigen': '✅', '/versand': '📤', '/admin/newsletter': '📰', '/admin/benutzer': '👥', '/admin/analyse': '🔬', '/admin/aufrufe': '📈' }[href] || '🛠️', label])] : null,
            ['Infos', [['/statistik', '📊', 'Statistik'], ['/analyse', '🔎', 'Analyse'], ['/ratgeber', '📚', 'Ratgeber'], ['/falschparker-melden-frankfurt', '📞', 'Falschparker melden in Frankfurt']]],
            ['Rechtliches', [['/impressum', '', 'Impressum'], ['/datenschutz', '', 'Datenschutz'], ['/nutzungsbedingungen', '', 'Nutzungsbedingungen']]],
          ].filter(Boolean) %>

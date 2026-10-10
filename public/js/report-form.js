@@ -556,7 +556,8 @@
     moveRight.title = 'Weiter nach hinten'
     moveRight.setAttribute('aria-label', 'Foto weiter nach hinten')
     moveRight.addEventListener('click', () => moveItem(item, 1))
-    const editBtn = mkBtn('Mehr …', 'btn-outline-secondary flex-fill')
+    const editBtn = mkBtn('', 'btn-outline-secondary flex-fill')
+    editBtn.innerHTML = '<span class="pc-label">Mehr </span>…'
     editBtn.title = 'Weitere Werkzeuge: Verpixeln, Drehen'
     editBtn.setAttribute('aria-expanded', 'false')
     editBtn.addEventListener('click', () => toggleTools(item))
@@ -573,10 +574,16 @@
     // groß mit bereits aktivem Werkzeug – sofort losziehen.
     const quick = document.createElement('div')
     quick.className = 'photo-card-quick'
-    const quickBlack = mkBtn('⬛ Schwärzen', 'btn-outline-dark flex-fill')
+    // Beschriftung (.pc-label) blendet app.css auf schmalen Handys aus – dann
+    // passen beide Werkzeuge in eine Reihe.
+    const quickBlack = mkBtn('', 'btn-outline-dark flex-fill')
+    quickBlack.innerHTML = '⬛<span class="pc-label"> Schwärzen</span>'
+    quickBlack.setAttribute('aria-label', 'Schwärzen')
     quickBlack.title = 'Bereiche schwarz übermalen (Gesichter, fremde Kennzeichen)'
     quickBlack.addEventListener('click', () => openWithTool(item, 'black'))
-    const quickCrop = mkBtn('✂️ Zuschneiden', 'btn-outline-dark flex-fill')
+    const quickCrop = mkBtn('', 'btn-outline-dark flex-fill')
+    quickCrop.innerHTML = '✂️<span class="pc-label"> Zuschneiden</span>'
+    quickCrop.setAttribute('aria-label', 'Zuschneiden')
     quickCrop.title = 'Bildausschnitt wählen'
     quickCrop.addEventListener('click', () => openWithTool(item, 'crop'))
     quick.appendChild(quickBlack)

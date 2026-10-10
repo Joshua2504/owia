@@ -15,20 +15,29 @@
     <div id="intake-picker">
       <%# data-chunk-size: Fotos je Upload-Request (CHUNK_SIZE in routes/intake.ts),
           liest import-upload.js – kein Inline-Script (CSP). %>
-      <input type="file" id="intake-files" class="form-control" data-chunk-size="<%= chunkSize %>"
-             accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
+      <%# Große Tipp-/Ablagefläche statt des nackten Datei-Inputs (der zeigt je
+          nach Browser „Choose Files" o. ä.). Das Input bleibt die Quelle der
+          Wahrheit; import-upload.js zeigt Auswahl + Vorschau und nimmt Drag & Drop an. %>
+      <label class="drop-zone" id="intake-drop" for="intake-files">
+        <input type="file" id="intake-files" class="visually-hidden" data-chunk-size="<%= chunkSize %>"
+               accept="image/png,image/jpeg,image/heic,image/heif,.heic,.heif" multiple>
+        <span class="drop-zone-icon" aria-hidden="true">🖼️</span>
+        <span class="drop-zone-title" id="intake-selection">Fotos auswählen</span>
+        <span class="drop-zone-sub">aus der Galerie – auch viele auf einmal<span class="d-none d-md-inline"> · oder hierher ziehen</span></span>
+        <span class="drop-zone-previews" id="intake-previews" hidden></span>
+      </label>
       <div class="form-text">JPG, PNG oder HEIC/HEIF · max. 20 MB pro Foto. Nach der Übertragung werden Vorschaubilder vorbereitet und Fotos gruppiert.</div>
       <!-- Direkteinstieg in die Kamera (PWA: App-Icon -> hier -> Kamera = 2 Taps).
            Eigenes Input, weil capture am Haupt-Input die Galerie-Auswahl
            verdrängen würde; import-upload.js sammelt die Aufnahmen dort ein. -->
       <input type="file" id="intake-camera" accept="image/*" capture="environment"
              multiple hidden aria-hidden="true">
-      <div class="d-flex gap-2 flex-wrap mt-3">
+      <div class="intake-buttons mt-3">
         <button type="button" id="intake-camera-btn" class="btn btn-outline-primary">
           📷 Fotos aufnehmen
         </button>
         <button type="button" id="intake-start" class="btn btn-primary" disabled>
-          Fotos hochladen &amp; gruppieren
+          Hochladen &amp; gruppieren
         </button>
       </div>
     </div>
@@ -54,55 +63,44 @@
   <div class="card shadow-sm">
     <div class="card-body">
       <h5 class="card-title mb-3">Bisherige Importe</h5>
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-          <thead>
-            <tr>
-              <th>Datum</th>
-              <th>Fotos</th>
-              <th>Status</th>
-              <th class="text-end"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <% for (const b of batches) { %>
-              <tr>
-                <td><%= new Date(b.created_at).toLocaleString('de-DE') %></td>
-                <td><%= b.photo_count %></td>
-                <td>
-                  <% if (b.status === 'open') { %>
-                    <span class="badge text-bg-warning">Upload offen</span>
-                  <% } else if (b.status === 'grouping') { %>
-                    <span class="badge text-bg-info">Wird verarbeitet</span>
-                  <% } else { %>
-                    <span class="badge text-bg-success">Gruppiert</span>
-                  <% } %>
-                </td>
-                <td class="text-end">
-                  <% if (b.status === 'open') { %>
-                    <% if (Number(b.photo_count) > 0) { %>
-                      <button type="button" class="btn btn-sm btn-outline-primary intake-finish-open" data-batch="<%= b.id %>">
-                        Jetzt gruppieren
-                      </button>
-                    <% } %>
-                    <button type="button" class="btn btn-sm btn-outline-danger intake-discard" data-batch="<%= b.id %>">
-                      Verwerfen
-                    </button>
-                  <% } else { %>
-                    <div class="d-flex gap-2 justify-content-end">
-                      <a class="btn btn-sm btn-outline-secondary" href="/import/<%= b.id %>">Ergebnis ansehen</a>
-                      <%# Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
-                      <form method="post" action="/import/<%= b.id %>/loeschen" class="m-0">
-                        <button type="submit" class="btn btn-sm btn-outline-danger">Löschen</button>
-                      </form>
-                    </div>
-                  <% } %>
-                </td>
-              </tr>
-            <% } %>
-          </tbody>
-        </table>
-      </div>
+      <%# Liste statt Tabelle: passt ohne Seitwärts-Scrollen auch aufs Handy. %>
+      <ul class="list-group list-group-flush import-list">
+        <% for (const b of batches) { %>
+          <li class="list-group-item">
+            <div class="import-list-main">
+              <div class="fw-semibold"><%= new Date(b.created_at).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) %></div>
+              <div class="small text-muted">
+                <%= b.photo_count %> Foto<%= Number(b.photo_count) === 1 ? '' : 's' %> ·
+                <% if (b.status === 'open') { %>
+                  <span class="badge text-bg-warning">Upload offen</span>
+                <% } else if (b.status === 'grouping') { %>
+                  <span class="badge text-bg-info">Wird verarbeitet</span>
+                <% } else { %>
+                  <span class="badge text-bg-success">Gruppiert</span>
+                <% } %>
+              </div>
+            </div>
+            <div class="import-list-actions">
+              <% if (b.status === 'open') { %>
+                <% if (Number(b.photo_count) > 0) { %>
+                  <button type="button" class="btn btn-sm btn-outline-primary intake-finish-open" data-batch="<%= b.id %>">
+                    Jetzt gruppieren
+                  </button>
+                <% } %>
+                <button type="button" class="btn btn-sm btn-outline-danger intake-discard" data-batch="<%= b.id %>">
+                  Verwerfen
+                </button>
+              <% } else { %>
+                <a class="btn btn-sm btn-outline-secondary" href="/import/<%= b.id %>">Ergebnis ansehen</a>
+                <%# Löschen führt erst auf eine Bestätigungsseite (serverseitig erzwungen). %>
+                <form method="post" action="/import/<%= b.id %>/loeschen" class="m-0">
+                  <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Import löschen" title="Import löschen">🗑</button>
+                </form>
+              <% } %>
+            </div>
+          </li>
+        <% } %>
+      </ul>
     </div>
   </div>
 <% } %>

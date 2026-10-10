@@ -102,6 +102,42 @@
       if (ok) { el.dataset.confirmed = '1'; el.click() }
     })
   })
+  // „Mehr"-Sheet (layout.ejs #app-mehr): nach unten wischen schließt es –
+  // wie ein natives Bottom-Sheet. Nur am Griff/Kopf oder wenn der Inhalt
+  // ganz oben steht, sonst würde Scrollen im Sheet es schließen.
+  ;(function () {
+    var sheet = document.getElementById('app-mehr')
+    if (!sheet) return
+    var body = sheet.querySelector('.offcanvas-body')
+    var startY = null, dy = 0
+    sheet.addEventListener('touchstart', function (e) {
+      var onHead = !body || !body.contains(e.target) || body.scrollTop <= 0
+      startY = onHead && e.touches.length === 1 ? e.touches[0].clientY : null
+      dy = 0
+    }, { passive: true })
+    sheet.addEventListener('touchmove', function (e) {
+      if (startY === null) return
+      dy = e.touches[0].clientY - startY
+      if (dy <= 0) { sheet.style.transform = ''; return }
+      sheet.style.transition = 'none'
+      sheet.style.transform = 'translateY(' + dy + 'px)'
+    }, { passive: true })
+    sheet.addEventListener('touchend', function () {
+      if (startY === null) return
+      startY = null
+      sheet.style.transition = ''
+      if (dy > 90 && window.bootstrap) {
+        // Aus der aktuellen Position weiter nach unten gleiten lassen; das
+        // Inline-transform räumt erst „hidden" ab (sonst springt es zurück).
+        sheet.style.transform = 'translateY(100%)'
+        window.bootstrap.Offcanvas.getOrCreateInstance(sheet).hide()
+      } else {
+        sheet.style.transform = ''
+      }
+    })
+    sheet.addEventListener('hidden.bs.offcanvas', function () { sheet.style.transform = '' })
+  })()
+
   // Sticky-Header: Höhe als --owia-nav-h, damit andere sticky-Elemente
   // darunter ankleben. "Nach oben"-Button erscheint nach etwas Scrollen.
   ;(function () {
@@ -113,14 +149,47 @@
       nav.addEventListener('shown.bs.collapse', setH)
       nav.addEventListener('hidden.bs.collapse', setH)
     }
+    // Handy-App-Modus: Seitentitel in der Leiste wie bei iOS erst einblenden,
+    // wenn die große Überschrift der Seite unter der Leiste verschwunden ist –
+    // vorher stünde derselbe Titel doppelt untereinander. Bis dahin zeigt die
+    // Leiste den Produktnamen (app.css .title-off).
+    var navTitle = document.querySelector('.site-page-title')
+    if (nav && navTitle && 'IntersectionObserver' in window) {
+      var heads = document.querySelectorAll('main h1, main h2')
+      var head = null
+      for (var i = 0; i < heads.length && !head; i++) {
+        var r = heads[i].getBoundingClientRect()
+        if (r.height && r.top < 360) head = heads[i]
+      }
+      if (head) {
+        var brand = navTitle.closest('.site-brand')
+        brand.classList.add('title-off')
+        new IntersectionObserver(function (entries) {
+          brand.classList.toggle('title-off', entries[0].isIntersecting)
+        }, { rootMargin: '-' + nav.offsetHeight + 'px 0px 0px 0px' }).observe(head)
+      }
+    }
+    // Tab-Leiste: Tippen auf den aktiven Tab (oder die obere Leiste außerhalb
+    // der Knöpfe) scrollt nach oben – wie in nativen Apps.
+    var toTop = function () {
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
+    }
+    document.addEventListener('click', function (e) {
+      var tab = e.target.closest && e.target.closest('.app-tab.active[href]')
+      if (tab && tab.getAttribute('href') === location.pathname && !location.search && window.scrollY > 0) {
+        e.preventDefault()
+        toTop()
+      }
+    })
+    if (nav) nav.addEventListener('click', function (e) {
+      if (e.target === nav || e.target === nav.firstElementChild) toTop()
+    })
     var btn = document.getElementById('back-to-top')
     if (!btn) return
     var update = function () { btn.hidden = window.scrollY < 400 }
     window.addEventListener('scroll', update, { passive: true })
     update()
-    btn.addEventListener('click', function () {
-      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
-    })
+    btn.addEventListener('click', toTop)
   })()
 })()

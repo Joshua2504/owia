@@ -15,7 +15,7 @@
         <form method="post" action="/login">
           <div class="mb-3">
             <label class="form-label" for="login-email">E-Mail</label>
-            <input type="email" name="email" id="login-email" class="form-control"
+            <input type="email" name="email" id="login-email" class="form-control form-control-lg" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="name@beispiel.de"
                    value="<%= locals.email || '' %>" required autofocus>
           </div>
           <div class="form-check mb-3">

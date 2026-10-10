@@ -277,4 +277,27 @@ const _ts = r.tattag && h.isoDate(r.tattag) ? h.isoDate(r.tattag) + ' ' + (h.hhm
       <% } %>
     </div>
   </td>
+  <% if (_isDraft) { %>
+  <%# Nur Handy (app.css): Entwürfe sind dort zugeklappt – statt elf Eingabefeldern
+      je Karte steht hier eine Zusammenfassung; Tippen klappt die Inline-Felder
+      auf (.is-open, report-table.js). Bewusst die letzte Zelle, damit die
+      nth-child-Spaltenbreiten der Tabelle (Desktop, dort ausgeblendet) stimmen. %>
+  <td class="cell-summary">
+    <% const _fzKurz = [r.fahrzeug_marke, r.fahrzeug_modell].filter(Boolean).join(' ') || r.fahrzeug_farbe || '' %>
+    <% const _zeit = r.tattag ? h.fmtDate(r.tattag) + (r.tatzeit_von ? ', ' + _hhmm(r.tatzeit_von) : '') : '' %>
+    <button type="button" class="draft-summary" data-draft-toggle aria-expanded="false"
+            aria-label="Angaben von <%= r.aktenzeichen %> bearbeiten">
+      <span class="draft-summary-line">
+        <% if (r.kennzeichen) { %><%- h.plate(r.kennzeichen, r.kennzeichen_land) %><% } else { %><span class="draft-missing">Kennzeichen fehlt</span><% } %>
+        <% if (_fzKurz) { %><span class="draft-summary-fz"><%= _fzKurz %></span><% } %>
+      </span>
+      <span class="draft-summary-line<%= r.verstoss_art ? '' : ' draft-missing' %>"><span class="draft-summary-ico" aria-hidden="true">🚫</span><span class="text-truncate"><%= r.verstoss_art || 'Verstoß fehlt' %></span></span>
+      <span class="draft-summary-line text-body-secondary">
+        <span class="draft-summary-ico" aria-hidden="true">🕒</span><span class="<%= _zeit ? '' : 'draft-missing' %>"><%= _zeit || 'Zeit fehlt' %></span>
+        <span class="draft-summary-ico ms-2" aria-hidden="true">📍</span><span class="text-truncate<%= r.tatort ? '' : ' draft-missing' %>"><%= r.tatort ? String(r.tatort).split(',')[0] : 'Tatort fehlt' %></span>
+      </span>
+      <span class="draft-summary-more"><span class="draft-summary-open">Angaben bearbeiten</span><span class="draft-summary-close">Zuklappen</span> <span class="draft-chevron" aria-hidden="true">›</span></span>
+    </button>
+  </td>
+  <% } %>
 </tr>

@@ -27,7 +27,7 @@ const versandLabel = {
         <% if (isEntwurf) { %>
           <a href="/anzeige/<%= report.aktenzeichen %>/bearbeiten" class="btn btn-outline-primary btn-sm">✎ Bearbeiten</a>
         <% } %>
-        <a href="/anzeigen" class="btn btn-outline-secondary btn-sm">← Übersicht</a>
+        <a href="/anzeigen" class="btn btn-outline-secondary btn-sm tabbar-dup">← Übersicht</a>
       </div>
     </div>
 
@@ -47,7 +47,8 @@ const versandLabel = {
 
     <div class="card shadow-sm mb-4">
       <div class="card-body">
-        <dl class="row mb-0">
+        <%# .detail-list (app.css): auf dem Handy Beschriftung und Wert in einer Zeile. %>
+        <dl class="row mb-0 detail-list">
           <dt class="col-sm-4">Aktenzeichen</dt>
           <dd class="col-sm-8"><code><%= report.aktenzeichen || '—' %></code></dd>
 
@@ -100,9 +101,9 @@ const versandLabel = {
       <div class="card shadow-sm mb-4">
         <div class="card-header">Beweisfotos (<%= images.length %>)</div>
         <div class="card-body">
-          <div class="row g-3">
+          <div class="row g-2 g-md-3">
             <% for (const img of images) { %>
-              <div class="col-6 col-md-4">
+              <div class="col-4">
                 <%# Vorschaubild statt Vollbild (lädt ein Bruchteil der Daten);
                     Hover = Vorschau/Lupe, Klick = groß (image-preview.js). %>
                 <img src="/anzeige/<%= report.aktenzeichen %>/image/<%= img.id %>/thumb.jpg?v=<%= img.v %>"
