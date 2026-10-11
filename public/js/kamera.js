@@ -520,8 +520,9 @@
     doneBtn.disabled = n === 0
     $('[data-count]').textContent = n
     shutter.disabled = !stream || busy || n >= MAX
-    flashBtn.textContent = flashOn ? '⚡ An' : '⚡ Aus'
+    // Runder Knopf unten links (kamera/index.ejs): Zustand über Farbe/Strich (app.css).
     flashBtn.setAttribute('aria-pressed', flashOn ? 'true' : 'false')
+    flashBtn.setAttribute('aria-label', flashOn ? 'Blitz ausschalten' : 'Blitz einschalten')
     flashBtn.classList.toggle('is-on', flashOn)
     $('[data-hint]').textContent = hintOverride || (
       n === 0 ? 'Verstoß fotografieren – Übersicht und Kennzeichen.'

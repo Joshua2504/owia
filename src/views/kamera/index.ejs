@@ -12,7 +12,6 @@
     <div class="kam-top">
       <button type="button" class="kam-pill" data-act="close">← Anzeigen</button>
       <button type="button" class="kam-pill kam-uploads" data-uploads hidden></button>
-      <button type="button" class="kam-pill kam-flash" data-act="flash" aria-pressed="false" hidden>⚡ Aus</button>
     </div>
 
     <div class="kam-msg" data-msg hidden>
@@ -27,7 +26,12 @@
       <div class="kam-hint" data-hint>Verstoß fotografieren – am besten Übersicht, dann Kennzeichen nah.</div>
       <div class="kam-strip" data-strip></div>
       <div class="kam-controls">
-        <button type="button" class="kam-round kam-gallery" data-act="pick" aria-label="Fotos aus der Galerie">🖼</button>
+        <%# Links unten in Daumenreichweite: Galerie + Blitz (nur wenn das Gerät
+            Taschenlampe/Blitz kann, kamera.js blendet ihn ein). %>
+        <div class="kam-left">
+          <button type="button" class="kam-round kam-gallery" data-act="pick" aria-label="Fotos aus der Galerie">🖼</button>
+          <button type="button" class="kam-round kam-flash" data-act="flash" aria-pressed="false" aria-label="Blitz einschalten" title="Blitz" hidden><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></button>
+        </div>
         <button type="button" class="kam-shutter" data-act="shoot" aria-label="Foto aufnehmen"></button>
         <button type="button" class="kam-done" data-act="done" disabled>Fertig <span class="kam-count" data-count>0</span></button>
       </div>
