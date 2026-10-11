@@ -21,6 +21,13 @@ const SORTS: Record<string, { empty: string; expr: string }> = {
 }
 const DEFAULT_SORT = { key: 'ts', dir: 'desc' as const }
 
+// Obergrenze der Anzeigen-Liste: Die Seite rendert alle Zeilen samt Fotoleisten
+// auf einmal (keine Paginierung). 2000 liegt weit über dem, was ein Nutzer
+// realistisch hat, deckelt aber Abfrage- und Renderzeit. Wird sie erreicht,
+// fehlen die ältesten (je nach Sortierung letzten) Einträge – das wird geloggt;
+// dann wäre eine echte Paginierung fällig.
+const LISTEN_LIMIT = 2000
+
 export default async function dashboardRoutes(app: FastifyInstance) {
   app.get('/anzeigen', { preHandler: requireAuth }, async (request, reply) => {
     const userId = request.session.userId as number
@@ -45,12 +52,17 @@ export default async function dashboardRoutes(app: FastifyInstance) {
               ${photoStatColumns('reports')},
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in') AS reply_count,
               (SELECT COUNT(*) FROM report_replies rr WHERE rr.report_id = reports.id AND rr.direction = 'in' AND rr.read_at IS NULL) AS unread_reply_count
-       FROM reports WHERE user_id = ? AND status <> 'papierkorb' ORDER BY ${orderBy}`,
+       FROM reports WHERE user_id = ? AND status <> 'papierkorb' ORDER BY ${orderBy} LIMIT ${LISTEN_LIMIT}`,
       [userId]
     )
+    const gekuerzt = reports.length >= LISTEN_LIMIT
+    if (gekuerzt) request.log.warn({ userId }, `Anzeigen-Liste auf ${LISTEN_LIMIT} Einträge gekürzt`)
 
     // Foto-IDs pro Anzeige für die Thumbnail-Leiste (gemeinsames Tabellen-Partial).
-    const imagesByReport = await thumbStrips("r.user_id = ? AND r.status <> 'papierkorb'", [userId], { zeit: true })
+    // Gekürzt: nur für die angezeigten Anzeigen, sonst lüde die Leiste trotzdem alle Fotos.
+    const imagesByReport = gekuerzt
+      ? await thumbStrips(`r.user_id = ? AND r.id IN (${reports.map(() => '?').join(',')})`, [userId, ...reports.map((r) => Number(r.id))], { zeit: true })
+      : await thumbStrips("r.user_id = ? AND r.status <> 'papierkorb'", [userId], { zeit: true })
 
     // Eingereichte Anzeigen: Countdown bis zum Versand (report-row.ejs).
     const warte = await versandWartezeiten(reports.filter((r) => r.status === 'eingereicht').map((r) => Number(r.id)))

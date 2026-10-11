@@ -99,8 +99,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0049_seitenaufrufe.sql')
-  assert.equal(rows.length, 49)
+  assert.equal(rows.at(-1)?.filename, '0050_freigabe_token.sql')
+  assert.equal(rows.length, 50)
 })
 
 test('Versand-Takt: höchstens ein Versand je VERSAND_ABSTAND_SEK, Freigabe gibt den Platz zurück', async () => {
@@ -209,7 +209,10 @@ test('Portal-Start, den ein Neustart abbrach, beginnt komplett von vorn', async 
   assert.equal(r.versand_ergebnis, null)
   const jobs = await query("SELECT payload FROM jobs WHERE type='portal.start' AND status='queued'")
   const payloads = jobs.map((j) => JSON.parse(j.payload))
-  assert.deepEqual(payloads.filter((p) => p.reportId === id), [{ reportId: id, auto: true, neustart: true }])
+  // Der Neustart trägt die Freigabe-Marke der Anzeige mit (Migration 0050).
+  const [marke] = await query('SELECT freigabe_token FROM reports WHERE id=?', [id])
+  assert.ok(marke.freigabe_token)
+  assert.deepEqual(payloads.filter((p) => p.reportId === id), [{ reportId: id, auto: true, neustart: true, freigabe: marke.freigabe_token }])
   assert.equal(payloads.filter((p) => p.reportId === unklar).length, 0)
   assert.equal((await query('SELECT versand_status FROM reports WHERE id=?', [unklar]))[0].versand_status, 'versand')
   await pool.execute("DELETE FROM jobs WHERE type='portal.start'")
@@ -1198,14 +1201,38 @@ test('Bildtyp kommt aus den Bytes, nicht aus dem Client-Mimetype; Riesenbilder w
   assert.throws(() => decode(bombe, 'image/png'), /zu groß/)
 })
 
-test('Posteingang: Authentication-Results mit DMARC/SPF-Fehlschlag entzieht dem Absender das Vertrauen', async () => {
-  const { authenticationFailed } = await import('../src/services/mailInbox')
-  const mail = (ar: string | null) => ({ headers: new Map(ar === null ? [] : [['authentication-results', ar]]) }) as any
-  assert.equal(authenticationFailed(mail(null)), false, 'ohne Prüfer bleibt es beim bisherigen Verhalten')
-  assert.equal(authenticationFailed(mail('mx.example; dmarc=pass header.from=stadt-frankfurt.de')), false)
-  assert.equal(authenticationFailed(mail('mx.example; spf=fail smtp.mailfrom=x; dmarc=fail header.from=stadt-frankfurt.de')), true)
-  assert.equal(authenticationFailed(mail('mx.example; spf=softfail; dkim=none')), true)
-  assert.equal(authenticationFailed(mail('mx.example; spf=fail; dkim=pass')), false, 'gültige DKIM-Signatur reicht')
+test('Posteingang: Aktenzeichen-Matching nur mit positivem Ergebnis im obersten Authentication-Results unseres MTA', async () => {
+  const { senderAuthenticated } = await import('../src/services/mailInbox')
+  const vorher = process.env.MAIL_AUTHSERV_ID
+  process.env.MAIL_AUTHSERV_ID = 'mx.example'
+  try {
+    const from = 'owi-anzeigen@stadt-frankfurt.de'
+    const mail = (...ars: string[]) => ({ headerLines: ars.map((v) => ({ key: 'authentication-results', line: `Authentication-Results: ${v}` })) }) as any
+    assert.equal(senderAuthenticated(mail(), from), false, 'ohne Prüfer kein Aktenzeichen-Matching')
+    assert.equal(senderAuthenticated(mail('mx.example;\r\n\tdmarc=pass (policy=none) header.from=stadt-frankfurt.de'), from), true)
+    assert.equal(senderAuthenticated(mail('mx.example; dkim=pass header.d=stadt-frankfurt.de header.s=main'), from), true)
+    assert.equal(senderAuthenticated(mail('mx.example; spf=pass (mx.example: domain of x designates 1.2.3.4) smtp.mailfrom=owi-anzeigen@stadt-frankfurt.de'), from), true)
+    assert.equal(senderAuthenticated(mail('mx.example; dkim=pass header.d=evil.example'), from), false, 'DKIM einer fremden Domain zählt nicht')
+    assert.equal(senderAuthenticated(mail('mx.example; spf=fail smtp.mailfrom=x; dmarc=fail header.from=stadt-frankfurt.de'), from), false)
+    assert.equal(senderAuthenticated(mail('mx.example; spf=softfail; dkim=none'), from), false, 'kein fail reicht nicht – es braucht ein pass')
+    // Angriff: eigener MTA meldet spf=fail, der Absender hat darunter einen
+    // „dmarc=pass“-Header mitgeschickt – nur der oberste zählt.
+    assert.equal(senderAuthenticated(mail('mx.example; spf=fail smtp.mailfrom=stadt-frankfurt.de', 'mx.example; dmarc=pass header.from=stadt-frankfurt.de'), from), false)
+    // Fremde authserv-id oben (unser MTA hat nicht geprüft) ⇒ kein Vertrauen.
+    assert.equal(senderAuthenticated(mail('evil.example; dmarc=pass header.from=stadt-frankfurt.de'), from), false)
+  } finally {
+    if (vorher === undefined) delete process.env.MAIL_AUTHSERV_ID
+    else process.env.MAIL_AUTHSERV_ID = vorher
+  }
+})
+
+test('Antwort-Anhänge: Content-Type nur aus Whitelist', async () => {
+  const { normalizeAttachmentType } = await import('../src/services/mailInbox')
+  assert.equal(normalizeAttachmentType('application/pdf'), 'application/pdf')
+  assert.equal(normalizeAttachmentType('IMAGE/JPG; name=x'), 'image/jpeg')
+  assert.equal(normalizeAttachmentType('text/html'), 'application/octet-stream')
+  assert.equal(normalizeAttachmentType('image/svg+xml'), 'application/octet-stream')
+  assert.equal(normalizeAttachmentType(null), 'application/octet-stream')
 })
 
 test('Magic-Link: GET verbraucht den Token nicht, erst der POST meldet an', async () => {
@@ -1281,7 +1308,7 @@ test('Öffentliche Karten-API liefert genaue Koordinaten (~1 m) und keine Kennun
     const eintrag = (res.json().reports as any[]).find((r) => Math.abs(r.lat - 50.12346) < 1e-9)
     assert.ok(eintrag, 'Anzeige erscheint mit genauer Breite')
     assert.equal(eintrag.lon, 8.76543)
-    assert.deepEqual(Object.keys(eintrag).sort(), ['imageUrl', 'imageUrls', 'lat', 'lon', 'tattag', 'verstossArt'], 'keine zusätzlichen Felder (Aktenzeichen, Kennzeichen, Nutzer)')
+    assert.deepEqual(Object.keys(eintrag).sort(), ['betrag', 'imageUrl', 'imageUrls', 'lat', 'lon', 'tattag', 'verstossArt'], 'keine zusätzlichen Felder (Aktenzeichen, Kennzeichen, Nutzer) – betrag = BKat-Regelsatz (0495cac)')
   } finally { await app.close() }
 })
 

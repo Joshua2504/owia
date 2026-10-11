@@ -143,7 +143,7 @@ maßgebliche, dokumentierte Referenz. Die wichtigsten Gruppen:
   `MAIL_PORT` (587/STARTTLS oder 465/SMTPS), `MAIL_USER`, `MAIL_PASS`,
   `MAIL_FROM`, `MAIL_FROM_NAME`
 - **E-Mail-Posteingang (IMAP)** – `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`,
-  `IMAP_PASS`, `IMAP_POLL_SECONDS`, `REPLY_TRUSTED_DOMAINS`
+  `IMAP_PASS`, `IMAP_POLL_SECONDS`, `REPLY_TRUSTED_DOMAINS`, `MAIL_AUTHSERV_ID`
 - **Admins** – `ADMIN_EMAILS` (kommagetrennt; leer = niemand kann freigeben)
 
 > ⚠️ **Produktion:** `NODE_ENV=production` ist Pflicht – sonst sind Dev-Endpoints

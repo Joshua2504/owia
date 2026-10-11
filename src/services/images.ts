@@ -23,22 +23,6 @@ function extFromMime(mime: string): string {
   return mime === 'image/png' ? 'png' : 'jpg'
 }
 
-function extFromName(filename: string, fallback: string): string {
-  const m = filename.toLowerCase().match(/\.([a-z0-9]+)$/)
-  return m ? m[1] : fallback
-}
-
-/** Browser melden HEIC uneinheitlich – daher MIME *und* Dateiendung prüfen. */
-function isHeic(filename: string, mimetype: string): boolean {
-  const f = filename.toLowerCase()
-  return (
-    mimetype.startsWith('image/heic') ||
-    mimetype.startsWith('image/heif') ||
-    f.endsWith('.heic') ||
-    f.endsWith('.heif')
-  )
-}
-
 /** Bildtyp aus den ersten Bytes statt aus dem vom Client gemeldeten Mimetype:
  *  JPEG (FF D8), PNG (89 50 4E 47), HEIC/HEIF (ISO-BMFF „ftyp“-Box mit heic/
  *  heix/hevc/mif1/msf1). Alles andere ist kein Bild – auch wenn der Upload
@@ -55,41 +39,92 @@ export function sniffImageType(buffer: Buffer): 'image/jpeg' | 'image/png' | 'im
   return null
 }
 
-/** Hochgeladenes Bild in ein nutzbares JPG/PNG (+ ggf. HEIC-Original) überführen. */
+/** Obergrenze der Pixelzahl für die HEIC-Dekodierung – dieselbe wie
+ *  pixelate.ts MAX_PIXELS für JPEG/PNG (80 MP; aktuelle Handys liefern bis
+ *  ~50 MP). heic-convert/libheif dekodiert in WebAssembly-Speicher, den die
+ *  resourceLimits des Bild-Workers nicht erfassen: Eine kleine Datei mit
+ *  riesigen deklarierten Maßen hätte sonst Gigabytes belegt. */
+const MAX_HEIC_PIXELS = 80_000_000
+
+/** Größte in einer HEIC/HEIF-Datei deklarierte Bildfläche aus den
+ *  `ispe`-Boxen (Image Spatial Extents, meta → iprp → ipco) – ohne zu
+ *  dekodieren. Berücksichtigt alle Einträge (Hauptbild, Kacheln, Vorschau),
+ *  maßgeblich ist der größte. null, wenn keine `ispe` gefunden wurde
+ *  (laut Norm Pflicht für jedes Bild-Item). */
+export function heicDimensions(buffer: Buffer): { width: number; height: number } | null {
+  let best: { width: number; height: number } | null = null
+  // Container-Boxen, in die abgestiegen wird; `meta` ist eine FullBox (4 Byte
+  // Version/Flags vor den Kind-Boxen).
+  const container = new Set(['meta', 'iprp', 'ipco'])
+  const walk = (start: number, end: number, depth: number) => {
+    let i = start
+    while (i + 8 <= end && depth < 6) {
+      let size = buffer.readUInt32BE(i)
+      const type = buffer.toString('latin1', i + 4, i + 8)
+      let header = 8
+      if (size === 1) {
+        // 64-Bit-Größe; > 4 GB kommt bei 20-MB-Uploads nicht vor.
+        if (i + 16 > end) return
+        size = Number(buffer.readBigUInt64BE(i + 8))
+        header = 16
+      } else if (size === 0) {
+        size = end - i // Box reicht bis zum Ende
+      }
+      if (size < header || i + size > end) return
+      if (type === 'ispe' && size >= header + 12) {
+        const width = buffer.readUInt32BE(i + header + 4)
+        const height = buffer.readUInt32BE(i + header + 8)
+        if (!best || width * height > best.width * best.height) best = { width, height }
+      } else if (container.has(type)) {
+        walk(i + header + (type === 'meta' ? 4 : 0), i + size, depth + 1)
+      }
+      i += size
+    }
+  }
+  walk(0, buffer.length, 0)
+  return best
+}
+
+/** Hochgeladenes Bild in ein nutzbares JPG/PNG (+ ggf. HEIC-Original) überführen.
+ *  Läuft im Bild-Worker (intakeImageWorker.ts) – die HEIC-Dekodierung ist
+ *  CPU-/speicherintensiv und gehört nie in den HTTP-Prozess. Typ und Endung
+ *  kommen ausschließlich aus den Bytes (sniffImageType): Name und Mimetype
+ *  des Clients werden bewusst ignoriert – ein als „image/jpeg“ gemeldetes HEIC
+ *  landete sonst unkonvertiert als .jpg und war nirgends darstellbar. */
 export async function prepareImage(
   buffer: Buffer,
-  filename: string,
-  mimetype: string
+  _filename: string,
+  _mimetype: string
 ): Promise<PreparedImage> {
-  // Der gemeldete Mimetype ist nur ein Hinweis – maßgeblich sind die Bytes.
   const sniffed = sniffImageType(buffer)
   if (!sniffed) throw new Error('unsupported')
-  mimetype = sniffed === 'image/heic' ? (mimetype || 'image/heic') : sniffed
-  if (DIRECT_IMAGE_TYPES.includes(mimetype)) {
-    const ext = extFromMime(mimetype)
+  if (DIRECT_IMAGE_TYPES.includes(sniffed)) {
+    const ext = extFromMime(sniffed)
     return {
       buffer,
-      mimetype,
+      mimetype: sniffed,
       ext,
       originalBuffer: buffer,
-      originalMimetype: mimetype,
+      originalMimetype: sniffed,
       originalExt: ext,
       converted: false,
     }
   }
-  if (isHeic(filename, mimetype)) {
-    const jpeg = Buffer.from(await heicConvert({ buffer, format: 'JPEG', quality: 0.85 }))
-    return {
-      buffer: jpeg,
-      mimetype: 'image/jpeg',
-      ext: 'jpg',
-      originalBuffer: buffer,
-      originalMimetype: mimetype || 'image/heic',
-      originalExt: extFromName(filename, 'heic'),
-      converted: true,
-    }
+  // HEIC/HEIF: Maße vor der Dekodierung prüfen (wie decode() für JPEG/PNG).
+  const dims = heicDimensions(buffer)
+  if (!dims || !dims.width || !dims.height || dims.width * dims.height > MAX_HEIC_PIXELS) {
+    throw new Error(dims ? `Bild zu groß (${dims.width}×${dims.height} px)` : 'HEIC ohne Bildmaße')
   }
-  throw new Error('unsupported')
+  const jpeg = Buffer.from(await heicConvert({ buffer, format: 'JPEG', quality: 0.85 }))
+  return {
+    buffer: jpeg,
+    mimetype: 'image/jpeg',
+    ext: 'jpg',
+    originalBuffer: buffer,
+    originalMimetype: 'image/heic',
+    originalExt: 'heic',
+    converted: true,
+  }
 }
 
 /** Versionskennung einer Bildfassung für Cache-Busting in URLs: Jede neue

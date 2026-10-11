@@ -13,7 +13,45 @@ export type PreparedReportMail = {
 }
 export class ReportPreparationError extends Error {}
 
-export type DispatchResult = 'sent' | 'busy' | 'uncertain' | 'not-pending'
+export type DispatchResult = 'sent' | 'busy' | 'uncertain' | 'not-pending' | 'stale'
+
+// Freigabe-Marke (reports.freigabe_token, Migration 0050): Die Admin-Freigabe
+// gilt nur für den Stand, den der Admin gesehen hat. Zwischen Freigabe und
+// Versand kann der Job lange warten (Versand-Takt, Portal belegt, „ab morgen“);
+// zieht der Nutzer in der Zeit zurück, ändert und reicht neu ein, darf der alte
+// Job nichts versenden. Daher: Freigabe setzt eine neue Marke und gibt sie dem
+// Job mit; Zurückziehen/Ablehnen/Einreichen löschen sie (routes/reports/submit.ts,
+// routes/admin.ts); der Claim (dispatchReport, portalDispatch.startPortalRun)
+// verlangt die passende Marke. Jobs ohne Marke (vor Migration 0050 eingereiht
+// und dort nicht zuordenbar) versenden nichts.
+
+const VERSAND_JOBS = "('report.dispatch', 'portal.start')"
+
+/** Wartende Versand-Jobs einer Anzeige löschen (laufende nicht – die scheitern
+ *  an der Marke). Die Zuordnung geht über payload.reportId, weil ein schon
+ *  einmal gelaufener Job (JobRetryLater) keinen pending_key mehr hat. */
+export async function wartendeVersandJobsLoeschen(reportId: number): Promise<void> {
+  await pool.execute(
+    `DELETE FROM jobs WHERE status = 'queued' AND type IN ${VERSAND_JOBS}
+        AND CAST(JSON_VALUE(payload, '$.reportId') AS UNSIGNED) = ?`,
+    [reportId]
+  )
+}
+
+/** Freigabe erteilen: neue Marke setzen (nur eingereicht und nicht im Versand)
+ *  und ältere wartende Versand-Jobs verwerfen – sonst verschluckte enqueueJob
+ *  den neuen Job als Schlüssel-Duplikat und der alte liefe mit veralteter
+ *  Marke ins Leere. null = nicht (mehr) freigebbar. */
+export async function freigabeErteilen(reportId: number): Promise<string | null> {
+  const token = crypto.randomUUID()
+  const [res] = await pool.execute<mysql.ResultSetHeader>(
+    "UPDATE reports SET freigabe_token=? WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
+    [token, reportId]
+  )
+  if (!res.affectedRows) return null
+  await wartendeVersandJobsLoeschen(reportId)
+  return token
+}
 
 /** SMTP-Annahme ist keine Zustellbestätigung. Das gespeicherte Ergebnis erlaubt
  *  aber, nach SQL-Fehlern ausschließlich den lokalen Abschluss zu wiederholen. */
@@ -60,16 +98,20 @@ async function finishDispatch(reportId: number): Promise<void> {
  *  Auch nach einem Prozessabbruch wird kein zweiter Versand gestartet. */
 export async function dispatchReport(
   reportId: number,
-  prepare: (messageId: string) => Promise<PreparedReportMail>
+  prepare: (messageId: string) => Promise<PreparedReportMail>,
+  freigabe?: string
 ): Promise<DispatchResult> {
+  // Claim nur mit der Marke der Freigabe (siehe oben, freigabeErteilen). Ohne
+  // Marke (nur Tests/Einmal-Skripte) keine Prüfung – der Job 'report.dispatch'
+  // (routes/admin.ts) gibt sie immer mit.
   const [claim] = await pool.execute<mysql.ResultSetHeader>(
     `UPDATE reports SET versand_status='vorbereitung'
-      WHERE id=? AND status='eingereicht' AND versand_status IS NULL`,
-    [reportId]
+      WHERE id=? AND status='eingereicht' AND versand_status IS NULL AND (? IS NULL OR freigabe_token=?)`,
+    [reportId, freigabe ?? null, freigabe ?? null]
   )
   if (!claim.affectedRows) {
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      'SELECT status, versand_status FROM reports WHERE id=?', [reportId]
+      'SELECT status, versand_status, freigabe_token FROM reports WHERE id=?', [reportId]
     )
     if (rows[0]?.status === 'versendet') return 'sent'
     if (rows[0]?.versand_status === 'angenommen') {
@@ -77,7 +119,8 @@ export async function dispatchReport(
       return 'sent'
     }
     if (rows[0]?.versand_status === 'versand') return 'uncertain'
-    return rows[0]?.versand_status ? 'busy' : 'not-pending'
+    if (rows[0]?.versand_status) return 'busy'
+    return freigabe && rows[0]?.status === 'eingereicht' && rows[0]?.freigabe_token !== freigabe ? 'stale' : 'not-pending'
   }
 
   let smtpStarted = false

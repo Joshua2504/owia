@@ -6,7 +6,7 @@
 
 const FRIST_MONATE = 3
 
-import { CITIES } from '../config/cities'
+import { CITIES, isCityId } from '../config/cities'
 import { detectCityByLabel } from './districts'
 
 /** Stadt der Anzeige für die Frist: aus der PLZ des Tatorts (die city-Spalte
@@ -22,7 +22,7 @@ function fristStadt(r: TatDaten): string | null {
 /** Frist für die Stadt der Anzeige: Verjährung (3 Monate) oder die kürzere
  *  Annahmefrist der Stadt (Frankfurt/Wiesbaden-Portal: 2 Monate). */
 export function fristMonate(city: unknown): number {
-  const c = typeof city === 'string' ? CITIES[city] : undefined
+  const c = isCityId(city) ? CITIES[city] : undefined
   return c?.fristMonate && c.fristMonate < FRIST_MONATE ? c.fristMonate : FRIST_MONATE
 }
 /** Ab so vielen Resttagen wird vor der nahenden Verjährung gewarnt. */
@@ -39,6 +39,18 @@ function toDay(d: DateLike): Date | null {
   if (d instanceof Date) return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate())
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d))
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null
+}
+
+/** „Heute" als Kalendertag in Berlin (00:00 lokal, wie toDay). Der Container
+ *  läuft in UTC: zwischen 0 und 2 Uhr Berlin (1–2 Uhr in der Sommerzeit-Lücke)
+ *  wäre `now.getDate()` noch der Vortag und die Resttage um 1 zu hoch. Aus den
+ *  Berliner Datumsteilen wird derselbe Typ gebaut wie bei `ab` (Date(y, m, d)),
+ *  die Differenz ist damit auch über eine Zeitumstellung hinweg ganzzahlig
+ *  (Math.round unten fängt die ±1 h ab). */
+function berlinTag(now: Date): Date {
+  const [y, m, d] = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin' })
+    .format(now).split('-').map(Number)
+  return new Date(y, m - 1, d)
 }
 
 /** Erster Tag, an dem die Tat verjährt ist: Die Frist endet mit Ablauf des
@@ -64,10 +76,10 @@ export function verjaehrung(r: TatDaten, now = new Date()): VerjaehrungStatus {
   const stadt = fristStadt(r)
   const monate = fristMonate(stadt)
   const text = monate < FRIST_MONATE
-    ? `Die Tat liegt mehr als ${monate === 2 ? 'zwei' : monate} Monate zurück – ${(stadt && CITIES[stadt]?.name) ?? 'die Stadt'} nimmt sie nicht mehr an.`
+    ? `Die Tat liegt mehr als ${monate === 2 ? 'zwei' : monate} Monate zurück – ${(isCityId(stadt) && CITIES[stadt].name) || 'die Stadt'} nimmt sie nicht mehr an.`
     : 'Die Tat liegt mehr als drei Monate zurück und ist verjährt.'
   if (!ab) return { verjaehrt: false, bald: false, ab: null, restTage: null, monate, text }
-  const heute = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const heute = berlinTag(now)
   const restTage = Math.round((ab.getTime() - heute.getTime()) / 86_400_000)
   return { verjaehrt: restTage <= 0, bald: restTage > 0 && restTage <= WARN_TAGE, ab, restTage, monate, text }
 }

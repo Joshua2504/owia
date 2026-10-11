@@ -60,12 +60,26 @@ export const APP_LINK_PATHS = ['/login/link/*', '/kamera', '/anzeigen', '/anzeig
 // mit denen die Prüfer sich ohne eigenes Postfach anmelden können. Für genau
 // diese eine Adresse gilt ein fester Code aus der Umgebung statt eines
 // Mail-Codes. Das Konto kann nichts einreichen (submitDraft), es erreicht also
-// nie eine Behörde. Nach zu vielen Fehlversuchen ist der feste Code bis zum
-// nächsten Neustart gesperrt (zusätzlich zum Rate-Limit von /login/verify).
+// nie eine Behörde. Nach zu vielen Fehlversuchen ist der feste Code für eine
+// Stunde gesperrt (zusätzlich zum Rate-Limit von /login/verify). Zeitlich
+// begrenzt, weil der Zähler global ist (nicht je IP): Eine dauerhafte Sperre
+// bis zum Neustart könnte jeder mit 20 Falscheingaben auslösen und damit die
+// Store-Prüfung blockieren. 20 Versuche/h bei 10^6 Codes bleiben unergiebig.
 // ---------------------------------------------------------------------------
 
 const REVIEW_MAX_FAILURES = 20
-let reviewFailures = 0
+const REVIEW_FAILURE_WINDOW_MS = 60 * 60 * 1000
+// Festes Fenster: beginnt mit der ersten Prüfung nach Ablauf des vorigen, die
+// Sperre hält also höchstens REVIEW_FAILURE_WINDOW_MS.
+const reviewFailures = { count: 0, fensterStart: 0 }
+
+function reviewFailureCount(now: number): number {
+  if (now - reviewFailures.fensterStart >= REVIEW_FAILURE_WINDOW_MS) {
+    reviewFailures.count = 0
+    reviewFailures.fensterStart = now
+  }
+  return reviewFailures.count
+}
 
 /** Adresse des Demo-Kontos, nur wenn auch ein gültiger Code gesetzt ist. */
 export function reviewEmail(): string | null {
@@ -83,10 +97,11 @@ export function isReviewAccount(email: string | null | undefined): boolean {
 
 /** Prüft den festen Code des Demo-Kontos (zeitkonstant). */
 export function reviewCodeMatches(email: string, code: string): boolean {
-  if (!isReviewAccount(email) || reviewFailures >= REVIEW_MAX_FAILURES) return false
+  const now = Date.now()
+  if (!isReviewAccount(email) || reviewFailureCount(now) >= REVIEW_MAX_FAILURES) return false
   const expected = Buffer.from((process.env.APP_REVIEW_CODE || '').trim())
   const given = Buffer.from(String(code).trim())
   const ok = given.length === expected.length && crypto.timingSafeEqual(given, expected)
-  if (!ok) reviewFailures++
+  if (!ok) reviewFailures.count++
   return ok
 }

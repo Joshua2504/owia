@@ -52,14 +52,38 @@ export function queuePlateAnalysis(
  *  siehe PUT /anzeige/:az/images/:imageId). */
 export function queueAnalyseOnly(userId: number, reportId: number, imageId: number, filename: string, mimetype: string): void {
   if (!alprEnabled()) return
+  // Während der Neu-Analyse 'pending' zeigen: drittProblem (submit.ts) sperrt
+  // das Einreichen nur, solange es eine laufende Analyse erkennen kann – sonst
+  // ginge ein frisch ersetztes Foto mit „keine Analyse, aber geprüft“ durch,
+  // bevor die Datenschutz-Prüfung überhaupt lief. Den alten Status merken, damit
+  // ein ALPR-Ausfall das (gültige) Kennzeichen-Ergebnis nicht als 'failed' zeigt.
+  const vorher = pool
+    .execute<mysql.RowDataPacket[]>('SELECT analysis_status FROM report_images WHERE id=?', [imageId])
+    .then(async ([rows]) => {
+      await setStatus(imageId, 'pending')
+      const alt = rows[0]?.analysis_status
+      return alt && alt !== 'pending' ? String(alt) : 'failed'
+    })
+    .catch(() => 'failed')
   queue = queue
     .then(async () => {
+      const altStatus = await vorher
       const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT report_id, filename FROM report_images WHERE id=?', [imageId])
       if (!rows.length) return
       const file = path.join(reportDir(userId, Number(rows[0].report_id)), String(rows[0].filename))
-      const result = await recognizePlate(file, mimetype)
+      const result = await recognizePlate(file, mimetype).catch(() => null)
+      // `AND filename=?`: Wurde das Foto inzwischen erneut ersetzt, gehört das
+      // Ergebnis zur alten Fassung – die neue hat ihre eigene Analyse eingereiht.
       if (result?.analyse) {
-        await pool.execute('UPDATE report_images SET analyse_json=? WHERE id=? AND filename=?', [JSON.stringify(result.analyse), imageId, rows[0].filename])
+        await pool.execute(
+          "UPDATE report_images SET analyse_json=?, analysis_status='done' WHERE id=? AND filename=?",
+          [JSON.stringify(result.analyse), imageId, rows[0].filename]
+        )
+      } else {
+        await pool.execute(
+          "UPDATE report_images SET analysis_status=? WHERE id=? AND filename=? AND analysis_status='pending'",
+          [altStatus, imageId, rows[0].filename]
+        )
       }
     })
     .catch(() => {
@@ -124,8 +148,11 @@ async function runAnalysis(
     await pool.execute(
       `UPDATE report_images
          SET detected_plate=?, plate_confidence=?, analyse_json=?, analysis_status='done', analyzed_at=NOW()
-       WHERE id=?`,
-      [best?.plate ?? null, best?.confidence ?? null, result.analyse ? JSON.stringify(result.analyse) : null, imageId]
+       WHERE id=? AND filename=?`,
+      // filename-Guard: Ein PUT (Foto ersetzt) während der Analyse hat eine
+      // eigene Analyse eingereiht – das Ergebnis der alten Fassung darf deren
+      // analyse_json nicht überschreiben (Datenschutz-Prüfung, submit.ts).
+      [best?.plate ?? null, best?.confidence ?? null, result.analyse ? JSON.stringify(result.analyse) : null, imageId, filename]
     )
 
     // Kennzeichen-Ausschnitt als eigene Datei neben dem Foto ablegen (Beleg,

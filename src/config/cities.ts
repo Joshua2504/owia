@@ -230,9 +230,17 @@ export const CITIES: Record<string, City> = {
   },
 }
 
+/** Ist `id` eine freigeschaltete Stadt-ID? Nur eigene Schlüssel zählen: Ein
+ *  schlichtes `CITIES[id]` träfe bei Client-Werten wie „constructor“ oder
+ *  „__proto__“ geerbte Object-Eigenschaften – die wären dann als Stadt
+ *  gespeichert worden und hätten beim Zugriff auf `.portal`/`.name` versagt. */
+export function isCityId(id: unknown): id is string {
+  return typeof id === 'string' && Object.hasOwn(CITIES, id)
+}
+
 /** Stadt zu einer ID; fällt bei unbekannter/leerer ID auf die Default-Stadt zurück. */
 export function getCity(id?: string | null): City {
-  return (id && CITIES[id]) || CITIES[DEFAULT_CITY_ID]
+  return isCityId(id) ? CITIES[id] : CITIES[DEFAULT_CITY_ID]
 }
 
 /** Stadt anhand einer Geo-Scope-Kennung (data-geo-scope) finden. */

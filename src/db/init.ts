@@ -35,10 +35,9 @@ export async function initDb(): Promise<void> {
   )
 
   // Entwurfs-Workflow: Anzeigen starten als Entwurf und werden später versendet;
-  // gelöschte Entwürfe liegen bis zum Ablauf im Papierkorb (migrations/0034).
-  await pool.query(
-    "ALTER TABLE reports MODIFY status ENUM('entwurf','eingereicht','versendet','papierkorb') NOT NULL DEFAULT 'entwurf'"
-  )
+  // gelöschte Entwürfe liegen bis zum Ablauf im Papierkorb. Das status-ENUM
+  // (inkl. 'papierkorb') setzt migrations/0034 – hier bewusst KEIN MODIFY mehr:
+  // es würde bei jedem Boot spätere Migrationen am ENUM rückgängig machen.
   // Art des Versands (selbst gedruckt/Post, selbst per E-Mail, von uns versendet).
   await pool.query(
     'ALTER TABLE reports ADD COLUMN IF NOT EXISTS versand_art VARCHAR(20) NULL'

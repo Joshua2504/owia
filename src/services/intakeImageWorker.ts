@@ -3,12 +3,12 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { parentPort } from 'node:worker_threads'
-import { prepareImage, writePreparedImage } from './images'
+import { prepareImage, writePreparedImage, writeReplacementImage } from './images'
 import { extractPhotoMeta } from './exif'
 import { writeThumbnailCache, writeMailVariantCache, cachedPixelate } from './pixelate'
 import type { BildAnalyse } from './alpr'
 
-parentPort!.on('message', async (job: { kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path' | 'pixel'; buffer?: Uint8Array; rawPath?: string; filename: string; mimetype: string; dir: string; analyse?: BildAnalyse | null }) => {
+parentPort!.on('message', async (job: { kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path' | 'pixel' | 'replace'; buffer?: Uint8Array; rawPath?: string; filename: string; mimetype: string; dir: string; analyse?: BildAnalyse | null; nurKonvertiert?: boolean }) => {
   try {
     if (job.kind === 'pixel') {
       // Schreibt <datei>.pixel.jpg als Cache (öffentliche Karte, routes/public.ts).
@@ -25,9 +25,17 @@ parentPort!.on('message', async (job: { kind: 'prepare' | 'thumbnail' | 'derivat
       parentPort!.postMessage({ ok: true })
       return
     }
-    const raw = job.kind === 'prepare-path' ? await fs.readFile(job.rawPath!) : undefined
+    const raw = job.rawPath && !job.buffer ? await fs.readFile(job.rawPath) : undefined
     const bytes = job.buffer || raw!
     const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    if (job.kind === 'replace') {
+      // Ersatzfassung (intakeImageProcessing.ts processReplacementImage): nur die
+      // nutzbare Datei schreiben, nie ein „-original“ (das bleibt der Erst-Upload).
+      const prepared = await prepareImage(buffer, '', '')
+      const filename = job.nurKonvertiert && !prepared.converted ? '' : await writeReplacementImage(job.dir, prepared)
+      parentPort!.postMessage({ ok: true, result: { filename, mimetype: prepared.mimetype, converted: prepared.converted } })
+      return
+    }
     const meta = await extractPhotoMeta(buffer)
     const prepared = await prepareImage(buffer, job.filename, job.mimetype)
     const names = await writePreparedImage(job.dir, prepared)

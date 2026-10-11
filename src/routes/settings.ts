@@ -13,6 +13,7 @@ import { MailService } from '../services/mail'
 import { adminEmails } from '../config/admin'
 import { appUrl } from '../config/app'
 import { cleanText } from '../utils/format'
+import { allowMailTo } from '../services/abuseLimits'
 
 /** Dateinamen für den ZIP-Export bereinigen. */
 function safeName(name: string): string {
@@ -92,6 +93,13 @@ export default async function settingsRoutes(app: FastifyInstance) {
     if (taken.length) {
       return flashRedirect(reply, 'error', 'Diese E-Mail-Adresse wird bereits verwendet.', '/einstellungen')
     }
+    // Limit je Zieladresse, gemeinsam mit dem Login-Code (services/abuseLimits.ts):
+    // Viele Konten könnten sonst abwechselnd ein fremdes Postfach fluten. Hier
+    // darf die Meldung deutlich sein – der Nutzer ist angemeldet, und das Limit
+    // verrät nichts darüber, ob zur Adresse ein Konto existiert.
+    if (!allowMailTo(neu)) {
+      return flashRedirect(reply, 'error', 'An diese Adresse wurden zu viele Bestätigungs-Mails gesendet – bitte in einer Stunde erneut versuchen.', '/einstellungen')
+    }
 
     const token = crypto.randomBytes(32).toString('hex')
     await pool.execute(
@@ -110,40 +118,113 @@ export default async function settingsRoutes(app: FastifyInstance) {
     return reply.redirect('/einstellungen')
   })
 
-  // E-Mail-Adresse ändern (Schritt 2): Token aus dem Link einlösen.
+  // E-Mail-Adresse ändern (Schritt 2): Token aus dem Link einlösen. Wie beim
+  // Anmeldelink (routes/auth.ts) zeigt der GET nur eine Bestätigungsseite –
+  // Link-Scanner der Mail-Anbieter (Outlook Safe Links, Virenscanner,
+  // Messenger-Vorschau) rufen Links vorab ab und hätten den Wechsel sonst ohne
+  // Zutun des Postfach-Inhabers vollzogen. Das war ausnutzbar: Ein Angreifer
+  // trägt in SEINEM Konto die (noch unregistrierte) Adresse des Opfers ein,
+  // der Scanner bestätigt, und meldet sich das Opfer später mit seiner Adresse
+  // an, landet es im Konto des weiterhin eingeloggten Angreifers.
   app.get('/einstellungen/email/bestaetigen/:token', async (request, reply) => {
     const { token } = request.params as { token: string }
+    const ziel = request.session.userId ? '/einstellungen' : '/login'
+    if (!/^[0-9a-f]{64}$/.test(token)) {
+      return flashRedirect(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen.', ziel)
+    }
     const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, email_change_neu FROM users
+      `SELECT email_change_neu FROM users
         WHERE email_change_token = ? AND email_change_expires > NOW()
-          AND email_change_neu IS NOT NULL`,
+          AND email_change_neu IS NOT NULL AND anonymized_at IS NULL`,
       [token]
     )
-    const user = rows[0]
-    if (!user) {
-      return flashRedirect(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen.', '/login')
+    if (!rows[0]) {
+      return flashRedirect(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen.', ziel)
     }
-    // Defensiv auch beim Einlösen prüfen: ein schwebender Wechsel könnte von
-    // vor der Admin-Sperre in Schritt 1 stammen.
-    if (adminEmails().includes(String(user.email_change_neu).toLowerCase())) {
-      return flashRedirect(reply, 'error', 'Diese E-Mail-Adresse kann nicht verwendet werden.', '/login')
+    return reply.view('/settings/email-bestaetigen.ejs', viewData(request, {
+      title: 'E-Mail-Adresse bestätigen',
+      token,
+      neu: rows[0].email_change_neu,
+    }))
+  })
+
+  // Erst der POST (Button auf der Bestätigungsseite; Sec-Fetch-Site-Prüfung in
+  // server.ts) verbraucht den Token und übernimmt die Adresse.
+  app.post('/einstellungen/email/bestaetigen/:token', async (request, reply) => {
+    const { token } = request.params as { token: string }
+    const ziel = request.session.userId ? '/einstellungen' : '/login'
+    if (!/^[0-9a-f]{64}$/.test(token)) {
+      return flashRedirect(reply, 'error', 'Der Bestätigungslink ist ungültig oder abgelaufen.', ziel)
     }
-    // Adresse könnte inzwischen vergeben sein (Race) – Unique-Kollision abfangen.
+
+    // In einer Transaktion: Zeile sperren (zwei parallele POSTs lösen den Token
+    // nur einmal ein), Adresse übernehmen, alte Anmeldewege entwerten.
+    type Ergebnis = { fehler: string } | { userId: number; alt: string; neu: string }
+    let ergebnis: Ergebnis
+    const conn = await pool.getConnection()
     try {
-      await pool.execute(
-        `UPDATE users SET email = email_change_neu, email_change_neu = NULL,
-                email_change_token = NULL, email_change_expires = NULL WHERE id = ?`,
-        [user.id]
+      await conn.beginTransaction()
+      const [rows] = await conn.execute<mysql.RowDataPacket[]>(
+        `SELECT id, email, email_change_neu FROM users
+          WHERE email_change_token = ? AND email_change_expires > NOW()
+            AND email_change_neu IS NOT NULL AND anonymized_at IS NULL
+          FOR UPDATE`,
+        [token]
       )
-    } catch {
-      return flashRedirect(reply, 'error', 'Diese E-Mail-Adresse wird inzwischen bereits verwendet.', '/login')
+      const user = rows[0]
+      if (!user) {
+        ergebnis = { fehler: 'Der Bestätigungslink ist ungültig oder abgelaufen.' }
+      } else if (adminEmails().includes(String(user.email_change_neu).toLowerCase())) {
+        // Defensiv auch beim Einlösen prüfen: ein schwebender Wechsel könnte von
+        // vor der Admin-Sperre in Schritt 1 stammen.
+        ergebnis = { fehler: 'Diese E-Mail-Adresse kann nicht verwendet werden.' }
+      } else {
+        try {
+          await conn.execute(
+            `UPDATE users SET email = email_change_neu, email_change_neu = NULL,
+                    email_change_token = NULL, email_change_expires = NULL WHERE id = ?`,
+            [user.id]
+          )
+          // Offene Login-Codes/-Links der ALTEN Adresse entwerten – sie führen
+          // ab jetzt nicht mehr in dieses Konto.
+          await conn.execute('UPDATE login_tokens SET used_at = NOW() WHERE used_at IS NULL AND email = ?', [user.email])
+          // Alle ANDEREN Sessions des Kontos beenden (wie bei der Kontoschließung,
+          // dort auch zur fehlenden user_id-Spalte): Wer vor dem Wechsel
+          // eingeloggt war, ist nicht zwingend der Inhaber der neuen Adresse
+          // (siehe oben). Außerdem trügen sie noch die alte userEmail, an der
+          // isAdminEmail hängt. Die eigene Session bleibt, wenn der
+          // Bestätigende gerade als dieser Nutzer angemeldet ist.
+          const eigeneSid = request.session.userId === user.id ? request.session.sessionId : ''
+          await conn.execute(
+            "DELETE FROM sessions WHERE JSON_EXTRACT(data, '$.userId') = ? AND sid <> ?",
+            [user.id, eigeneSid]
+          )
+          ergebnis = { userId: user.id, alt: user.email, neu: user.email_change_neu }
+        } catch (err) {
+          // Adresse könnte inzwischen vergeben sein (Race) – Unique-Kollision.
+          if ((err as { code?: string }).code !== 'ER_DUP_ENTRY') throw err
+          ergebnis = { fehler: 'Diese E-Mail-Adresse wird inzwischen bereits verwendet.' }
+        }
+      }
+      if ('fehler' in ergebnis) await conn.rollback()
+      else await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    } finally {
+      conn.release()
     }
-    // Falls der Bestätigende gerade als dieser Nutzer angemeldet ist: Session aktualisieren.
-    if (request.session.userId === user.id) {
-      request.session.userEmail = user.email_change_neu
+
+    if ('fehler' in ergebnis) return flashRedirect(reply, 'error', ergebnis.fehler, ziel)
+
+    // Eigene Session nachziehen (userName fiel ohne Namen auf die E-Mail zurück).
+    if (request.session.userId === ergebnis.userId) {
+      request.session.userEmail = ergebnis.neu
+      if (request.session.userName === ergebnis.alt) request.session.userName = ergebnis.neu
       await request.session.save()
+      return flashRedirect(reply, 'success', 'E-Mail-Adresse geändert – bitte künftig damit anmelden. Andere Geräte wurden abgemeldet.', '/einstellungen')
     }
-    return flashRedirect(reply, 'success', 'E-Mail-Adresse geändert – bitte künftig damit anmelden.', request.session.userId === user.id ? '/einstellungen' : '/login')
+    return flashRedirect(reply, 'success', 'E-Mail-Adresse geändert – bitte jetzt damit anmelden.', '/login')
   })
 
   // Konto schließen & anonymisieren (DSGVO Art. 17): Statt die Anzeigen hart zu
@@ -202,21 +283,30 @@ export default async function settingsRoutes(app: FastifyInstance) {
 
       // 3) users-Zeile scrubben (Profil leeren, E-Mail durch eindeutigen
       //    Platzhalter ersetzen, Konto als anonymisiert markieren = Login gesperrt).
+      //    ALLE personenbezogenen Spalten – bei neuen users-Spalten (migrations/)
+      //    hier nachziehen. Stand 0049: anrede/hausnummer (0039),
+      //    datenschutz_akzeptiert_at (init.ts; der Einwilligungsnachweis wird mit
+      //    dem Konto gegenstandslos), schwebender E-Mail-Wechsel (0023).
+      //    Bleiben: id, created_at, anonymized_at, cc_self (keine Personendaten).
+      //    Die bisherige Adresse aus der DB lesen, nicht aus der Session (die
+      //    könnte nach einem E-Mail-Wechsel auf einem anderen Gerät veraltet sein).
+      const [alt] = await conn.execute<mysql.RowDataPacket[]>('SELECT email FROM users WHERE id = ? FOR UPDATE', [userId])
+      const altEmail = String(alt[0]?.email || '')
       const platzhalter = `geloescht-${userId}-${crypto.randomBytes(4).toString('hex')}@anonym.invalid`
       await conn.execute(
         `UPDATE users
-            SET vorname=NULL, nachname=NULL, strasse=NULL, plz=NULL, ort=NULL, telefon=NULL,
+            SET anrede=NULL, vorname=NULL, nachname=NULL, strasse=NULL, hausnummer=NULL,
+                plz=NULL, ort=NULL, telefon=NULL, datenschutz_akzeptiert_at=NULL,
                 email=?, anonymized_at=NOW(),
                 email_change_neu=NULL, email_change_token=NULL, email_change_expires=NULL
           WHERE id=?`,
         [platzhalter, userId]
       )
 
-      // 4) Login der bisherigen Adresse entwerten, Session beenden. report_images
+      // 4) Login-Tokens der bisherigen Adresse löschen (nicht nur entwerten –
+      //    die Zeilen tragen die E-Mail-Adresse), Session beenden. report_images
       //    und die Dateien unter data/uploads/<userId>/ bleiben bewusst erhalten.
-      await conn.execute('UPDATE login_tokens SET used_at = NOW() WHERE used_at IS NULL AND email = ?', [
-        request.session.userEmail || '',
-      ])
+      await conn.execute('DELETE FROM login_tokens WHERE email = ?', [altEmail])
       // ALLE Sessions des Nutzers beenden, nicht nur die aktuelle – ein weiterhin
       // eingeloggter Zweitbrowser („Angemeldet bleiben", 30 Tage) könnte das
       // geschlossene Konto sonst unverändert weiterbenutzen. Die sessions-Tabelle

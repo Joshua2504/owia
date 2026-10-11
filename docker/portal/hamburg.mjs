@@ -350,5 +350,7 @@ export const PROFILE = {
     isSummary: (step) => step.title === 'Zusammenfassung',
     fill: fillHamburg,
     submit: submitHamburg,
+    // Für den Absende-Wächter in server.mjs (civento-Profile nutzen lib.currentStep).
+    currentStep: currentPage,
   },
 }

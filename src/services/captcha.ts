@@ -35,10 +35,20 @@ function hmacHex(input: string): string {
   return crypto.createHmac('sha256', HMAC_KEY).update(input).digest('hex')
 }
 
+// Exaktes Format des Salts aus createChallenge(): 12 Zufallsbytes hex +
+// „?expires=“ + Unix-Sekunden (10 Ziffern, reicht bis zum Jahr 2286).
+// Die Signatur (Altcha v1: HMAC über challenge = sha256(salt + number)) bindet
+// nur den VERKETTETEN String – ohne festes Format ließen sich Ziffern zwischen
+// salt und number verschieben (salt „…expires=17600000001“, number 2345 statt
+// „…expires=1760000000“, 12345): neuer Salt ⇒ Replay-Sperre umgangen, Ablauf
+// in ferner Zukunft. Feste Länge + kanonische Zahl machen die Zerlegung eindeutig.
+const SALT_RE = /^[0-9a-f]{24}\?expires=(\d{10})$/
+
 /** Frische Challenge fürs Widget (Attribut challengeurl). */
 export function createChallenge(): CaptchaChallenge {
   const expires = Date.now() + CHALLENGE_TTL_MS
   // Ablauf steckt als Query-Param im Salt und ist damit HMAC-signiert.
+  // Format muss zu SALT_RE passen (verifyCaptcha lehnt alles andere ab).
   const salt = `${crypto.randomBytes(12).toString('hex')}?expires=${Math.floor(expires / 1000)}`
   const secretNumber = crypto.randomInt(0, MAX_NUMBER)
   const challenge = sha256Hex(salt + secretNumber)
@@ -78,15 +88,21 @@ export function verifyCaptcha(payload: unknown): boolean {
     typeof data.salt !== 'string' ||
     typeof data.signature !== 'string' ||
     typeof data.number !== 'number' ||
-    !Number.isInteger(data.number)
+    !Number.isInteger(data.number) ||
+    // Wertebereich wie bei der Erzeugung (randomInt(0, MAX_NUMBER)); als
+    // JSON-Zahl ist String(number) kanonisch (keine führenden Nullen, kein Vorzeichen).
+    data.number < 0 ||
+    data.number > MAX_NUMBER
   ) {
     return false
   }
 
-  // Ablauf aus dem (signierten) Salt lesen.
-  const expiresParam = /[?&]expires=(\d+)/.exec(data.salt)?.[1]
+  // Ablauf aus dem (über die Challenge signierten) Salt lesen. Zusätzlich nach
+  // oben begrenzen: Kein von uns erzeugter Salt läuft später als jetzt + TTL ab.
+  const expiresParam = SALT_RE.exec(data.salt)?.[1]
   const expiresMs = expiresParam ? Number(expiresParam) * 1000 : 0
-  if (!expiresMs || expiresMs <= Date.now()) return false
+  const now = Date.now()
+  if (!expiresMs || expiresMs <= now || expiresMs > now + CHALLENGE_TTL_MS) return false
 
   // Signatur (Challenge stammt wirklich von uns) und Lösung prüfen –
   // timingSafeEqual, auch wenn ein Timing-Angriff hier wenig hergibt.

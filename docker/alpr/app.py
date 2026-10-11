@@ -130,9 +130,13 @@ def health():
     return {"ok": True}
 
 
+# Bewusst `def` statt `async def`: Die Inferenz (OpenCV/ONNX, mehrere Sekunden
+# CPU) und der threading.Lock blockieren sonst die Event-Loop – /health (und der
+# Docker-Healthcheck) antwortet dann nicht mehr, solange ein Foto läuft. FastAPI
+# führt `def`-Routen im Threadpool aus; der inference_lock serialisiert weiter.
 @app.post("/recognize")
-async def recognize(file: UploadFile = File(...)):
-    data = await file.read()
+def recognize(file: UploadFile = File(...)):
+    data = file.file.read()  # synchron (SpooledTemporaryFile), kein await im Threadpool
     img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         return {"plates": [], "best": None, "faces": [], "fahrzeug": None, "width": 0, "height": 0}

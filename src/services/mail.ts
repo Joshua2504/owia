@@ -638,9 +638,10 @@ export const MailService = {
     const wieder = !!vorherigeAblehnung
 
     const text = [
-      `Anzeige ${report.aktenzeichen} wurde am ${now.toLocaleDateString('de-DE')} um ${now.toLocaleTimeString(
+      `Anzeige ${report.aktenzeichen} wurde am ${now.toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' })} um ${now.toLocaleTimeString(
         'de-DE',
-        { hour: '2-digit', minute: '2-digit' }
+        // Container läuft in UTC – ohne timeZone stünde die Uhrzeit 1–2 h falsch in der Admin-Mail.
+        { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' }
       )} Uhr`,
       `von ${userEmail || extra?.email || 'unbekannt'} zur Prüfung eingereicht.`,
       wieder ? '' : undefined,

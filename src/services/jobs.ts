@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import mysql from 'mysql2/promise'
 import type { FastifyBaseLogger } from 'fastify'
 import { pool } from '../db/connection'
@@ -18,9 +19,13 @@ const CONCURRENCY = 3
 const POLL_MS = 5000
 /** Zeitlimit je Job: ein hängender Handler (SMTP ohne Socket-Timeout, Photon
  *  ohne Antwort) soll nicht dauerhaft einen der CONCURRENCY-Plätze belegen.
- *  Nach Ablauf gilt der Versuch als gescheitert (Backoff wie bei Fehlern); der
- *  Handler selbst läuft im Hintergrund weiter, bis er aufgibt – Handler sind
- *  wiederholbar (siehe oben), ein doppelter Lauf ist also verkraftbar. */
+ *  Nach Ablauf gilt der Versuch als gescheitert; der Handler selbst läuft im
+ *  Hintergrund weiter. Gegen doppelte Ausführung (z. B. dieselbe Mail zweimal):
+ *  Jeder Claim bekommt eine Lauf-Kennung (jobs.lauf_id, Migration 0050) – nur
+ *  der Lauf, dessen Kennung noch passt, schreibt das Ergebnis. Der neue Versuch
+ *  wartet mindestens ein weiteres Zeitlimit; endet der alte Handler bis dahin
+ *  doch erfolgreich, gilt der Job als erledigt und der Versuch entfällt. Erst
+ *  wenn er auch dann noch hängt, läuft der Job ein zweites Mal. */
 const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS || 10 * 60 * 1000)
 /** Ein 'running'-Job, der länger als das ist, stammt aus einem früheren
  *  Prozess (Absturz ohne sauberes Requeue) und wird neu eingereiht. */
@@ -105,45 +110,72 @@ async function claim(): Promise<mysql.RowDataPacket | null> {
     )
     const job = rows[0]
     if (!job) return null
+    const lauf = crypto.randomUUID()
     const [res] = await pool.execute<mysql.ResultSetHeader>(
-      "UPDATE jobs SET status = 'running', pending_key = NULL, attempts = attempts + 1, started_at = NOW() WHERE id = ? AND status = 'queued'",
-      [job.id]
+      "UPDATE jobs SET status = 'running', pending_key = NULL, attempts = attempts + 1, started_at = NOW(), lauf_id = ? WHERE id = ? AND status = 'queued'",
+      [lauf, job.id]
     )
-    if (res.affectedRows === 1) return job
+    if (res.affectedRows === 1) return Object.assign(job, { lauf_id: lauf })
   }
   return null
 }
 
+class JobTimeout extends Error {}
+
 async function runJob(job: mysql.RowDataPacket): Promise<void> {
   const handler = handlers.get(job.type)
+  const lauf = String(job.lauf_id)
   let timer: NodeJS.Timeout | null = null
+  let work: Promise<void> | null = null
   try {
     if (!handler) throw new Error(`Unbekannter Job-Typ ${job.type}`)
+    work = handler(JSON.parse(job.payload), log!)
     await Promise.race([
-      handler(JSON.parse(job.payload), log!),
+      work,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Zeitlimit von ${Math.round(JOB_TIMEOUT_MS / 60000)} min überschritten`)), JOB_TIMEOUT_MS)
+        timer = setTimeout(() => reject(new JobTimeout(`Zeitlimit von ${Math.round(JOB_TIMEOUT_MS / 60000)} min überschritten`)), JOB_TIMEOUT_MS)
       }),
     ])
-    await pool.execute("UPDATE jobs SET status = 'done', finished_at = NOW(), error = NULL WHERE id = ?", [job.id])
+    await pool.execute(
+      "UPDATE jobs SET status = 'done', finished_at = NOW(), error = NULL WHERE id = ? AND lauf_id = ?",
+      [job.id, lauf]
+    )
   } catch (err) {
     if (err instanceof JobRetryLater) {
       await pool.execute(
         `UPDATE jobs SET status = 'queued', attempts = ?, error = ?, started_at = NULL,
-                run_after = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ?`,
-        [Number(job.attempts), err.message.slice(0, 2000), Math.max(1, Math.round(err.seconds)), job.id]
+                run_after = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ? AND lauf_id = ?`,
+        [Number(job.attempts), err.message.slice(0, 2000), Math.max(1, Math.round(err.seconds)), job.id, lauf]
       ).catch(() => undefined)
       return
     }
     const attempt = Number(job.attempts) + 1
     const final = !handler || attempt >= Number(job.max_attempts)
     log?.error({ err, jobId: job.id, type: job.type, attempt }, 'Hintergrund-Job fehlgeschlagen')
-    // Erneuter Versuch mit Backoff: 1, 4, 9 … Minuten.
+    // Erneuter Versuch mit Backoff: 1, 4, 9 … Minuten; nach einem Zeitlimit
+    // mindestens ein weiteres Zeitlimit (der alte Handler bekommt die Chance,
+    // noch fertig zu werden, siehe JOB_TIMEOUT_MS).
+    const timeout = err instanceof JobTimeout
+    const minuten = timeout ? Math.max(attempt * attempt, Math.ceil(JOB_TIMEOUT_MS / 60000)) : attempt * attempt
     await pool.execute(
       `UPDATE jobs SET status = ?, error = ?, finished_at = IF(? , NOW(), NULL),
-              run_after = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?`,
-      [final ? 'failed' : 'queued', String((err as Error)?.message || err).slice(0, 2000), final, attempt * attempt, job.id]
+              run_after = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ? AND lauf_id = ?`,
+      [final ? 'failed' : 'queued', String((err as Error)?.message || err).slice(0, 2000), final, minuten, job.id, lauf]
     ).catch(() => undefined)
+    if (timeout && work) {
+      // Später Erfolg des alten Handlers: Job gilt als erledigt, solange noch
+      // kein neuer Lauf ihn übernommen hat (lauf_id unverändert). Später Fehler:
+      // ist als Fehlversuch schon gezählt.
+      void work.then(
+        () => pool.execute<mysql.ResultSetHeader>(
+          "UPDATE jobs SET status = 'done', finished_at = NOW(), error = NULL WHERE id = ? AND lauf_id = ? AND status IN ('queued','failed')",
+          [job.id, lauf]
+        ).then(([r]) => {
+          if (r.affectedRows) log?.warn({ jobId: job.id, type: job.type }, 'Job nach Zeitlimit doch erfolgreich beendet – Wiederholung entfällt')
+        }),
+        () => undefined
+      ).catch(() => undefined)
+    }
   } finally {
     if (timer) clearTimeout(timer)
   }

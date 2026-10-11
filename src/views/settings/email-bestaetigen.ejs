@@ -1,0 +1,25 @@
+<%# Bestätigungsseite für den Link aus der E-Mail-Wechsel-Mail (routes/settings.ts):
+    Wie beim Anmeldelink (auth/link.ejs) wird der Token erst beim POST
+    verbraucht – Link-Scanner der Mail-Anbieter dürfen den Wechsel nicht
+    vorab auslösen. %>
+<div class="row justify-content-center">
+  <div class="col-md-6">
+    <div class="card shadow-sm">
+      <div class="card-body p-4 text-center">
+        <h2 class="card-title mb-3">Neue E-Mail-Adresse bestätigen</h2>
+        <p class="text-muted small mb-3">
+          Für dein OWiA-Konto soll künftig diese Adresse gelten:
+        </p>
+        <p class="fw-semibold mb-4"><%= neu %></p>
+        <form method="post" action="/einstellungen/email/bestaetigen/<%= token %>">
+          <button type="submit" class="btn btn-primary btn-lg w-100" autofocus>Adresse übernehmen</button>
+        </form>
+        <p class="small text-muted mt-3 mb-0">
+          Danach meldest du dich nur noch mit dieser Adresse an; auf anderen Geräten
+          wirst du abgemeldet. Hast du den Wechsel nicht selbst angefordert? Dann
+          einfach diese Seite schließen – ohne Klick passiert nichts.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

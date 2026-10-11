@@ -8,6 +8,7 @@ import { verifyCaptcha } from '../services/captcha'
 import { consumeMagicLink, consumeLoginCode } from '../services/loginTokens'
 import { appUrl } from '../config/app'
 import { isReviewAccount, reviewCodeMatches } from '../config/mobileApp'
+import { allowMailTo } from '../services/abuseLimits'
 
 const CODE_TTL_MINUTES = 15
 // „Angemeldet bleiben": Cookie-Lebensdauer, sonst gilt der Default aus server.ts.
@@ -145,6 +146,18 @@ export default async function authRoutes(app: FastifyInstance) {
     // Demo-Konto der Store-Prüfung (config/mobileApp.ts): fester Code statt
     // Mail – die Prüfer haben kein Postfach dieser Adresse.
     if (isReviewAccount(normalizedEmail)) {
+      return reply.view('/auth/verify.ejs', viewData(request, {
+        title: 'Code eingeben',
+        email: normalizedEmail,
+      }))
+    }
+
+    // Limit je Zieladresse (services/abuseLimits.ts) gegen Mail-Bombing über
+    // rotierende IPs. Antwort bewusst identisch zum Erfolgsfall (keine Konto-
+    // Enumeration) – und VOR dem Entwerten alter Codes, damit der zuletzt
+    // zugestellte Code des echten Inhabers gültig bleibt.
+    if (!allowMailTo(normalizedEmail)) {
+      request.log.warn('Login-Code: Limit je Zieladresse erreicht – keine Mail versendet')
       return reply.view('/auth/verify.ejs', viewData(request, {
         title: 'Code eingeben',
         email: normalizedEmail,

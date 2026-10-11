@@ -44,6 +44,12 @@ ausgewertet. Empfänger für jede freigeschaltete Stadt vor Versand prüfen.
 `REPLY_TRUSTED_DOMAINS` muss die gewünschten Amts-Domains abdecken, wenn
 Antworten ohne Message-ID-Bezug automatisch per Aktenzeichen zugeordnet werden
 sollen. Der obige Frankfurt-Wert ist nur ein Beispiel.
+Zusätzlich muss der eigene Mailserver die Mail positiv authentifiziert haben:
+Ausgewertet wird nur der OBERSTE `Authentication-Results`-Header, und nur wenn
+er die authserv-id `MAIL_AUTHSERV_ID` trägt (leer = `IMAP_HOST`; Prod/Mailcow:
+`mail.treudler.net`) und `dmarc=pass` bzw. ausgerichtetes `dkim=pass`/`spf=pass`
+für die From-Domain meldet. Sonst landet die Mail als „nicht zugeordnet“ beim
+Admin (`services/mailInbox.ts`, `senderAuthenticated`).
 
 ## Einmalig auf dem Server einrichten
 
@@ -66,7 +72,8 @@ sollen. Der obige Frankfurt-Wert ist nur ein Beispiel.
 
 ## Smoke-Test nach jedem Deploy
 
-1. `curl -s https://<domain>/health` → `{"ok":true,"jobs":{…},"warnungen":[]}` –
+1. `curl -s http://127.0.0.1:3000/health` (auf dem Server; von außen liefert
+   `/health` nur `{"ok":true}`) → `{"ok":true,"jobs":{…},"warnungen":[]}` –
    `warnungen` muss leer sein (sonst: Job-Runner steht, alte Jobs warten oder
    Fehlschläge in der letzten Stunde). `…/health?voll=1` pingt zusätzlich
    Portal- und ALPR-Dienst.

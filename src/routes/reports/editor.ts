@@ -19,7 +19,7 @@ import { VERSTOSS_ARTEN } from '../../config/verstoss'
 import { FAHRZEUG_TYPEN, FAHRZEUG_MARKEN, FAHRZEUG_FARBEN, markeNormalisieren, DEFAULT_FAHRZEUG_TYP, KENNZEICHEN_LAENDER } from '../../config/fahrzeug'
 import { imageVersion } from '../../services/images'
 import { createDraft, isEditableDraft, trashDrafts } from '../../services/drafts'
-import { replyAttachmentPath } from '../../services/mailInbox'
+import { replyAttachmentPath, sendReplyAttachment } from '../../services/mailInbox'
 import { MailService } from '../../services/mail'
 import { verstossGesperrt } from '../../services/portale'
 import { loadReportByAktenzeichen, loadQueueContext, FORMULAR_HILFEN, VERSTOSS_SPERREN, strukturFelder, persistFields, normalizePlate, isComplete, mostUsedVerstoesse, isProfileComplete, enqueuePdf, istDatum, istUhrzeit, stripImage } from './shared'
@@ -488,20 +488,36 @@ export default async function editorRoutes(app: FastifyInstance) {
     // Nachrichtenverlauf (Anzeige-Mail, Antworten des Amts, eigene Nachrichten)
     // + Anhänge; Ansehen der Seite = gelesen.
     const [replies] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT id, direction, from_address, subject, body_text, received_at, read_at
+      `SELECT id, direction, message_id, from_address, subject, body_text, received_at, read_at
          FROM report_replies WHERE report_id = ? ORDER BY received_at, id`,
       [report.id]
     )
     const attachmentsByReply: Record<number, mysql.RowDataPacket[]> = {}
+    // Abschluss-Beleg des Portals (oben auf der Seite eingebettet). Erkannt
+    // wird er an Merkmalen, die nur finishRun() in services/portalDispatch.ts
+    // erzeugt: Zeile mit direction='out' (eingehende Mails sind immer 'in')
+    // und Message-ID <portal-UUID@owia.local>, Anhang application/pdf. Der
+    // Dateiname allein (…-Portal-Zusammenfassung.pdf) reicht NICHT – den kann
+    // jede eingehende Mail mitbringen. Ändert finishRun das ID-Format, hier
+    // nachziehen.
+    let portalBeleg: { replyId: number; attId: number } | null = null
     if (replies.length) {
       const ids = replies.map((r) => r.id)
       const [atts] = await pool.execute<mysql.RowDataPacket[]>(
-        `SELECT id, reply_id, original_filename, size_bytes
+        `SELECT id, reply_id, original_filename, mimetype, size_bytes
            FROM report_reply_attachments WHERE reply_id IN (${ids.map(() => '?').join(',')})
           ORDER BY id`,
         ids
       )
       for (const a of atts) (attachmentsByReply[a.reply_id] ??= []).push(a)
+      for (const r of replies) {
+        if (r.direction !== 'out' || !/^<portal-[0-9a-f-]{36}@owia\.local>$/.test(String(r.message_id || ''))) continue
+        const pdf = (attachmentsByReply[r.id] || []).find((a) => a.mimetype === 'application/pdf')
+        if (pdf) {
+          portalBeleg = { replyId: Number(r.id), attId: Number(pdf.id) }
+          break
+        }
+      }
       await pool.execute(
         'UPDATE report_replies SET read_at = NOW() WHERE report_id = ? AND read_at IS NULL',
         [report.id]
@@ -536,6 +552,7 @@ export default async function editorRoutes(app: FastifyInstance) {
       images,
       replies,
       attachmentsByReply,
+      portalBeleg,
       complete: isComplete(report),
       verjaehrt: isVerjaehrt(report),
       profileComplete: await isProfileComplete(userId),
@@ -626,15 +643,15 @@ export default async function editorRoutes(app: FastifyInstance) {
     const att = rows[0]
     if (!att) return reply.status(404).send('Anhang nicht gefunden.')
 
+    let buffer: Buffer
     try {
-      const buffer = await fs.readFile(replyAttachmentPath(Number(replyId), att.filename))
-      return reply
-        .header('Content-Type', att.mimetype || 'application/octet-stream')
-        // ?inline=1: PDF-Vorschau im iframe der Anzeigen-Seite statt Download.
-        .header('Content-Disposition', `${(request.query as { inline?: string }).inline ? 'inline' : 'attachment'}; filename="${att.original_filename || att.filename}"`)
-        .send(buffer)
+      buffer = await fs.readFile(replyAttachmentPath(Number(replyId), att.filename))
     } catch {
       return reply.status(404).send('Anhang-Datei nicht gefunden.')
     }
+    // ?inline=1: PDF-Vorschau im iframe der Anzeigen-Seite statt Download –
+    // aber nur für Whitelist-Typen, mit CSP-sandbox und nosniff; der Anhang
+    // kann aus einer fremden Mail stammen (services/mailInbox.ts).
+    return sendReplyAttachment(reply, att as { filename: string }, buffer, !!(request.query as { inline?: string }).inline)
   })
 }

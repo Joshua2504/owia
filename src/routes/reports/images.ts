@@ -9,9 +9,9 @@ import fs from 'fs/promises'
 import { pool } from '../../db/connection'
 import { requireAuth } from '../../middleware/auth'
 import { queueTatortFill } from '../../services/tatortFill'
-import { prepareImage, writeReplacementImage, removeImagePair, removeDerivedFiles, PreparedImage } from '../../services/images'
-import { processReportImage, processReportImageDerivatives, loadThumbnail, withIntakeUploadLock } from '../../services/intakeImageProcessing'
-import { createDraft, isEditableDraft, reportDir, insertImageRow, imageCount, nextSortOrder } from '../../services/drafts'
+import { removeImagePair, removeDerivedFiles } from '../../services/images'
+import { processReportImage, processReportImageDerivatives, processReplacementImage, loadThumbnail, withIntakeUploadLock, ReplacementResult } from '../../services/intakeImageProcessing'
+import { createDraft, deleteDraft, isEditableDraft, reportDir, insertImageRow, imageCount, nextSortOrder } from '../../services/drafts'
 import { alprEnabled, recognizePlate } from '../../services/alpr'
 import { queuePlateAnalysis, queueAnalyseOnly, plateCropName, bestPlateForReport, prefillReportPlate, bestFahrzeugForReport, prefillReportFahrzeug } from '../../services/plateAnalysis'
 import { photoSha256, findExistingPhoto } from '../../services/photoDedup'
@@ -36,33 +36,60 @@ async function removeImageFiles(
   return removeImagePair(reportDir(userId, reportId), filename, originalFilename)
 }
 
-/** Bild zum Entwurf auf Platte + in der DB speichern; gibt die neue Bild-ID zurück.
+/** Ergebnis von saveImageToReport: gespeichert oder abgelehnt (Limit/Duplikat). */
+export type SaveImageResult =
+  | { ok: true; id: number; filename: string; mimetype: string; capturedAt: string | null }
+  | { ok: false; grund: 'voll' }
+  | { ok: false; grund: 'doppelt'; existing: string }
+
+/** Bild zum Entwurf auf Platte + in der DB speichern.
  *  HEIC-Konvertierung und EXIF-Lesen (aus dem Original – die Konvertierung
- *  entfernt die Metadaten) laufen im Worker-Thread. */
+ *  entfernt die Metadaten) laufen im Worker-Thread, bewusst AUSSERHALB der
+ *  Nutzer-Sperre (dauert bei HEIC Sekunden). Bildlimit und Duplikatprüfung
+ *  werden danach unter withIntakeUploadLock zusammen mit dem INSERT
+ *  entschieden: Zwei parallele Uploads sahen vorher denselben Zählerstand bzw.
+ *  denselben „noch nicht vorhanden“-Befund und kamen beide durch. Abgelehnte
+ *  Uploads räumen ihre schon geschriebenen Dateien wieder weg. Aufrufer sollten
+ *  vorab ohne Sperre grob prüfen (imageCount/findExistingPhoto), damit
+ *  offensichtliche Ablehnungen nicht erst durch den Worker laufen.
+ *  Wirft, wenn das Bild nicht verarbeitet werden kann (kein JPG/PNG/HEIC). */
 export async function saveImageToReport(
   userId: number,
   reportId: number,
   upload: { buffer: Buffer; filename: string; mimetype: string },
   sha256: string
-): Promise<{ id: number; filename: string; mimetype: string; capturedAt: string | null }> {
+): Promise<SaveImageResult> {
   const dir = reportDir(userId, reportId)
   const p = await processReportImage(upload.buffer, upload.filename, upload.mimetype, dir)
   const { filename, originalFilename, meta } = p
-  queueDerivatives(dir, filename, p.mimetype)
 
-  // Neues Bild ans Ende der Sortierreihenfolge hängen.
-  const id = await insertImageRow(reportId, {
-    filename,
-    mimetype: p.mimetype,
-    originalFilename,
-    originalMimetype: p.originalMimetype,
-    sortOrder: await nextSortOrder(reportId),
-    capturedAt: meta.capturedAt,
-    gpsLat: meta.lat,
-    gpsLon: meta.lon,
-    sha256,
+  const result = await withIntakeUploadLock(userId, async (): Promise<SaveImageResult> => {
+    if ((await imageCount(reportId)) >= MAX_IMAGES) return { ok: false, grund: 'voll' }
+    const existing = await findExistingPhoto(userId, sha256)
+    if (existing) return { ok: false, grund: 'doppelt', existing }
+    // Neues Bild ans Ende der Sortierreihenfolge hängen.
+    const id = await insertImageRow(reportId, {
+      filename,
+      mimetype: p.mimetype,
+      originalFilename,
+      originalMimetype: p.originalMimetype,
+      sortOrder: await nextSortOrder(reportId),
+      capturedAt: meta.capturedAt,
+      gpsLat: meta.lat,
+      gpsLon: meta.lon,
+      sha256,
+    })
+    return { ok: true, id, filename, mimetype: p.mimetype, capturedAt: meta.capturedAt }
+  }).catch(async (err) => {
+    await removeImagePair(dir, filename, originalFilename)
+    throw err
   })
-  return { id, filename, mimetype: p.mimetype, capturedAt: meta.capturedAt }
+  if (!result.ok) {
+    await removeImagePair(dir, filename, originalFilename)
+    return result
+  }
+  queueDerivatives(dir, filename, p.mimetype)
+  return result
 }
 
 /** Bild-URLs mit ?v=<Fassung> (imageVersion) ändern sich bei jeder neuen
@@ -91,13 +118,10 @@ export default async function imageRoutes(app: FastifyInstance) {
         if (part.fieldname !== 'bilder' || !part.filename) continue
         const buffer = await part.toBuffer()
         if (buffer.length === 0) continue
-        // Bildlimit unter der Nutzer-Sperre prüfen (wie der Foto-Import):
-        // Zwei parallele Uploads sahen sonst denselben Zählerstand und
-        // kamen gemeinsam über MAX_IMAGES.
-        const voll = await withIntakeUploadLock(userId, async () => {
-          return (await imageCount(reportId)) >= MAX_IMAGES
-        })
-        if (voll) {
+        // Grobe Vorprüfung ohne Sperre (spart bei vollem Entwurf/Duplikat die
+        // Bildverarbeitung); verbindlich entscheidet saveImageToReport unter
+        // der Nutzer-Sperre zusammen mit dem INSERT.
+        if ((await imageCount(reportId)) >= MAX_IMAGES) {
           errors.push(`Maximal ${MAX_IMAGES} Bilder pro Anzeige.`)
           continue
         }
@@ -111,6 +135,12 @@ export default async function imageRoutes(app: FastifyInstance) {
             continue
           }
           const row = await saveImageToReport(userId, reportId, { buffer, filename: part.filename, mimetype: part.mimetype || '' }, sha256)
+          if (!row.ok) {
+            errors.push(row.grund === 'voll'
+              ? `Maximal ${MAX_IMAGES} Bilder pro Anzeige.`
+              : `${part.filename}: Bereits vorhanden (${row.existing}) – übersprungen.`)
+            continue
+          }
           // Kennzeichen im Hintergrund erkennen; Ergebnis holt das Formular per Poll.
           queuePlateAnalysis(userId, reportId, row.id, row.filename, row.mimetype)
           // Tatort leer? Aus den GPS-Daten des neuen Fotos nachtragen.
@@ -164,33 +194,57 @@ export default async function imageRoutes(app: FastifyInstance) {
     const old = await loadOwnedImage(az, imageId, userId, { draftOnly: true })
     if (!old) return reply.status(404).send({ error: 'not found' })
 
-    let prepared: PreparedImage | null = null
+    let upload: Buffer | null = null
     try {
       for await (const part of request.parts()) {
         if (part.type !== 'file' || part.fieldname !== 'bilder' || !part.filename) continue
         const buffer = await part.toBuffer()
         if (buffer.length === 0) continue
-        prepared = await prepareImage(buffer, part.filename, part.mimetype || '')
+        upload = buffer
         break // nur das erste Bild ersetzt die bestehende Fassung
       }
     } catch {
       return reply.status(413).send({ error: 'Bild zu groß (max. 20 MB).' })
     }
-    if (!prepared) {
+    if (!upload) {
       return reply.status(400).send({ error: 'Kein gültiges Bild übermittelt.' })
     }
 
     // Nur die neue nutzbare Fassung schreiben – original_filename bleibt auf dem
     // Erst-Upload stehen, damit eine (auch versehentliche) Schwärzung das
     // unbearbeitete Original nie vernichtet (es bleibt als Beleg auf der Platte
-    // und geht in den Datenexport ein).
+    // und geht in den Datenexport ein). Typprüfung/HEIC-Konvertierung samt
+    // Pixel-Limit laufen im Bild-Worker, nie hier im Request.
     const dir = reportDir(userId, old.report_id)
-    const filename = await writeReplacementImage(dir, prepared)
-    queueDerivatives(dir, filename, prepared.mimetype)
-    await pool.execute(
-      'UPDATE report_images SET filename=?, mimetype=? WHERE id=?',
-      [filename, prepared.mimetype, imageId]
+    let replaced: ReplacementResult
+    try {
+      replaced = await processReplacementImage({ buffer: upload }, dir)
+    } catch {
+      return reply.status(400).send({ error: 'Nur JPG-, PNG- und HEIC/HEIF-Bilder (bis 80 Megapixel) werden unterstützt.' })
+    }
+    const { filename, mimetype } = replaced
+
+    // Neue Fassung = neues Foto für alle Prüfungen: Datenschutz-Analyse,
+    // Dritte-Freigabe, Kennzeichen-Markierung und „geprüft“ gelten nur für die
+    // alte Fassung (wie bei „⟲ Original“). Ohne geprueft_at=NULL ließ sich ein
+    // bestätigtes Foto nachträglich durch ein beliebiges ungeprüftes ersetzen.
+    // photo-edit.js setzt Box und „geprüft“ nach dem PUT neu.
+    // Guard auf die bisherige Fassung (filename) und den Entwurfsstatus: Bei
+    // zwei parallelen PUTs (oder Verschieben/Auto-Schwärzen dazwischen) gewinnt
+    // genau einer; der Verlierer räumt seine Datei weg, statt eine Fassung zu
+    // überschreiben, deren Datei der andere schon gelöscht hat.
+    const [upd] = await pool.execute<mysql.ResultSetHeader>(
+      `UPDATE report_images ri JOIN reports r ON r.id = ri.report_id
+          SET ri.filename=?, ri.mimetype=?, ri.analyse_json=NULL, ri.dritte_ok=0,
+              ri.kennzeichen_box=NULL, ri.kennzeichen_keins=0, ri.geprueft_at=NULL
+        WHERE ri.id=? AND ri.report_id=? AND ri.filename=? AND r.status='entwurf'`,
+      [filename, mimetype, Number(imageId), old.report_id, old.filename]
     )
+    if (!upd.affectedRows) {
+      await fs.rm(path.join(dir, filename), { force: true }).catch(() => {})
+      return reply.status(409).send({ error: 'Das Foto wurde gerade geändert – bitte erneut versuchen.' })
+    }
+    queueDerivatives(dir, filename, mimetype)
 
     // Gespeicherten Kennzeichen-Ausschnitt zur neuen Fassung mitnehmen, BEVOR
     // unten die alten Dateien samt Ableitungen weggeräumt werden (die Erkennung
@@ -216,10 +270,7 @@ export default async function imageRoutes(app: FastifyInstance) {
     // hatte: PUT feuert bei jedem Schwärzungs-Save, und in der ersetzten Fassung
     // ist das Kennzeichen typischerweise gerade unkenntlich gemacht.
     // Die Datenschutz-Analyse (fremde Kennzeichen, Gesichter) gilt dagegen immer
-    // nur für die alte Fassung: verwerfen und für die neue neu erstellen.
-    // Die markierte Kennzeichen-Box gilt nur für die alte Fassung (Zuschnitt/
-    // Drehen) – photo-edit.js setzt sie nach dem PUT neu.
-    await pool.execute('UPDATE report_images SET analyse_json=NULL, dritte_ok=0, kennzeichen_box=NULL, kennzeichen_keins=0 WHERE id=?', [imageId])
+    // nur für die alte Fassung: oben verworfen, hier für die neue neu erstellt.
     if (old.detected_plate === null) {
       await pool.execute(
         `UPDATE report_images
@@ -227,9 +278,9 @@ export default async function imageRoutes(app: FastifyInstance) {
          WHERE id=?`,
         [imageId]
       )
-      queuePlateAnalysis(userId, old.report_id, Number(imageId), filename, prepared.mimetype)
+      queuePlateAnalysis(userId, old.report_id, Number(imageId), filename, mimetype)
     } else {
-      queueAnalyseOnly(userId, old.report_id, Number(imageId), filename, prepared.mimetype)
+      queueAnalyseOnly(userId, old.report_id, Number(imageId), filename, mimetype)
     }
 
     return reply.send({ image: { id: Number(imageId), url: `/anzeige/${az}/image/${imageId}` } })
@@ -251,25 +302,23 @@ export default async function imageRoutes(app: FastifyInstance) {
     }
 
     const dir = reportDir(userId, old.report_id)
-    let buffer: Buffer
+    const originalPath = path.join(dir, old.original_filename)
     try {
-      buffer = await fs.readFile(path.join(dir, old.original_filename))
+      await fs.access(originalPath)
     } catch {
       return reply.status(410).send({ error: 'Das Original dieses Fotos ist nicht mehr vorhanden.' })
     }
     // JPG/PNG: das Original ist selbst die nutzbare Fassung (wie nach dem
-    // Upload). HEIC: neu konvertieren – das Original bleibt unangetastet.
+    // Upload). HEIC: neu konvertieren – das Original bleibt unangetastet. Beides
+    // im Bild-Worker (Typ aus den Bytes, HEIC mit Pixel-Limit), nie im Request.
     let filename: string = old.original_filename
-    let mimetype: string = old.original_mimetype || old.mimetype
-    let prepared: PreparedImage
+    let mimetype: string
     try {
-      prepared = await prepareImage(buffer, old.original_filename, old.original_mimetype || '')
+      const r = await processReplacementImage({ rawPath: originalPath }, dir, { nurKonvertiert: true })
+      mimetype = r.mimetype
+      if (r.converted) filename = r.filename
     } catch {
       return reply.status(422).send({ error: 'Das Original lässt sich nicht lesen.' })
-    }
-    if (prepared.converted) {
-      filename = await writeReplacementImage(dir, prepared)
-      mimetype = prepared.mimetype
     }
 
     const [res] = await pool.execute<mysql.ResultSetHeader>(
@@ -408,8 +457,8 @@ export default async function imageRoutes(app: FastifyInstance) {
     const report = await loadReportByAktenzeichen(az, userId)
     if (!report) return reply.status(404).send({ error: 'not found' })
     if (!isEditableDraft(report)) return reply.status(409).send({ error: 'Nur Entwürfe können bearbeitet werden.' })
-    const [cnt] = await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS c, COALESCE(MAX(sort_order), 0) AS m FROM report_images WHERE report_id = ?', [report.id])
-    if (Number(cnt[0].c) >= MAX_IMAGES) return reply.status(409).send({ error: `Höchstens ${MAX_IMAGES} Fotos je Anzeige.` })
+    // Vorprüfung ohne Sperre (spart das Kopieren); verbindlich unten unter der Sperre.
+    if ((await imageCount(report.id)) >= MAX_IMAGES) return reply.status(409).send({ error: `Höchstens ${MAX_IMAGES} Fotos je Anzeige.` })
     const [rows] = await pool.execute<mysql.RowDataPacket[]>('SELECT * FROM report_images WHERE id = ? AND report_id = ?', [Number(imageId), report.id])
     const img = rows[0]
     if (!img) return reply.status(404).send({ error: 'not found' })
@@ -428,14 +477,25 @@ export default async function imageRoutes(app: FastifyInstance) {
     }
     await fs.copyFile(path.join(dir, plateCropName(img.filename)), path.join(dir, plateCropName(filename))).catch(() => {})
 
-    const werte: Record<string, unknown> = { ...img, filename, original_filename: original, sort_order: Number(cnt[0].m) + 1, geprueft_at: null }
-    delete werte.id
-    const spalten = Object.keys(werte)
-    const [res] = await pool.execute<mysql.ResultSetHeader>(
-      `INSERT INTO report_images (${spalten.map((c) => `\`${c}\``).join(', ')}) VALUES (${spalten.map(() => '?').join(', ')})`,
-      spalten.map((c) => (werte[c] === undefined ? null : werte[c])) as any[]
-    )
-    return reply.send({ image: { id: res.insertId, put: `/anzeige/${az}/images/${res.insertId}` } })
+    // Zählen + INSERT unter der Nutzer-Sperre (wie Upload/Verschieben), sonst
+    // kamen parallele Duplikate gemeinsam über MAX_IMAGES.
+    const insertId = await withIntakeUploadLock(userId, async () => {
+      const [cnt] = await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS c, COALESCE(MAX(sort_order), 0) AS m FROM report_images WHERE report_id = ?', [report.id])
+      if (Number(cnt[0].c) >= MAX_IMAGES) return null
+      const werte: Record<string, unknown> = { ...img, filename, original_filename: original, sort_order: Number(cnt[0].m) + 1, geprueft_at: null }
+      delete werte.id
+      const spalten = Object.keys(werte)
+      const [res] = await pool.execute<mysql.ResultSetHeader>(
+        `INSERT INTO report_images (${spalten.map((c) => `\`${c}\``).join(', ')}) VALUES (${spalten.map(() => '?').join(', ')})`,
+        spalten.map((c) => (werte[c] === undefined ? null : werte[c])) as any[]
+      )
+      return res.insertId
+    })
+    if (insertId === null) {
+      await removeImagePair(dir, filename, original)
+      return reply.status(409).send({ error: `Höchstens ${MAX_IMAGES} Fotos je Anzeige.` })
+    }
+    return reply.send({ image: { id: insertId, put: `/anzeige/${az}/images/${insertId}` } })
   })
 
   app.post('/anzeige/:az/images/reorder', { preHandler: requireAuth }, async (request, reply) => {
@@ -446,8 +506,14 @@ export default async function imageRoutes(app: FastifyInstance) {
     if (report.status !== 'entwurf') return reply.status(409).send({ error: 'not a draft' })
 
     const body = (request.body || {}) as { order?: unknown }
+    // Nur echte Bild-IDs dieses Reports, jede einmal: Ohne Filter lief pro
+    // übergebenem Element ein UPDATE – eine Liste mit 100 000 Einträgen hielt
+    // die DB entsprechend lange beschäftigt. So bleibt es bei höchstens so
+    // vielen UPDATEs, wie die Anzeige Fotos hat (≤ MAX_IMAGES).
+    const [own] = await pool.execute<mysql.RowDataPacket[]>('SELECT id FROM report_images WHERE report_id = ?', [report.id])
+    const ownIds = new Set(own.map((r) => Number(r.id)))
     const order = Array.isArray(body.order)
-      ? body.order.map((v) => Number(v)).filter((n) => Number.isFinite(n))
+      ? [...new Set(body.order.map((v) => Number(v)).filter((n) => ownIds.has(n)))]
       : []
     if (!order.length) return reply.send({ ok: true })
 
@@ -605,6 +671,7 @@ export async function moveImages(
     if (!isEditableDraft(target)) {
       return { status: 409, body: { error: 'Ziel-Anzeige ist kein Entwurf mehr.' } }
     }
+    // Vorprüfung ohne Sperre (spart das Kopieren); verbindlich unten in der Transaktion.
     if ((await imageCount(target.id)) + imgs.length > MAX_IMAGES) {
       return { status: 400, body: { error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` } }
     }
@@ -615,7 +682,6 @@ export async function moveImages(
   const from = reportDir(userId, source.id)
   const to = reportDir(userId, targetId)
   await fs.mkdir(to, { recursive: true })
-  let sortOrder = await nextSortOrder(targetId)
   // Reihenfolge: erst kopieren, dann DB umhängen, zuletzt Quellen löschen.
   // Ein Abbruch nach dem Kopieren lässt die DB auf den alten (noch
   // vorhandenen) Ort zeigen; ein Abbruch nach dem DB-Schreiben hinterlässt
@@ -627,27 +693,81 @@ export async function moveImages(
     // Gecachte Ableitungen (Vorschau, Pixelbild, Versandfassung, Kennzeichen-Ausschnitt).
     ...['.thumb.jpg', '.pixel.jpg', '.mail.jpg', '.plate.jpg'].map((s) => img.filename + s),
   ].filter(Boolean) as string[]
-  for (const img of imgs) {
-    for (const f of dateien(img)) {
-      await fs.copyFile(path.join(from, f), path.join(to, f)).catch((err) => {
-        // Pflichtdateien müssen kopierbar sein; fehlende Caches sind egal.
-        if (f === img.filename || f === img.original_filename) throw err
-      })
+  // Kopien im Ziel wieder entfernen – außer für Fotos, die (durch einen
+  // parallelen Request) inzwischen tatsächlich im Ziel stehen: deren Dateien
+  // sind dieselben Namen und gehören dann jener Zeile.
+  const kopienEntfernen = async () => {
+    const [imZiel] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT id FROM report_images WHERE report_id = ? AND id IN (${imgs.map(() => '?').join(',')})`,
+      [targetId, ...imgs.map((i) => i.id)]
+    )
+    const behalten = new Set(imZiel.map((r) => Number(r.id)))
+    for (const img of imgs) {
+      if (behalten.has(Number(img.id))) continue
+      for (const f of dateien(img)) await fs.rm(path.join(to, f), { force: true }).catch(() => {})
     }
   }
-  const conn = await pool.getConnection()
+  const neuerEntwurfWeg = async () => {
+    if (dest.newDraft) await deleteDraft(userId, { id: targetId }).catch(() => {})
+  }
   try {
-    await conn.beginTransaction()
     for (const img of imgs) {
-      await conn.execute('UPDATE report_images SET report_id = ?, sort_order = ? WHERE id = ?', [targetId, sortOrder++, img.id])
+      for (const f of dateien(img)) {
+        await fs.copyFile(path.join(from, f), path.join(to, f)).catch((err) => {
+          // Pflichtdateien müssen kopierbar sein; fehlende Caches sind egal.
+          if (f === img.filename || f === img.original_filename) throw err
+        })
+      }
     }
-    await conn.commit()
   } catch (err) {
-    await conn.rollback()
-    for (const img of imgs) for (const f of dateien(img)) await fs.rm(path.join(to, f), { force: true }).catch(() => {})
+    await kopienEntfernen()
+    await neuerEntwurfWeg()
     throw err
-  } finally {
-    conn.release()
+  }
+
+  // Umhängen unter der Nutzer-Sperre und in einer Transaktion: Bildlimit des
+  // Ziels, Entwurfsstatus beider Anzeigen und „Foto liegt noch in der Quelle“
+  // werden hier verbindlich geprüft. Vorher zählte nur die Vorprüfung oben –
+  // parallele Verschiebe-/Upload-Requests kamen gemeinsam über MAX_IMAGES, und
+  // ein zwischendurch eingereichter Entwurf verlor oder bekam noch Fotos.
+  const ergebnis = await withIntakeUploadLock(userId, async (): Promise<'ok' | 'voll' | 'kein-entwurf' | 'weg'> => {
+    const conn = await pool.getConnection()
+    try {
+      await conn.beginTransaction()
+      // FOR UPDATE: ein paralleles Einreichen wartet bis zum Commit.
+      const [entwuerfe] = await conn.execute<mysql.RowDataPacket[]>(
+        `SELECT id FROM reports WHERE id IN (?, ?) AND user_id = ? AND status = 'entwurf' AND versand_status IS NULL FOR UPDATE`,
+        [source.id, targetId, userId]
+      )
+      if (entwuerfe.length !== 2) { await conn.rollback(); return 'kein-entwurf' }
+      if ((await imageCount(targetId, conn)) + imgs.length > MAX_IMAGES) { await conn.rollback(); return 'voll' }
+      let sortOrder = await nextSortOrder(targetId, conn)
+      for (const img of imgs) {
+        const [upd] = await conn.execute<mysql.ResultSetHeader>(
+          'UPDATE report_images SET report_id = ?, sort_order = ? WHERE id = ? AND report_id = ?',
+          [targetId, sortOrder++, img.id, source.id]
+        )
+        if (!upd.affectedRows) { await conn.rollback(); return 'weg' }
+      }
+      await conn.commit()
+      return 'ok'
+    } catch (err) {
+      await conn.rollback().catch(() => {})
+      throw err
+    } finally {
+      conn.release()
+    }
+  }).catch(async (err) => {
+    await kopienEntfernen()
+    await neuerEntwurfWeg()
+    throw err
+  })
+  if (ergebnis !== 'ok') {
+    await kopienEntfernen()
+    await neuerEntwurfWeg()
+    if (ergebnis === 'voll') return { status: 400, body: { error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` } }
+    if (ergebnis === 'kein-entwurf') return { status: 409, body: { error: 'Quelle oder Ziel ist kein Entwurf mehr.' } }
+    return { status: 409, body: { error: 'Die Fotos wurden gerade geändert – bitte neu laden.' } }
   }
   for (const img of imgs) for (const f of dateien(img)) await fs.rm(path.join(from, f), { force: true }).catch(() => {})
 

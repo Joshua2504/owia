@@ -19,7 +19,6 @@ import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { requireAuth, viewData } from '../middleware/auth'
 import { createDraft, trashDrafts, imageCount } from '../services/drafts'
-import { withIntakeUploadLock } from '../services/intakeImageProcessing'
 import { queuePlateAnalysis } from '../services/plateAnalysis'
 import { queueTatortFill } from '../services/tatortFill'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
@@ -82,14 +81,17 @@ export default async function kameraRoutes(app: FastifyInstance) {
     }
     if (!upload) return reply.status(400).send({ error: 'Kein Bild empfangen.' })
 
-    const voll = await withIntakeUploadLock(userId, async () => {
-      return (await imageCount(report.id)) >= MAX_IMAGES
-    })
-    if (voll) return reply.status(409).send({ error: `Maximal ${MAX_IMAGES} Fotos pro Anzeige.` })
+    // Grobe Vorprüfung ohne Sperre (spart die Bildverarbeitung); verbindlich
+    // prüft saveImageToReport Limit und Duplikat unter der Nutzer-Sperre
+    // zusammen mit dem INSERT – sonst kamen parallele Aufnahmen gemeinsam
+    // über MAX_IMAGES bzw. dasselbe Foto zweimal hinein.
+    const voll = () => reply.status(409).send({ error: `Maximal ${MAX_IMAGES} Fotos pro Anzeige.` })
+    const doppelt = (existing: string) => reply.status(409).send({ error: `Dieses Foto ist schon vorhanden (${existing}).`, doppelt: true })
+    if ((await imageCount(report.id)) >= MAX_IMAGES) return voll()
 
     const sha256 = photoSha256(upload.buffer)
     const existing = await findExistingPhoto(userId, sha256)
-    if (existing) return reply.status(409).send({ error: `Dieses Foto ist schon vorhanden (${existing}).`, doppelt: true })
+    if (existing) return doppelt(existing)
 
     let row
     try {
@@ -97,6 +99,7 @@ export default async function kameraRoutes(app: FastifyInstance) {
     } catch {
       return reply.status(400).send({ error: 'Nur JPG-, PNG- und HEIC/HEIF-Bilder werden unterstützt.' })
     }
+    if (!row.ok) return row.grund === 'voll' ? voll() : doppelt(row.existing)
 
     // Metadaten vom Handy nur als Ersatz für fehlendes EXIF.
     const zeit = ZEIT_RE.test(felder.aufgenommen || '') ? felder.aufgenommen : null

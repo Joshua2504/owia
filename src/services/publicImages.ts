@@ -8,16 +8,26 @@ import { pool } from '../db/connection'
 import { reportDir } from './drafts'
 import { kartenAnalyse } from './dritte'
 import { processPixelNow } from './intakeImageProcessing'
+import { logger } from './logger'
 
+// Wird fire-and-forget aufgerufen (`void prewarmPublicImages(...)` in
+// reportDispatch.ts/portalDispatch.ts, nach abgeschlossenem Versand) – darf
+// deshalb NIE ablehnen: Eine unbehandelte Ablehnung (z.B. DB kurz weg) hätte
+// sonst den Prozess beendet. Fehlt die Vorberechnung, liefert die Karte das
+// Bild eben noch nicht; der Versand selbst ist davon unberührt.
 export async function prewarmPublicImages(reportId: number): Promise<void> {
-  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-    `SELECT r.user_id, ri.filename, ri.mimetype, ri.analyse_json, ri.kennzeichen_box, ri.kennzeichen_keins
-       FROM report_images ri JOIN reports r ON r.id = ri.report_id
-      WHERE ri.report_id = ? ORDER BY ri.sort_order, ri.id LIMIT 10`,
-    [reportId]
-  )
-  // Die Karte zeigt beim Hovern alle Fotos (routes/public.ts, max. 10).
-  for (const img of rows) {
-    await processPixelNow(img.filename, img.mimetype, reportDir(img.user_id, reportId), kartenAnalyse(img.analyse_json, img.kennzeichen_box, img.kennzeichen_keins)).catch(() => {})
+  try {
+    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+      `SELECT r.user_id, ri.filename, ri.mimetype, ri.analyse_json, ri.kennzeichen_box, ri.kennzeichen_keins
+         FROM report_images ri JOIN reports r ON r.id = ri.report_id
+        WHERE ri.report_id = ? ORDER BY ri.sort_order, ri.id LIMIT 10`,
+      [reportId]
+    )
+    // Die Karte zeigt beim Hovern alle Fotos (routes/public.ts, max. 10).
+    for (const img of rows) {
+      await processPixelNow(img.filename, img.mimetype, reportDir(img.user_id, reportId), kartenAnalyse(img.analyse_json, img.kennzeichen_box, img.kennzeichen_keins)).catch(() => {})
+    }
+  } catch (err) {
+    logger.error({ err, reportId }, 'Öffentliche Bildfassungen nicht vorberechnet')
   }
 }

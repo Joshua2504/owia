@@ -11,12 +11,13 @@ import { getCity, hasPdfForm } from '../../config/cities'
 import { resolveSendCity, cityEmail } from '../../services/districts'
 import { fahrzeugBeschreibung } from '../../config/fahrzeug'
 import { portalFuer } from '../../services/portale'
-import { dritteFunde, fundeText } from '../../services/dritte'
+import { dritteFunde, fundeText, parseAnalyse } from '../../services/dritte'
 import { imageVersion } from '../../services/images'
 import { pdfPath } from '../../services/drafts'
 import { isAdminEmail } from '../../config/admin'
 import { enqueueJob } from '../../services/jobs'
 import { enqueuePortalStart } from '../../services/portalDispatch'
+import { freigabeErteilen, wartendeVersandJobsLoeschen } from '../../services/reportDispatch'
 import { previewReportMail } from '../../services/mail'
 import { loadReportByAktenzeichen, isProfileComplete, regeneratePdf, enqueuePdf, countUncheckedImages, uncheckedMessage } from './shared'
 import { loadUser } from '../../services/users'
@@ -156,12 +157,16 @@ export default async function submitRoutes(app: FastifyInstance) {
     if (report.status !== 'eingereicht') return reply.redirect(`/anzeige/${az}`)
 
     const [withdrawn] = await pool.execute<mysql.ResultSetHeader>(
-      "UPDATE reports SET status='entwurf', eingereicht_at=NULL WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
+      "UPDATE reports SET status='entwurf', eingereicht_at=NULL, freigabe_token=NULL WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
       [report.id]
     )
     if (!withdrawn.affectedRows) {
       return flashRedirect(reply, 'error', 'Die Anzeige wird bereits versendet und kann nicht zurückgezogen werden.', `/anzeige/${az}`)
     }
+    // Eine bereits erteilte Freigabe gilt nur für den alten Stand: Marke ist
+    // oben gelöscht (ein laufender Job scheitert daran), wartende Versand-Jobs
+    // werden verworfen (services/reportDispatch.ts).
+    await wartendeVersandJobsLoeschen(Number(report.id))
     return flashRedirect(reply, 'success', 'Anzeige zurückgezogen – sie ist wieder ein Entwurf.', `/anzeige/${az}/bearbeiten`)
   })
 }
@@ -202,7 +207,10 @@ export async function submitDraft(
   // sichern – die Admin-Mail weist darauf hin.
   const vorherigeAblehnung = report.ablehnung_grund as string | null
   const [submitted] = await pool.execute<mysql.ResultSetHeader>(
-    "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL WHERE id=? AND status='entwurf' AND versand_status IS NULL",
+    // freigabe_token=NULL: jede (Neu-)Einreichung braucht eine neue Freigabe
+    // (services/reportDispatch.ts) – auch wenn ein anderer Weg zurück in den
+    // Entwurf die alte Marke nicht gelöscht hat.
+    "UPDATE reports SET status='eingereicht', eingereicht_at=NOW(), ablehnung_grund=NULL, freigabe_token=NULL WHERE id=? AND status='entwurf' AND versand_status IS NULL",
     [report.id]
   )
   if (!submitted.affectedRows) return { ok: false, status: 409, message: 'Die Anzeige wird bereits bearbeitet.', redirect: `/anzeige/${az}` }
@@ -213,7 +221,7 @@ export async function submitDraft(
   const dritte = unchecked ? null : await drittProblem(report)
   if (unchecked || dritte) {
     await pool.execute(
-      "UPDATE reports SET status='entwurf', eingereicht_at=NULL, ablehnung_grund=? WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
+      "UPDATE reports SET status='entwurf', eingereicht_at=NULL, ablehnung_grund=?, freigabe_token=NULL WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
       [vorherigeAblehnung, report.id]
     )
     return { ok: false, status: 422, message: unchecked ? uncheckedMessage(unchecked) : dritte!, redirect: '/anzeigen' }
@@ -229,7 +237,11 @@ export async function submitDraft(
     return { ok: true, portal: `/versand?az=${encodeURIComponent(az)}` }
   }
   if (opts.sofort) {
-    await enqueueJob('report.dispatch', { reportId: report.id, aktenzeichen: az }, { key: `report.dispatch:${report.id}`, maxAttempts: 1 })
+    // Sofortversand = Freigabe durch den Admin selbst: Marke setzen und dem Job
+    // mitgeben (wie /admin/anzeigen/:id/approve).
+    const freigabe = await freigabeErteilen(Number(report.id))
+    if (!freigabe) return { ok: false, status: 409, message: 'Die Anzeige wird bereits bearbeitet.', redirect: `/anzeige/${az}` }
+    await enqueueJob('report.dispatch', { reportId: report.id, aktenzeichen: az, freigabe }, { key: `report.dispatch:${report.id}`, maxAttempts: 1 })
     return { ok: true, queued: true }
   }
   // PDF auf den letzten Stand bringen (die Admin-Prüfung zeigt es an), danach
@@ -292,7 +304,8 @@ export async function submitProblems(
     // Abgelaufene Annahmefrist meldet schon „verjaehrt" (gleicher Grund).
     if (p && !(vjStatus.verjaehrt && /zwei Monate/.test(p))) problems.push({ kind: 'variante', message: p })
   }
-  const dritte = await drittProblem(report)
+  // Ungeprüfte Fotos stehen schon unter 'photos' (countUncheckedImages).
+  const dritte = await drittProblem(report, { ungeprueftIgnorieren: true })
   if (dritte) problems.push({ kind: 'dritte', message: dritte })
   return problems
 }
@@ -309,17 +322,50 @@ async function portalProblemFuer(report: mysql.RowDataPacket, cityId: string, us
 }
 
 /** Datenschutz: Fotos mit fremden Kennzeichen oder Gesichtern, die weder
- *  geschwärzt noch als unbedenklich bestätigt sind (services/dritte.ts). */
-export async function drittProblem(report: mysql.RowDataPacket): Promise<string | null> {
+ *  geschwärzt noch als unbedenklich bestätigt sind (services/dritte.ts).
+ *  Eine fehlende Analyse heißt NICHT „nichts gefunden“ (dritteFunde(null) = []):
+ *  - Analyse läuft noch (analysis_status 'pending', services/plateAnalysis.ts):
+ *    Hinderungsgrund, bis sie fertig ist – das dauert Sekunden; beim Neustart
+ *    hängengebliebene setzt failStalePlateAnalyses() auf 'failed'.
+ *  - Keine Analyse vorhanden (ALPR ausgefallen/abgeschaltet, Neu-Analyse nach
+ *    dem Schwärzen gescheitert, Altbestand): nicht dauerhaft sperren – ein
+ *    ALPR-Ausfall soll niemanden am Einreichen hindern –, aber nur mit
+ *    manueller Prüfung durch den Nutzer: geprueft_at muss gesetzt sein. Jede
+ *    neue Fassung setzt geprueft_at zurück (PUT „Foto ersetzen“, „⟲ Original“,
+ *    routes/reports/images.ts), die Bestätigung gilt also genau der Fassung,
+ *    für die keine Analyse vorliegt.
+ *  opts.ungeprueftIgnorieren: ungeprüfte Fotos meldet der Aufrufer schon
+ *  selbst (submitProblems → 'photos'), hier nicht doppelt aufführen. */
+export async function drittProblem(
+  report: mysql.RowDataPacket,
+  opts: { ungeprueftIgnorieren?: boolean } = {}
+): Promise<string | null> {
   const [imgs] = await pool.execute<mysql.RowDataPacket[]>(
-    'SELECT analyse_json, dritte_ok FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
+    'SELECT analyse_json, dritte_ok, analysis_status, geprueft_at FROM report_images WHERE report_id = ? ORDER BY sort_order, id',
     [report.id]
   )
   const teile: string[] = []
+  const laeuft: number[] = []
+  const ohneAnalyse: number[] = []
   imgs.forEach((img, i) => {
     if (img.dritte_ok) return
+    if (img.analysis_status === 'pending') {
+      laeuft.push(i + 1)
+      return
+    }
+    if (!parseAnalyse(img.analyse_json)) {
+      if (img.geprueft_at === null && !opts.ungeprueftIgnorieren) ohneAnalyse.push(i + 1)
+      return
+    }
     const funde = dritteFunde(img.analyse_json, report.kennzeichen)
     if (funde.length) teile.push(`Foto ${i + 1}: ${fundeText(funde)}`)
   })
-  return teile.length ? `Daten Dritter erkennbar – ${teile.join('; ')}. Bitte schwärzen oder im Foto als unbedenklich bestätigen.` : null
+  const fotos = (n: number[]) => (n.length === 1 ? `Foto ${n[0]}` : `Fotos ${n.join(', ')}`)
+  const meldungen: string[] = []
+  if (teile.length) meldungen.push(`Daten Dritter erkennbar – ${teile.join('; ')}. Bitte schwärzen oder im Foto als unbedenklich bestätigen.`)
+  if (laeuft.length) meldungen.push(`Die automatische Datenschutz-Prüfung läuft noch (${fotos(laeuft)}) – bitte einen Moment warten.`)
+  if (ohneAnalyse.length) {
+    meldungen.push(`Für ${fotos(ohneAnalyse)} war keine automatische Datenschutz-Prüfung möglich – bitte selbst auf fremde Kennzeichen und Gesichter prüfen, bei Bedarf schwärzen und das Foto bestätigen.`)
+  }
+  return meldungen.length ? meldungen.join(' ') : null
 }

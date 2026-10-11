@@ -71,15 +71,15 @@
         <div class="table-responsive px-2 pb-2">
           <table class="table table-sm mb-0 align-middle">
             <thead><tr>
-              <th>Datum</th><th>Uhrzeit</th><th>Tatbestand</th>
+              <th><%= admin ? 'Datum' : 'Monat' %></th><% if (admin) { %><th>Uhrzeit</th><% } %><th>Tatbestand</th>
               <% if (admin) { %><th>Tatort</th><% } else { %><th class="d-none d-md-table-cell">Stadt</th><% } %>
               <th class="text-end">Regelsatz</th>
             </tr></thead>
             <tbody>
               <% w.vergehen.forEach((v) => { %>
                 <tr<% if (admin && v.detail) { %> class="an-vg" tabindex="0" data-detail="<%= JSON.stringify({ ...v.detail, datum: datum(v.datum), wochentag: v.wochentag, tatbestand: v.tatbestand, euro: v.euro === null ? null : eur(v.euro), tatort: v.tatort, stadt: v.stadt, behinderung: v.behinderung }) %>"<% } %>>
-                  <td class="text-nowrap"><%= v.wochentag || '' %> <%= datum(v.datum) %></td>
-                  <td class="text-nowrap"><%= v.stunde === null ? '–' : `${String(v.stunde).padStart(2, '0')}–${String((v.stunde + 1) % 24).padStart(2, '0')} Uhr` %></td>
+                  <td class="text-nowrap"><% if (admin) { %><%= v.wochentag || '' %> <% } %><%= datum(v.datum) %></td>
+                  <% if (admin) { %><td class="text-nowrap"><%= v.stunde === null ? '–' : `${String(v.stunde).padStart(2, '0')}–${String((v.stunde + 1) % 24).padStart(2, '0')} Uhr` %></td><% } %>
                   <td><%= v.tatbestand %><% if (v.behinderung) { %> <span class="badge text-bg-secondary">mit Behinderung</span><% } %></td>
                   <% if (admin) { %><td class="small"><%= v.tatort || '–' %></td><% } else { %><td class="d-none d-md-table-cell"><%= v.stadt %></td><% } %>
                   <td class="text-end text-nowrap"><%= v.euro === null ? '–' : eur(v.euro) %></td>

@@ -4,7 +4,7 @@ import { setLogger } from './services/logger'
 import { assertProductionMailConfig } from './config/mail'
 import path from 'path'
 import fs from 'fs/promises'
-import Fastify, { FastifyError } from 'fastify'
+import Fastify, { FastifyError, FastifyReply, FastifyRequest } from 'fastify'
 import cookie from '@fastify/cookie'
 import session from '@fastify/session'
 import formbody from '@fastify/formbody'
@@ -54,6 +54,8 @@ import { verstossGesperrt } from './services/portale'
 import { zaehleAufruf } from './services/aufrufe'
 import aufrufeRoutes from './routes/aufrufe'
 import mobileAppRoutes from './routes/mobileApp'
+import { isInternalIp, rateLimitKey } from './services/abuseLimits'
+import { isAdminEmail } from './config/admin'
 
 // trustProxy: hinter Caddy sonst falsches Protokoll (secure-Cookies) und
 // Docker-interne IPs statt Client-IPs in Logs und Rate-Limits. Nur Loopback
@@ -63,11 +65,36 @@ import mobileAppRoutes from './routes/mobileApp'
 const app = Fastify({ logger: { level: 'info' }, trustProxy: ['loopback', 'uniquelocal'] })
 
 const IS_PROD = process.env.NODE_ENV === 'production'
+// Dev-Werkzeuge (Posteingang einspielen, PDF-Felder) nur bei AUSDRÜCKLICH
+// gesetztem development – nicht „alles außer production“: Fehlt NODE_ENV in
+// Prod versehentlich, wären die Endpunkte sonst öffentlich (Fail-Open).
+const IS_DEV = process.env.NODE_ENV === 'development'
+
+// Unbehandelte Promise-Ablehnungen beenden Node (ab v15) den ganzen Prozess –
+// ein vergessenes .catch() an einem fire-and-forget-Aufruf (void foo()) riss
+// damit laufende Uploads, Versand-Watcher und Sessions mit. Loggen und weiter:
+// Die Ablehnung betrifft nur die eine abgebrochene Aufgabe, der Rest der App
+// ist intakt (Fehler im Request-Pfad fängt ohnehin der Fehlerhandler).
+process.on('unhandledRejection', (reason) => {
+  app.log.error({ err: reason }, 'Unbehandelte Promise-Ablehnung')
+})
+// Eine synchron geworfene, nirgends gefangene Exception dagegen kann mitten in
+// einer Zustandsänderung abgebrochen haben (halb geschriebene Dateien, Locks,
+// Stream-Zustände) – Node selbst garantiert danach nichts mehr. Daher loggen
+// und beenden; Docker (restart: unless-stopped) startet die App neu, offene
+// Jobs nimmt der Job-Runner beim Boot wieder auf (services/jobs.ts).
+process.on('uncaughtException', (err) => {
+  app.log.fatal({ err }, 'Unbehandelte Exception – Prozess wird beendet')
+  process.exit(1)
+})
 
 async function main() {
   // Fail-fast statt unsicherem Betrieb: In Produktion MÜSSEN ein echtes
   // SESSION_SECRET und APP_URL gesetzt sein (sonst signierbare Sessions mit
   // öffentlich bekanntem Fallback bzw. Host-Header-Injection in Magic-Links).
+  if (!IS_PROD && !IS_DEV) {
+    app.log.warn({ NODE_ENV: process.env.NODE_ENV }, 'NODE_ENV ist weder production noch development – Cookies ohne secure, Dev-Endpunkte aus.')
+  }
   if (IS_PROD) {
     const secret = process.env.SESSION_SECRET || ''
     if (secret.length < 32 || secret.includes('change-this') || secret.includes('fallback-dev')) {
@@ -133,10 +160,14 @@ async function main() {
   // Asset-Requests summieren sich beim normalen Blättern schnell (eine Listen-
   // seite lädt viele Thumbnails, die Karte viele Kacheln) – daher hoch angesetzt;
   // die sensiblen, mail-versendenden Endpoints sind einzeln streng limitiert.
+  // keyGenerator gilt auch für alle Routen-Limits (das Plugin mischt die
+  // globalen Optionen ein): IPv6 zählt je /64, sonst wechselt ein Angreifer
+  // einfach die Adresse innerhalb seines Präfixes (services/abuseLimits.ts).
   await app.register(rateLimit, {
     global: true,
     max: 2000,
     timeWindow: '1 minute',
+    keyGenerator: (request) => rateLimitKey(request.ip),
   })
 
   // CSRF-Schutz über Fetch Metadata: Alle zustandsändernden Requests müssen
@@ -305,12 +336,22 @@ async function main() {
   // 503, sonst würde Compose die App bei einem hängenden Job neu starten):
   // Job-Runner (ältester wartender Job, Fehlschläge, letzter Tick), Portal-
   // und ALPR-Dienst – mit `?voll=1` auch die (langsameren) Dienst-Pings.
-  app.get('/health', { config: { rateLimit: false } }, async (request, reply) => {
+  // Details nur für interne Aufrufer (Docker-Healthcheck über localhost,
+  // deploy.sh über die Docker-Bridge – beide prüfen nur den Status) und
+  // eingeloggte Admins: Job-Fehlerzahlen sind Betriebsinterna, und `?voll=1`
+  // würde Portal/ALPR auf Zuruf von außen anpingen. Externes Uptime-Monitoring
+  // bekommt den knappen Status ({ ok }) und 503 bei DB-Ausfall wie bisher.
+  // Rate-Limit nur für externe Aufrufer; der Healthcheck selbst ist ausgenommen.
+  app.get('/health', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute', allowList: (req) => isInternalIp(req.ip) } },
+  }, async (request, reply) => {
     try {
       await pool.execute('SELECT 1')
     } catch {
       return reply.status(503).send({ ok: false })
     }
+    const intern = isInternalIp(request.ip) || (!!request.session?.userId && isAdminEmail(request.session.userEmail))
+    if (!intern) return reply.send({ ok: true })
     const jobs = await jobStats().catch(() => null)
     const warnungen: string[] = []
     if (jobs?.oldestQueuedMin != null && jobs.oldestQueuedMin > 15) warnungen.push(`ältester wartender Job ${jobs.oldestQueuedMin} min`)
@@ -326,19 +367,25 @@ async function main() {
     return reply.send(out)
   })
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (IS_DEV) {
+    // Zweiter Riegel neben IS_DEV: Auch die Dev-Instanz hängt per Caddy im
+    // Internet (dev.owia.net, nur Basic Auth davor). Die Werkzeuge sind für
+    // curl auf dem Host gedacht (CLAUDE.md) – von außen gibt es sie nicht.
+    const nurIntern = async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!isInternalIp(request.ip)) return reply.callNotFound()
+    }
     // Dev-Transport für den Posteingang (Mailpit spricht kein IMAP): rohe
     // RFC822-Mail per POST einspielen, läuft durch dieselbe Pipeline.
     app.addContentTypeParser('message/rfc822', { parseAs: 'buffer' }, (_req, body, done) =>
       done(null, body)
     )
-    app.post('/dev/inbound-mail', async (request, reply) => {
+    app.post('/dev/inbound-mail', { onRequest: nurIntern }, async (request, reply) => {
       const raw = Buffer.isBuffer(request.body) ? request.body : Buffer.from(String(request.body))
       const result = await processInboundMail(raw, app.log)
       return reply.send({ result })
     })
 
-    app.get('/debug/pdf-fields', async (_req, reply) => {
+    app.get('/debug/pdf-fields', { onRequest: nurIntern }, async (_req, reply) => {
       try {
         const fields = await PdfService.listFields()
         return reply.send({ fields })

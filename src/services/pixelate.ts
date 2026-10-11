@@ -5,6 +5,7 @@ import { PNG } from 'pngjs'
 import exifr from 'exifr'
 import type { BildAnalyse } from './alpr'
 import type { KartenAnalyse } from './dritte'
+import { sniffImageType } from './images'
 
 // Serverseitige Verpixelung für die anonyme Übersichtskarte.
 //
@@ -415,7 +416,13 @@ export async function cachedThumbnail(
     fs.writeFile(thumbPath, out).catch(() => {})
     return { buffer: out, type: 'image/jpeg' }
   } catch {
-    // Nicht dekodierbar -> Originalbild ausliefern (Vorschau bleibt sichtbar).
-    return { buffer: original, type: mimetype || 'application/octet-stream' }
+    // Nicht dekodierbar (z.B. über dem Pixel-Limit) -> Originalbild ausliefern,
+    // damit die Vorschau sichtbar bleibt – aber nur, wenn die Bytes wirklich
+    // JPEG/PNG sind, und mit dem daraus bestimmten Typ. Der gespeicherte
+    // Mimetype eines rohen Import-Fotos stammt vom Client („text/html“ …);
+    // alles andere (auch noch unkonvertiertes HEIC) wirft -> Aufrufer 404.
+    const typ = sniffImageType(original)
+    if (typ !== 'image/jpeg' && typ !== 'image/png') throw new Error('Keine darstellbare Vorschau')
+    return { buffer: original, type: typ }
   }
 }

@@ -192,8 +192,11 @@ export default async function bulkRoutes(app: FastifyInstance) {
             AND TIME_TO_SEC(TIMEDIFF(tatzeit_bis, tatzeit_von)) < ${TATZEIT_BIS_MIN_ABSTAND * 60}`,
         [target.id]
       )
-      await deleteDraft(userId, { id: source.id, pdf_filename: source.pdf_filename })
-      merged++
+      // deleteDraft prüft „noch bearbeitbarer Entwurf“ im DELETE selbst: Wurde
+      // die Quelle zwischen Umhängen und Löschen eingereicht, bleibt sie
+      // bestehen statt samt Dateien zu verschwinden (zählt dann nicht als
+      // zusammengeführt).
+      if (await deleteDraft(userId, { id: source.id, pdf_filename: source.pdf_filename }, 'entwurf')) merged++
     }
     await enqueuePdf(target.id, userId)
     return flashRedirect(reply, 'success', merged

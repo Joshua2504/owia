@@ -91,7 +91,7 @@ const embedQ = embed ? '&embed=1' : ''
           <button type="button" class="btn btn-sm btn-link" id="photo-select-clear">Auswahl aufheben</button>
         </div>
         <!-- Bereits gespeicherte Bilder; das Script baut daraus die Foto-Karten. -->
-        <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/anzeige/${r.aktenzeichen}/image/${img.id}`, v: img.v, capturedAt: img.captured_at || null, detectedPlate: img.detected_plate || null, gpsLat: img.gps_lat !== null ? Number(img.gps_lat) : null, gpsLon: img.gps_lon !== null ? Number(img.gps_lon) : null }))) %></script>
+        <script id="existing-images-data" type="application/json"><%- JSON.stringify(images.map((img) => ({ id: img.id, url: `/anzeige/${r.aktenzeichen}/image/${img.id}`, v: img.v, capturedAt: img.captured_at || null, detectedPlate: img.detected_plate || null, gpsLat: img.gps_lat !== null ? Number(img.gps_lat) : null, gpsLon: img.gps_lon !== null ? Number(img.gps_lon) : null }))).replace(/</g, '\\u003c') %></script>
         <div id="image-editor" class="photo-grid"></div>
         <div id="photo-empty" class="photo-empty" hidden>
           Noch keine Fotos. Über „+ Fotos hinzufügen" auswählen oder hierher ziehen.

@@ -8,7 +8,7 @@ import path from 'path'
 import fs from 'fs/promises'
 import { pool } from '../../db/connection'
 import { PdfService } from '../../services/pdf'
-import { getCity, CITIES, hasPdfForm } from '../../config/cities'
+import { getCity, hasPdfForm, isCityId } from '../../config/cities'
 import { VERSTOSS_ARTEN, VERSTOSS_HAEUFIG } from '../../config/verstoss'
 import { FAHRZEUG_TYPEN, markeNormalisieren } from '../../config/fahrzeug'
 import { ALLE_VARIANTEN, formularHilfen } from '../../services/portalFfm'
@@ -169,8 +169,17 @@ export function istUhrzeit(raw: unknown): boolean {
 export async function persistFields(
   reportId: string | number,
   userId: number,
-  v: Record<string, string | undefined>
+  body: Record<string, unknown>
 ): Promise<void> {
+  // Nur Strings übernehmen (Zahlen als Text), alles andere gilt als leer: Der
+  // JSON-Autosave reicht den Body ungeprüft durch – ein Array oder Objekt in
+  // `verstoss_art`/`tatort` warf sonst bei `.trim()`/`.replace()` einen
+  // TypeError (500) statt einfach nichts zu speichern.
+  const v: Record<string, string | undefined> = {}
+  for (const [k, raw] of Object.entries(body)) {
+    if (typeof raw === 'string') v[k] = raw
+    else if (typeof raw === 'number' && Number.isFinite(raw)) v[k] = String(raw)
+  }
   // Standard "Nein": nur explizites "ja" ergibt 1, alles andere 0.
   const behinderung = v.behinderung === 'ja' ? 1 : 0
   // Text immer aufbewahren (falls später doch wieder „Ja"); im PDF wird er nur
@@ -206,7 +215,7 @@ export async function persistFields(
   const tatortLon = tatortLat !== null ? lon : null
   // Zuständige Stadt aus dem Dropdown (nur freigeschaltete IDs zulassen). Fehlt der
   // Wert oder ist er unbekannt, bleibt die gespeicherte Stadt erhalten (COALESCE).
-  const city = v.city && CITIES[v.city] ? v.city : null
+  const city = isCityId(v.city) ? v.city : null
   // Formate und Längen wie in PATCH /anzeige/:az/felder: Der Autosave des
   // Editors schickt den ganzen Body ungeprüft – ein manipuliertes Datum
   // („foo") endete sonst als DB-Fehler (500), ein erfundener Verstoß außerhalb

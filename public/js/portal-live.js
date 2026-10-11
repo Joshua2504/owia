@@ -71,7 +71,7 @@
       pic.addEventListener('click', function (e) {
         var r = pic.getBoundingClientRect()
         self.input({ type: 'click', x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height })
-        self.screen.focus({ preventScroll: true })
+        if (self.state !== 'ready') self.screen.focus({ preventScroll: true })
       })
     })
     var wheelAcc = 0
@@ -145,6 +145,13 @@
   Slot.prototype.input = function (body) {
     var self = this
     if (!this.current) return Promise.resolve()
+    // Auf der Zusammenfassung nur scrollen – ein Klick auf das „Absenden" der
+    // Stadt ginge an der Versand-Sperre vorbei (der Portal-Dienst lehnt es
+    // ebenfalls ab, docker/portal/server.mjs).
+    if (this.state === 'ready' && body.type !== 'wheel') {
+      this.showMsg('Formular ist fertig – im Live-Bild nur scrollen. Abgesendet wird mit „Jetzt absenden".', 'warning')
+      return Promise.resolve()
+    }
     return post('/versand/' + this.current.id + '/input', body).catch(function (err) { self.showMsg(err.message, 'danger') })
   }
 
@@ -251,7 +258,9 @@
       // bloße Ansehen einer längst erledigten.
       var wasActive = ACTIVE.indexOf(this.state) >= 0
       this.state = st
-      if (st === 'needs_input' || st === 'ready') this.screen.focus({ preventScroll: true })
+      // Fokus (Tastatur ins Live-Bild) nur, wenn Eingriffe gefragt sind – auf
+      // der Zusammenfassung ('ready') ist nur noch Scrollen erlaubt.
+      if (st === 'needs_input') this.screen.focus({ preventScroll: true })
       if (st === 'done' || st === 'failed' || st === 'cancelled') this.finish(st, wasActive)
     }
   }

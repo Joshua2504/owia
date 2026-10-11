@@ -15,6 +15,10 @@
 //   Fehler nach Absenden / Lauf verloren nach Absenden
 //                              → bleibt 'versand' = unklar, Mensch prüft
 //                                (resolveUncertain, Knöpfe auf /versand)
+//   Lauf meldet submitted (z. B. im Live-Bild selbst abgesendet, vom Dienst
+//   erkannt) → sofort 'versand', nie freigeben oder neu starten
+// Automatische Starts (Job portal.start) brauchen die Freigabe-Marke der
+// Anzeige (reports.freigabe_token, services/reportDispatch.ts).
 // versand_ergebnis enthält {"portal":{runId,…}}; darüber nimmt resumeWatchers()
 // nach einem App-Neustart laufende Läufe wieder auf.
 
@@ -38,6 +42,7 @@ import { versandBestaetigungEinreihen } from './versandBestaetigung'
 import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 import { versandPlatzBelegen, versandPlatzFreigeben } from './versandTakt'
 import { loadUser } from './users'
+import { freigabeErteilen } from './reportDispatch'
 
 export const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
@@ -49,6 +54,9 @@ export class PortalBusyError extends PortalError {}
 export class PortalUnerreichbarError extends PortalError {}
 /** Tat von heute, das Portal nimmt sie erst ab morgen an. */
 export class PortalAbMorgenError extends PortalError {}
+/** Die Freigabe des Jobs gilt nicht mehr (Anzeige seitdem zurückgezogen,
+ *  abgelehnt oder neu eingereicht). */
+export class PortalFreigabeVeraltetError extends PortalError {}
 
 export interface PortalRunStatus {
   id: string
@@ -66,9 +74,12 @@ export interface PortalRunStatus {
 }
 
 let log: FastifyBaseLogger | null = null
-const watching = new Set<number>()
+// Beides je Lauf (runId), nicht je Anzeige: Startet eine Anzeige neu, während
+// der Watcher des alten Laufs noch ausläuft, darf dessen finally weder den
+// neuen Watcher blockieren noch dessen „ohne Rückfrage absenden" löschen.
+const watching = new Set<string>()
 /** Läufe, die nach dem Ausfüllen sofort abgeschickt werden sollen. */
-const autoSubmit = new Set<number>()
+const autoSubmit = new Set<string>()
 /** Letzter Status je Anzeige (auch nach Ende, für die Live-Seite). */
 const lastStatus = new Map<number, PortalRunStatus & { reportId: number; finishedNote?: string }>()
 
@@ -130,8 +141,12 @@ async function checkStartbar(report: mysql.RowDataPacket): Promise<void> {
   if (erstMorgen(adapter, report)) throw new PortalAbMorgenError('Das Portal nimmt nur Taten vor dem heutigen Tag an – bitte ab morgen senden.')
 }
 
-/** Formular-Lauf starten. Wirft PortalError mit deutscher Meldung. */
-export async function startPortalRun(reportId: number, opts: { auto?: boolean } = {}): Promise<string> {
+/** Formular-Lauf starten. Wirft PortalError mit deutscher Meldung.
+ *  freigabe: Marke der Admin-Freigabe (Job portal.start) – der Claim gelingt nur,
+ *  solange die Anzeige sie noch trägt. Ohne (Klick auf /versand: der Admin sieht
+ *  die Anzeige dort selbst) wird nur sichergestellt, dass die Anzeige eine Marke
+ *  hat, damit ein Neustart des Laufs (restartFromScratch) sie mitnehmen kann. */
+export async function startPortalRun(reportId: number, opts: { auto?: boolean; freigabe?: string | null } = {}): Promise<string> {
   const report = await loadReport(reportId)
   if (!report) throw new PortalError('Anzeige nicht gefunden.')
   await checkStartbar(report)
@@ -145,12 +160,19 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
   // resumeWatchers() können ihn so gezielt abbrechen.
   let clientRunId: string | null = crypto.randomUUID()
   const startInfo = { pendingRunId: clientRunId, startedAt: new Date().toISOString(), ...(opts.auto ? { auto: true } : {}) }
+  const freigabe = opts.freigabe ?? null
   const [claim] = await pool.execute<mysql.ResultSetHeader>(
-    `UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=?
-      WHERE id=? AND status='eingereicht' AND versand_status IS NULL`,
-    [JSON.stringify({ portal: startInfo }), reportId]
+    `UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=?, freigabe_token=IFNULL(freigabe_token, ?)
+      WHERE id=? AND status='eingereicht' AND versand_status IS NULL AND (? IS NULL OR freigabe_token=?)`,
+    [JSON.stringify({ portal: startInfo }), crypto.randomUUID(), reportId, freigabe, freigabe]
   )
-  if (!claim.affectedRows) throw new PortalError('Die Anzeige wird bereits versendet.')
+  if (!claim.affectedRows) {
+    const r = freigabe ? await loadReport(reportId) : null
+    if (r && !r.versand_status && r.freigabe_token !== freigabe) {
+      throw new PortalFreigabeVeraltetError('Die Freigabe ist veraltet – die Anzeige wurde seitdem zurückgezogen oder neu eingereicht.')
+    }
+    throw new PortalError('Die Anzeige wird bereits versendet.')
+  }
 
   try {
     const user = (await loadUser(report.user_id))!
@@ -192,8 +214,7 @@ export async function startPortalRun(reportId: number, opts: { auto?: boolean } 
       JSON.stringify({ portal: { runId: body.id, startedAt: startInfo.startedAt, ...(opts.auto ? { auto: true } : {}) } }),
       reportId,
     ])
-    if (opts.auto) autoSubmit.add(reportId)
-    else autoSubmit.delete(reportId)
+    if (opts.auto) autoSubmit.add(body.id)
     watch(reportId, body.id)
     return body.id
   } catch (err) {
@@ -242,14 +263,35 @@ export async function submitPortalRun(reportId: number): Promise<void> {
     [JSON.stringify({ portal: { ...info, submittedAt: new Date().toISOString() } }), reportId]
   )
   if (!upd.affectedRows) throw new PortalError('Die Anzeige ist nicht im Versand-Schritt.')
-  const res = await proxy(info.runId, '/submit', { method: 'POST' }).catch(() => null)
-  if (!res || !res.ok) {
-    // Klick ist nachweislich nicht passiert – Sperre zurück auf 'vorbereitung'.
+  let res: Response
+  try {
+    res = await proxy(info.runId, '/submit', { method: 'POST' })
+  } catch (err) {
+    // Keine Verbindung zustande gekommen (Container läuft nicht / Name nicht
+    // auflösbar): Die Anfrage hat den Dienst nie erreicht, ein Klick ist
+    // ausgeschlossen – Sperre zurück auf 'vorbereitung' wie bei einer Absage.
+    const code = String((err as { cause?: { code?: string } })?.cause?.code || '')
+    if (['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH'].includes(code)) {
+      await pool.execute("UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=? WHERE id=? AND versand_status='versand'", [
+        JSON.stringify({ portal: info }),
+        reportId,
+      ])
+      throw new PortalError('Der Portal-Dienst ist nicht erreichbar – nichts abgesendet, bitte später erneut versuchen.')
+    }
+    // Timeout/Netzfehler: Die Anfrage kann den Dienst erreicht und den Klick
+    // ausgelöst haben, nur die Antwort fehlt. Also bleibt 'versand' (unklar);
+    // meldet der Lauf später 'done', bucht der Watcher normal ab.
+    await markUncertain(reportId, { ...info, submittedAt: new Date().toISOString() }, 'Absenden ohne Antwort des Portal-Dienstes – Ergebnis unklar.')
+    throw new PortalError('Der Portal-Dienst hat auf „Absenden" nicht geantwortet – Ergebnis unklar, bitte prüfen.')
+  }
+  if (!res.ok) {
+    // Echte Absage des Dienstes (z. B. 409 „nicht bereit", 404 Lauf unbekannt):
+    // Der Klick ist nachweislich nicht passiert – Sperre zurück auf 'vorbereitung'.
     await pool.execute("UPDATE reports SET versand_status='vorbereitung', versand_ergebnis=? WHERE id=? AND versand_status='versand'", [
       JSON.stringify({ portal: info }),
       reportId,
     ])
-    const body = res ? ((await res.json().catch(() => ({}))) as { error?: string }) : {}
+    const body = (await res.json().catch(() => ({}))) as { error?: string }
     throw new PortalError(body.error || 'Absenden nicht möglich.')
   }
 }
@@ -257,7 +299,7 @@ export async function submitPortalRun(reportId: number): Promise<void> {
 export async function cancelPortalRun(reportId: number): Promise<void> {
   const report = await loadReport(reportId)
   const info = report && portalInfo(report)
-  autoSubmit.delete(reportId)
+  if (info?.runId) autoSubmit.delete(info.runId)
   if (!report || !info?.runId) return
   if (report.versand_status === 'versand') throw new PortalError('Wird gerade abgesendet – Abbruch nicht mehr möglich.')
   await proxy(info.runId, '/cancel', { method: 'POST' }).catch(() => null)
@@ -279,21 +321,30 @@ async function releaseClaim(reportId: number): Promise<void> {
  *  und den Versand komplett von vorn starten. Nach dem Absenden-Klick
  *  ('versand') nie: dort ist unklar, ob die Anzeige angekommen ist. */
 async function restartFromScratch(reportId: number, auto: boolean, grund: string): Promise<void> {
+  // Der Neustart übernimmt die Marke der Anzeige (startPortalRun sorgt dafür,
+  // dass jeder Lauf eine hat; IFNULL nur für Claims aus der Zeit davor). Zieht
+  // der Nutzer in der Lücke zurück, ist sie gelöscht und der Job versendet nichts.
   const [rel] = await pool.execute<mysql.ResultSetHeader>(
-    "UPDATE reports SET versand_status=NULL, versand_ergebnis=NULL WHERE id=? AND versand_status='vorbereitung'",
-    [reportId]
+    "UPDATE reports SET versand_status=NULL, versand_ergebnis=NULL, freigabe_token=IFNULL(freigabe_token, ?) WHERE id=? AND versand_status='vorbereitung'",
+    [crypto.randomUUID(), reportId]
   )
   if (!rel.affectedRows) return
+  const freigabe = (await loadReport(reportId))?.freigabe_token ?? null
   // neustart: kein neuer Versand, sondern derselbe – nicht erneut takten.
-  await enqueueJob('portal.start', { reportId, auto, neustart: true }, { key: `portal.start:${reportId}`, maxAttempts: 3 })
+  await enqueueJob('portal.start', { reportId, auto, neustart: true, freigabe }, { key: `portal.start:${reportId}`, maxAttempts: 3 })
   log?.warn({ reportId, grund }, 'Portal-Lauf verloren – Versand startet neu')
 }
 
-async function markUncertain(reportId: number, info: Record<string, unknown>, error: string): Promise<void> {
-  await pool.execute("UPDATE reports SET versand_ergebnis=? WHERE id=? AND versand_status='versand'", [
-    JSON.stringify({ portal: { ...info, error } }),
-    reportId,
-  ])
+/** Ergebnis unklar markieren. Greift auch aus 'vorbereitung', wenn der Lauf
+ *  selbst meldet, dass abgesendet wurde (submitted/submitting – z. B. im
+ *  Live-Bild geklickt): dann muss die Sperre auf 'versand', sonst gäbe ein
+ *  Abbruch die Anzeige zum zweiten Versand frei. */
+async function markUncertain(reportId: number, info: Record<string, unknown>, error: string | null, ausVorbereitung = false): Promise<void> {
+  await pool.execute(
+    `UPDATE reports SET versand_status='versand', versand_ergebnis=?
+      WHERE id=? AND versand_status IN ('versand'${ausVorbereitung ? ", 'vorbereitung'" : ''})`,
+    [JSON.stringify({ portal: { ...info, ...(error ? { error } : {}) } }), reportId]
+  )
 }
 
 /** Erfolgreichen Lauf abschließen: Beleg sichern, Anzeige als versendet buchen. */
@@ -315,9 +366,10 @@ async function finishRun(reportId: number, runId: string, st: PortalRunStatus): 
     }
   }
   const city = getCity(report.city)
+  const portalName = portalFuer(report.city)?.bezeichnung || 'Online-Portal'
   const subject = `Online-Anzeige ${report.aktenzeichen} über das Portal (${city.ordnungsamt})${vorgangsId ? ` – Vorgangs-ID ${vorgangsId}` : ''}`
   const text = [
-    `Über das Online-Portal der Stadt (ekom21) abgesendet am ${new Date().toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}.`,
+    `Über das Online-Angebot der Stadt (${portalName}) abgesendet am ${new Date().toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}.`,
     vorgangsId ? `Vorgangs-ID: ${vorgangsId}` : 'Eine Vorgangs-ID wurde auf der Abschlussseite nicht erkannt (siehe Anhang).',
     '',
     '--- Abschlussseite ---',
@@ -374,8 +426,8 @@ async function finishRun(reportId: number, runId: string, st: PortalRunStatus): 
 
 /** Lauf bis zum Ende beobachten und das Ergebnis in die DB übernehmen. */
 function watch(reportId: number, runId: string): void {
-  if (watching.has(reportId)) return
-  watching.add(reportId)
+  if (watching.has(runId)) return
+  watching.add(runId)
   void (async () => {
     let misses = 0
     try {
@@ -404,10 +456,17 @@ function watch(reportId: number, runId: string): void {
           return
         }
         lastStatus.set(reportId, { ...st, reportId })
+        // Der Lauf meldet „abgesendet", die DB steht noch auf 'vorbereitung'
+        // (im Live-Bild selbst geklickt, vom Dienst erkannt): sofort sperren.
+        if ((st.submitted || st.state === 'submitting') && report.versand_status === 'vorbereitung') {
+          await markUncertain(reportId, { ...portalInfo(report)!, submittedAt: new Date().toISOString() }, null, true)
+          report.versand_status = 'versand'
+          log?.warn({ reportId, runId }, 'Portal-Lauf meldet abgesendet ohne „Jetzt absenden" – Sperre auf versand')
+        }
         // „Ohne Rückfrage absenden" nur, wenn der Lauf ohne einen einzigen
         // Eingriff durchkam – sonst wartet er wie gewohnt auf den Klick.
-        if (st.state === 'ready' && autoSubmit.has(reportId) && report.versand_status === 'vorbereitung') {
-          autoSubmit.delete(reportId)
+        if (st.state === 'ready' && autoSubmit.has(runId) && report.versand_status === 'vorbereitung') {
+          autoSubmit.delete(runId)
           if ((st.pauses ?? 0) === 0) {
             await submitPortalRun(reportId).catch((err) => log?.error({ err, reportId }, 'Automatisches Absenden fehlgeschlagen'))
           }
@@ -419,7 +478,7 @@ function watch(reportId: number, runId: string): void {
         }
         if (st.state === 'cancelled' || st.state === 'failed') {
           if (st.submitted || report.versand_status === 'versand') {
-            await markUncertain(reportId, portalInfo(report)!, st.error || st.message)
+            await markUncertain(reportId, portalInfo(report)!, st.error || st.message, st.submitted)
             log?.error({ reportId, error: st.error }, 'Portal-Versand: Fehler nach dem Absenden – Ergebnis unklar')
           } else {
             await releaseClaim(reportId)
@@ -430,8 +489,8 @@ function watch(reportId: number, runId: string): void {
     } catch (err) {
       log?.error({ err, reportId }, 'Portal-Watcher abgebrochen')
     } finally {
-      watching.delete(reportId)
-      autoSubmit.delete(reportId)
+      watching.delete(runId)
+      autoSubmit.delete(runId)
       // Der Portal-Dienst ist frei: wartende Starts nach Freigabe sofort versuchen.
       void pool.execute("UPDATE jobs SET run_after=NOW() WHERE type='portal.start' AND status='queued'").catch(() => undefined)
     }
@@ -449,7 +508,7 @@ export async function resumeWatchers(logger: FastifyBaseLogger): Promise<void> {
   for (const r of rows) {
     const info = portalInfo(r)
     if (info?.runId && !info.error) {
-      if (info.auto && r.versand_status === 'vorbereitung') autoSubmit.add(Number(r.id))
+      if (info.auto && r.versand_status === 'vorbereitung') autoSubmit.add(info.runId)
       watch(Number(r.id), info.runId)
     }
     else if (!info?.runId && r.versand_status === 'vorbereitung') {
@@ -465,6 +524,10 @@ export async function resolveUncertain(reportId: number, outcome: 'gesendet' | '
   if (!report || report.versand_status !== 'versand' || !portalInfo(report)) throw new PortalError('Kein unklarer Portal-Versand.')
   if (outcome === 'nicht-gesendet') {
     await pool.execute("UPDATE reports SET versand_status=NULL, versand_ergebnis=NULL WHERE id=? AND versand_status='versand'", [reportId])
+    // Steht der Lauf im Dienst noch (z. B. 'ready' nach einem Absenden ohne
+    // Antwort), belegte er sonst bis zum Leerlauf-Limit den einzigen Platz.
+    const runId = portalInfo(report)?.runId
+    if (runId) await proxy(runId, '/cancel', { method: 'POST' }).catch(() => null)
     return
   }
   await finishRun(reportId, portalInfo(report)!.runId || '', {
@@ -485,19 +548,31 @@ function sekundenBisMorgen(): number {
   return 24 * 3600 - (h * 3600 + m * 60 + s) + 5 * 60
 }
 
-registerJob('portal.start', async ({ reportId, auto, neustart }) => {
+// Freigabe-Marke (services/reportDispatch.ts): Der Job startet nur, solange die
+// Anzeige noch die Marke seiner Freigabe trägt. Jobs ohne Marke (vor Migration
+// 0050 eingereiht und dort nicht der aktuellen Fassung zuzuordnen) starten nie –
+// ob der Admin genau diesen Stand gesehen hat, ist nicht mehr belegbar.
+registerJob('portal.start', async ({ reportId, auto, neustart, freigabe }, jobLog) => {
   const report = await loadReport(Number(reportId))
   // Inzwischen abgelehnt, von Hand auf /versand gestartet oder erledigt.
   if (!report || report.status !== 'eingereicht' || report.versand_status) return
+  if (!freigabe || report.freigabe_token !== freigabe) {
+    jobLog.warn({ reportId, mitMarke: !!freigabe }, 'Portal-Start verworfen – Freigabe gehört zu einem älteren Stand der Anzeige')
+    return
+  }
   // Höchstens eine Anzeige je eingestelltem Abstand (services/versandTakt.ts).
   const warten = neustart ? null : await versandPlatzBelegen()
   if (warten !== null) throw new JobRetryLater('Versand-Takt: nächster Versand frühestens in ' + Math.ceil(warten / 60) + ' min', warten)
   try {
     // auto fehlt bei Starts nach der Freigabe (= ohne Rückfrage absenden);
     // ein Neustart übernimmt die Einstellung des verlorenen Laufs.
-    await startPortalRun(Number(reportId), { auto: auto !== false })
+    await startPortalRun(Number(reportId), { auto: auto !== false, freigabe: String(freigabe) })
   } catch (err) {
     if (!neustart) await versandPlatzFreigeben()
+    if (err instanceof PortalFreigabeVeraltetError) {
+      jobLog.warn({ reportId }, err.message)
+      return
+    }
     // Belegt oder (nach Deploy/Neustart) noch nicht wieder da: warten, kein Fehlversuch.
     if (err instanceof PortalBusyError || err instanceof PortalUnerreichbarError) throw new JobRetryLater(err.message, 60)
     if (err instanceof PortalAbMorgenError) throw new JobRetryLater(err.message, sekundenBisMorgen())
@@ -518,7 +593,10 @@ export async function enqueuePortalStart(reportId: number): Promise<{ problem: s
     else if (err instanceof PortalError) return { problem: err.message, abMorgen: false }
     else throw err
   }
-  await enqueueJob('portal.start', { reportId }, { key: `portal.start:${reportId}`, maxAttempts: 3 })
+  // Marke an den jetzt geprüften Stand binden (verwirft ältere wartende Starts).
+  const freigabe = await freigabeErteilen(reportId)
+  if (!freigabe) return { problem: 'Die Anzeige wird bereits versendet oder wurde inzwischen geändert.', abMorgen: false }
+  await enqueueJob('portal.start', { reportId, freigabe }, { key: `portal.start:${reportId}`, maxAttempts: 3 })
   return { problem: null, abMorgen }
 }
 

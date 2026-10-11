@@ -10,6 +10,8 @@ import { strasseMitNummer } from '../config/person'
 import { fahrzeugBeschreibung } from '../config/fahrzeug'
 import { pdfDir } from './drafts'
 import { hhmm, localIsoDate } from '../utils/format'
+import { winAnsiZeichen } from './stickers'
+import { logger } from './logger'
 
 const RESOURCES_DIR = path.join(process.cwd(), 'resources')
 
@@ -118,7 +120,9 @@ export const PdfService = {
     for (const [fieldName, value] of Object.entries(fieldMap)) {
       try {
         const field = form.getTextField(fieldName)
-        field.setText(value)
+        // Nur WinAnsi-Zeichen (Helvetica): ein „ł" oder Emoji in Name/Beschreibung
+        // ließe updateFieldAppearances/flatten scheitern → leeres Formular.
+        field.setText(winAnsiZeichen(value))
       } catch {
         // Feld existiert nicht im Formular — nach Inspektion anpassen
       }
@@ -184,15 +188,16 @@ export const PdfService = {
         }
       }
       form.updateFieldAppearances(fieldFont)
-    } catch {
-      /* Appearances bleiben wie sie sind */
+    } catch (err) {
+      logger.warn({ err, aktenzeichen: report.aktenzeichen }, 'PDF: Feld-Appearances nicht erzeugt')
     }
 
     // Felder „einbrennen", damit sie nicht mehr veränderbar sind und in jedem
     // Viewer/Druck sichtbar sind.
     try {
       form.flatten()
-    } catch {
+    } catch (err) {
+      logger.warn({ err, aktenzeichen: report.aktenzeichen }, 'PDF: flatten fehlgeschlagen')
       try {
         form.updateFieldAppearances()
       } catch {
@@ -247,7 +252,7 @@ export const PdfService = {
           if (report.tatort) {
             // Adresse als Bildunterschrift; WinAnsi kann keine Emojis o.Ä. – daher absichern.
             try {
-              page.drawText(String(report.tatort), { x: margin, y: cursorY - 10, size: 10, font })
+              page.drawText(winAnsiZeichen(String(report.tatort).replace(/\s+/g, ' ')), { x: margin, y: cursorY - 10, size: 10, font })
               cursorY -= 26
             } catch {
               /* Sonderzeichen in der Adresse – Unterschrift weglassen */

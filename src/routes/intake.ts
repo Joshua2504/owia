@@ -27,7 +27,16 @@ export const CHUNK_SIZE = 5
 
 type BatchRow = mysql.RowDataPacket & { id: number; status: string }
 
-async function loadBatch(batchId: string, userId: number): Promise<BatchRow | null> {
+/** ID aus einem URL-Parameter strikt als positive Ganzzahl lesen. MySQL
+ *  verglich „5abc“ oder „5/../x“ sonst still als 5 – der Rohwert landete dann
+ *  in Dateipfaden (intakeDir). */
+function parseId(raw: unknown): number | null {
+  return typeof raw === 'string' && /^[1-9]\d{0,9}$/.test(raw) ? Number(raw) : null
+}
+
+async function loadBatch(batchIdRaw: string, userId: number): Promise<BatchRow | null> {
+  const batchId = parseId(batchIdRaw)
+  if (batchId === null) return null
   const [rows] = await pool.execute<BatchRow[]>(
     'SELECT id, status FROM intake_batches WHERE id = ? AND user_id = ?',
     [batchId, userId]
@@ -66,6 +75,88 @@ async function removeIntakeSources(userId: number, batchId: number | string, fil
   for (const f of [filename, originalFilename !== filename ? originalFilename : '', `${filename}.thumb.jpg`]) {
     if (f) await fs.rm(path.join(from, f), { force: true }).catch(() => {})
   }
+}
+
+/** Ein fertig verarbeitetes Import-Foto einer Anzeige zuordnen – atomar:
+ *  Claim (`report_id IS NULL` → gesetzt), Kopie der Dateien und INSERT der
+ *  report_images-Zeile laufen in EINER Transaktion. Gewinnt ein paralleler
+ *  Request (Doppelklick, zweiter Tab, Job 'intake.group') den Claim, legt
+ *  dieser hier nichts an – zwei report_images-Zeilen teilten sich sonst eine
+ *  Datei, und das Löschen der einen zerstörte die andere. Bricht etwas ab,
+ *  rollt die DB zurück und die Kopien im Entwurf verschwinden wieder.
+ *  Unter der Nutzer-Sperre, weil hier auch MAX_IMAGES verbindlich gezählt
+ *  wird (wie bei Upload/Verschieben, routes/reports/images.ts).
+ *  Gibt die neue Bild-ID zurück, 'vergeben' oder 'voll'. */
+async function assignIntakePhoto(
+  userId: number,
+  batchId: number,
+  reportId: number,
+  p: PhotoRow
+): Promise<number | 'vergeben' | 'voll'> {
+  return withIntakeUploadLock(userId, async () => {
+    if ((await imageCount(reportId)) >= MAX_IMAGES) return 'voll' as const
+    const conn = await pool.getConnection()
+    let kopiert = false
+    try {
+      await conn.beginTransaction()
+      const [claim] = await conn.execute<mysql.ResultSetHeader>(
+        "UPDATE intake_photos SET report_id = ? WHERE id = ? AND batch_id = ? AND report_id IS NULL AND processing_status = 'ready'",
+        [reportId, p.id, batchId]
+      )
+      if (!claim.affectedRows) {
+        await conn.rollback()
+        return 'vergeben' as const
+      }
+      kopiert = true
+      await movePhotoFiles(userId, batchId, reportId, p.filename, p.original_filename)
+      const imageId = await insertImageRow(reportId, {
+        filename: p.filename,
+        mimetype: p.mimetype,
+        originalFilename: p.original_filename,
+        originalMimetype: p.original_mimetype,
+        sortOrder: await nextSortOrder(reportId, conn),
+        capturedAt: p.captured_at,
+        gpsLat: p.gps_lat !== null ? Number(p.gps_lat) : null,
+        gpsLon: p.gps_lon !== null ? Number(p.gps_lon) : null,
+        sha256: p.sha256,
+      }, conn)
+      await conn.commit()
+      return imageId
+    } catch (err) {
+      await conn.rollback().catch(() => {})
+      // Nur unsere Kopien entfernen – der Claim war unserer, niemand sonst
+      // hat diese Dateien in den Entwurf gelegt.
+      if (kopiert) {
+        const to = reportDir(userId, reportId)
+        for (const f of [p.filename, p.original_filename !== p.filename ? p.original_filename : '', `${p.filename}.thumb.jpg`]) {
+          if (f) await fs.rm(path.join(to, f), { force: true }).catch(() => {})
+        }
+      }
+      throw err
+    } finally {
+      conn.release()
+    }
+  }).then(async (res) => {
+    // Quelle erst nach dem Commit löschen (Kopieren → DB → Löschen).
+    if (typeof res === 'number') await removeIntakeSources(userId, batchId, p.filename, p.original_filename)
+    return res
+  })
+}
+
+/** Unzugeordnetes Import-Foto des Nutzers (Lightbox/Vorschau). batch_id
+ *  kommt aus der DB-Zeile, nie aus dem URL-Parameter (Dateipfad!). */
+async function loadIntakePhoto(batchIdRaw: string, photoIdRaw: string, userId: number): Promise<mysql.RowDataPacket | null> {
+  const batchId = parseId(batchIdRaw)
+  const photoId = parseId(photoIdRaw)
+  if (batchId === null || photoId === null) return null
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT p.filename, p.mimetype, p.batch_id
+       FROM intake_photos p
+       JOIN intake_batches b ON b.id = p.batch_id
+      WHERE p.id = ? AND p.batch_id = ? AND b.user_id = ? AND p.report_id IS NULL`,
+    [photoId, batchId, userId]
+  )
+  return rows[0] ?? null
 }
 
 type PhotoRow = mysql.RowDataPacket & {
@@ -177,28 +268,22 @@ async function groupIntakeBatch(payload: { batchId: number; userId: number }, lo
             tatortLon: incident.lon,
             intakeBatchId: batch.id,
           })
+          let zugeordnet = 0
           for (let s = 0; s < chunkIds.length; s++) {
             const p = byId.get(chunkIds[s])
             if (!p) continue
-            await movePhotoFiles(userId, batch.id, draft.id, p.filename, p.original_filename)
-            const imageId = await insertImageRow(draft.id, {
-              filename: p.filename,
-              mimetype: p.mimetype,
-              originalFilename: p.original_filename,
-              originalMimetype: p.original_mimetype,
-              sortOrder: s + 1,
-              capturedAt: p.captured_at,
-              gpsLat: p.gps_lat !== null ? Number(p.gps_lat) : null,
-              gpsLon: p.gps_lon !== null ? Number(p.gps_lon) : null,
-              sha256: p.sha256,
-            })
-            await removeIntakeSources(userId, batch.id, p.filename, p.original_filename)
+            // Atomarer Claim wie beim manuellen Zuordnen (assignIntakePhoto):
+            // Ein Foto, das inzwischen anderweitig zugeordnet wurde, bleibt dort.
+            const imageId = await assignIntakePhoto(userId, batch.id, draft.id, p)
+            if (typeof imageId !== 'number') continue
+            zugeordnet++
             // Kennzeichen im Hintergrund erkennen (füllt das leere Feld des Entwurfs).
             queuePlateAnalysis(userId, draft.id, imageId, p.filename, p.mimetype)
-            await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [
-              draft.id,
-              p.id,
-            ])
+          }
+          // Alle Fotos des Abschnitts waren schon vergeben: leeren Entwurf nicht stehen lassen.
+          if (!zugeordnet) {
+            await deleteDraft(userId, { id: draft.id })
+            continue
           }
           // Photon hat oben nicht geantwortet: Adresse im Hintergrund nachholen.
           if (!address?.label) queueTatortFill(draft.id)
@@ -410,18 +495,11 @@ export default async function intakeRoutes(app: FastifyInstance) {
     const { batchId, photoId } = request.params as { batchId: string; photoId: string }
     const userId = request.session.userId as number
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT p.filename, p.mimetype
-         FROM intake_photos p
-         JOIN intake_batches b ON b.id = p.batch_id
-        WHERE p.id = ? AND p.batch_id = ? AND b.user_id = ? AND p.report_id IS NULL`,
-      [photoId, batchId, userId]
-    )
-    const photo = rows[0]
+    const photo = await loadIntakePhoto(batchId, photoId, userId)
     if (!photo) return reply.status(404).send('Bild nicht gefunden.')
 
     try {
-      const buffer = await fs.readFile(path.join(intakeDir(userId, batchId), photo.filename))
+      const buffer = await fs.readFile(path.join(intakeDir(userId, photo.batch_id), photo.filename))
       // Nie als etwas anderes als Bild ausliefern: Der gespeicherte Mimetype
       // stammt beim Rohupload vom Client. Alles außer image/* wird als Download
       // geschickt, damit der Browser es nicht same-origin rendert (HTML/SVG).
@@ -441,23 +519,21 @@ export default async function intakeRoutes(app: FastifyInstance) {
     const { batchId, photoId } = request.params as { batchId: string; photoId: string }
     const userId = request.session.userId as number
 
-    const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-      `SELECT p.filename, p.mimetype
-         FROM intake_photos p
-         JOIN intake_batches b ON b.id = p.batch_id
-        WHERE p.id = ? AND p.batch_id = ? AND b.user_id = ? AND p.report_id IS NULL`,
-      [photoId, batchId, userId]
-    )
-    const photo = rows[0]
+    const photo = await loadIntakePhoto(batchId, photoId, userId)
     if (!photo) return reply.status(404).send('Bild nicht gefunden.')
 
     try {
+      // loadThumbnail liefert nur JPEG/PNG (aus den Bytes bestimmt) und wirft
+      // sonst – ein nicht dekodierbares Rohfoto ging früher mit dem
+      // Client-Mimetype (z.B. text/html) zurück. nosniff setzt zwar schon
+      // helmet global, hier aber bewusst explizit.
       const { buffer, type } = await loadThumbnail(
-        intakeDir(userId, batchId),
+        intakeDir(userId, photo.batch_id),
         photo.filename,
         photo.mimetype
       )
       return reply
+        .header('X-Content-Type-Options', 'nosniff')
         .header('Content-Type', type)
         .header('Cache-Control', 'private, max-age=3600')
         .send(buffer)
@@ -478,12 +554,17 @@ export default async function intakeRoutes(app: FastifyInstance) {
     // nach Abschluss des Uploads – ein rohes HEIC aus einem noch offenen Batch
     // hätte sonst als „nutzbare Fassung“ in der Anzeige gelegen.
     if (batch.status === 'open') return reply.status(409).send({ error: 'Der Import läuft noch – bitte erst abschließen.' })
+    // Während der Job 'intake.group' läuft, verteilt er die Fotos selbst – ein
+    // manuelles Zuordnen parallel dazu konkurrierte um dieselben Fotos.
+    if (batch.status === 'grouping') return reply.status(409).send({ error: 'Der Import wird noch verarbeitet – bitte kurz warten.' })
+    const photoIdNum = parseId(photoId)
+    if (photoIdNum === null) return reply.status(404).send({ error: 'not found' })
     const [rows] = await pool.execute<PhotoRow[]>(
       `SELECT id, filename, mimetype, original_filename, original_mimetype,
               DATE_FORMAT(captured_at, '%Y-%m-%d %H:%i:%s') AS captured_at,
               gps_lat, gps_lon, report_id, sha256
          FROM intake_photos WHERE id = ? AND batch_id = ? AND processing_status = 'ready'`,
-      [photoId, batch.id]
+      [photoIdNum, batch.id]
     )
     const photo = rows[0]
     if (!photo || photo.report_id !== null) return reply.status(404).send({ error: 'not found' })
@@ -500,30 +581,25 @@ export default async function intakeRoutes(app: FastifyInstance) {
       reportId = draft.id
     } else {
       const [reports] = await pool.execute<mysql.RowDataPacket[]>(
-        `SELECT id FROM reports WHERE aktenzeichen = ? AND user_id = ? AND status = 'entwurf'`,
-        [body.az ?? '', userId]
+        `SELECT id FROM reports WHERE aktenzeichen = ? AND user_id = ? AND status = 'entwurf' AND versand_status IS NULL`,
+        [typeof body.az === 'string' ? body.az : '', userId]
       )
       if (!reports[0]) return reply.status(404).send({ error: 'Entwurf nicht gefunden.' })
       reportId = reports[0].id
+      // Vorprüfung ohne Sperre; verbindlich zählt assignIntakePhoto.
       if ((await imageCount(reportId)) >= MAX_IMAGES) {
         return reply.status(400).send({ error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` })
       }
     }
 
-    await movePhotoFiles(userId, batch.id, reportId, photo.filename, photo.original_filename)
-    const imageId = await insertImageRow(reportId, {
-      filename: photo.filename,
-      mimetype: photo.mimetype,
-      originalFilename: photo.original_filename,
-      originalMimetype: photo.original_mimetype,
-      sortOrder: await nextSortOrder(reportId),
-      capturedAt: photo.captured_at,
-      gpsLat: photo.gps_lat !== null ? Number(photo.gps_lat) : null,
-      gpsLon: photo.gps_lon !== null ? Number(photo.gps_lon) : null,
-      sha256: photo.sha256,
-    })
-    await pool.execute('UPDATE intake_photos SET report_id = ? WHERE id = ?', [reportId, photo.id])
-    await removeIntakeSources(userId, batch.id, photo.filename, photo.original_filename)
+    const imageId = await assignIntakePhoto(userId, batch.id, reportId, photo)
+    if (typeof imageId !== 'number') {
+      // Neu angelegten (leeren) Entwurf nicht stehen lassen.
+      if (body.newDraft) await deleteDraft(userId, { id: reportId })
+      return imageId === 'voll'
+        ? reply.status(400).send({ error: `Maximal ${MAX_IMAGES} Bilder pro Anzeige.` })
+        : reply.status(409).send({ error: 'Das Foto wurde bereits zugeordnet.' })
+    }
     queuePlateAnalysis(userId, reportId, imageId, photo.filename, photo.mimetype)
     // Neuer/leerer Entwurf: Tatort aus den Foto-Koordinaten (no-op, wenn gesetzt).
     queueTatortFill(reportId)
@@ -576,9 +652,13 @@ export default async function intakeRoutes(app: FastifyInstance) {
 
     // Bewusst sequenziell und ohne Transaktion (Codebase-Stil): bricht es
     // mittendrin ab, bleibt ein weiterhin löschbarer Batch übrig.
+    // Guard im DELETE (scope 'beide'): ein zwischen Bestätigung und Löschen
+    // eingereichter Entwurf bleibt erhalten (und wird unten nur abgetrennt).
+    let geloescht = 0
     for (const r of draftsToDelete) {
-      await deleteDraft(userId, { id: r.id, pdf_filename: r.pdf_filename })
+      if (await deleteDraft(userId, { id: r.id, pdf_filename: r.pdf_filename }, 'beide')) geloescht++
     }
+    const behalten = keptCount + draftsToDelete.length - geloescht
     // Eingereichte/versendete Anzeigen bleiben erhalten und werden nur vom
     // Batch getrennt – intake_batch_id hat keine FK, ein hängender Verweis
     // würde z.B. den Redirect nach dem Verwerfen ins Leere (404) führen.
@@ -591,9 +671,9 @@ export default async function intakeRoutes(app: FastifyInstance) {
     await pool.execute('DELETE FROM intake_batches WHERE id = ?', [batch.id])
     await fs.rm(intakeDir(userId, batch.id), { recursive: true, force: true })
 
-    let msg = `Foto-Import gelöscht – ${draftsToDelete.length} ${draftsToDelete.length === 1 ? 'Entwurf' : 'Entwürfe'} entfernt.`
-    if (keptCount > 0) {
-      msg += ` ${keptCount} bereits eingereichte ${keptCount === 1 ? 'Anzeige bleibt' : 'Anzeigen bleiben'} erhalten.`
+    let msg = `Foto-Import gelöscht – ${geloescht} ${geloescht === 1 ? 'Entwurf' : 'Entwürfe'} entfernt.`
+    if (behalten > 0) {
+      msg += ` ${behalten} bereits eingereichte ${behalten === 1 ? 'Anzeige bleibt' : 'Anzeigen bleiben'} erhalten.`
     }
     return flashRedirect(reply, 'success', msg, '/import')
   })

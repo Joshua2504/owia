@@ -130,7 +130,8 @@ DELETE) statt CSRF-Token; Abmelden nur per POST; `trustProxy` nur für
 Loopback/private Netze; Fehlerhandler reicht 4xx mit Status durch (JSON bei
 `Accept: application/json`), nur 5xx werden als `error` geloggt. `/health`
 meldet `warnungen` (Job-Runner, mit `?voll=1` auch Portal/ALPR), bleibt aber
-200, solange die DB antwortet.
+200, solange die DB antwortet – Details nur intern (Loopback/private Netze)
+oder für Admins, von außen nur `{ok}` (30/min).
 
 **Bilder:** Typ wird aus den Bytes bestimmt (`sniffImageType`), nicht aus dem
 Client-Mimetype; `decode()` lehnt Bilder über 80 MP anhand des Headers ab.

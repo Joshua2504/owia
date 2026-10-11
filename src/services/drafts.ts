@@ -124,16 +124,48 @@ export async function createDraft(
   throw new Error('Aktenzeichen-Erzeugung fehlgeschlagen')
 }
 
+/** Welche Anzeigen deleteDraft() löschen darf – geprüft im DELETE selbst
+ *  (nicht vorab in JS), damit eine parallel eingereichte Anzeige nie samt
+ *  Fotos verschwindet. 'entwurf' = bearbeitbarer Entwurf ohne Versand-Claim
+ *  (isEditableDraft), 'papierkorb' = Papierkorb-Purge, 'beide' = Import löschen. */
+export type DeleteDraftScope = 'entwurf' | 'papierkorb' | 'beide'
+const DELETE_GUARD: Record<DeleteDraftScope, string> = {
+  entwurf: "status = 'entwurf' AND versand_status IS NULL",
+  papierkorb: "status = 'papierkorb'",
+  beide: "((status = 'entwurf' AND versand_status IS NULL) OR status = 'papierkorb')",
+}
+
 /** Entwurf samt Dateien vollständig entfernen (DB-Zeile, Upload-Verzeichnis, PDF).
  *  Vorher die intake_photos-Buchhaltung löschen: deren FK ist ON DELETE SET NULL –
  *  die Fotos würden sonst in der Import-Übersicht als „nicht zugeordnet" wieder
- *  auftauchen, obwohl ihre Dateien mit dem Entwurfs-Verzeichnis verschwinden. */
+ *  auftauchen, obwohl ihre Dateien mit dem Entwurfs-Verzeichnis verschwinden.
+ *  Beides in einer Transaktion: Greift der Status-Guard nicht (Anzeige wurde
+ *  inzwischen eingereicht/wiederhergestellt), bleibt alles – auch die
+ *  intake_photos-Zeilen und die Dateien – unangetastet. Gibt zurück, ob gelöscht wurde. */
 export async function deleteDraft(
   userId: number,
-  report: { id: number; pdf_filename?: string | null }
-): Promise<void> {
-  await pool.execute('DELETE FROM intake_photos WHERE report_id = ?', [report.id])
-  await pool.execute('DELETE FROM reports WHERE id = ? AND user_id = ?', [report.id, userId])
+  report: { id: number; pdf_filename?: string | null },
+  scope: DeleteDraftScope = 'entwurf'
+): Promise<boolean> {
+  const conn = await pool.getConnection()
+  try {
+    await conn.beginTransaction()
+    await conn.execute('DELETE FROM intake_photos WHERE report_id = ?', [report.id])
+    const [res] = await conn.execute<mysql.ResultSetHeader>(
+      `DELETE FROM reports WHERE id = ? AND user_id = ? AND ${DELETE_GUARD[scope]}`,
+      [report.id, userId]
+    )
+    if (!res.affectedRows) {
+      await conn.rollback()
+      return false
+    }
+    await conn.commit()
+  } catch (err) {
+    await conn.rollback().catch(() => {})
+    throw err
+  } finally {
+    conn.release()
+  }
   try {
     await fs.rm(reportDir(userId, report.id), { recursive: true, force: true })
   } catch {
@@ -146,6 +178,7 @@ export async function deleteDraft(
       /* egal */
     }
   }
+  return true
 }
 
 /** Tage, die ein Entwurf im Papierkorb bleibt, bevor er endgültig verschwindet. */
@@ -196,9 +229,16 @@ export async function purgeTrash(opts: { userId?: number; reportIds?: number[] }
     `SELECT id, user_id, pdf_filename FROM reports WHERE ${where.join(' AND ')}`,
     params
   )
-  for (const r of rows) await deleteDraft(r.user_id, { id: r.id, pdf_filename: r.pdf_filename })
-  return rows.length
+  let n = 0
+  for (const r of rows) {
+    if (await deleteDraft(r.user_id, { id: r.id, pdf_filename: r.pdf_filename }, 'papierkorb')) n++
+  }
+  return n
 }
+
+/** Pool oder Transaktions-Verbindung (z.B. Zuordnen eines Import-Fotos:
+ *  Claim + INSERT in einer Transaktion, routes/intake.ts). */
+export type Db = mysql.Pool | mysql.PoolConnection
 
 export type ImageRowMeta = {
   filename: string
@@ -212,10 +252,12 @@ export type ImageRowMeta = {
   sha256?: string | null // Hash des Original-Uploads (services/photoDedup.ts)
 }
 
-/** Anzahl Fotos einer Anzeige (für das Limit MAX_IMAGES in routes/reports/shared.ts;
- *  Aufrufer, die parallel hochladen, zählen unter withIntakeUploadLock). */
-export async function imageCount(reportId: number): Promise<number> {
-  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+/** Anzahl Fotos einer Anzeige (für das Limit MAX_IMAGES in routes/reports/shared.ts).
+ *  Zählen und anschließendes INSERT/Umhängen müssen gemeinsam unter
+ *  withIntakeUploadLock (services/intakeImageProcessing.ts) laufen – sonst
+ *  kommen zwei parallele Requests mit demselben Zählerstand über das Limit. */
+export async function imageCount(reportId: number, db: Db = pool): Promise<number> {
+  const [rows] = await db.execute<mysql.RowDataPacket[]>(
     'SELECT COUNT(*) AS c FROM report_images WHERE report_id = ?',
     [reportId]
   )
@@ -235,8 +277,8 @@ export async function evidenceImageRows(reportId: number | string): Promise<mysq
 }
 
 /** sort_order für ein neues Foto: ans Ende der bisherigen Reihenfolge. */
-export async function nextSortOrder(reportId: number): Promise<number> {
-  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+export async function nextSortOrder(reportId: number, db: Db = pool): Promise<number> {
+  const [rows] = await db.execute<mysql.RowDataPacket[]>(
     'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM report_images WHERE report_id = ?',
     [reportId]
   )
@@ -244,8 +286,8 @@ export async function nextSortOrder(reportId: number): Promise<number> {
 }
 
 /** Bild-Row zu einem Entwurf anlegen (Dateien liegen bereits auf Platte). */
-export async function insertImageRow(reportId: number, meta: ImageRowMeta): Promise<number> {
-  const [result] = await pool.execute<mysql.ResultSetHeader>(
+export async function insertImageRow(reportId: number, meta: ImageRowMeta, db: Db = pool): Promise<number> {
+  const [result] = await db.execute<mysql.ResultSetHeader>(
     `INSERT INTO report_images
        (report_id, filename, mimetype, original_filename, original_mimetype,
         sort_order, captured_at, gps_lat, gps_lon, sha256)

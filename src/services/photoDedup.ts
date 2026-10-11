@@ -28,12 +28,15 @@ export async function findExistingPhoto(userId: number, sha256: string): Promise
   if (images[0]) return `Anzeige ${images[0].aktenzeichen}`
 
   // Dann unzugeordnete Import-Fotos (zugeordnete haben eine report_images-Zeile
-  // mit demselben Hash und sind oben schon gefunden worden).
+  // mit demselben Hash und sind oben schon gefunden worden). Fehlgeschlagene
+  // ('error') zählen nicht: Sie tauchen nirgends als zuordenbares Foto auf –
+  // als Sperre wäre dasselbe Foto sonst nie wieder importierbar gewesen.
   const [photos] = await pool.execute<mysql.RowDataPacket[]>(
     `SELECT p.batch_id
        FROM intake_photos p
        JOIN intake_batches b ON b.id = p.batch_id
       WHERE p.sha256 = ? AND b.user_id = ? AND p.report_id IS NULL
+        AND p.processing_status <> 'error'
       LIMIT 1`,
     [sha256, userId]
   )

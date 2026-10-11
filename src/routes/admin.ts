@@ -8,8 +8,8 @@ import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { requireAdmin, viewData, setFlash, flashRedirect } from '../middleware/auth'
 import { MailService } from '../services/mail'
-import { dispatchReport, ReportPreparationError } from '../services/reportDispatch'
-import { replyAttachmentPath, repliesDir } from '../services/mailInbox'
+import { dispatchReport, ReportPreparationError, freigabeErteilen, wartendeVersandJobsLoeschen } from '../services/reportDispatch'
+import { replyAttachmentPath, repliesDir, sendReplyAttachment } from '../services/mailInbox'
 import { resolveSendCity } from '../services/districts'
 import { regeneratePdf, isProfileComplete } from './reports'
 import { deleteUser, UserDeleteError } from '../services/userDelete'
@@ -35,41 +35,49 @@ async function loadReportWithUser(
   return { report, user }
 }
 
-/** Admin-Freigabe einer eingereichten Anzeige: Prüfungen, PDF neu, Mail an das
- *  Ordnungsamt. Genutzt von der Freigabe in /admin/anzeigen und vom
- *  „Einreichen & versenden" eines Admins für eigene Anzeigen (reports.ts). */
+/** Versand einer eingereichten, freigegebenen Anzeige: Prüfungen, PDF neu,
+ *  Mail an das Ordnungsamt. Läuft als Job 'report.dispatch' (eingereiht von der
+ *  Freigabe in /admin/anzeigen und vom „Einreichen & versenden" eines Admins,
+ *  routes/reports/submit.ts). `freigabe` = Marke der Freigabe (freigabeErteilen). */
 export async function approveAndDispatch(
   id: string,
   aktenzeichen: string,
-  log: FastifyBaseLogger
+  log: FastifyBaseLogger,
+  freigabe: string
 ): Promise<{ ok: boolean; message: string }> {
   try {
     const result = await dispatchReport(Number(id), async (messageId) => {
       const fresh = await loadReportWithUser(id)
-      // Portal-Städte (Frankfurt) laufen ausschließlich über /versand (routes/portal.ts).
-      if (fresh && usesPortal(fresh.report)) {
-        throw new ReportPreparationError('Diese Anzeige wird über das Online-Portal der Stadt versendet – bitte unter „Versand".')
-      }
       if (!fresh || !(await isProfileComplete(fresh.report.user_id))) {
         throw new ReportPreparationError('Das Nutzerprofil ist unvollständig. Bitte die Anzeige ablehnen und korrigieren lassen.')
       }
       if (isVerjaehrt(fresh.report)) {
         throw new ReportPreparationError('Die Tat ist verjährt (mehr als drei Monate her). Bitte die Anzeige ablehnen.')
       }
+      // Erst die tatsächliche Versandstadt bestimmen (Tatort kann seit der
+      // Einreichung einer anderen Stadt zugeordnet sein), dann entscheiden, ob
+      // sie per Portal versendet – sonst ginge eine Portal-Anzeige per Mail raus
+      // bzw. eine Mail-Anzeige würde mit Verweis auf /versand abgewiesen.
       const gate = resolveSendCity(fresh.report.tatort, fresh.report.city)
       if (!gate.ok) throw new ReportPreparationError(gate.message)
+      // Portal-Städte laufen ausschließlich über /versand (routes/portal.ts).
+      if (usesPortal({ city: gate.cityId })) {
+        throw new ReportPreparationError('Diese Anzeige wird über das Online-Portal der Stadt versendet – bitte unter „Versand".')
+      }
       await pool.execute('UPDATE reports SET city=? WHERE id=?', [gate.cityId, fresh.report.id])
       await regeneratePdf(fresh.report.id, fresh.report.user_id)
       const ready = await loadReportWithUser(id)
       if (!ready) throw new Error('Anzeige nicht mehr verfügbar.')
       return MailService.prepareReport(ready.report, ready.user, messageId)
-    })
+    }, freigabe)
     if (result === 'sent') return { ok: true, message: `Anzeige ${aktenzeichen}: Versand abgeschlossen.` }
     return {
       ok: false,
       message: result === 'uncertain'
         ? 'Der Versand läuft oder sein Ergebnis ist unklar. Vor einem erneuten Versand muss der Mailserver geprüft werden.'
-        : 'Die Anzeige wird bereits verarbeitet oder ist nicht mehr zur Freigabe verfügbar.',
+        : result === 'stale'
+          ? 'Die Freigabe ist veraltet – die Anzeige wurde seitdem zurückgezogen oder neu eingereicht. Bitte erneut prüfen und freigeben.'
+          : 'Die Anzeige wird bereits verarbeitet oder ist nicht mehr zur Freigabe verfügbar.',
     }
   } catch (err) {
     log.error({ err }, 'Freigabe/Versandabschluss fehlgeschlagen')
@@ -85,8 +93,16 @@ export async function approveAndDispatch(
 // erzeugt; Fehler landen in jobs.error und werden bis zu 3× wiederholt.
 // Der Versand selbst nur einmal – dispatchReport sperrt über versand_status, ein
 // unklares Ergebnis muss ein Mensch prüfen (docs/VERSANDBETRIEB.md).
-registerJob('report.dispatch', async ({ reportId, aktenzeichen }, log) => {
-  const outcome = await approveAndDispatch(String(reportId), aktenzeichen, log)
+//
+// Ohne Freigabe-Marke im Payload (vor Migration 0050 eingereiht und dort nicht
+// der aktuellen Fassung zuzuordnen) wird nichts versendet: Ob der Admin genau
+// diesen Stand gesehen hat, lässt sich nicht mehr belegen.
+registerJob('report.dispatch', async ({ reportId, aktenzeichen, freigabe }, log) => {
+  if (!freigabe) {
+    log.warn({ reportId }, 'Versand-Job ohne Freigabe-Marke verworfen – Anzeige bitte neu freigeben')
+    throw new Error('Freigabe ohne Marke (vor dem Update eingereiht) – bitte die Anzeige erneut freigeben.')
+  }
+  const outcome = await approveAndDispatch(String(reportId), aktenzeichen, log, String(freigabe))
   if (!outcome.ok) throw new Error(outcome.message)
 })
 
@@ -230,10 +246,9 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!att) return reply.status(404).send('Anhang nicht gefunden.')
     try {
       const buffer = await fs.readFile(replyAttachmentPath(Number(replyId), att.filename))
-      return reply
-        .header('Content-Type', att.mimetype || 'application/octet-stream')
-        .header('Content-Disposition', `attachment; filename="${att.original_filename || att.filename}"`)
-        .send(buffer)
+      // Immer als Download, Typ-Whitelist + CSP sandbox + nosniff (Anhang
+      // stammt aus einer fremden, evtl. gefälschten Mail).
+      return sendReplyAttachment(reply, att as { filename: string }, buffer, false)
     } catch {
       return reply.status(404).send('Anhang-Datei nicht gefunden.')
     }
@@ -264,6 +279,18 @@ export default async function adminRoutes(app: FastifyInstance) {
     const loaded = await loadReportWithUser(id)
     if (!loaded) return reply.status(404).send('Anzeige nicht gefunden.')
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
+    // Versandweg nach der tatsächlichen Versandstadt (aus dem Tatort), nicht
+    // nach der gespeicherten – wie approveAndDispatch. Weicht sie ab, wird sie
+    // festgeschrieben, damit der Portal-Lauf den richtigen Adapter nimmt.
+    const gate = resolveSendCity(loaded.report.tatort, loaded.report.city)
+    if (!gate.ok) return flashRedirect(reply, 'error', `Anzeige ${loaded.report.aktenzeichen}: ${gate.message}`, '/admin/anzeigen')
+    if (gate.cityId !== loaded.report.city) {
+      await pool.execute(
+        "UPDATE reports SET city=? WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
+        [gate.cityId, loaded.report.id]
+      )
+      loaded.report.city = gate.cityId
+    }
     // Portal-Städte: Lauf startet sofort im Hintergrund, /versand zeigt ihn live.
     if (usesPortal(loaded.report)) {
       const az = loaded.report.aktenzeichen
@@ -276,7 +303,13 @@ export default async function adminRoutes(app: FastifyInstance) {
         : `Anzeige ${az}: Portal-Versand gestartet.`, `/versand?az=${encodeURIComponent(az)}`)
     }
 
-    await enqueueJob('report.dispatch', { reportId: loaded.report.id, aktenzeichen: loaded.report.aktenzeichen },
+    // Freigabe-Marke: der Job versendet nur, solange die Anzeige seitdem nicht
+    // zurückgezogen/abgelehnt/neu eingereicht wurde (services/reportDispatch.ts).
+    const freigabe = await freigabeErteilen(Number(loaded.report.id))
+    if (!freigabe) {
+      return flashRedirect(reply, 'error', 'Die Anzeige wird bereits versendet oder wurde inzwischen geändert.', '/admin/anzeigen')
+    }
+    await enqueueJob('report.dispatch', { reportId: loaded.report.id, aktenzeichen: loaded.report.aktenzeichen, freigabe },
       { key: `report.dispatch:${loaded.report.id}`, maxAttempts: 1 })
     return flashRedirect(reply, 'success', `Anzeige ${loaded.report.aktenzeichen}: Versand läuft im Hintergrund.`, '/admin/anzeigen')
   })
@@ -294,12 +327,15 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (loaded.report.status !== 'eingereicht') return reply.redirect('/admin/anzeigen')
 
     const [rejected] = await pool.execute<mysql.ResultSetHeader>(
-      "UPDATE reports SET status='entwurf', eingereicht_at=NULL, ablehnung_grund=? WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
+      "UPDATE reports SET status='entwurf', eingereicht_at=NULL, ablehnung_grund=?, freigabe_token=NULL WHERE id=? AND status='eingereicht' AND versand_status IS NULL",
       [grund, loaded.report.id]
     )
     if (!rejected.affectedRows) {
       return flashRedirect(reply, 'error', 'Die Anzeige wird bereits versendet oder wurde inzwischen geändert.', '/admin/anzeigen')
     }
+    // Eine frühere Freigabe ist mit der Ablehnung hinfällig (Marke oben gelöscht);
+    // wartende Versand-Jobs gleich mit entfernen.
+    await wartendeVersandJobsLoeschen(Number(loaded.report.id))
     await enqueueJob('mail.report-rejected', { reportId: loaded.report.id, grund })
     return flashRedirect(reply, 'success', `Anzeige ${loaded.report.aktenzeichen} abgelehnt – der Nutzer wurde informiert.`, '/admin/anzeigen')
   })

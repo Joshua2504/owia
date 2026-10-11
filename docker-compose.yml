@@ -13,7 +13,9 @@ services:
   # Volume caddy_data, damit Let's Encrypt sie nicht bei jedem Neustart neu
   # ausstellt (Rate-Limits!).
   caddy:
-    image: caddy:2-alpine
+    # Versionen gepinnt auf den Stand von Prod (11.10.2026), damit ein Deploy keine
+    # ungetesteten Upstream-Updates mitzieht; Update bewusst per Tag-Änderung.
+    image: caddy:2.11.7-alpine
     profiles: [production]
     ports:
       - "80:80"
@@ -39,9 +41,9 @@ services:
     # sonst restartet jeder Deploy-rsync die App mehrfach mit Mischständen.
     command: sh -c "exec tsx $${TSX_WATCH-watch} src/server.ts"
     ports:
-      # Produktion: APP_BIND=127.0.0.1:3000 setzen, damit Port 3000 nicht am
-      # Caddy vorbei öffentlich erreichbar ist.
-      - "${APP_BIND:-3000}:3000"
+      # Default nur Loopback, damit Port 3000 nie versehentlich am Caddy vorbei
+      # öffentlich erreichbar ist (Dev/Prod setzen APP_BIND in der .env ohnehin).
+      - "${APP_BIND:-127.0.0.1:3000}:3000"
     volumes:
       - ./src:/app/src
       - ./public:/app/public
@@ -77,6 +79,7 @@ services:
       IMAP_PASS: ${IMAP_PASS:-}
       IMAP_POLL_SECONDS: ${IMAP_POLL_SECONDS:-}
       REPLY_TRUSTED_DOMAINS: ${REPLY_TRUSTED_DOMAINS:-}
+      MAIL_AUTHSERV_ID: ${MAIL_AUTHSERV_ID:-}
       PHOTON_URL: ${PHOTON_URL:-}
       ALPR_URL: ${ALPR_URL:-}
       ALPR_ENABLED: ${ALPR_ENABLED:-}
@@ -105,7 +108,7 @@ services:
       start_period: 30s
 
   db:
-    image: mariadb:11
+    image: mariadb:11.8.9
     volumes:
       - ./data/mysql:/var/lib/mysql
       - ./src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
@@ -124,11 +127,11 @@ services:
     logging: *default-logging
 
   mail:
-    image: axllent/mailpit
+    image: axllent/mailpit:v1.31.4
     ports:
-      # Produktion: MAILPIT_BIND=127.0.0.1:8025 (UI nicht öffentlich; wird bei
-      # MAIL_DRIVER=smtp ohnehin nicht genutzt).
-      - "${MAILPIT_BIND:-8025}:8025"
+      # Default nur Loopback (UI nicht öffentlich; wird bei MAIL_DRIVER=smtp
+      # ohnehin nicht genutzt). Dev/Prod setzen MAILPIT_BIND in der .env.
+      - "${MAILPIT_BIND:-127.0.0.1:8025}:8025"
     networks: [default, proxy]
     restart: unless-stopped
     logging: *default-logging
@@ -139,7 +142,7 @@ services:
   # einige Minuten; solange liefert /api/geo/search einfach keine Treffer.
   # REGION akzeptiert "germany"/"de" oder z.B. "planet" bzw. mehrere Länder.
   photon:
-    image: rtuszik/photon-docker:latest
+    image: rtuszik/photon-docker:2.4.0
     environment:
       - REGION=germany
       - UPDATE_STRATEGY=PARALLEL

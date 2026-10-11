@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { CITIES, City, getCityByName } from '../config/cities'
+import { CITIES, City, getCityByName, isCityId } from '../config/cities'
 
 // Bundesweite Zuständigkeits-Tabelle: Postleitzahl -> Ort + Ordnungsamt-Adresse.
 // Quelle: resources/districts.csv ("plz","name","email"), einmalig beim Start
@@ -109,7 +109,7 @@ export function recipientEmailForReport(report: {
 }): string | null {
   const byPlz = districtByPlz(extractPlz(report.tatort))
   if (byPlz) return byPlz.email
-  const city = report.city ? CITIES[report.city] : undefined
+  const city = isCityId(report.city) ? CITIES[report.city] : undefined
   return city ? cityEmail(city) : null
 }
 
@@ -157,7 +157,8 @@ export function resolveSendCity(
     }
   }
   // unknown: PLZ nicht in der Tabelle / kein Tatort mit PLZ.
-  if (currentCityId && CITIES[currentCityId]) return { ok: true, cityId: currentCityId }
+  // isCityId statt CITIES[...]: „constructor“ o. ä. ist keine Stadt (cities.ts).
+  if (isCityId(currentCityId)) return { ok: true, cityId: currentCityId }
   return {
     ok: false,
     message:

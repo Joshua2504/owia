@@ -243,7 +243,16 @@ export function analysiere(rows: AnalyseEingabe[], opts: { mitKennzeichen?: bool
       // ein Platz nicht über Tag + Uhrzeit mit der öffentlichen Karte verknüpfen lässt.
       w.erst = w.erst?.slice(0, 7) ?? null
       w.letzt = w.letzt?.slice(0, 7) ?? null
-      for (const v of w.vergehen) v.datum = v.datum?.slice(0, 7) ?? null
+      // Wochentag und Stunde je Einzeltat ebenfalls entfernen: Wochentag+Monat
+      // grenzt den Tag auf 4–5 Kandidaten ein, mit Stunde und Stadt ist die Tat
+      // gegen die öffentliche Karte (/api/public/reports: exakter Tattag +
+      // Koordinaten) eindeutig zuzuordnen → Bewegungsprofil pro Fahrzeug.
+      // Die aggregierte Heatmap/Wochentags-Statistik über alle Taten bleibt.
+      for (const v of w.vergehen) {
+        v.datum = v.datum?.slice(0, 7) ?? null
+        v.wochentag = null
+        v.stunde = null
+      }
     }
   })
 
@@ -274,7 +283,32 @@ export function analysiere(rows: AnalyseEingabe[], opts: { mitKennzeichen?: bool
   }
 }
 
+// Öffentliche Ansicht: 5 min gecacht (wie startseitenKennzahlen in routes/public.ts) –
+// die Aggregation läuft sonst bei jedem Aufruf/Bot-Hit über alle versendeten Anzeigen.
+let publicCache: { bis: number; analyse: Analyse } | null = null
+const ANALYSE_TTL_MS = 5 * 60 * 1000
+
 export async function ladeAnalyse(opts: { mitKennzeichen?: boolean } = {}): Promise<Analyse> {
+  if (opts.mitKennzeichen) return ladeAnalyseAdmin()
+  if (publicCache && publicCache.bis > Date.now()) return publicCache.analyse
+  const analyse = await ladeAnalyseOeffentlich()
+  publicCache = { bis: Date.now() + ANALYSE_TTL_MS, analyse }
+  return analyse
+}
+
+/** Öffentlich nur die Spalten, die in die Aggregation/Pseudonymisierung eingehen –
+ *  kein Tatort, keine Koordinaten, keine Freitexte, keine Bild-Subquery. */
+async function ladeAnalyseOeffentlich(): Promise<Analyse> {
+  const [rows] = await pool.query<mysql.RowDataPacket[]>(
+    `SELECT kennzeichen, fahrzeug_marke, fahrzeug_typ, fahrzeug_farbe, verstoss_art,
+            DATE_FORMAT(tattag, '%Y-%m-%d') AS tattag, HOUR(tatzeit_von) AS stunde,
+            city, behinderung, fahrzeug_verlassen
+       FROM reports WHERE status = 'versendet'`
+  )
+  return analysiere(rows.map((r) => ({ ...r, tatort: null })) as AnalyseEingabe[], {})
+}
+
+async function ladeAnalyseAdmin(): Promise<Analyse> {
   const [rows] = await pool.query<mysql.RowDataPacket[]>(
     `SELECT kennzeichen, fahrzeug_marke, fahrzeug_typ, fahrzeug_farbe, verstoss_art,
             DATE_FORMAT(tattag, '%Y-%m-%d') AS tattag, HOUR(tatzeit_von) AS stunde,
@@ -287,5 +321,5 @@ export async function ladeAnalyse(opts: { mitKennzeichen?: boolean } = {}): Prom
               WHERE ri.report_id = reports.id) AS image_ids
        FROM reports WHERE status = 'versendet'`
   )
-  return analysiere(rows as AnalyseEingabe[], opts)
+  return analysiere(rows as AnalyseEingabe[], { mitKennzeichen: true })
 }

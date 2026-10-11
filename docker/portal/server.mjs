@@ -11,6 +11,12 @@
 //
 // Zustände: starting → filling ⇄ needs_input → ready → submitting → done
 //           (jederzeit vor 'submitting': cancelled; Fehler: failed)
+// Im Zustand 'ready' ist nur noch Scrollen erlaubt: Abgeschickt wird allein
+// über POST /runs/:id/submit, das vorher den DB-Zustand 'versand' setzt. Ein
+// Wächter (abgesendetPruefen) erkennt trotzdem, wenn die Seite die
+// Zusammenfassung nach vorn verlässt (z. B. „Absenden" der Stadt in
+// 'needs_input' im Live-Bild geklickt) – dann gilt der Lauf als abgesendet
+// (submitted=true, failed = unklar) und darf nie als „nichts passiert" enden.
 // Läufe leben nur im Speicher. Ein Neustart verliert sie – die App erkennt das
 // (404) und behandelt einen Lauf, der schon 'submitting' war, als unklar.
 
@@ -21,7 +27,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
-import { fillSteps, submitForm, readSummary, Cancelled } from './lib.mjs'
+import { fillSteps, submitForm, readSummary, currentStep, isBusy, sleep, Cancelled } from './lib.mjs'
 import { PROFILE as EKOM21 } from './ekom21.mjs'
 import { PROFILE as MAINZ } from './mainz.mjs'
 import { PROFILE as HAMBURG } from './hamburg.mjs'
@@ -41,6 +47,9 @@ const KEEP_FINISHED_MS = 6 * 60 * 60 * 1000
 const MAX_ACTIVE = 1
 
 const runs = new Map()
+// Plätze, die ein POST /runs gerade belegt (zwischen Prüfung und createRun
+// liegen awaits – ohne Reservierung kämen zwei Starts gleichzeitig durch).
+let reserviert = 0
 let browser = null
 // Ab SIGTERM antwortet der Dienst nur noch 503: Die Läufe sterben mit dem
 // Chromium und melden dabei 'failed' – das darf die App nicht als echten
@@ -56,6 +65,11 @@ async function getBrowser() {
 }
 
 const ACTIVE = new Set(['starting', 'filling', 'needs_input', 'ready', 'submitting'])
+const aktiveLaeufe = () => [...runs.values()].filter((r) => ACTIVE.has(r.state)).length + reserviert
+
+/** Die Seite hat die Zusammenfassung verlassen, ohne dass wir „Absenden"
+ *  geklickt haben – vermutlich hat jemand im Live-Bild selbst abgesendet. */
+class ManuellAbgesendet extends Error {}
 
 function deferred() {
   let resolve
@@ -78,6 +92,9 @@ function createRun(payload, files, dir) {
     error: null,
     submitted: false,
     pauses: 0, // Eingriffe des Nutzers – „ohne Rückfrage absenden" nur bei 0
+    summaryStep: null, // zuletzt gesehene Zusammenfassung (Schritt), für den Absende-Wächter
+    verdacht: 0, // Wächter: aufeinanderfolgende Prüfungen „hinter der Zusammenfassung"
+    navigiert: false, // Hauptframe hat nach 'ready' navigiert
     createdAt: Date.now(),
     updatedAt: Date.now(),
     finishedAt: null,
@@ -118,6 +135,7 @@ function createRun(payload, files, dir) {
       run.waiter = deferred()
       const what = await run.waiter.promise
       run.waiter = null
+      if (what === 'manuell') throw new ManuellAbgesendet(run.manuell)
       if (what === 'cancel') throw new Cancelled('Abgebrochen.')
       run.setState('filling')
       run.logMsg('Fortgesetzt')
@@ -329,8 +347,77 @@ async function startScreencast(run) {
   }, 700)
 }
 
+// ---------------------------------------------------------------------------
+// Absende-Wächter: Solange der Mensch eingreifen kann ('needs_input'; in
+// 'ready' nur noch Scrollen), prüft er alle 1,5 s den Schritt der Seite. Wer die
+// Zusammenfassung einmal gesehen hat und dann auf einem späteren Schritt bzw.
+// einer Seite ohne Schrittleiste landet (Abschlussseite), hat abgesendet. In
+// 'ready' zählt zusätzlich jede Navigation des Hauptframes weg von der
+// Zusammenfassung (dort ist kein Klick mehr erlaubt, also kann nur das Absenden
+// oder ein Sitzungsende der Stadt navigieren – beides muss ein Mensch klären).
+// Ein Fehlalarm kostet eine Klärung von Hand, ein verpasster einen Doppelversand.
+
+const WAECHTER_MS = 1500
+
+async function seitenSchritt(run) {
+  return (run.profile?.currentStep || currentStep)(run.page)
+}
+
+/** true = Lauf gilt (jetzt) als abgesendet. Verlangt zwei Treffer hintereinander,
+ *  damit ein Ladezustand (Schrittleiste kurz weg) nicht auslöst. */
+async function abgesendetPruefen(run) {
+  if (run.submitted) return true
+  const page = run.page
+  if (!page || page.isClosed() || !run.profile) return false
+  let s
+  try {
+    if (await isBusy(page)) return false
+    s = await seitenSchritt(run)
+  } catch {
+    return false
+  }
+  if (run.profile.isSummary(s)) {
+    run.summaryStep = s
+    run.verdacht = 0
+    return false
+  }
+  const sum = run.summaryStep
+  const vorwaerts = !!sum && (s.n === 0 || !sum.n || s.n > sum.n)
+  const wegNachReady = run.state === 'ready' && run.navigiert
+  if (!vorwaerts && !wegNachReady) {
+    run.verdacht = 0
+    return false
+  }
+  if (++run.verdacht < 2) return false
+  run.submitted = true
+  run.manuell = `Die Seite hat die Zusammenfassung verlassen (jetzt: „${s.title || 'unbekannte Seite'}") – vermutlich wurde im Live-Bild abgesendet. Ergebnis unklar, bitte bei der Stadt prüfen.`
+  run.logMsg(run.manuell)
+  run.waiter?.resolve('manuell')
+  return true
+}
+
+/** Sofortprüfung (vor einem Abbruch): bei Verdacht kurz nachprüfen. */
+async function abgesendetFeststellen(run) {
+  for (let i = 0; i < 3; i++) {
+    if (await abgesendetPruefen(run)) return true
+    if (!run.verdacht) return false
+    await sleep(800)
+  }
+  return run.submitted
+}
+
+function startWaechter(run) {
+  let laeuft = false
+  run.waechter = setInterval(() => {
+    if (laeuft || (run.state !== 'needs_input' && run.state !== 'ready')) return
+    laeuft = true
+    abgesendetPruefen(run).catch(() => false).finally(() => { laeuft = false })
+  }, WAECHTER_MS)
+}
+
 async function finish(run) {
   clearInterval(run.shotTimer)
+  clearInterval(run.waechter)
   run.finishedAt = Date.now()
   try {
     if (run.page && !run.page.isClosed()) run.frame = await run.page.screenshot({ type: 'jpeg', quality: 70 }).catch(() => run.frame)
@@ -349,20 +436,29 @@ async function execute(run) {
     run.ctx = await b.newContext({ locale: 'de-DE', timezoneId: 'Europe/Berlin', viewport: VIEWPORT, acceptDownloads: true })
     run.page = await run.ctx.newPage()
     run.page.on('dialog', (d) => { run.logMsg(`Dialog: ${d.message()}`); d.accept().catch(() => {}) })
+    // Navigation nach 'ready' (dort ist nur Scrollen erlaubt) → Absende-Wächter.
+    run.page.on('framenavigated', (f) => {
+      if (run.state === 'ready' && f === run.page?.mainFrame()) run.navigiert = true
+    })
     await startScreencast(run)
     run.setState('filling')
     const profile = PROFILE[run.payload.portal || 'ekom21-ffm']
     if (!profile) throw new Error(`Unbekanntes Portal „${run.payload.portal}".`)
+    run.profile = profile
+    startWaechter(run)
     if (profile.fill) await profile.fill(run.engine)
     else await fillSteps(run.engine, profile)
 
     run.summary = await readSummary(run.page)
+    run.summaryStep = await seitenSchritt(run).catch(() => run.summaryStep)
     run.artifacts['summary.png'] = await run.page.screenshot({ type: 'png', fullPage: true }).catch(() => null)
+    run.navigiert = false
     run.setState('ready', 'Formular ausgefüllt – bitte Zusammenfassung prüfen und absenden.')
     run.logMsg('Zusammenfassung erreicht – wartet auf „Absenden"')
     run.waiter = deferred()
     const what = await run.waiter.promise
     run.waiter = null
+    if (what === 'manuell') throw new ManuellAbgesendet(run.manuell)
     if (what !== 'submit') throw new Cancelled('Abgebrochen.')
 
     run.setState('submitting', 'Wird abgesendet …')
@@ -373,6 +469,11 @@ async function execute(run) {
     run.result = { vorgangsId: result.vorgangsId, text: result.text, hasReceipt: !!result.receipt }
     run.setState('done', result.vorgangsId ? `Abgesendet – Vorgangs-ID ${result.vorgangsId}` : 'Abgesendet.')
   } catch (err) {
+    // Abbruch (Knopf oder Leerlauf) nur dann als „nichts abgesendet" melden,
+    // wenn die Seite nicht inzwischen hinter der Zusammenfassung steht.
+    if (err instanceof Cancelled && (run.state === 'needs_input' || run.state === 'ready') && (await abgesendetFeststellen(run))) {
+      err = new ManuellAbgesendet(run.manuell)
+    }
     if (err instanceof Cancelled) {
       run.setState('cancelled', 'Abgebrochen – nichts wurde abgesendet.')
       run.logMsg('Abgebrochen')
@@ -454,16 +555,53 @@ function send(res, status, body, type = 'application/json') {
 
 const ARTIFACT_TYPES = { 'summary.png': 'image/png', 'final.png': 'image/png', 'error.png': 'image/png', 'receipt.pdf': 'application/pdf' }
 
+/** Neuen Lauf anlegen (POST /runs, Platz ist reserviert). */
+async function neuerLauf(res, body) {
+  // Antwortet das Portal der Stadt gerade nicht (ekom21 hing am 08.10.2026
+  // minutenlang), gar nicht erst starten – sonst hängt der Lauf womöglich
+  // nach „Absenden" und das Ergebnis bleibt unklar.
+  const startUrl = PROFILE[body.payload.portal || 'ekom21-ffm']?.startUrl
+  if (startUrl && !(await portalErreichbar(startUrl))) {
+    return send(res, 503, { error: 'Das Online-Portal der Stadt antwortet gerade nicht – neuer Versuch in einer Minute.' })
+  }
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-'))
+  const files = { uebersicht: [], fahrzeug: [] }
+  let i = 0
+  for (const f of body.files || []) {
+    const role = f.role === 'fahrzeug' ? 'fahrzeug' : 'uebersicht'
+    const name = `${String(++i).padStart(2, '0')}-${String(f.name || 'foto.jpg').replace(/[^\w.\-äöüÄÖÜß]/g, '_')}`
+    const p = path.join(dir, name)
+    await fs.writeFile(p, Buffer.from(f.data, 'base64'))
+    files[role].push(p)
+  }
+  const run = createRun(body.payload, files, dir)
+  if (typeof body.id === 'string' && /^[0-9a-f-]{36}$/.test(body.id)) {
+    runs.delete(run.id)
+    run.id = body.id
+    runs.set(run.id, run)
+  }
+  run.logMsg(`Lauf angelegt (${files.uebersicht.length} Übersichts-, ${files.fahrzeug.length} Fahrzeugfoto(s))`)
+  execute(run)
+  return send(res, 201, publicRun(run))
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, 'http://x')
   const parts = url.pathname.split('/').filter(Boolean)
 
   if (shuttingDown) return send(res, 503, { error: 'Portal-Dienst wird beendet.' })
   if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true, runs: runs.size })
+  // Für deploy.sh: läuft gerade ein Versand (auch wartend auf Eingabe/Absenden)?
+  // Dann den Container nicht neu erstellen – der Lauf ginge verloren.
+  if (req.method === 'GET' && url.pathname === '/busy') {
+    const aktiv = aktiveLaeufe()
+    return send(res, 200, { busy: aktiv > 0, aktiv })
+  }
 
   if (req.method === 'POST' && url.pathname === '/runs') {
-    const active = [...runs.values()].filter((r) => ACTIVE.has(r.state)).length
-    if (active >= MAX_ACTIVE) return send(res, 429, { error: 'Es läuft bereits ein Portal-Vorgang – bitte warten, bis er fertig ist.' })
+    // Schnelle Absage vor dem (großen) Body; verbindlich ist erst die
+    // Reservierung unten.
+    if (aktiveLaeufe() >= MAX_ACTIVE) return send(res, 429, { error: 'Es läuft bereits ein Portal-Vorgang – bitte warten, bis er fertig ist.' })
     const body = await readBody(req)
     if (!body.payload) return send(res, 400, { error: 'payload fehlt' })
     // Idempotenz: Die App gibt eine eigene Lauf-ID mit. Kommt dieselbe ID noch
@@ -472,32 +610,16 @@ async function handle(req, res) {
     if (typeof body.id === 'string' && /^[0-9a-f-]{36}$/.test(body.id) && runs.has(body.id)) {
       return send(res, 200, publicRun(runs.get(body.id)))
     }
-    // Antwortet das Portal der Stadt gerade nicht (ekom21 hing am 08.10.2026
-    // minutenlang), gar nicht erst starten – sonst hängt der Lauf womöglich
-    // nach „Absenden" und das Ergebnis bleibt unklar.
-    const startUrl = PROFILE[body.payload.portal || 'ekom21-ffm']?.startUrl
-    if (startUrl && !(await portalErreichbar(startUrl))) {
-      return send(res, 503, { error: 'Das Online-Portal der Stadt antwortet gerade nicht – neuer Versuch in einer Minute.' })
+    // Prüfen und belegen ohne await dazwischen (Node: kein zweiter Request
+    // kann sich dazwischenschieben); freigegeben, sobald der Lauf selbst in
+    // `runs` zählt oder der Start scheitert.
+    if (aktiveLaeufe() >= MAX_ACTIVE) return send(res, 429, { error: 'Es läuft bereits ein Portal-Vorgang – bitte warten, bis er fertig ist.' })
+    reserviert++
+    try {
+      return await neuerLauf(res, body)
+    } finally {
+      reserviert--
     }
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-'))
-    const files = { uebersicht: [], fahrzeug: [] }
-    let i = 0
-    for (const f of body.files || []) {
-      const role = f.role === 'fahrzeug' ? 'fahrzeug' : 'uebersicht'
-      const name = `${String(++i).padStart(2, '0')}-${String(f.name || 'foto.jpg').replace(/[^\w.\-äöüÄÖÜß]/g, '_')}`
-      const p = path.join(dir, name)
-      await fs.writeFile(p, Buffer.from(f.data, 'base64'))
-      files[role].push(p)
-    }
-    const run = createRun(body.payload, files, dir)
-    if (typeof body.id === 'string' && /^[0-9a-f-]{36}$/.test(body.id)) {
-      runs.delete(run.id)
-      run.id = body.id
-      runs.set(run.id, run)
-    }
-    run.logMsg(`Lauf angelegt (${files.uebersicht.length} Übersichts-, ${files.fahrzeug.length} Fahrzeugfoto(s))`)
-    execute(run)
-    return send(res, 201, publicRun(run))
   }
 
   if (req.method === 'GET' && url.pathname === '/live/video') return liveWatch(req, res)
@@ -559,8 +681,15 @@ async function handle(req, res) {
 
   if (req.method === 'POST' && action === 'input') {
     const page = run.page
-    if (!page || run.state === 'submitting') return send(res, 409, { error: 'Keine Eingabe möglich.' })
+    if (!page || run.state === 'submitting' || run.submitted) return send(res, 409, { error: 'Keine Eingabe möglich.' })
     const b = await readBody(req, 64 * 1024)
+    // Auf der Zusammenfassung ('ready') nur noch scrollen: Ein Klick auf das
+    // „Absenden" der Stadt im Live-Bild ginge an der Sperre 'versand' vorbei –
+    // ein späterer Abbruch/Neustart würde dann ein zweites Mal senden.
+    // Abgeschickt wird nur über „Jetzt absenden" (POST …/submit).
+    if (run.state === 'ready' && b.type !== 'wheel') {
+      return send(res, 409, { error: 'Formular ist fertig – im Live-Bild nur scrollen; abgesendet wird mit „Jetzt absenden".' })
+    }
     if (b.type === 'click') await page.mouse.click(Math.round(b.x * VIEWPORT.width), Math.round(b.y * VIEWPORT.height))
     else if (b.type === 'wheel') await page.mouse.wheel(0, Math.max(-3000, Math.min(3000, Number(b.dy) || 0)))
     else if (b.type === 'type') await page.keyboard.type(String(b.text || '').slice(0, 500))

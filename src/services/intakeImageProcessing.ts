@@ -11,10 +11,21 @@ export type IntakeImageResult = {
   originalMimetype: string
   meta: { capturedAt: string | null; lat: number | null; lon: number | null }
 }
+/** Ergebnis eines 'replace'-Jobs (Ersatzfassung bzw. Original wiederherstellen). */
+export type ReplacementResult = {
+  /** Neu geschriebene Datei – leer, wenn nichts geschrieben wurde (nurKonvertiert
+   *  und das Bild war schon JPG/PNG). */
+  filename: string
+  /** Aus den Bytes bestimmter Typ der nutzbaren Fassung (image/jpeg|png). */
+  mimetype: string
+  converted: boolean
+}
+type WorkerResult = IntakeImageResult | ReplacementResult
 type Job = {
-  kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path' | 'pixel'; buffer?: Buffer; rawPath?: string; filename: string; mimetype: string; dir: string
+  kind: 'prepare' | 'thumbnail' | 'derivatives' | 'prepare-path' | 'pixel' | 'replace'; buffer?: Buffer; rawPath?: string; filename: string; mimetype: string; dir: string
   analyse?: BildAnalyse | null
-  resolve: (result: IntakeImageResult | undefined) => void; reject: (error: Error) => void
+  nurKonvertiert?: boolean
+  resolve: (result: WorkerResult | undefined) => void; reject: (error: Error) => void
 }
 const jobs: Job[] = []
 let worker: Worker | null = null
@@ -33,7 +44,7 @@ function startNext() {
       resourceLimits: { maxOldGenerationSizeMb: 1024, maxYoungGenerationSizeMb: 128 },
     })
     worker = current
-    current.on('message', (message: { ok: boolean; result?: IntakeImageResult }) => {
+    current.on('message', (message: { ok: boolean; result?: WorkerResult }) => {
       if (worker !== current || !active) return
       const job = active
       active = null
@@ -59,25 +70,25 @@ function startNext() {
   // Eigener übertragbarer Puffer: niemals einen Buffer-Pool oder andere
   // Originalbytes durch Detaching beschädigen. Nur begrenzt viele Jobs aktiv.
   const bytes = active.buffer ? Uint8Array.from(active.buffer) : undefined
-  worker.postMessage({ kind: active.kind, buffer: bytes, rawPath: active.rawPath, filename: active.filename, mimetype: active.mimetype, dir: active.dir, analyse: active.analyse ?? null }, bytes ? [bytes.buffer] : [])
+  worker.postMessage({ kind: active.kind, buffer: bytes, rawPath: active.rawPath, filename: active.filename, mimetype: active.mimetype, dir: active.dir, analyse: active.analyse ?? null, nurKonvertiert: !!active.nurKonvertiert }, bytes ? [bytes.buffer] : [])
 }
 
 export function processIntakeImage(buffer: Buffer, filename: string, mimetype: string, dir: string): Promise<IntakeImageResult> {
-  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+  return new Promise<WorkerResult | undefined>((resolve, reject) => {
     jobs.push({ kind: 'prepare', buffer, filename, mimetype, dir, resolve, reject })
     startNext()
   }).then(result => {
-    if (!result) throw new Error('Bild konnte nicht verarbeitet werden.')
+    if (!result || !('meta' in result)) throw new Error('Bild konnte nicht verarbeitet werden.')
     return result
   })
 }
 
 export function processIntakeRaw(rawPath: string, filename: string, mimetype: string, dir: string): Promise<IntakeImageResult> {
-  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+  return new Promise<WorkerResult | undefined>((resolve, reject) => {
     jobs.push({ kind: 'prepare-path', rawPath, filename, mimetype, dir, resolve, reject })
     startNext()
   }).then(result => {
-    if (!result) throw new Error('Bild konnte nicht verarbeitet werden.')
+    if (!result || !('meta' in result)) throw new Error('Bild konnte nicht verarbeitet werden.')
     return result
   })
 }
@@ -93,7 +104,7 @@ function enqueue(job: Job, priority: boolean) {
 /** Vorschaubild + Versandfassung eines gespeicherten Anzeigenfotos im Worker
  *  berechnen (beides als Datei-Cache neben dem Bild, s. pixelate.ts). */
 export function processReportImageDerivatives(filename: string, mimetype: string, dir: string): Promise<void> {
-  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+  return new Promise<WorkerResult | undefined>((resolve, reject) => {
     enqueue({ kind: 'derivatives', filename, mimetype, dir, resolve, reject }, true)
   }).then(() => {})
 }
@@ -101,10 +112,32 @@ export function processReportImageDerivatives(filename: string, mimetype: string
 /** Bild für den Upload in eine Anzeige vorbereiten (HEIC→JPG, EXIF, Dateien
  *  schreiben) – wie processIntakeImage, aber vorrangig in der Warteschlange. */
 export function processReportImage(buffer: Buffer, filename: string, mimetype: string, dir: string): Promise<IntakeImageResult> {
-  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+  return new Promise<WorkerResult | undefined>((resolve, reject) => {
     enqueue({ kind: 'prepare', buffer, filename, mimetype, dir, resolve, reject }, true)
   }).then(result => {
-    if (!result) throw new Error('Bild konnte nicht verarbeitet werden.')
+    if (!result || !('meta' in result)) throw new Error('Bild konnte nicht verarbeitet werden.')
+    return result
+  })
+}
+
+/** Ersatzfassung eines Anzeigenfotos im Worker vorbereiten und als neue Datei
+ *  in `dir` schreiben (PUT „Foto ersetzen“, „⟲ Original“). Quelle: Upload-
+ *  Buffer oder Datei auf Platte (rawPath). Die HEIC-Konvertierung samt
+ *  Pixel-Limit (images.ts prepareImage) läuft so nie im HTTP-Prozess.
+ *  nurKonvertiert: JPG/PNG nicht neu schreiben (das Original ist selbst die
+ *  nutzbare Fassung) – dann ist `filename` leer. Vorrangig eingereiht wie
+ *  processReportImage (der Nutzer wartet im Foto-Dialog). */
+export function processReplacementImage(
+  src: { buffer: Buffer } | { rawPath: string },
+  dir: string,
+  opts: { nurKonvertiert?: boolean } = {}
+): Promise<ReplacementResult> {
+  return new Promise<WorkerResult | undefined>((resolve, reject) => {
+    enqueue({
+      kind: 'replace', ...src, filename: '', mimetype: '', dir, nurKonvertiert: opts.nurKonvertiert, resolve, reject,
+    }, true)
+  }).then(result => {
+    if (!result || !('converted' in result)) throw new Error('Bild konnte nicht verarbeitet werden.')
     return result
   })
 }
@@ -112,7 +145,7 @@ export function processReportImage(buffer: Buffer, filename: string, mimetype: s
 /** Öffentliches Pixelbild (Karte) im Worker berechnen – nicht vorrangig, die
  *  Karte ist nicht interaktiv-kritisch, ein Nutzer-Upload schon. */
 export function processPixelNow(filename: string, mimetype: string, dir: string, analyse: BildAnalyse | null): Promise<void> {
-  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+  return new Promise<WorkerResult | undefined>((resolve, reject) => {
     enqueue({ kind: 'pixel', filename, mimetype, dir, analyse, resolve, reject }, false)
   }).then(() => {})
 }
@@ -130,7 +163,7 @@ export async function loadPixelated(dir: string, filename: string, mimetype: str
 
 /** Fehlendes Vorschaubild vorrangig nachrechnen (On-demand-Fallback der Listen). */
 export function processThumbnailNow(filename: string, mimetype: string, dir: string): Promise<void> {
-  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+  return new Promise<WorkerResult | undefined>((resolve, reject) => {
     enqueue({ kind: 'thumbnail', filename, mimetype, dir, resolve, reject }, true)
   }).then(() => {})
 }
@@ -150,7 +183,7 @@ export async function loadThumbnail(dir: string, filename: string, mimetype: str
 // Erst nach dem Upload erzeugen. Die Warteschlange enthält nur Dateipfade,
 // niemals die Originalbytes aller 150 Fotos gleichzeitig im Arbeitsspeicher.
 export function processIntakeThumbnail(filename: string, mimetype: string, dir: string): Promise<void> {
-  return new Promise<IntakeImageResult | undefined>((resolve, reject) => {
+  return new Promise<WorkerResult | undefined>((resolve, reject) => {
     jobs.push({ kind: 'thumbnail', filename, mimetype, dir, resolve, reject })
     startNext()
   }).then(() => {})

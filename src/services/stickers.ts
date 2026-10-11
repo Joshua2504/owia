@@ -200,8 +200,37 @@ export const AUFDRUCK_MAX = 140
 
 /** Nur Zeichen, die die PDF-Standardschriften (WinAnsi) setzen können –
  *  sonst wirft pdf-lib beim Rendern. */
-function winAnsi(s: string): string {
-  return s.replace(/[^\x20-\x7E\xA0-\xFF€„“”‚‘’–—…]/g, ' ').replace(/\s+/g, ' ').trim()
+export function winAnsi(s: string): string {
+  return winAnsiZeichen(s, ' ').replace(/\s+/g, ' ').trim()
+}
+
+const WINANSI_OK = /^[\x20-\x7E\xA0-\xFF€„“”‚‘’–—…]$/
+/** Buchstaben ohne Unicode-Zerlegung, die NFD nicht auf einen Grundbuchstaben bringt. */
+const TRANSLIT: Record<string, string> = { 'ł': 'l', 'Ł': 'L', 'đ': 'd', 'Đ': 'D', 'ı': 'i' }
+
+/**
+ * Zeichenweise auf WinAnsi bringen, ohne Whitespace anzufassen (Zeilenumbrüche
+ * bleiben für mehrzeilige PDF-Felder erhalten, \r\n → \n, Tab → Leerzeichen).
+ * Akzentbuchstaben außerhalb von WinAnsi werden zum Grundbuchstaben („ł" → „l",
+ * „ń" → „n"), Unsichtbares (ZWJ, Variantenselektoren) entfällt, alles andere
+ * (Emoji, kyrillisch …) wird durch `ersatz` ersetzt. Für PDF-Formularfelder
+ * (services/pdf.ts): ein einziges nicht kodierbares Zeichen lässt in pdf-lib
+ * sonst das ganze Rendern der Feldoptik scheitern.
+ */
+export function winAnsiZeichen(s: string, ersatz = '?'): string {
+  let out = ''
+  for (const c of s.replace(/\r\n?/g, '\n')) {
+    if (c === '\n') out += c
+    else if (c === '\t') out += ' '
+    else if (WINANSI_OK.test(c)) out += c
+    else {
+      const d = TRANSLIT[c] ?? c.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      if (d !== c && d.length > 0 && [...d].every((x) => WINANSI_OK.test(x))) out += d
+      else if (/^[\u200b-\u200f\u2060\ufe00-\ufe0f\ufeff\u0300-\u036f]$/.test(c)) continue
+      else out += ersatz
+    }
+  }
+  return out
 }
 
 /** „55 €" bzw. „17,50 €". */

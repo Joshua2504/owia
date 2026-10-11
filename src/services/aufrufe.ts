@@ -38,13 +38,52 @@ export function routeMuster(app: FastifyInstance, pathname: string): string | nu
   }).join('/').slice(0, 191)
 }
 
+// Der Referer ist frei fälschbar: ohne Begrenzung könnte jeder beliebig viele
+// verschiedene `extern:<host>`-Zeilen anlegen (Tabelle wächst, Auswertung
+// wird zugemüllt). Deshalb nur plausible Hostnamen und je Tag höchstens
+// MAX_EXTERN verschiedene Werte; der Rest zählt unter `extern:sonstige`.
+const EXTERN_SONSTIGE = 'extern:sonstige'
+const MAX_EXTERN = 200
+const HOST_RE = /^[a-z0-9]([a-z0-9.-]{0,98}[a-z0-9])?$/
+
+/** Hostname ohne Port/www. (URL.hostname enthält nie einen Port; IDN kommt als Punycode) oder null. */
+function externHost(hostname: string): string | null {
+  const h = hostname.toLowerCase().replace(/^www\./, '')
+  return HOST_RE.test(h) && !h.includes('..') ? h : null
+}
+
 /** Herkunft eines Aufrufs: Muster der eigenen vorigen Seite, `extern:<host>` oder `direkt`. */
 export function herkunft(app: FastifyInstance, referer: string | undefined, eigenerHost: string): string {
   if (!referer) return 'direkt'
   let url: URL
   try { url = new URL(referer) } catch { return 'direkt' }
-  if (url.host !== eigenerHost) return `extern:${url.hostname.replace(/^www\./, '')}`.slice(0, 191)
+  if (url.host !== eigenerHost) {
+    const host = externHost(url.hostname)
+    return host ? `extern:${host}` : EXTERN_SONSTIGE
+  }
   return routeMuster(app, url.pathname) ?? '(unbekannt)'
+}
+
+// Heute bereits zugelassene extern-Werte (Schnellpfad ohne DB-Abfrage je Aufruf).
+let externHeute: { tag: string; werte: Set<string> } = { tag: '', werte: new Set() }
+
+/** Deckelt die Zahl verschiedener `extern:`-Werte je Tag (siehe MAX_EXTERN). */
+async function externBegrenzen(von: string): Promise<string> {
+  if (!von.startsWith('extern:') || von === EXTERN_SONSTIGE) return von
+  const tag = new Date().toISOString().slice(0, 10)
+  if (externHeute.tag !== tag) externHeute = { tag, werte: new Set() }
+  if (externHeute.werte.has(von)) return von
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT COUNT(*) AS n, COALESCE(SUM(von = ?), 0) AS vorhanden
+       FROM (SELECT DISTINCT von FROM seitenaufrufe
+              WHERE tag = CURDATE() AND von LIKE 'extern:%' AND von <> ?) t`,
+    [von, EXTERN_SONSTIGE]
+  )
+  if (Number(rows[0]?.vorhanden) > 0 || Number(rows[0]?.n) < MAX_EXTERN) {
+    externHeute.werte.add(von)
+    return von
+  }
+  return EXTERN_SONSTIGE
 }
 
 /**
@@ -61,12 +100,14 @@ export function zaehleAufruf(app: FastifyInstance, request: FastifyRequest, repl
   if (!String(reply.getHeader('content-type') || '').includes('text/html')) return
   const pfad = request.routeOptions.url
   if (!pfad || AUSGENOMMEN.has(pfad)) return
-  const von = herkunft(app, h.referer, request.host)
-  pool.execute(
-    `INSERT INTO seitenaufrufe(tag, pfad, von, anzahl) VALUES (CURDATE(), ?, ?, 1)
-     ON DUPLICATE KEY UPDATE anzahl = anzahl + 1`,
-    [pfad.slice(0, 191), von]
-  ).catch((err) => logger.warn({ err }, 'Seitenaufruf nicht gezählt'))
+  const roh = herkunft(app, h.referer, request.host)
+  externBegrenzen(roh)
+    .then((von) => pool.execute(
+      `INSERT INTO seitenaufrufe(tag, pfad, von, anzahl) VALUES (CURDATE(), ?, ?, 1)
+       ON DUPLICATE KEY UPDATE anzahl = anzahl + 1`,
+      [pfad.slice(0, 191), von]
+    ))
+    .catch((err) => logger.warn({ err }, 'Seitenaufruf nicht gezählt'))
 }
 
 export type Zeile = { name: string; anzahl: number }
