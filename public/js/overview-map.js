@@ -130,6 +130,34 @@
     )
   }
 
+  // Hover-Vorschau innerhalb der Karte halten: Leaflet setzt sie stur über den
+  // Marker – nahe am oberen Kartenrand schnitt der Kartenrahmen (overflow:
+  // hidden) Tatbestand und Fotos ab. Darum oben/unten nach dem freien Platz
+  // wählen und seitlich an den Rand schieben. Nach dem Laden der Fotos (Höhe
+  // ändert sich) noch einmal.
+  function fitTooltip(map, marker, tt) {
+    const el = tt.getElement()
+    if (!el) return
+    const size = map.getSize()
+    const p = map.latLngToContainerPoint(marker.getLatLng())
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    const RAND = 8
+    const oben = p.y - 24 - RAND
+    const unten = size.y - p.y - 24 - RAND
+    const dir = h <= oben || oben >= unten ? 'top' : 'bottom'
+    let dx = 0
+    if (p.x - w / 2 < RAND) dx = RAND - (p.x - w / 2)
+    else if (p.x + w / 2 > size.x - RAND) dx = size.x - RAND - (p.x + w / 2)
+    tt.options.direction = dir
+    tt.options.offset = L.point(dx, dir === 'top' ? -24 : 24)
+    el.classList.toggle('is-shifted', dx !== 0)
+    tt.update()
+    el.querySelectorAll('img').forEach((img) => {
+      if (!img.complete) img.addEventListener('load', () => { if (tt.isOpen()) fitTooltip(map, marker, tt) }, { once: true })
+    })
+  }
+
   // Popup für eigene Entwürfe (nicht anonym – mit Adresse und Bearbeiten-Link).
   function ownPopupHtml(r) {
     const parts = ['<div class="fw-semibold">Eigener Entwurf</div>']
@@ -167,6 +195,7 @@
       cluster.addLayer(m)
       if (window.matchMedia('(hover: hover)').matches) {
         m.bindTooltip(() => hoverHtml(r), { direction: 'top', offset: [0, -24], className: 'overview-hover', opacity: 1 })
+        m.on('tooltipopen', (e) => fitTooltip(map, m, e.tooltip))
         // Popup offen → Tooltip wäre doppelt.
         m.on('popupopen', () => m.closeTooltip())
       }

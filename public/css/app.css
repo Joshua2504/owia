@@ -1407,6 +1407,11 @@ body:has(.editor-actions) .back-to-top { bottom: 5rem; }
 .overview-fotos.is-multi { grid-template-columns: repeat(2, 160px); }
 .overview-fotos img { width: 160px; height: auto; border-radius: 4px; image-rendering: pixelated; background: #ddd; }
 .leaflet-tooltip.overview-hover { white-space: normal; max-width: 340px; padding: 6px; }
+/* Hover-Vorschau kompakt (Hochformat-Fotos machten sie höher als die Karte);
+   lazy würde im Tooltip erst nach dem Anzeigen laden. Seitlich verschoben
+   (overview-map.js fitTooltip) zeigt der Pfeil nicht mehr auf den Marker. */
+.overview-hover .overview-fotos img { height: 120px; object-fit: cover; }
+.leaflet-tooltip.overview-hover.is-shifted::before { display: none; }
 /* Cluster (Leaflet.markercluster): Foto-Stapel mit Anzahl-Badge. */
 .overview-cluster { position: relative; }
 .overview-cluster img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; border: 2px solid #495057;
@@ -1534,7 +1539,10 @@ body.is-bare { overflow: hidden; overscroll-behavior: none; background: #000; }
   justify-self: start; width: 52px; height: 52px; border: 0; border-radius: 50%;
   background: rgba(255,255,255,.18); color: #fff; font-size: 1.4rem;
 }
-.kam-left { justify-self: start; display: flex; align-items: center; gap: .6rem; }
+.kam-flash-row { display: flex; justify-content: center; margin-bottom: .6rem; }
+.kam-flash-row:has(> [hidden]) { display: none; }
+.kam-flash-row .kam-round { width: 44px; height: 44px; }
+.kam-flash-row .kam-flash:not(.is-on)::after { width: 26px; margin-left: -13px; }
 /* Blitz: aus = durchgestrichen, an = gelb. */
 .kam-flash { position: relative; display: grid; place-items: center; }
 .kam-flash[hidden] { display: none; }
@@ -2239,11 +2247,4 @@ body.is-embed .nav-progress, body.is-bare .nav-progress { top: 0; }
 @media (max-width: 575.98px) {
   /* Live-Versand: Abstand/Selbsttest unter der Überschrift statt gequetscht daneben. */
   .versand-tools { width: 100%; margin-left: 0 !important; flex-wrap: wrap; justify-content: space-between; }
-}
-/* Kamera auf schmalen Handys (iPhone SE): Galerie + Blitz + Fertig passen sonst nicht neben den Auslöser. */
-@media (max-width: 374.98px) {
-  .kam-left { gap: .35rem; }
-  .kam-left .kam-round { width: 44px; height: 44px; font-size: 1.2rem; }
-  .kam-controls { gap: .5rem; }
-  .kam-done { padding: .5rem .75rem; font-size: .95rem; }
 }
