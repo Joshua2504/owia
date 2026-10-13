@@ -2248,3 +2248,12 @@ body.is-embed .nav-progress, body.is-bare .nav-progress { top: 0; }
   /* Live-Versand: Abstand/Selbsttest unter der Überschrift statt gequetscht daneben. */
   .versand-tools { width: 100%; margin-left: 0 !important; flex-wrap: wrap; justify-content: space-between; }
 }
+
+/* Foto-Dialog: Verschieben/Löschen unten im Kachel-Streifen (photo-edit.js). */
+.photo-edit-strip-actions { display: flex; flex-direction: column; gap: .4rem; margin-top: .25rem; }
+.photo-edit-strip-actions .btn { width: 100%; }
+.photo-edit-strip-actions .pe-lbl { display: inline !important; }
+@media (max-width: 767.98px) {
+  .photo-edit-strip-actions { flex-direction: row; margin: 0; flex: 0 0 auto; }
+  .photo-edit-strip-actions .btn { width: auto; white-space: nowrap; }
+}

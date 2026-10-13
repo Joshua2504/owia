@@ -42,6 +42,18 @@
     return e
   }
 
+  var stripAkt = null
+  function stripActions() {
+    if (!stripAkt) {
+      stripAkt = el('div', 'photo-edit-strip-actions')
+    }
+    ;['move-menu', 'delete'].forEach(function (a) {
+      var b = dlg.querySelector('[data-act=' + a + ']') || stripAkt.querySelector('[data-act=' + a + ']')
+      if (b) stripAkt.appendChild(b)
+    })
+    return stripAkt
+  }
+
   function build() {
     dlg = el('dialog', 'photo-edit-dialog')
     dlg.setAttribute('aria-label', 'Foto bearbeiten')
@@ -50,7 +62,7 @@
       '<div class="ms-auto d-flex align-items-center gap-2">' +
       '<span class="photo-edit-status small"></span>' +
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="move-menu" title="Foto(s) in eine neue oder andere Anzeige verschieben – mehrere über die Häkchen an den Kacheln" aria-label="Verschieben">↗<span class="pe-lbl"> Verschieben</span></button>' +
-      '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen">🗑</button>' +
+      '<button type="button" class="btn btn-sm btn-outline-danger" data-act="delete" title="Foto aus dem Entwurf löschen" aria-label="Foto löschen">🗑<span class="pe-lbl"> Löschen</span></button>' +
       // Handy: Knöpfe nur als Symbol (app.css .pe-lbl/.pe-x), damit der Kopf einzeilig bleibt.
       '<button type="button" class="btn btn-sm btn-outline-light" data-act="cancel" aria-label="Schließen"><span class="pe-x" aria-hidden="true">✕</span><span class="pe-lbl">Schließen</span></button>' +
       '<button type="button" class="btn btn-sm btn-success" data-act="save" title="Enter">✓ Bestätigen</button>' +
@@ -846,6 +858,17 @@
       dup.setAttribute('data-act', 'dup-photo')
       dup.title = 'Aktuelles Foto kopieren – z. B. um die Kopie als Nahaufnahme zuzuschneiden'
       strip.appendChild(dup)
+    }
+    // Foto-Aktionen (Verschieben, Löschen) gehören zum Foto – unten in den
+    // Streifen; ohne Streifen bleiben sie im Kopf. Die Knöpfe werden nur
+    // umgehängt (Listener bleiben), replaceChildren oben löst sie jedes Mal.
+    var akt = stripActions()
+    if (mitStreifen) {
+      strip.appendChild(akt)
+    } else {
+      var kopf = dlg.querySelector('.photo-edit-head > .ms-auto')
+      kopf.insertBefore(akt.firstChild, kopf.querySelector('[data-act=cancel]'))
+      kopf.insertBefore(akt.firstChild, kopf.querySelector('[data-act=cancel]'))
     }
     renderRolle(state)
   }
@@ -2420,8 +2443,12 @@
     menu.hidden = false
     // Rechtsbündig unter dem Knopf, aber immer ganz im Bild (Handy).
     var w = menu.offsetWidth
-    menu.style.top = btn.bottom + 6 + 'px'
-    menu.style.left = Math.max(8, Math.min(btn.right - w, window.innerWidth - w - 8)) + 'px'
+    // Unten kein Platz (Streifen am Handy-Bildschirmrand): über dem Knopf öffnen.
+    var hoch = menu.offsetHeight
+    menu.style.top = (btn.bottom + 6 + hoch > window.innerHeight - 8 ? Math.max(8, btn.top - hoch - 6) : btn.bottom + 6) + 'px'
+    // Knopf links im Streifen: linksbündig; im Kopf (rechts): rechtsbündig.
+    var ausrichtung = btn.left < window.innerWidth / 2 ? btn.left : btn.right - w
+    menu.style.left = Math.max(8, Math.min(ausrichtung, window.innerWidth - w - 8)) + 'px'
     moveTargets = null
     renderMoveList()
     var az = s.az
