@@ -1150,6 +1150,7 @@ body.is-embed main { padding-bottom: 0 !important; }
   overflow-y: auto;
   z-index: 1060;
 }
+.ss-menu { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .ss-menu .list-group-item { white-space: normal; }
 @media (max-width: 767.98px) {
   .ss-input { font-size: 16px; }

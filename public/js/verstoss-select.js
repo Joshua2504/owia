@@ -161,7 +161,7 @@
     menu.className = 'list-group shadow-sm'
     menu.style.cssText =
       'position:absolute;top:100%;left:0;right:0;z-index:1050;max-height:340px;' +
-      'overflow-y:auto;display:none;'
+      'overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;display:none;'
     root.appendChild(menu)
 
     let buttons = [] // aktuell wählbare Einträge (für Tastatur-Navigation)
@@ -313,7 +313,19 @@
       menu.scrollTop = 0
       menu.style.display = 'block'
       input.setAttribute('aria-expanded', 'true')
+      fitVisible()
     }
+
+    // Handy: Liste nur so hoch wie bis zur Tastatur (visualViewport) – auf iOS
+    // lag sie sonst unter der Tastatur und ließ sich nicht scrollen. Fest
+    // positionierte Listen (Foto-Dialog) richtet photo-edit.js selbst aus.
+    function fitVisible() {
+      const vv = window.visualViewport
+      if (!vv || menu.style.position === 'fixed' || menu.style.display === 'none') return
+      const frei = vv.offsetTop + vv.height - menu.getBoundingClientRect().top - 8
+      menu.style.maxHeight = Math.max(140, Math.min(340, frei)) + 'px'
+    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fitVisible)
 
     // Browse-Modus: beim Scrollen ans Ende die nächste Charge nachladen.
     menu.addEventListener('scroll', () => {

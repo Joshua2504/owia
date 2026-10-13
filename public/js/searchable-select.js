@@ -115,7 +115,18 @@
       menu.hidden = false
       input.setAttribute('aria-expanded', 'true')
       highlight()
+      fitVisible()
     }
+
+    // Handy: Liste nur bis zur Tastatur (visualViewport) – auf iOS schrumpft
+    // das Layout nicht, die Liste lag sonst darunter und ließ sich nicht scrollen.
+    function fitVisible() {
+      var vv = window.visualViewport
+      if (!vv || menu.hidden) return
+      var frei = vv.offsetTop + vv.height - menu.getBoundingClientRect().top - 8
+      menu.style.maxHeight = Math.max(140, Math.min(320, frei)) + 'px'
+    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', fitVisible)
 
     input.addEventListener('focus', function () {
       input.value = ''

@@ -469,6 +469,8 @@
     // die Auswahl meldet verstoss-select.js per change am versteckten Feld.
     verstossHidden().addEventListener('change', function () { savePlate().then(updateUi, function () {}) })
     window.addEventListener('resize', function () { if (dlg.open) fitVerstossMenu() })
+    // iOS: Tastatur auf/zu ändert nur den sichtbaren Bereich (kein window-resize).
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { if (dlg.open) fitVerstossMenu() })
     verstossInput().addEventListener('input', fitVerstossMenu)
     // Beim Scrollen der Seitenleiste mitwandern (capture: scroll bubbelt nicht).
     dlg.addEventListener('scroll', function () { fitVerstossMenu() }, true)
@@ -660,15 +662,21 @@
     menu.style.width = w + 'px'
     menu.style.right = 'auto'
     menu.style.left = Math.max(16, left) + 'px'
-    // Unter das Feld, wenn genug Platz ist, sonst darüber.
-    var below = window.innerHeight - r.bottom - 16
-    var above = r.top - 16
+    // Unter das Feld, wenn genug Platz ist, sonst darüber. Maßstab ist der
+    // sichtbare Bereich (visualViewport): Auf iOS schrumpft innerHeight nicht,
+    // wenn die Tastatur aufgeht – die Liste lag dann zum Großteil unter der
+    // Tastatur und ließ sich nicht scrollen.
+    var vv = window.visualViewport
+    var sichtUnten = vv ? vv.offsetTop + vv.height : window.innerHeight
+    var sichtOben = vv ? vv.offsetTop : 0
+    var below = sichtUnten - r.bottom - 8
+    var above = r.top - sichtOben - 8
     // Öffnet die Liste nach oben, steht sie umgekehrt: der erste Treffer
     // direkt über dem Feld (Pfeiltasten tauschen, s. Keydown-Handler).
     if (below >= 240 || below >= above) {
       menu.style.top = r.bottom + 'px'
       menu.style.bottom = 'auto'
-      menu.style.maxHeight = Math.max(160, below) + 'px'
+      menu.style.maxHeight = Math.max(120, below) + 'px'
       menu.style.flexDirection = ''
       delete menu.dataset.umgekehrt
     } else {
