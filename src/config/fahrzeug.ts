@@ -89,6 +89,12 @@ export const FAHRZEUG_FARBEN = [
   'schwarz', 'weiß', 'silber', 'grau', 'blau', 'rot', 'grün', 'gelb', 'orange', 'braun', 'beige', 'gold', 'violett',
 ]
 
+/** Deutsches Versicherungskennzeichen (Mofa, Roller, Ape …): Ziffern und
+ *  Buchstaben, z. B. „705 HNX" – kein Bindestrich, kein Ortskürzel. */
+export function istVersicherungskennzeichen(kz: unknown): boolean {
+  return /^\d{1,3} ?[A-Z]{1,3}$/.test(String(kz || '').toUpperCase().replace(/\s+/g, ' ').trim())
+}
+
 /** Länderkennzeichen (Unterscheidungszeichen, wie reports.kennzeichen_land) →
  *  Länderliste des Portals. Fehlt ein Land, kann es im Portal nicht gewählt werden. */
 export const KENNZEICHEN_LAENDER: Record<string, string> = {

@@ -1054,6 +1054,16 @@ test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
   assert.equal(schutz.tat.ort, 'Römerberg 1 (Fahrzeug war verlassen)')
   const bordstein = buildPortalPayload({ ...basis, verstoss_art: lbl2('112372') } as any, nutzer)
   assert.equal(bordstein.tat.ort, 'Römerberg 1 (Fahrzeug war verlassen)')
+  // Versicherungskennzeichen: Leichtkraftfahrzeug geht als Leichtkraftrad,
+  // PKW wird vorher abgefangen (das Portal lehnt das Format sonst ab).
+  const ape = { ...basis, verstoss_art: lbl2('141070'), kennzeichen: '705 HNX', fahrzeug_typ: 'Leichtkraftfahrzeug' }
+  assert.equal(buildPortalPayload(ape as any, nutzer).fahrzeug.typ, 'Leichtkraftrad')
+  assert.equal(buildPortalPayload({ ...ape, kennzeichen: 'F-AB 1' } as any, nutzer).fahrzeug.typ, 'Leichtkraftfahrzeug')
+  const kreuz = { verstoss_art: '112262 – Sie parkten weniger als 5 Meter vor der Kreuzung/Einmündung.', verstoss_variante: 'Kreuzung', kennzeichen_land: 'D', kennzeichen: '705 HNX' }
+  assert.equal(portalProblem({ ...kreuz, fahrzeug_typ: 'Leichtkraftfahrzeug' }), null)
+  assert.equal(portalProblem({ ...kreuz, fahrzeug_typ: 'Mofa' }), null)
+  assert.match(portalProblem({ ...kreuz, fahrzeug_typ: 'PKW' }) || '', /Versicherungskennzeichen/)
+  assert.equal(portalProblem({ ...kreuz, kennzeichen_land: 'NL', fahrzeug_typ: 'PKW' }), null)
 })
 
 test('Wiesbaden- und Mainz-Portal: Zuordnung, Prüfungen, Payload', () => {

@@ -20,7 +20,7 @@
 import mysql from 'mysql2/promise'
 import { tbnrAusLabel, VERSTOESSE } from '../config/verstoss'
 import { portalAnrede } from '../config/person'
-import { fahrzeugTyp, portalMarke, KENNZEICHEN_LAENDER } from '../config/fahrzeug'
+import { fahrzeugTyp, portalMarke, KENNZEICHEN_LAENDER, istVersicherungskennzeichen } from '../config/fahrzeug'
 import { hhmm, localIsoDate } from '../utils/format'
 
 export type PathEl = { pick?: string[]; ask?: string[]; optional?: boolean; hint?: string; manual?: boolean }
@@ -387,6 +387,21 @@ export function zweiMonateProblem(r: Record<string, any>, stadt: string): string
   return tag < grenze.toISOString().slice(0, 10) ? `${stadt} nimmt nur Taten der letzten zwei Monate an.` : null
 }
 
+/** Versicherungskennzeichen (deutsch) nimmt das Frankfurter Portal nur bei
+ *  diesen Fahrzeugtypen an – bei allen anderen verlangt es „XXX-XX 1234"
+ *  (Trockenläufe 14.10.2026: Mofa, Leichtkraftrad, Kraftroller ok; PKW und
+ *  Leichtkraftfahrzeug abgelehnt). Leichtkraftfahrzeuge (z. B. Ape 50) melden
+ *  wir deshalb als Leichtkraftrad (Nutzerentscheidung), die Anzeige bleibt
+ *  unverändert. */
+const VK_TYPEN = ['Mofa', 'Leichtkraftrad', 'Kraftroller']
+function deutschesVk(r: Record<string, any>): boolean {
+  return String(r.kennzeichen_land || 'D').toUpperCase() === 'D' && istVersicherungskennzeichen(r.kennzeichen)
+}
+export function portalFahrzeugTyp(r: Record<string, any>): string {
+  const typ = fahrzeugTyp(r.fahrzeug_typ)
+  return deutschesVk(r) && typ === 'Leichtkraftfahrzeug' ? 'Leichtkraftrad' : typ
+}
+
 export function portalProblem(r: Record<string, any>): string | null {
   const frist = zweiMonateProblem(r, 'Frankfurt')
   if (frist) return frist
@@ -401,6 +416,9 @@ export function portalProblem(r: Record<string, any>): string | null {
   }
   if (r.kennzeichen_land && !KENNZEICHEN_LAENDER[String(r.kennzeichen_land).toUpperCase()]) {
     return `Das Länderkennzeichen „${r.kennzeichen_land}" kennt das Portal der Stadt nicht.`
+  }
+  if (deutschesVk(r) && !VK_TYPEN.includes(portalFahrzeugTyp(r))) {
+    return `„${r.kennzeichen}" ist ein Versicherungskennzeichen – das Portal der Stadt nimmt es nur bei Mofa, Leichtkraftrad, Kraftroller oder Leichtkraftfahrzeug an. Bitte den Fahrzeugtyp anpassen.`
   }
   return null
 }
@@ -439,7 +457,7 @@ export function buildPortalPayload(r: mysql.RowDataPacket, u: mysql.RowDataPacke
       text: behinderungText,
     },
     fahrzeug: {
-      typ: fahrzeugTyp(r.fahrzeug_typ),
+      typ: portalFahrzeugTyp(r),
       land,
       kennzeichen: r.kennzeichen || '',
       marke: portalMarke(r.fahrzeug_marke) ?? (r.fahrzeug_marke ? String(r.fahrzeug_marke) : null),
