@@ -108,15 +108,22 @@ export const CITIES: Record<string, City> = {
       mapLon: 8.6638,
     },
   },
-  // Bad Soden-Salmünster (Main-Kinzig-Kreis, Hessen). Kein amtliches PDF-Formular
-  // -> Versand als rohe E-Mail. Empfänger-Adresse kommt (wie bei allen Städten)
-  // aus districts.csv (PLZ 63628).
+  // Bad Soden-Salmünster (Main-Kinzig-Kreis, Hessen). Weder PDF-Formular noch
+  // Online-Portal (Stand 10/2026) -> Versand als rohe E-Mail. Empfänger kommt (wie
+  // bei allen Städten) aus districts.csv (PLZ 63628 -> ordnungsamt@…, laut
+  // Kontaktseite und Verwaltungsportal Hessen zuständig für Verkehrs-Bußgelder).
   badsoden: {
     id: 'badsoden',
     // Exakt wie in districts.csv, damit die PLZ-Erkennung (63628) greift.
     name: 'Bad Soden-Salmünster',
     ordnungsamt: 'Ordnungsamt der Stadt Bad Soden-Salmünster',
     // kein pdfForm -> rohe E-Mail
+    mail: {
+      // Fotos reichen; der Tatort steht als Adresse im Mailtext.
+      ohneKarte: true,
+      // Ladungsfähige Anschrift der Zeugin/des Zeugen, sonst müsste das Amt nachfragen.
+      anschriftImText: true,
+    },
     geo: {
       scope: 'bss',
       // Gesamtes Stadtgebiet inkl. Stadtteile (Salmünster, Ahl, Mernes …).

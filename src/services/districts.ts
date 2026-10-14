@@ -6,10 +6,9 @@ import { CITIES, City, getCityByName, isCityId } from '../config/cities'
 // Quelle: resources/districts.csv ("plz","name","email"), einmalig beim Start
 // eingelesen (~8.300 Zeilen, wenige hundert KB). Wird NUR zur Erkennung genutzt:
 // Aus dem Tatort (dessen PLZ) leiten wir das zuständige Amt ab und entscheiden,
-// ob dieser Ort bereits freigeschaltet ist (siehe CITIES). Der tatsächliche
-// Versand nutzt die Adresse aus der Stadt-Registry (config/cities.ts), nicht
-// diese Tabelle – so bleiben bewusste Overrides (z.B. Bad Soden-Salmünster)
-// unabhängig von der CSV.
+// ob dieser Ort bereits freigeschaltet ist (siehe CITIES). Auch der Mail-
+// Empfänger kommt aus dieser Tabelle (recipientEmailForReport) – eine falsche
+// Amtsadresse wird also hier in der CSV korrigiert.
 
 export interface District {
   plz: string
