@@ -69,7 +69,7 @@ export async function runSelbsttest(index = Math.floor(Date.now() / 86400000)): 
   if (!adapter) throw new Error(`Kein Portal für ${stadt}.`)
   const label = VERSTOSS_ARTEN.find((l) => l.startsWith(`${tbnr} – `))
   if (!label) throw new Error(`Test-Tatbestand ${tbnr} fehlt im Katalog.`)
-  // Das Portal nimmt nur Tattage vor heute an.
+  // Gestern: liegt sicher in jeder Annahmefrist.
   const gestern = new Date(Date.now() - 86400000)
   const report = {
     verstoss_art: label,

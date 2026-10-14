@@ -364,8 +364,8 @@ export function isoOf(d: unknown): string {
 
 export class PortalDatenFehler extends Error {}
 
-/** Das Portal nimmt nur Tattage VOR heute an („Datum muss kleiner als <heute>
- *  sein"). Anzeigen vom selben Tag sind erst ab morgen versendbar. */
+/** Tattag heute oder später? Für Portale, die heutige Taten ablehnen
+ *  (PortalAdapter.heuteErlaubt = false; derzeit keins – ekom21 nimmt sie an). */
 export function erstAbMorgen(r: Record<string, any>, heute = berlinHeute()): boolean {
   const tag = r.tattag instanceof Date ? localIsoDate(r.tattag) : String(r.tattag || '').slice(0, 10)
   return !!tag && tag >= heute

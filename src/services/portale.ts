@@ -40,7 +40,9 @@ const ffm: PortalAdapter = {
   versendbar: imPortal,
   problem: (r) => portalProblem(r),
   varianteFehlt: (r) => verstossVarianten(r.verstoss_art).length > 0 && !r.verstoss_variante,
-  heuteErlaubt: false,
+  // Trockenlauf 14.10.2026: Tattag heute geht bis zur Zusammenfassung durch. Die
+  // Meldung „Datum muss kleiner als <heute> sein" kommt nur bei Daten nach heute.
+  heuteErlaubt: true,
   payload: (r, u, f) => ({ portal: 'ekom21-ffm', ...buildPortalPayload(r, u, f) }),
   fotos: photoRoles,
 }
