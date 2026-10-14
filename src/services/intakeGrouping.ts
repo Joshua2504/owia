@@ -130,7 +130,7 @@ function sortKey(p: IntakePhoto): string {
   return `${p.capturedAt ?? '9999-99-99 99:99:99'}#${String(p.id).padStart(12, '0')}`
 }
 
-function toIncident(photos: IntakePhoto[]): Incident {
+export function toIncident(photos: IntakePhoto[]): Incident {
   const times = photos.map((p) => p.capturedAt).filter((t): t is string => t !== null).sort()
   const coords = photos.filter((p) => p.lat !== null && p.lon !== null)
   const day = times.length ? dayOf(times[0]) : null
@@ -161,7 +161,7 @@ function toIncident(photos: IntakePhoto[]): Incident {
  *  unleserliche oder Hintergrund-Kennzeichen) gehen zum zeitlich nächsten Foto
  *  mit Fahrzeug, bei Gleichstand zum vorherigen – Fotos einer Tat entstehen
  *  direkt nacheinander. Weniger als zwei Fahrzeuge: Vorfall bleibt, wie er ist. */
-function splitByVehicle(photos: IntakePhoto[], minConfidence: number): IntakePhoto[][] {
+export function splitByVehicle(photos: IntakePhoto[], minConfidence: number): IntakePhoto[][] {
   const sorted = [...photos].sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : 1))
   const keyOf = (p: IntakePhoto): string | null =>
     p.plate && (p.plateConfidence ?? 0) >= minConfidence ? plateKey(p.plate) || null : null
