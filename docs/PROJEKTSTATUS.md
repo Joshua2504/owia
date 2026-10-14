@@ -80,7 +80,7 @@ Die Trennung schützt den Live-Betrieb vor normalen Entwicklungsänderungen. Bei
 - SHA-256-Duplikaterkennung pro Nutzer in Anzeigen und unzugeordneten Importfotos.
 - Lokale Kennzeichenerkennung, Bildausschnitt und Vorbefüllung noch leerer Kennzeichenfelder.
 - Admin-Prüfung, Freigabe/Ablehnung, Benutzerübersicht, Verwaltung nicht zugeordneter Antworten und Newsletter.
-- PDF für Frankfurt; strukturierte E-Mail mit Beweisfotos für Bad Soden-Salmünster (ohne Karte, mit Anschrift im Text) und Hanau (Fotos + ggf. Karte).
+- PDF für Frankfurt; strukturierte E-Mail mit Beweisfotos für Bad Soden-Salmünster und Hanau (ohne Karte, mit Anschrift im Text).
 - IMAP-Antwortverarbeitung, Korrespondenz in der Anzeige, Antworten des Nutzers ans Amt.
 - Öffentliche Karte mit Tatortkoordinaten, Datum, Verstoß und stark pixeliertem Foto; es werden auch Einzelfallmarker ausgeliefert, nicht ausschließlich Aggregate.
 - Responsive Oberfläche, Theme-Umschaltung und PWA-Service-Worker; nur statische `/public/`-Assets werden gecacht.

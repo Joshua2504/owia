@@ -83,7 +83,7 @@ Admin (`services/mailInbox.ts`, `senderAuthenticated`).
 5. Freigabe ausschließlich mit kontrolliertem Testempfänger bzw. in Dev/Mailpit
    prüfen; keinen Test an ein echtes Ordnungsamt schicken. Frankfurt läuft
    über `/versand` (Portal): dort nur bis zur Zusammenfassung testen und
-   abbrechen. Hanau erhält Beweisfotos und ggf. Karte, Bad Soden-Salmünster nur Fotos.
+   abbrechen. Bad Soden-Salmünster und Hanau erhalten nur Beweisfotos (ohne Karte).
 6. `docker compose ps portal` → healthy (Browser-Container für das Frankfurter Portal).
 
 `/health` prüft App und DB-Verbindung, aber weder SMTP/IMAP noch Geocoding,

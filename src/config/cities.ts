@@ -147,6 +147,12 @@ export const CITIES: Record<string, City> = {
     name: 'Hanau',
     ordnungsamt: 'Ordnungsamt der Stadt Hanau',
     // kein pdfForm -> rohe E-Mail
+    mail: {
+      // Fotos reichen; der Tatort steht als Adresse im Mailtext.
+      ohneKarte: true,
+      // Ladungsfähige Anschrift der Zeugin/des Zeugen, sonst müsste das Amt nachfragen.
+      anschriftImText: true,
+    },
     geo: {
       scope: 'hanau',
       // Gesamtes Stadtgebiet inkl. Stadtteile (Kesselstadt, Steinheim, Großauheim,
