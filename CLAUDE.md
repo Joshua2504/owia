@@ -68,7 +68,8 @@ in Requests: `registerJob` + `enqueueJob` statt `await`.
 **Anzeigen-Lifecycle** (`reports.status`: `entwurf` → `eingereicht` → `versendet`):
 1. Entwurf (`services/drafts.ts`; Aktenzeichen `OWiA-<6 Ziffern>`), einzeln im
    Editor oder gebündelt über den Foto-Import (`routes/intake.ts` +
-   `services/intakeGrouping.ts`, deterministisches Clustering nach GPS/Zeit)
+   `services/intakeGrouping.ts`, deterministisches Clustering nach GPS/Zeit,
+   danach je Fahrzeug nach erkanntem Kennzeichen – ALPR läuft im Import-Job vorab)
    oder per Handy-Kamera (`/kamera` = PWA-Start, `routes/kamera.ts` +
    `public/js/kamera.js`: ein Entwurf je „Fertig", Zeit/GPS als Formularfelder,
    weil Kamerabilder kein EXIF haben; danach optional Sticker-Scan).

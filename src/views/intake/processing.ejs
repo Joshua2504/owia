@@ -11,12 +11,16 @@
       Die Fotos werden im Hintergrund vorbereitet und zu Entwürfen gruppiert.
       Du musst nicht warten – die Entwürfe erscheinen nach und nach in deiner Anzeigen-Liste.
     </p>
-    <% const pct = total ? Math.round((processed + assigned) * 50 / total) : 0 %>
+    <%# Drei Schritte (vorbereiten, Kennzeichen erkennen, zuordnen); ohne ALPR zwei.
+        Nach der Erkennung steht der Zähler nicht mehr im Speicher – dann ist sie fertig. %>
+    <% const steps = analysed === null ? 2 : 3 %>
+    <% const recognizedCount = analysed === null ? 0 : (assigned ? total : analysed) %>
+    <% const pct = total ? Math.round((processed + recognizedCount + assigned) * 100 / (total * steps)) : 0 %>
     <div class="progress mb-2" role="progressbar" aria-valuenow="<%= pct %>" aria-valuemin="0" aria-valuemax="100">
       <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: <%= pct %>%"></div>
     </div>
     <p class="text-muted small mb-0">
-      <%= processed %> von <%= total %> Fotos vorbereitet · <%= assigned %> Entwürfen zugeordnet
+      <%= processed %> von <%= total %> Fotos vorbereitet<% if (analysed !== null) { %> · <%= recognizedCount %> Kennzeichen geprüft<% } %> · <%= assigned %> Entwürfen zugeordnet
     </p>
   </div>
 </div>

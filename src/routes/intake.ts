@@ -14,7 +14,8 @@ import crypto from 'node:crypto'
 import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
 import { findDuplicateGroups } from '../services/duplicates'
 import { createDraft, DraftLimitError, deleteDraft, reportDir, intakeDir, insertImageRow, imageCount, nextSortOrder } from '../services/drafts'
-import { queuePlateAnalysis } from '../services/plateAnalysis'
+import { queuePlateAnalysis, recognizeQueued, storeRecognition, prefillReportPlate, prefillReportFahrzeug } from '../services/plateAnalysis'
+import { alprEnabled, ALPR_MIN_CONFIDENCE, type RecognizeResult } from '../services/alpr'
 import { reverseGeocode } from '../services/geocode'
 import { queueTatortFill } from '../services/tatortFill'
 import { photoSha256, findExistingPhoto } from '../services/photoDedup'
@@ -26,6 +27,12 @@ import { MAX_IMAGES, photoStatColumns, thumbStrips } from './reports/shared'
 export const CHUNK_SIZE = 5
 
 type BatchRow = mysql.RowDataPacket & { id: number; status: string }
+
+/** Fortschritt der Kennzeichen-Erkennung je laufendem Import (Batch-ID →
+ *  analysierte Fotos), nur für die Zwischenseite processing.ejs. Im Speicher
+ *  genügt: Job und Seite laufen im selben Prozess, nach einem Neustart beginnt
+ *  der Job ohnehin von vorn. */
+const plateProgress = new Map<number, number>()
 
 /** ID aus einem URL-Parameter strikt als positive Ganzzahl lesen. MySQL
  *  verglich „5abc“ oder „5/../x“ sonst still als 5 – der Rohwert landete dann
@@ -186,8 +193,8 @@ async function loadPhotos(batchId: number, onlyUnassigned = false): Promise<Phot
   return rows
 }
 
-/** Hintergrund-Job 'intake.group': wartende Fotos verarbeiten, gruppieren und
- *  daraus Entwürfe erzeugen. Der Batch steht dabei auf 'grouping' (Claim in
+/** Hintergrund-Job 'intake.group': wartende Fotos verarbeiten, Kennzeichen
+ *  erkennen, gruppieren (Ort/Zeit, dann je Fahrzeug) und daraus Entwürfe erzeugen. Der Batch steht dabei auf 'grouping' (Claim in
  *  POST /import/:id/finish). Wiederholbar: bereits zugeordnete Fotos bleiben
  *  unberührt (loadPhotos(…, true) liefert nur unzugeordnete). */
 async function groupIntakeBatch(payload: { batchId: number; userId: number }, log: FastifyBaseLogger): Promise<void> {
@@ -239,14 +246,30 @@ async function groupIntakeBatch(payload: { batchId: number; userId: number }, lo
         await processIntakeThumbnail(photo.filename, photo.mimetype, intakeDir(userId, batch.id))
       }
 
+      // Kennzeichen VOR dem Gruppieren erkennen: Ort und Zeit allein trennen
+      // keine Autos, die nacheinander in derselben Straße fotografiert wurden
+      // (ein Entwurf mit drei Taten). Das Ergebnis landet unten direkt in den
+      // Entwurfs-Fotos – jedes Foto wird nur einmal analysiert.
+      const recognized = new Map<number, RecognizeResult>()
+      if (alprEnabled()) {
+        plateProgress.set(batch.id, 0)
+        for (const photo of photos) {
+          const result = await recognizeQueued(path.join(intakeDir(userId, batch.id), photo.filename), photo.mimetype)
+          if (result) recognized.set(photo.id, result)
+          plateProgress.set(batch.id, (plateProgress.get(batch.id) || 0) + 1)
+        }
+      }
+
       const byId = new Map(photos.map((p) => [p.id, p]))
       const input: IntakePhoto[] = photos.map((p) => ({
         id: p.id,
         capturedAt: p.captured_at,
         lat: p.gps_lat !== null ? Number(p.gps_lat) : null,
         lon: p.gps_lon !== null ? Number(p.gps_lon) : null,
+        plate: recognized.get(p.id)?.best?.plate ?? null,
+        plateConfidence: recognized.get(p.id)?.best?.confidence ?? null,
       }))
-      const { incidents } = groupPhotos(input)
+      const { incidents } = groupPhotos(input, { minPlateConfidence: ALPR_MIN_CONFIDENCE })
 
       for (const incident of incidents) {
         // Adresse aus den Koordinaten; Photon-Ausfall darf nie blockieren.
@@ -277,14 +300,23 @@ async function groupIntakeBatch(payload: { batchId: number; userId: number }, lo
             const imageId = await assignIntakePhoto(userId, batch.id, draft.id, p)
             if (typeof imageId !== 'number') continue
             zugeordnet++
-            // Kennzeichen im Hintergrund erkennen (füllt das leere Feld des Entwurfs).
-            queuePlateAnalysis(userId, draft.id, imageId, p.filename, p.mimetype)
+            // Lesung aus der Erkennung oben übernehmen; ohne Ergebnis (ALPR aus,
+            // Dienst-Fehler) im Hintergrund nachholen – das füllt das leere Feld.
+            const result = recognized.get(p.id)
+            const gespeichert = result
+              ? await storeRecognition(userId, draft.id, imageId, p.filename, result).then(() => true, () => false)
+              : false
+            if (!gespeichert) queuePlateAnalysis(userId, draft.id, imageId, p.filename, p.mimetype)
           }
           // Alle Fotos des Abschnitts waren schon vergeben: leeren Entwurf nicht stehen lassen.
           if (!zugeordnet) {
             await deleteDraft(userId, { id: draft.id })
             continue
           }
+          // Kennzeichen/Marke/Farbe aus den vorliegenden Lesungen setzen (tut
+          // nichts, solange nachgeholte Analysen laufen – die befüllen selbst).
+          await prefillReportPlate(userId, draft.id).catch(() => {})
+          await prefillReportFahrzeug(userId, draft.id).catch(() => {})
           // Photon hat oben nicht geantwortet: Adresse im Hintergrund nachholen.
           if (!address?.label) queueTatortFill(draft.id)
         }
@@ -300,6 +332,8 @@ async function groupIntakeBatch(payload: { batchId: number; userId: number }, lo
       if (err instanceof DraftLimitError) log.info({ userId }, 'Intake-Gruppierung: Tageslimit erreicht')
       else log.error({ err }, 'Intake-Gruppierung fehlgeschlagen')
       await pool.execute("UPDATE intake_batches SET status = 'done', grouped_at = NOW() WHERE id = ?", [batch.id])
+    } finally {
+      plateProgress.delete(batch.id)
     }
 
 }
@@ -446,6 +480,8 @@ export default async function intakeRoutes(app: FastifyInstance) {
         total: Number(counts[0]?.total || 0),
         processed: Number(counts[0]?.processed || 0),
         assigned: Number(counts[0]?.assigned || 0),
+        // null = ohne Kennzeichen-Erkennung (Dev) – die Seite zeigt den Schritt dann nicht.
+        analysed: alprEnabled() ? plateProgress.get(batch.id) ?? 0 : null,
       }))
     }
 

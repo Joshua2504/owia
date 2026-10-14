@@ -13,7 +13,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
-import { alprEnabled, recognizePlate, ALPR_MIN_CONFIDENCE } from './alpr'
+import { alprEnabled, recognizePlate, ALPR_MIN_CONFIDENCE, type RecognizeResult } from './alpr'
 import { reportDir } from './drafts'
 
 /** Dateiname des gespeicherten Kennzeichen-Ausschnitts eines Fotos
@@ -45,6 +45,21 @@ export function queuePlateAnalysis(
     .catch(() => {
       /* Einzelfehler dürfen die Kette nicht abreißen lassen. */
     })
+}
+
+/** Ein Foto außerhalb einer Anzeige analysieren (Foto-Import: Kennzeichen
+ *  trennen die Fahrzeuge schon beim Gruppieren) – über dieselbe serielle Kette
+ *  wie die Upload-Analysen. null = ALPR aus oder Dienst-Fehler. Das Ergebnis
+ *  speichert der Aufrufer per storeRecognition, sobald das Foto in einer
+ *  Anzeige liegt. */
+export function recognizeQueued(filePath: string, mimetype: string): Promise<RecognizeResult | null> {
+  if (!alprEnabled()) return Promise.resolve(null)
+  const result = queue.then(() => recognizePlate(filePath, mimetype).catch(() => null))
+  queue = result.then(
+    () => undefined,
+    () => undefined
+  )
+  return result
 }
 
 /** Nur die Datenschutz-Analyse (analyse_json) eines ersetzten Fotos erneuern –
@@ -144,32 +159,43 @@ async function runAnalysis(
       return
     }
 
-    const best = result.best
-    await pool.execute(
-      `UPDATE report_images
-         SET detected_plate=?, plate_confidence=?, analyse_json=?, analysis_status='done', analyzed_at=NOW()
-       WHERE id=? AND filename=?`,
-      // filename-Guard: Ein PUT (Foto ersetzt) während der Analyse hat eine
-      // eigene Analyse eingereiht – das Ergebnis der alten Fassung darf deren
-      // analyse_json nicht überschreiben (Datenschutz-Prüfung, submit.ts).
-      [best?.plate ?? null, best?.confidence ?? null, result.analyse ? JSON.stringify(result.analyse) : null, imageId, filename]
-    )
-
-    // Kennzeichen-Ausschnitt als eigene Datei neben dem Foto ablegen (Beleg,
-    // welcher Bildbereich gelesen wurde; abrufbar über .../image/:id/plate.jpg).
-    if (best?.cropJpeg) {
-      try {
-        await fs.writeFile(path.join(reportDir(userId, reportId), plateCropName(filename)), best.cropJpeg)
-      } catch {
-        /* Crop ist verzichtbar – Kennzeichen-Text ist gespeichert */
-      }
-    }
-
+    await storeRecognition(userId, reportId, imageId, filename, result)
     await prefillReportPlate(userId, reportId)
     await prefillReportFahrzeug(userId, reportId)
   } catch (err) {
     logger.error({ err, imageId, reportId }, 'Kennzeichen-Analyse fehlgeschlagen')
     await setStatus(imageId, 'failed')
+  }
+}
+
+/** Analyse-Ergebnis eines Fotos speichern: Lesung + Datenschutz-Analyse in
+ *  report_images, Kennzeichen-Ausschnitt als Datei neben dem Foto. */
+export async function storeRecognition(
+  userId: number,
+  reportId: number,
+  imageId: number,
+  filename: string,
+  result: RecognizeResult
+): Promise<void> {
+  const best = result.best
+  await pool.execute(
+    `UPDATE report_images
+       SET detected_plate=?, plate_confidence=?, analyse_json=?, analysis_status='done', analyzed_at=NOW()
+     WHERE id=? AND filename=?`,
+    // filename-Guard: Ein PUT (Foto ersetzt) während der Analyse hat eine
+    // eigene Analyse eingereiht – das Ergebnis der alten Fassung darf deren
+    // analyse_json nicht überschreiben (Datenschutz-Prüfung, submit.ts).
+    [best?.plate ?? null, best?.confidence ?? null, result.analyse ? JSON.stringify(result.analyse) : null, imageId, filename]
+  )
+
+  // Kennzeichen-Ausschnitt als eigene Datei neben dem Foto ablegen (Beleg,
+  // welcher Bildbereich gelesen wurde; abrufbar über .../image/:id/plate.jpg).
+  if (best?.cropJpeg) {
+    try {
+      await fs.writeFile(path.join(reportDir(userId, reportId), plateCropName(filename)), best.cropJpeg)
+    } catch {
+      /* Crop ist verzichtbar – Kennzeichen-Text ist gespeichert */
+    }
   }
 }
 
