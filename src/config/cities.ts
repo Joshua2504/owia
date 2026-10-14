@@ -10,7 +10,7 @@
 // Städte OHNE pdfForm werden als rohe E-Mail versendet (Sachverhalt im Text,
 // Beweisfotos + Tatort-Karte als Anhang) – für Ämter ohne eigenes Formular.
 // Städte MIT pdfForm bekommen das amtliche Formular als PDF-Anhang.
-// Städte MIT portal (Frankfurt, Wiesbaden, Mainz) laufen ausschließlich über
+// Städte MIT portal (Frankfurt, Wiesbaden, Hanau, Mainz, Hamburg) laufen ausschließlich über
 // das Online-Formular der Stadt – dort entsteht weder PDF noch Mail
 // (hasPdfForm() ist dann false, auch wenn pdfForm noch eingetragen ist).
 //
@@ -66,7 +66,7 @@ export interface City {
   /** Versand über ein Online-Formular statt per Mail (services/portalDispatch.ts).
    *  Frankfurt: ekom21/civento seit 10/2026 – Mails mit PDF nimmt das Amt nur
    *  noch für Tatbestände an, die das Portal nicht kennt. */
-  portal?: 'ekom21-ffm' | 'ekom21-wi' | 'civento-mz' | 'intelliform-hh'
+  portal?: 'ekom21-ffm' | 'ekom21-wi' | 'ekom21-hu' | 'civento-mz' | 'intelliform-hh'
   /** Annahmefrist der Stadt in Monaten, wenn kürzer als die Verjährung (3) –
    *  das ekom21-Portal nimmt nur Taten der letzten zwei Monate an. */
   fristMonate?: number
@@ -138,21 +138,19 @@ export const CITIES: Record<string, City> = {
       mapLon: 9.3669,
     },
   },
-  // Hanau (Main-Kinzig-Kreis, Hessen). Kein amtliches PDF-Formular -> Versand als
-  // rohe E-Mail. Empfänger-Adresse kommt (wie bei allen Städten) aus districts.csv
-  // (PLZ 63450–63457 -> verwarngeldstelle@hanau.de).
+  // Hanau (Main-Kinzig-Kreis, Hessen). Seit 11/2024 ekom21-Online-Formular
+  // (privatanzeige-online.hanau.de); Mail an die Verwarngeldstelle nimmt die Stadt
+  // laut Pressemitteilung weiter an, das Portal ist aber der direkte Weg.
+  // Erkundung 14.10.2026 (/root/owia/work/hanau/BERICHT.md): exakt die Frankfurter
+  // Konfiguration (gleicher Tatbestand-Baum, 8 Schritte) plus Rubrik „Parkscheibe";
+  // abweichend nur E-Mail Pflicht und Taten von heute erlaubt (services/portale.ts).
   hanau: {
     id: 'hanau',
     // Exakt wie in districts.csv, damit die PLZ-Erkennung (63450 …) greift.
     name: 'Hanau',
     ordnungsamt: 'Ordnungsamt der Stadt Hanau',
-    // kein pdfForm -> rohe E-Mail
-    mail: {
-      // Fotos reichen; der Tatort steht als Adresse im Mailtext.
-      ohneKarte: true,
-      // Ladungsfähige Anschrift der Zeugin/des Zeugen, sonst müsste das Amt nachfragen.
-      anschriftImText: true,
-    },
+    portal: 'ekom21-hu',
+    fristMonate: 2,
     geo: {
       scope: 'hanau',
       // Gesamtes Stadtgebiet inkl. Stadtteile (Kesselstadt, Steinheim, Großauheim,

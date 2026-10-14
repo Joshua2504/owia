@@ -377,14 +377,17 @@ export function berlinHeute(): string {
 }
 
 /** Was dem Portal-Versand fehlt (Prüfliste vor dem Einreichen); `null` = passt. */
-/** ekom21 (Frankfurt, Wiesbaden) nimmt nur Taten der letzten zwei Monate an –
- *  ältere lassen sich im Formular nicht absenden. */
+/** ekom21 (Frankfurt, Wiesbaden, Hanau) nimmt nur Taten der letzten zwei Monate
+ *  an – ältere lassen sich im Formular nicht absenden. Der kalendermäßig
+ *  entsprechende Tag zählt schon nicht mehr (Trockenläufe 14.10.2026 in
+ *  Frankfurt und Hanau: 14.08. abgelehnt, 15.08. angenommen; passt zu
+ *  verjaehrtAb mit fristMonate 2). */
 export function zweiMonateProblem(r: Record<string, any>, stadt: string): string | null {
   const tag = isoOf(r.tattag)
   if (!tag) return null
   const grenze = new Date(berlinHeute())
   grenze.setMonth(grenze.getMonth() - 2)
-  return tag < grenze.toISOString().slice(0, 10) ? `${stadt} nimmt nur Taten der letzten zwei Monate an.` : null
+  return tag <= grenze.toISOString().slice(0, 10) ? `${stadt} nimmt nur Taten der letzten zwei Monate an.` : null
 }
 
 /** Versicherungskennzeichen (deutsch) nimmt das Frankfurter Portal nur bei
@@ -402,8 +405,8 @@ export function portalFahrzeugTyp(r: Record<string, any>): string {
   return deutschesVk(r) && typ === 'Leichtkraftfahrzeug' ? 'Leichtkraftrad' : typ
 }
 
-export function portalProblem(r: Record<string, any>): string | null {
-  const frist = zweiMonateProblem(r, 'Frankfurt')
+export function portalProblem(r: Record<string, any>, stadt = 'Frankfurt'): string | null {
+  const frist = zweiMonateProblem(r, stadt)
   if (frist) return frist
   // Tatbestände ohne Portal-Eintrag sind bewusst nicht versendbar (Nutzer-
   // entscheidung 10/2026 – kein Ausweichen auf Mail mit PDF).

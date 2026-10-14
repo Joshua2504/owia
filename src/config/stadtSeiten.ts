@@ -218,16 +218,16 @@ export const STADT_SEITEN: StadtSeite[] = [
         zeilen: ['Steinheimer Str. 1b, 63450 Hanau'],
       },
     ],
-    versand: `<p>Der OWiA-Anzeiger schickt deine Anzeige mit allen Angaben und Beweisfotos per E-Mail an die
-      <strong>Verwarngeldstelle der Stadt Hanau</strong>. Du bekommst eine Kopie bzw. Bestätigung mit allen
-      übermittelten Angaben; Antworten der Stadt siehst du direkt in der App.</p>`,
+    versand: `<p>Der OWiA-Anzeiger trägt deine Anzeige mit allen Angaben und Beweisfotos in das offizielle
+      <strong>Online-Formular der Stadt Hanau</strong> ein – denselben Weg, den die Verwarngeldstelle für private
+      Anzeigen anbietet. Die Eingangsbestätigung der Stadt kommt per E-Mail an dich.</p>`,
     stadtteile: ['Innenstadt', 'Kesselstadt', 'Lamboy', 'Nordwest', 'Steinheim', 'Klein-Auheim', 'Großauheim',
       'Wolfgang', 'Mittelbuchen'],
     faq: [
       ['Wen rufe ich in Hanau bei Falschparkern an?',
        'Die Stadtpolizei Hanau unter 06181 2950-1900 (Mo–Sa 6:30–22 Uhr). Außerhalb dieser Zeiten das Polizeirevier Hanau unter 06181 100-120, bei unmittelbarer Gefahr 110.'],
       ['Wie zeige ich Falschparker in Hanau an?',
-       'Mit Fotos, Ort, Zeit und Kennzeichen bei der Verwarngeldstelle der Stadt. Mit dem OWiA-Anzeiger geht das kostenlos online – die Anzeige wird per E-Mail an die Verwarngeldstelle übermittelt.'],
+       'Mit Fotos, Ort, Zeit und Kennzeichen bei der Verwarngeldstelle der Stadt. Mit dem OWiA-Anzeiger geht das kostenlos online – die Anzeige wird über das Online-Formular der Stadt übermittelt.'],
       ['Werden anonyme Anzeigen bearbeitet?',
        'Nein. Du wirst gegenüber der Stadt als Zeugin oder Zeuge mit Name und Anschrift benannt.'],
     ],

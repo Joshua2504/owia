@@ -1,6 +1,6 @@
 // ekom21-Vorlage „Anzeige einer Verkehrsordnungswidrigkeit" (cc_key=AnzeigeOwi)
-// – Frankfurt (Stand 10/2026, 8 Schritte) und Wiesbaden (7 Schritte, anders
-// konfiguriert). Bausteine in lib.mjs.
+// – Frankfurt (Stand 10/2026, 8 Schritte), Hanau (identisch zu Frankfurt, nur
+// E-Mail Pflicht) und Wiesbaden (7 Schritte, anders konfiguriert). Bausteine in lib.mjs.
 //
 // Frankfurt: Rubrik + Fahrzeug in „Angaben der Ordnungswidrigkeiten", der
 //   Tatbestand-Baum (Halten/Parken/… → Stelle → Behinderung) im eigenen Schritt
@@ -120,4 +120,5 @@ function profil(oe, { pfadHier }) {
 export const PROFILE = {
   'ekom21-ffm': profil('00.00.PA.FFOrdA', { pfadHier: false }),
   'ekom21-wi': profil('00.00.PA.WIOrdA', { pfadHier: true }),
+  'ekom21-hu': profil('00.00.PA.HNOrdA', { pfadHier: false }),
 }

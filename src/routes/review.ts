@@ -7,6 +7,7 @@ import { cityEmail } from '../services/districts'
 import { imageVersion } from '../services/images'
 import { isVerjaehrt, verjaehrung } from '../services/verjaehrung'
 import { verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoleMap, ffmFormHinweise } from '../services/portalFfm'
+import { portalFuer, erstMorgen } from '../services/portale'
 import { dritteFunde, parseAnalyse, parseKennzeichenBox, erkannteKennzeichenBox } from '../services/dritte'
 import { submitProblems, kennzeichenBestaetigt } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
@@ -97,6 +98,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
       [report.id]
     )
     const city = getCity(report.city)
+    const adapter = portalFuer(report.city)
     const rollen = photoRoleMap(imgs)
     const vj = verjaehrung(report)
     // Zeitspanne der Fotos (EXIF) für „Uhrzeit aus Fotos" – als Strings, nie
@@ -141,8 +143,12 @@ export default async function reviewRoutes(app: FastifyInstance) {
       varianten: verstossVarianten(report.verstoss_art).map((x) => x.value),
       langparker: (tatDauerMinuten(report) ?? 0) > 60 ? langparkerVariante(report.verstoss_art) : null,
       recipient: { ordnungsamt: city.ordnungsamt, email: cityEmail(city) || '' },
-      // Frankfurt-Portal: Formular an dessen Fragen anpassen (photo-edit.js renderFfm).
-      ffm: city.portal === 'ekom21-ffm' ? ffmFormHinweise(report, times[times.length - 1]) : null,
+      // Frankfurt-/Hanau-Portal (gleiches Formular): Formular an dessen Fragen
+      // anpassen (photo-edit.js renderFfm). „Erst ab morgen" nur, wo das Portal
+      // heutige Taten ablehnt.
+      ffm: adapter && (adapter.id === 'ekom21-ffm' || adapter.id === 'ekom21-hu')
+        ? { ...ffmFormHinweise(report, times[times.length - 1]), abMorgen: erstMorgen(adapter, report) }
+        : null,
       verjaehrung: vj.bald ? { restTage: vj.restTage } : null,
       hasGps: imgs.some((i) => i.gps_lat !== null),
       // Kartenmitte ohne Tatort (Foto-Dialog, photo-edit.js): Stadtmitte.

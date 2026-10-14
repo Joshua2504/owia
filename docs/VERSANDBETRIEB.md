@@ -52,7 +52,7 @@ Ergebnisse sichtbar. Benutzer-Nachrichten im bereits vorhandenen Mailverlauf
 nutzen noch den bisherigen direkten Versand; die neue Sperre betrifft die
 Admin-Freigabe einer Anzeige.
 
-## Portal-Versand (Frankfurt, Wiesbaden, Mainz)
+## Portal-Versand (Frankfurt, Wiesbaden, Hanau, Mainz, Hamburg)
 
 Besonderheiten je Stadt (Adapter in `src/services/portale.ts`):
 

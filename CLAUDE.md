@@ -83,7 +83,7 @@ in Requests: `registerJob` + `enqueueJob` statt `await`.
 4. Admin-Freigabe (`routes/admin.ts`) regeneriert das PDF (`services/pdf.ts`,
    AcroForm-`fieldMap` je Stadt), versendet (`services/mail.ts`) und legt die
    ausgehende Mail als erste Zeile in `report_replies` ab. **Ausnahme Städte mit
-   `portal` (Frankfurt, Wiesbaden, Mainz, Hamburg – Adapter `services/portale.ts`):** Versand live unter `/versand` (`routes/portal.ts` →
+   `portal` (Frankfurt, Wiesbaden, Hanau, Mainz, Hamburg – Adapter `services/portale.ts`):** Versand live unter `/versand` (`routes/portal.ts` →
    `services/portalDispatch.ts` → Container `portal`, Playwright,
    `docker/portal/ekom21.mjs`, `mainz.mjs`, `hamburg.mjs`). Mapping Katalog → Portal-Auswahlbaum und
    Pflichtangaben (Variante, Fahrzeugtyp, Hausnummer): `services/portalFfm.ts`;

@@ -11,7 +11,7 @@ import { verjaehrung } from '../src/services/verjaehrung'
 import { aggregiere } from '../src/services/statistik'
 import { analysiere } from '../src/services/analyse'
 import { regelsatzEuro, VERSTOESSE } from '../src/config/verstoss'
-import { portalTatbestand, verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoles, portalProblem, buildPortalPayload, portalTatzeit, tatortText } from '../src/services/portalFfm'
+import { portalTatbestand, verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoles, portalProblem, buildPortalPayload, portalTatzeit, tatortText, berlinHeute } from '../src/services/portalFfm'
 import { portalMarke, fahrzeugBeschreibung } from '../src/config/fahrzeug'
 import { wiTatbestand, wiProblem, buildWiPayload } from '../src/services/portalWi'
 import { buildMzPayload, tatortTeile, mzProblem, mzFotos } from '../src/services/portalMz'
@@ -984,10 +984,13 @@ test('Frankfurt-Portal: Tatbestand-Pfade, Varianten und Langparker', () => {
   assert.equal(portalProblem({ verstoss_art: kreuzung, verstoss_variante: 'Kreuzung', kennzeichen_land: 'D' }), null)
 })
 
-test('Frankfurt-Portal: jeder waehlbare Verstoß führt im Portal-Baum zu einem Eintrag', async () => {
+for (const [stadt, datei] of [['frankfurt', 'ekom21-ffm-baum.json'], ['hanau', 'ekom21-hu-baum.json']] as const) test(`ekom21-Portal ${stadt}: jeder waehlbare Verstoß führt im Portal-Baum zu einem Eintrag`, async () => {
   // tests/fixtures/ekom21-ffm-baum.json: alle Pfade des Online-Formulars (Stand
-  // 10/2026, durchgespielt mit /root/owia/work/ekom21-frankfurt/dfs.js).
-  const baum = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures/ekom21-ffm-baum.json'), 'utf8')) as Record<string, string[][]>
+  // 10/2026, durchgespielt mit /root/owia/work/ekom21-frankfurt/dfs.js); Hanau
+  // (14.10.2026, /root/owia/work/hanau/tree.js) hat denselben Baum plus Rubrik
+  // „Ohne oder mit abgelaufener Parkscheibe" – das Frankfurter Mapping muss dort
+  // genauso aufgehen.
+  const baum = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', datei), 'utf8')) as Record<string, string[][]>
   const norm = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase()
   const passt = (opt: string, c: string) => norm(opt).startsWith(norm(c))
   // Spielt den Pfad wie choosePathElement (docker/portal/lib.mjs) durch.
@@ -1013,7 +1016,7 @@ test('Frankfurt-Portal: jeder waehlbare Verstoß führt im Portal-Baum zu einem 
   let waehlbar = 0
   for (const x of VERSTOESSE) {
     const label = `${x.tbnr} – ${x.text}`
-    if (verstossGesperrt('frankfurt', label)) continue
+    if (verstossGesperrt(stadt, label)) continue
     waehlbar++
     const vs = verstossVarianten(label)
     for (const v of vs.length ? vs.map((y) => y.value) : [null]) {
@@ -1027,13 +1030,13 @@ test('Frankfurt-Portal: jeder waehlbare Verstoß führt im Portal-Baum zu einem 
   assert.deepEqual(probleme, [])
   assert.ok(waehlbar >= 180, `nur ${waehlbar} waehlbar`)
   // Halten gibt es im Portal nicht überall: absolutes Haltverbot nur „Parken".
-  assert.equal(verstossGesperrt('frankfurt', '141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), true)
-  assert.equal(verstossGesperrt('frankfurt', '141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).'), false)
+  assert.equal(verstossGesperrt(stadt, '141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), true)
+  assert.equal(verstossGesperrt(stadt, '141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).'), false)
   // Andere Städte sperren nichts.
   assert.equal(verstossGesperrt('wiesbaden', '141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), false)
   const sp = verstossSperren(VERSTOESSE.map((x) => `${x.tbnr} – ${x.text}`))
-  assert.deepEqual(Object.keys(sp.gesperrt), ['frankfurt'])
-  assert.equal(sp.gesperrt.frankfurt.idx.length, VERSTOESSE.length - waehlbar)
+  assert.deepEqual(Object.keys(sp.gesperrt).sort(), ['frankfurt', 'hanau'])
+  assert.equal(sp.gesperrt[stadt].idx.length, VERSTOESSE.length - waehlbar)
 })
 
 test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
@@ -1115,8 +1118,29 @@ test('Wiesbaden- und Mainz-Portal: Zuordnung, Prüfungen, Payload', () => {
   assert.deepEqual(mzFotos({ uebersicht: [1, 2, 3], fahrzeug: [4, 5] }), [4, 1, 5])
   // Registry + Ortsteile
   assert.equal(portalFuer('mainz')!.id, 'civento-mz')
-  assert.equal(portalFuer('hanau'), null)
   assert.equal(getCityByName('Mainz-Kastel')!.id, 'wiesbaden')
+})
+
+test('Hanau-Portal: Frankfurter Formular, E-Mail Pflicht, heute erlaubt, 2-Monats-Grenze', () => {
+  const hu = portalFuer('hanau')!
+  assert.equal(hu.id, 'ekom21-hu')
+  assert.equal(hu.heuteErlaubt, true)
+  const r = { verstoss_art: '112454 – Sie parkten verbotswidrig auf dem Gehweg.', kennzeichen: 'HU-A 1', kennzeichen_land: 'D',
+    tattag: '2026-10-07', tatzeit_von: '10:00:00', tatort: 'Am Markt 14, 63450 Hanau', behinderung: 0 } as any
+  const u = { anrede: 'herr', vorname: 'Max', nachname: 'Muster', strasse: 'Weg', hausnummer: '2', plz: '63450', ort: 'Hanau', email: 'm@x' } as any
+  const p = hu.payload(r, u) as any
+  assert.equal(p.portal, 'ekom21-hu')
+  assert.equal(p.gruppe, 'Gehweg/Fußgängerüberweg/Fußgängerfurt')
+  assert.equal(p.tat.ort, 'Am Markt 14')
+  assert.equal(p.email, 'm@x')
+  assert.throws(() => hu.payload(r, { ...u, email: '' }), /E-Mail/)
+  // Der kalendermäßig entsprechende Tag vor zwei Monaten ist schon zu alt
+  // (Portal lehnt am 14.10. den 14.08. ab, nimmt den 15.08.).
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  const grenze = new Date(berlinHeute()); grenze.setMonth(grenze.getMonth() - 2)
+  const danach = new Date(grenze); danach.setDate(danach.getDate() + 1)
+  assert.equal(hu.problem({ ...r, tattag: iso(grenze) }), 'Hanau nimmt nur Taten der letzten zwei Monate an.')
+  assert.equal(hu.problem({ ...r, tattag: iso(danach) }), null)
 })
 
 test('Hamburg-Portal: Tatvorwürfe, Kennzeichen, Tatort, Payload', async () => {

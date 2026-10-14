@@ -4,17 +4,18 @@
 //
 //   ekom21-ffm  Frankfurt  – services/portalFfm.ts (Tatbestand-Baum, Varianten Pflicht, 2-Monats-Frist)
 //   ekom21-wi   Wiesbaden  – services/portalWi.ts  (eine Ebene, „Sonstiges", 2-Monats-Frist)
+//   ekom21-hu   Hanau      – wie Frankfurt (gleicher Baum), E-Mail Pflicht, heute erlaubt
 //   civento-mz  Mainz      – services/portalMz.ts  (Art × Rubrik + Freitext, Telefon Pflicht)
 //   intelliform-hh Hamburg – services/portalHh.ts  (24 Tatvorwürfe + „keiner" mit Sachverhalt, ≤ 3 Fotos)
 
 import mysql from 'mysql2/promise'
 import { CITIES, DEFAULT_CITY_ID, getCity } from '../config/cities'
-import { buildPortalPayload, imPortal, portalProblem, photoRoles, erstAbMorgen, verstossVarianten } from './portalFfm'
+import { buildPortalPayload, imPortal, portalProblem, photoRoles, erstAbMorgen, verstossVarianten, PortalDatenFehler } from './portalFfm'
 import { buildWiPayload, wiProblem } from './portalWi'
 import { buildMzPayload, mzProblem, mzFotos } from './portalMz'
 import { buildHhPayload, hhProblem, hhFotos } from './portalHh'
 
-export type PortalId = 'ekom21-ffm' | 'ekom21-wi' | 'civento-mz' | 'intelliform-hh'
+export type PortalId = 'ekom21-ffm' | 'ekom21-wi' | 'ekom21-hu' | 'civento-mz' | 'intelliform-hh'
 
 export interface PortalAdapter {
   id: PortalId
@@ -42,6 +43,21 @@ const ffm: PortalAdapter = {
   heuteErlaubt: false,
   payload: (r, u, f) => ({ portal: 'ekom21-ffm', ...buildPortalPayload(r, u, f) }),
   fotos: photoRoles,
+}
+
+// Hanau: Formular 1:1 wie Frankfurt (Trockenlauf 14.10.2026, Baum in
+// tests/fixtures/ekom21-hu-baum.json) – nur die E-Mail ist Pflicht und Taten
+// von heute nimmt es an. Die Zusatz-Rubrik „Ohne oder mit abgelaufener
+// Parkscheibe" (Zeichen 314/315) hat keinen Katalog-Gegenpart.
+const hu: PortalAdapter = {
+  ...ffm,
+  id: 'ekom21-hu',
+  problem: (r) => portalProblem(r, 'Hanau'),
+  heuteErlaubt: true,
+  payload: (r, u, f) => {
+    if (!u.email) throw new PortalDatenFehler('Hanau verlangt eine E-Mail-Adresse.')
+    return { portal: 'ekom21-hu', ...buildPortalPayload(r, u, f) }
+  },
 }
 
 const wi: PortalAdapter = {
@@ -80,7 +96,7 @@ const hh: PortalAdapter = {
   fotos: hhFotos,
 }
 
-const ADAPTER: Record<PortalId, PortalAdapter> = { 'ekom21-ffm': ffm, 'ekom21-wi': wi, 'civento-mz': mz, 'intelliform-hh': hh }
+const ADAPTER: Record<PortalId, PortalAdapter> = { 'ekom21-ffm': ffm, 'ekom21-wi': wi, 'ekom21-hu': hu, 'civento-mz': mz, 'intelliform-hh': hh }
 
 /** Adapter der Stadt (null = Versand per Mail). */
 export function portalFuer(cityId: string | null | undefined): PortalAdapter | null {

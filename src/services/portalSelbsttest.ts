@@ -18,11 +18,14 @@ import { enqueueJob, registerJob, JobRetryLater } from './jobs'
 
 const PORTAL_URL = (process.env.PORTAL_URL || 'http://portal:8080').replace(/\/$/, '')
 
-/** Testfälle: Frankfurt je Rubrik ein typischer Tatbestand, dazu Wiesbaden
+/** Testfälle: Frankfurt je Rubrik ein typischer Tatbestand, dazu Hanau
+ *  (gleiches Formular, eigene Instanz: Halten + Behinderungsfrage), Wiesbaden
  *  (Rubrik + „Sonstiges"), Mainz (Rubrik + Kreuzung) und Hamburg (Radio-
  *  Tatvorwurf, Listen-Tatvorwurf, „keiner" mit Sachverhalt). */
 const FAELLE: { stadt: string; tbnr: string }[] = [
   ...['141174', '112454', '141312', '112042', '141245', '112216', '112464', '112262'].map((tbnr) => ({ stadt: 'frankfurt', tbnr })),
+  { stadt: 'hanau', tbnr: '112454' },
+  { stadt: 'hanau', tbnr: '112262' },
   { stadt: 'wiesbaden', tbnr: '141312' },
   { stadt: 'wiesbaden', tbnr: '112456' },
   { stadt: 'mainz', tbnr: '112454' },
@@ -34,6 +37,7 @@ const FAELLE: { stadt: string; tbnr: string }[] = [
 const TATORT: Record<string, string> = {
   frankfurt: 'Römerberg 1, 60311 Frankfurt am Main',
   wiesbaden: 'Wilhelmstraße 10, 65183 Wiesbaden',
+  hanau: 'Am Markt 14, 63450 Hanau',
   mainz: 'Große Bleiche 12, 55116 Mainz',
   hamburg: 'Hammer Straße 30, 22041 Hamburg',
 }
@@ -86,7 +90,7 @@ export async function runSelbsttest(index = Math.floor(Date.now() / 86400000)): 
     // Hamburg prüft die Anschrift gegen ein Adressregister – daher eine real
     // existierende Adresse (Zeil 51 gibt es; „Römerberg 1" lehnt das Register ab).
     anrede: 'herr', vorname: 'Max', nachname: 'Mustermann', strasse: 'Zeil', hausnummer: '51',
-    // Wiesbaden verlangt eine E-Mail, Mainz eine Telefonnummer – Test-Werte,
+    // Wiesbaden und Hanau verlangen eine E-Mail, Mainz eine Telefonnummer – Test-Werte,
     // abgesendet wird nie.
     plz: '60313', ort: 'Frankfurt am Main', telefon: '069 0000000', email: 'selbsttest@example.org',
   } as unknown as mysql.RowDataPacket

@@ -7,12 +7,12 @@ GPS-/EXIF-Daten und einer Karten-Verortung entsteht eine vollständige Anzeige,
 die – je nach Stadt – über das Online-Portal der Stadt, als amtliches
 PDF-Formular oder als strukturierte E-Mail ans Ordnungsamt versendet wird.
 
-Aktuell freigeschaltet: **Frankfurt am Main**, **Wiesbaden** (beide Online-Portal
-ekom21), **Mainz** (civento-Formular RLP) und **Hamburg** (Online-Dienst im
+Aktuell freigeschaltet: **Frankfurt am Main**, **Wiesbaden**, **Hanau** (alle
+Online-Portal ekom21), **Mainz** (civento-Formular RLP) und **Hamburg** (Online-Dienst im
 Serviceportal, IntelliForm) – jeweils live im Browser ausgefüllt, weil diese
-Städte keine Mail-Anzeigen mehr annehmen bzw. Hamburg ausdrücklich um den
-Online-Dienst bittet – sowie
-**Bad Soden-Salmünster** und **Hanau** (jeweils E-Mail-Versand). Weitere Städte lassen sich über eine
+Städte keine Mail-Anzeigen mehr annehmen, ausdrücklich um den Online-Dienst
+bitten (Hamburg) bzw. das Portal der direkte Weg ist (Hanau) – sowie
+**Bad Soden-Salmünster** (E-Mail-Versand). Weitere Städte lassen sich über eine
 zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freischalten)).
 
 ---
@@ -165,7 +165,7 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
 - Welche Städte tatsächlich **freigeschaltet** sind, entscheidet die Registry
   [`src/config/cities.ts`](src/config/cities.ts). Ein erkannter Ort ohne Eintrag
   dort wird als „noch nicht freigeschaltet" abgewiesen.
-- Städte **mit** `portal` (Frankfurt, Wiesbaden, Mainz, Hamburg) werden über das Online-Formular der Stadt
+- Städte **mit** `portal` (Frankfurt, Wiesbaden, Hanau, Mainz, Hamburg) werden über das Online-Formular der Stadt
   versendet: der Container `portal` (`docker/portal/`, Playwright) füllt es aus,
   der Admin sieht unter `/versand` live zu (zwei Läufe parallel), greift bei
   Bedarf per Klick ins Live-Bild ein und sendet ab; nächtlicher Selbsttest. Je Stadt
