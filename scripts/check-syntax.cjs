@@ -8,10 +8,17 @@ function walk(dir) {
     return entry.isDirectory() ? walk(filename) : [filename]
   })
 }
-for (const filename of [...walk('public/js'), 'public/sw.js'].filter(f => f.endsWith('.js'))) {
+// Browser-JS (buildlos) und der Portal-Dienst (docker/portal, eigenes Image,
+// sonst von keiner Prüfung erfasst).
+const scripts = [
+  ...walk('public/js').filter(f => f.endsWith('.js')),
+  'public/sw.js',
+  ...walk('docker/portal').filter(f => f.endsWith('.mjs')),
+]
+for (const filename of scripts) {
   execFileSync(process.execPath, ['--check', filename])
 }
 for (const filename of walk('src/views').filter(f => f.endsWith('.ejs'))) {
   ejs.compile(fs.readFileSync(filename, 'utf8'), { filename })
 }
-console.log('Browser-JavaScript und EJS-Templates: Syntax OK.')
+console.log('Browser-JavaScript, Portal-Dienst und EJS-Templates: Syntax OK.')

@@ -1,0 +1,15 @@
+# Lint für den ALPR-Dienst (CI: .github/workflows/check.yml). Formatter bewusst
+# noch nicht – ein Umformatieren käme in einen eigenen Commit.
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W", "B", "UP", "I"]
+ignore = [
+  "E501",  # lange Zeilen (Kommentare/Prompts) sind hier gewollt
+  "B008",  # FastAPI-Idiom: File(...) als Default
+  "B905",  # zip() ohne strict: Längen sind durch die Modelle festgelegt
+]
+
+[lint.isort]
+known-first-party = ["app", "districts", "fahrzeug", "fahrzeug_text", "plate", "segment"]

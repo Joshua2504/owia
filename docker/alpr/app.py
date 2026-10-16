@@ -15,8 +15,8 @@ import threading
 import cv2
 import numpy as np
 import onnxruntime as ort
-from fastapi import FastAPI, File, UploadFile
 from fast_plate_ocr import LicensePlateRecognizer
+from fastapi import FastAPI, File, UploadFile
 from open_image_models import create_detector
 
 from fahrzeug import Fahrzeug

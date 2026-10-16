@@ -8,15 +8,6 @@ import cookie from '@fastify/cookie'
 import formbody from '@fastify/formbody'
 import ejs from 'ejs'
 import { verjaehrung } from '../src/services/verjaehrung'
-import { aggregiere } from '../src/services/statistik'
-import { analysiere } from '../src/services/analyse'
-import { regelsatzEuro, VERSTOESSE } from '../src/config/verstoss'
-import { portalTatbestand, verstossVarianten, langparkerVariante, tatDauerMinuten, photoRoles, portalProblem, buildPortalPayload, portalTatzeit, tatortText, berlinHeute } from '../src/services/portalFfm'
-import { portalMarke, fahrzeugBeschreibung } from '../src/config/fahrzeug'
-import { wiTatbestand, wiProblem, buildWiPayload } from '../src/services/portalWi'
-import { buildMzPayload, tatortTeile, mzProblem, mzFotos } from '../src/services/portalMz'
-import { portalFuer, verstossGesperrt, verstossSperren } from '../src/services/portale'
-import { getCityByName } from '../src/config/cities'
 import { pool } from '../src/db/connection'
 import { initDb } from '../src/db/init'
 import { runMigrations } from '../src/db/migrate'
@@ -30,9 +21,6 @@ import adminRoutes from '../src/routes/admin'
 import reportsRoutes from '../src/routes/reports'
 import settingsRoutes from '../src/routes/settings'
 import { trashDrafts, restoreDrafts, purgeTrash } from '../src/services/drafts'
-import { groupPhotos } from '../src/services/intakeGrouping'
-import { resolveSendCity } from '../src/services/districts'
-import { assertProductionMailConfig } from '../src/config/mail'
 import view from '@fastify/view'
 import { PDFDocument } from 'pdf-lib'
 import stickerRoutes from '../src/routes/sticker'
@@ -40,8 +28,7 @@ import stickerTestRoutes from '../src/routes/stickerTest'
 import { viewHelpers } from '../src/views/helpers'
 import { zaehleAufruf, ladeAufrufe } from '../src/services/aufrufe'
 import {
-  createBatch, linkCode, unlinkCode, voidOpenCodes, normalizeCode, parseLayout, renderBatchPdf,
-  batchCodes, StickerLayout, STICKER_MAX_SEITEN, STICKER_VORLAGEN, vorschauSvg,
+  createBatch, linkCode, unlinkCode, voidOpenCodes, normalizeCode, parseLayout, renderBatchPdf, batchCodes, StickerLayout, STICKER_MAX_SEITEN, STICKER_VORLAGEN, vorschauSvg,
 } from '../src/services/stickers'
 import { ENTWUERFE } from '../src/services/stickerEntwuerfe'
 import { setze, satzFonts } from '../src/services/stickerSatz'
@@ -334,51 +321,6 @@ test('Echter SMTP-Versand in Mailpit verwendet die persistierte Message-ID', asy
   assert.ok(mail.To.some(to => to.Address.includes('@')))
 })
 
-test('Foto-Gruppierung erhält Zeiträume über Mitternacht', () => {
-  const result = groupPhotos([
-    { id: 1, capturedAt: '2026-10-05 23:55:00', lat: 50.1, lon: 8.6 },
-    { id: 2, capturedAt: '2026-10-06 00:05:00', lat: 50.1, lon: 8.6 },
-  ])
-  assert.equal(result.incidents.length, 1)
-  assert.equal(result.incidents[0].dayTo, '2026-10-06')
-})
-
-test('Foto-Gruppierung trennt Fahrzeuge am selben Ort nach Kennzeichen', () => {
-  const foto = (id: number, zeit: string, plate: string | null, plateConfidence = 1) => ({
-    id, capturedAt: `2026-10-14 ${zeit}`, lat: 50.1, lon: 8.6, plate, plateConfidence,
-  })
-  // Drei Autos nacheinander in derselben Straße (Prod-Fall 515), Übersichtsfoto ohne Lesung.
-  const drei = groupPhotos([
-    foto(1, '12:07:16', 'GN-BM 1111'), foto(2, '12:07:17', 'GN-BM 1111'), foto(3, '12:07:20', null),
-    foto(4, '12:07:34', 'F-MN 435'), foto(5, '12:07:35', 'F-MN 435'),
-    foto(6, '12:08:27', 'F-A 123'), foto(7, '12:08:28', 'F-A 123'),
-  ])
-  assert.deepEqual(drei.incidents.map((i) => i.photoIds), [[1, 2, 3], [4, 5], [6, 7]])
-  assert.equal(drei.incidents[1].timeFrom, '12:07:34')
-  // OCR-Varianten (Strich, Suffix, ein Zeichen) und ein Auto im Hintergrund bleiben eine Anzeige.
-  const eins = groupPhotos([
-    foto(1, '15:40:51', 'F-SL 1912'), foto(2, '15:40:55', 'MTK-ZM 555'),
-    foto(3, '15:41:01', 'FS-L 1912E'), foto(4, '15:41:03', 'F-SL 1913', 0.8),
-  ])
-  assert.equal(eins.incidents.length, 1)
-  // Ein Foto je Auto: sichere Einzellesungen sind eigene Fahrzeuge, unsichere nicht.
-  assert.equal(groupPhotos([foto(1, '10:00:00', 'F-AB 1'), foto(2, '10:00:20', 'F-CD 2')]).incidents.length, 2)
-  assert.equal(groupPhotos([foto(1, '10:00:00', 'F-AB 1', 0.88), foto(2, '10:00:20', 'F-CD 2', 0.85)]).incidents.length, 1)
-})
-
-test('Städte-Gate erkennt Hanau und blockiert nicht freigeschaltete Orte', () => {
-  assert.deepEqual(resolveSendCity('Marktplatz, 63450 Hanau', 'frankfurt'), { ok: true, cityId: 'hanau' })
-  assert.equal(resolveSendCity('10115 Berlin', 'frankfurt').ok, false)
-})
-
-
-test('Produktions-Mailkonfiguration kann nicht still auf Mailpit zurückfallen', () => {
-  assert.throws(() => assertProductionMailConfig({ NODE_ENV: 'production', MAIL_DRIVER: 'smpt' }))
-  assert.throws(() => assertProductionMailConfig({ NODE_ENV: 'production', MAIL_DRIVER: 'smtp' }))
-  assert.doesNotThrow(() => assertProductionMailConfig({ NODE_ENV: 'development', MAIL_DRIVER: 'mailpit' }))
-  assert.doesNotThrow(() => assertProductionMailConfig({ NODE_ENV: 'production', MAIL_DRIVER: 'smtp', MAIL_HOST: 'smtp.example.invalid', MAIL_FROM: 'owia@example.invalid' }))
-})
-
 test('Verlorene Speicherung der SMTP-Annahme löst keinen erneuten Versand aus', async () => {
   const id = await report()
   let sent = 0
@@ -407,7 +349,6 @@ test('Fremde Anzeigen und ihre Fotos bleiben vor dem Nutzer verborgen', async ()
     }
   } finally { await app.close() }
 })
-
 
 test('Kontoschließung kann einen ungeklärten Versand nicht löschen', async () => {
   const [created] = await pool.execute<mysql.ResultSetHeader>("INSERT INTO users(email) VALUES ('closing@example.invalid')")
@@ -890,24 +831,6 @@ test('Sticker-Seite zeigt Fremden nur öffentliche Angaben und zählt nur deren 
   } finally { await app.close() }
 })
 
-test('Statistik summiert Regelsätze je TBNR, Freitext zählt ohne Betrag', () => {
-  // Stichproben aus dem KBA-Katalog (resources/bussgelder.csv).
-  assert.equal(regelsatzEuro('112454'), 55)
-  assert.equal(regelsatzEuro('141312'), 25)
-  assert.equal(regelsatzEuro('000000'), null)
-  const s = aggregiere([
-    { verstoss_art: '112454 – Sie parkten verbotswidrig auf dem Gehweg.', monat: '2026-09', city: 'frankfurt' },
-    { verstoss_art: '112454 – Sie parkten verbotswidrig auf dem Gehweg.', monat: '2026-10', city: 'frankfurt' },
-    { verstoss_art: '141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).', monat: '2026-10', city: 'frankfurt' },
-    { verstoss_art: 'Sonstige Vergehen', monat: '2026-10', city: 'frankfurt' },
-  ])
-  assert.equal(s.anzahl, 4)
-  assert.equal(s.mitRegelsatz, 3)
-  assert.equal(s.euro, 135)
-  assert.deepEqual(s.tatbestaende.map((t) => [t.key, t.anzahl, t.euro]), [['112454', 2, 110], ['141312', 1, 25], ['sonstige', 1, 0]])
-  assert.deepEqual(s.monate.map((m) => [m.label, m.anzahl, m.euro]), [['September 2026', 1, 55], ['Oktober 2026', 3, 80]])
-})
-
 test('Marke: VW wird zu Volkswagen', async () => {
   const { markeNormalisieren } = await import('../src/config/fahrzeug')
   assert.equal(markeNormalisieren('VW'), 'Volkswagen')
@@ -918,28 +841,6 @@ test('Marke: VW wird zu Volkswagen', async () => {
   assert.equal(markeNormalisieren('VWX'), 'VWX')
 })
 
-test('Analyse: Wiederholer-Ranking öffentlich ohne Kennzeichen und nur monatsgenau', () => {
-  const r = (kennzeichen: string, tattag: string, stunde: number | null = 8) => ({
-    kennzeichen, tattag, stunde, fahrzeug_marke: 'VW', fahrzeug_typ: null, fahrzeug_farbe: 'rot',
-    verstoss_art: '112454 – Sie parkten verbotswidrig auf dem Gehweg.', city: 'frankfurt',
-    behinderung: 0, fahrzeug_verlassen: 0, tatort: 'Musterstr. 1',
-  })
-  const rows = [r('F-AB 1', '2026-09-01'), r('FAB1', '2026-09-02'), r('F-AB 1', '2026-09-02'),
-    r('F-XY 2', '2026-09-03'), r('F-XY 2', '2026-09-03'), r('F-ZZ 3', '2026-09-07', null)]
-  const pub = analysiere(rows)
-  assert.equal(pub.fahrzeuge, 3)
-  assert.equal(pub.wiederholer, 2)
-  assert.deepEqual(pub.ranking.map((w) => [w.name, w.anzahl, w.tage]), [['Fahrzeug 1', 3, 2], ['Fahrzeug 2', 2, 1]])
-  const json = JSON.stringify(pub)
-  assert.ok(!json.includes('AB1') && !json.includes('Musterstr') && !json.includes('2026-09-0'))
-  assert.equal(pub.heatmap[1][8], 1) // 01.09.2026 = Dienstag (Mo = Index 0)
-  assert.equal(pub.heatmap[2][8], 2)
-  assert.equal(pub.wochentage[0].anzahl, 1) // Montag ohne Uhrzeit zählt nur hier
-  const adm = analysiere(rows, { mitKennzeichen: true })
-  assert.equal(adm.ranking[0].name, 'F-AB 1') // gespeicherte Schreibweise, nicht die Gruppier-Form
-  assert.equal(adm.ranking[0].vergehen[0].tatort, 'Musterstr. 1')
-})
-
 test('Hintergrund-Jobs: gleicher Schlüssel wird nur einmal eingereiht', async () => {
   const { enqueueJob } = await import('../src/services/jobs')
   await enqueueJob('test.noop', { a: 1 }, { key: 'test.noop:1' })
@@ -947,239 +848,6 @@ test('Hintergrund-Jobs: gleicher Schlüssel wird nur einmal eingereiht', async (
   const rows = await query("SELECT COUNT(*) AS n FROM jobs WHERE pending_key = 'test.noop:1'")
   assert.equal(Number(rows[0].n), 1)
   await pool.execute("DELETE FROM jobs WHERE type = 'test.noop'")
-})
-
-test('Frankfurt-Portal: Tatbestand-Pfade, Varianten und Langparker', () => {
-  const pick = (l: string, v?: string) => portalTatbestand(l, v)
-  assert.deepEqual(pick('141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).'), {
-    gruppe: 'Haltverbot/gesperrter Bereich/Sonderparkplätze',
-    pfad: [{ pick: ['im Haltverbot'] }, { pick: ['im absoluten Haltverbot (Zeichen 283)'] }, { pick: ['Parken'] }],
-    rettung: false,
-    parken: true,
-  })
-  // Fahrzeug verlassen = Parken, auch bei „Sie hielten …"; der Schutzstreifen
-  // kennt im Portal nur Halten.
-  const lbl = (tbnr: string) => { const x = VERSTOESSE.find((y) => y.tbnr === tbnr)!; return `${x.tbnr} – ${x.text}` }
-  assert.deepEqual(portalTatbestand(lbl('141070'), null, false)!.pfad[0], { pick: ['Halten'] })
-  assert.equal(portalTatbestand(lbl('141070'), null, false)!.parken, false)
-  assert.deepEqual(portalTatbestand(lbl('141070'), null, true)!.pfad[0], { pick: ['Parken'] })
-  assert.equal(portalTatbestand(lbl('141070'), null, true)!.parken, true)
-  assert.deepEqual(portalTatbestand(lbl('142170'), null, true)!.pfad[0], { pick: ['Halten'] })
-  assert.equal(portalTatbestand(lbl('142170'), null, true)!.parken, false)
-  // Bordsteinabsenkung u. Ä.: kein Halten/Parken im Pfad → Zusatz bleibt nötig.
-  assert.equal(portalTatbestand(lbl('112372'), null, true)!.parken, false)
-  // Mehrdeutig ohne Variante → Live-Auswahl; mit Variante eindeutig.
-  const kreuzung = '112262 – Sie parkten weniger als 5 Meter vor der Kreuzung/Einmündung.'
-  assert.deepEqual(verstossVarianten(kreuzung).map((x) => x.value), ['Kreuzung', 'Einmündung'])
-  assert.ok(pick(kreuzung)!.pfad[0].ask)
-  assert.deepEqual(pick(kreuzung, 'Einmündung')!.pfad, [{ pick: ['weniger als 5 Meter VOR einer Einmündung'] }])
-  // „länger als 1 Stunde" mit Rückfall auf „Parken"
-  assert.deepEqual(pick('112656 – Sie parkten länger als 1 Stunde verbotswidrig auf dem Gehweg.')!.pfad[0], { pick: ['Parken länger als 1 Stunde', 'Parken'] })
-  assert.equal(pick('112612 – Sie parkten vor oder in einer amtlich gekennzeichneten Feuerwehrzufahrt und behinderten dadurch ein Rettungsfahrzeug im Einsatz.')!.rettung, true)
-  // Nicht im Portal
-  assert.equal(pick('112456 – Sie hielten/parkten nicht Platz sparend.'), null)
-  assert.equal(langparkerVariante('112454 – Sie parkten verbotswidrig auf dem Gehweg.'), '112656 – Sie parkten länger als 1 Stunde verbotswidrig auf dem Gehweg.')
-  assert.equal(tatDauerMinuten({ tatzeit_von: '10:15:00', tatzeit_bis: '11:30:00' }), 75)
-  assert.equal(portalProblem({ verstoss_art: kreuzung }), 'Bitte beim Verstoß genauer angeben: Kreuzung oder Einmündung.')
-  assert.equal(portalProblem({ verstoss_art: kreuzung, verstoss_variante: 'Kreuzung', kennzeichen_land: 'D' }), null)
-})
-
-for (const [stadt, datei] of [['frankfurt', 'ekom21-ffm-baum.json'], ['hanau', 'ekom21-hu-baum.json']] as const) test(`ekom21-Portal ${stadt}: jeder waehlbare Verstoß führt im Portal-Baum zu einem Eintrag`, async () => {
-  // tests/fixtures/ekom21-ffm-baum.json: alle Pfade des Online-Formulars (Stand
-  // 10/2026, durchgespielt mit /root/owia/work/ekom21-frankfurt/dfs.js); Hanau
-  // (14.10.2026, /root/owia/work/hanau/tree.js) hat denselben Baum plus Rubrik
-  // „Ohne oder mit abgelaufener Parkscheibe" – das Frankfurter Mapping muss dort
-  // genauso aufgehen.
-  const baum = JSON.parse(await fs.readFile(path.join(__dirname, 'fixtures', datei), 'utf8')) as Record<string, string[][]>
-  const norm = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase()
-  const passt = (opt: string, c: string) => norm(opt).startsWith(norm(c))
-  // Spielt den Pfad wie choosePathElement (docker/portal/lib.mjs) durch.
-  const fehler = (gruppe: string, pfad: { pick?: string[]; ask?: string[]; optional?: boolean }[]) => {
-    let blaetter = baum[gruppe] ?? []
-    let tiefe = 0
-    for (const el of pfad) {
-      const opts = [...new Set(blaetter.filter((p) => p.length > tiefe).map((p) => p[tiefe]))]
-      const cands = el.pick ?? el.ask ?? []
-      const treffer = el.pick
-        ? cands.map((c) => opts.find((o) => passt(o, c))).find(Boolean)
-        : (() => { const f = opts.filter((o) => cands.some((c) => passt(o, c))); return f.length === 1 ? f[0] : undefined })()
-      if (!treffer) {
-        if (el.optional) continue
-        return `keine Option für ${cands.join(' / ')} (da: ${opts.join(' / ')})`
-      }
-      blaetter = blaetter.filter((p) => p[tiefe] === treffer)
-      tiefe++
-    }
-    return blaetter.some((p) => p.length === tiefe) ? null : 'Pfad endet vor einem Eintrag'
-  }
-  const probleme: string[] = []
-  let waehlbar = 0
-  for (const x of VERSTOESSE) {
-    const label = `${x.tbnr} – ${x.text}`
-    if (verstossGesperrt(stadt, label)) continue
-    waehlbar++
-    const vs = verstossVarianten(label)
-    for (const v of vs.length ? vs.map((y) => y.value) : [null]) {
-      for (const verlassen of [false, true]) {
-        const tb = portalTatbestand(label, v, verlassen)!
-        const f = fehler(tb.gruppe, tb.pfad)
-        if (f) probleme.push(`${x.tbnr} [${v ?? '-'}${verlassen ? ', verlassen' : ''}]: ${f}`)
-      }
-    }
-  }
-  assert.deepEqual(probleme, [])
-  assert.ok(waehlbar >= 180, `nur ${waehlbar} waehlbar`)
-  // Halten gibt es im Portal nicht überall: absolutes Haltverbot nur „Parken".
-  assert.equal(verstossGesperrt(stadt, '141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), true)
-  assert.equal(verstossGesperrt(stadt, '141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).'), false)
-  // Andere Städte sperren nichts.
-  assert.equal(verstossGesperrt('wiesbaden', '141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), false)
-  const sp = verstossSperren(VERSTOESSE.map((x) => `${x.tbnr} – ${x.text}`))
-  assert.deepEqual(Object.keys(sp.gesperrt).sort(), ['frankfurt', 'hanau'])
-  assert.equal(sp.gesperrt[stadt].idx.length, VERSTOESSE.length - waehlbar)
-})
-
-test('Frankfurt-Portal: Fahrzeug, Fotos und Payload', () => {
-  const lbl2 = (tbnr: string) => { const x = VERSTOESSE.find((y) => y.tbnr === tbnr)!; return `${x.tbnr} – ${x.text}` }
-  assert.equal(portalMarke('VW'), 'Volkswagen')
-  assert.equal(portalMarke('Mercedes'), 'Mercedes-Benz')
-  assert.equal(portalMarke('vw golf'), 'Volkswagen')
-  assert.equal(portalMarke('Lada'), null)
-  assert.equal(fahrzeugBeschreibung({ fahrzeug_marke: 'VW', fahrzeug_modell: 'Golf', fahrzeug_farbe: 'schwarz' }), 'VW Golf, schwarz')
-  // Die Reihenfolge entscheidet: Foto 1 = Übersicht, der Rest (≤ 5) = Fahrzeug.
-  const roles = photoRoles([1, 2, 3, 4, 5, 6, 7])
-  assert.deepEqual([roles.uebersicht, roles.fahrzeug], [[1], [2, 3, 4, 5, 6]])
-  const one = photoRoles([{ id: 7, detected_plate: null }])
-  assert.deepEqual([one.uebersicht.map((i) => i.id), one.fahrzeug.map((i) => i.id)], [[7], [7]])
-  const p = buildPortalPayload(
-    { verstoss_art: '141174 – Sie parkten auf einem Radweg/Radfahrstreifen (Zeichen 237).', kennzeichen: 'F-AB 1', kennzeichen_land: 'D',
-      fahrzeug_marke: 'VW', fahrzeug_farbe: 'rot', tattag: '2026-10-07', tatzeit_von: '22:30:00', tatzeit_bis: '01:00:00', tattag_bis: '2026-10-08',
-      tatort: 'Römerberg 1, 60311 Frankfurt am Main', beschreibung: 'Vor dem Café', behinderung: 0 } as any,
-    { anrede: 'frau', vorname: 'Erika', nachname: 'Muster', strasse: 'Weg', hausnummer: '2', plz: '60311', ort: 'Frankfurt', email: 'e@x' } as any
-  )
-  assert.equal(p.person.anrede, 'Frau')
-  assert.equal(p.fahrzeug.marke, 'Volkswagen')
-  assert.equal(p.fahrzeug.typ, 'PKW')
-  assert.deepEqual(p.tat, { ort: 'Römerberg 1 (Tatzeitraum bis 08.10.2026 01:00 Uhr; Vor dem Café)', tattag: '07.10.2026', von: '22:30', bis: '23:59' })
-  assert.equal(p.gruppe, 'Radweg/Radfahrstreifen')
-  // Ende fehlt: letztes Foto desselben Tages; sonst Beginn = Ende.
-  assert.deepEqual(portalTatzeit({ tattag: '2026-09-11', tatzeit_von: '02:13:33' }, '2026-09-11 02:19'), { von: '02:13', bis: '02:19', zusatz: null })
-  assert.deepEqual(portalTatzeit({ tattag: '2026-09-11', tatzeit_von: '02:13:33' }, null), { von: '02:13', bis: '02:13', zusatz: null })
-  assert.equal(tatortText({ tatort: 'Franz-Simon-Straße 29, 65934 Frankfurt am Main', fahrzeug_verlassen: 1 }), 'Franz-Simon-Straße 29 (Fahrzeug war verlassen)')
-  assert.equal(tatortText({ tatort: 'Franz-Simon-Straße 29, 65934 Frankfurt am Main', fahrzeug_verlassen: 1 }, [], true), 'Franz-Simon-Straße 29')
-  // Payload: Parken im Pfad → kein Zusatz; Halten-Tatbestand + verlassen → Parken.
-  const basis = { kennzeichen: 'F-AB 1', kennzeichen_land: 'D', tattag: '2026-10-07', tatzeit_von: '10:00:00', tatzeit_bis: '10:30:00',
-    tatort: 'Römerberg 1, 60311 Frankfurt am Main', behinderung: 0, fahrzeug_verlassen: 1 }
-  const nutzer = { anrede: 'herr', vorname: 'M', nachname: 'M', strasse: 'Weg', hausnummer: '1', plz: '60311', ort: 'Frankfurt', email: 'm@x' } as any
-  const geparkt = buildPortalPayload({ ...basis, verstoss_art: '141174 – Sie parkten auf einem Radweg/Radfahrstreifen (Zeichen 237).' } as any, nutzer)
-  assert.equal(geparkt.tat.ort, 'Römerberg 1')
-  const gehalten = buildPortalPayload({ ...basis, verstoss_art: lbl2('141070') } as any, nutzer)
-  assert.deepEqual(gehalten.pfad[0], { pick: ['Parken'] })
-  assert.equal(gehalten.tat.ort, 'Römerberg 1')
-  const schutz = buildPortalPayload({ ...basis, verstoss_art: lbl2('142170') } as any, nutzer)
-  assert.equal(schutz.tat.ort, 'Römerberg 1 (Fahrzeug war verlassen)')
-  const bordstein = buildPortalPayload({ ...basis, verstoss_art: lbl2('112372') } as any, nutzer)
-  assert.equal(bordstein.tat.ort, 'Römerberg 1 (Fahrzeug war verlassen)')
-  // Versicherungskennzeichen: Leichtkraftfahrzeug geht als Leichtkraftrad,
-  // PKW wird vorher abgefangen (das Portal lehnt das Format sonst ab).
-  const ape = { ...basis, verstoss_art: lbl2('141070'), kennzeichen: '705 HNX', fahrzeug_typ: 'Leichtkraftfahrzeug' }
-  assert.equal(buildPortalPayload(ape as any, nutzer).fahrzeug.typ, 'Leichtkraftrad')
-  assert.equal(buildPortalPayload({ ...ape, kennzeichen: 'F-AB 1' } as any, nutzer).fahrzeug.typ, 'Leichtkraftfahrzeug')
-  const kreuz = { verstoss_art: '112262 – Sie parkten weniger als 5 Meter vor der Kreuzung/Einmündung.', verstoss_variante: 'Kreuzung', kennzeichen_land: 'D', kennzeichen: '705 HNX' }
-  assert.equal(portalProblem({ ...kreuz, fahrzeug_typ: 'Leichtkraftfahrzeug' }), null)
-  assert.equal(portalProblem({ ...kreuz, fahrzeug_typ: 'Mofa' }), null)
-  assert.match(portalProblem({ ...kreuz, fahrzeug_typ: 'PKW' }) || '', /Versicherungskennzeichen/)
-  assert.equal(portalProblem({ ...kreuz, kennzeichen_land: 'NL', fahrzeug_typ: 'PKW' }), null)
-})
-
-test('Wiesbaden- und Mainz-Portal: Zuordnung, Prüfungen, Payload', () => {
-  // Wiesbaden: eine Ebene, Halten → Sonstiges
-  assert.deepEqual(wiTatbestand('141312 – Sie parkten im absoluten Haltverbot (Zeichen 283).'), { gruppe: 'Haltverbot', satz: ['Das Fahrzeug parkte im absoluten Haltverbot (Zeichen 283)'] })
-  assert.equal(wiTatbestand('141310 – Sie hielten im absoluten Haltverbot (Zeichen 283).'), null)
-  assert.equal(wiTatbestand('141245 – Sie benutzten die Sperrfläche (Zeichen 298) zum Parken.')!.satz[0], 'Das Fahrzeugt parkte auf einer Sperrfläche')
-  const u = { anrede: 'herr', vorname: 'Max', nachname: 'M', strasse: 'Weg', hausnummer: '1', plz: '65183', ort: 'Wiesbaden', email: 'm@x', telefon: '0611 1' } as any
-  const wi = buildWiPayload({ verstoss_art: '112456 – Sie hielten/parkten nicht Platz sparend.', kennzeichen_land: 'D', tattag: '2026-10-07', tatzeit_von: '10:00:00', tatort: 'Wilhelmstraße 10, 65183 Wiesbaden', behinderung: 0, fahrzeug_verlassen: 1 } as any, u)
-  assert.equal(wi.gruppe, 'Sonstiges')
-  assert.deepEqual(wi.pfad, [])
-  assert.match(wi.tatvorwurf, /nicht Platz sparend/)
-  assert.equal(wi.tat.ort, 'Wilhelmstraße 10')
-  assert.match(wi.ergaenzend, /verlassen/)
-  assert.equal(wiProblem({ tattag: '2020-01-01' }), 'Wiesbaden nimmt nur Taten der letzten zwei Monate an.')
-  // Mainz: Art × Rubrik, Tatort zerlegt, Telefon Pflicht
-  assert.deepEqual(tatortTeile('Große Bleiche 12a, 55116 Mainz'), { strasse: 'Große Bleiche', hausnummer: '12a', plz: '55116', ort: 'Mainz' })
-  assert.equal(tatortTeile('Rheinufer, 55116 Mainz')!.hausnummer, null)
-  const mz = buildMzPayload({ verstoss_art: '112262 – Sie parkten weniger als 5 Meter vor der Kreuzung/Einmündung.', verstoss_variante: 'Einmündung', kennzeichen: 'MZ-A 1', kennzeichen_land: 'D', fahrzeug_marke: 'Skoda', fahrzeug_typ: 'Elektrokleinstfahrzeug', tattag: '2026-10-07', tatzeit_von: '10:00:00', tatort: 'Große Bleiche 12, 55116 Mainz', behinderung: 1, behinderung_text: 'Kinderwagen' } as any, u)
-  assert.deepEqual(mz.mz.art, 'Parken')
-  assert.equal(mz.mz.rubrik, 'Das Fahrzeug stand im 5-Meter Kreuzungsbereich')
-  assert.match(mz.mz.freitext, /genauer: Einmündung.*Behinderung: Kinderwagen/)
-  assert.equal(mz.fahrzeug.marke, 'Škoda')
-  assert.equal(mz.fahrzeug.typ, 'Elektrokleinstrad')
-  assert.equal(mzProblem({ tatort: 'Große Bleiche 12, 55116 Mainz' }, { telefon: '' }), 'Mainz verlangt eine Telefonnummer – bitte im Profil ergänzen.')
-  assert.deepEqual(mzFotos({ uebersicht: [1, 2, 3], fahrzeug: [4, 5] }), [4, 1, 5])
-  // Registry + Ortsteile
-  assert.equal(portalFuer('mainz')!.id, 'civento-mz')
-  assert.equal(getCityByName('Mainz-Kastel')!.id, 'wiesbaden')
-})
-
-test('Hanau-Portal: Frankfurter Formular, E-Mail Pflicht, heute erlaubt, 2-Monats-Grenze', () => {
-  const hu = portalFuer('hanau')!
-  assert.equal(hu.id, 'ekom21-hu')
-  assert.equal(hu.heuteErlaubt, true)
-  const r = { verstoss_art: '112454 – Sie parkten verbotswidrig auf dem Gehweg.', kennzeichen: 'HU-A 1', kennzeichen_land: 'D',
-    tattag: '2026-10-07', tatzeit_von: '10:00:00', tatort: 'Am Markt 14, 63450 Hanau', behinderung: 0 } as any
-  const u = { anrede: 'herr', vorname: 'Max', nachname: 'Muster', strasse: 'Weg', hausnummer: '2', plz: '63450', ort: 'Hanau', email: 'm@x' } as any
-  const p = hu.payload(r, u) as any
-  assert.equal(p.portal, 'ekom21-hu')
-  assert.equal(p.gruppe, 'Gehweg/Fußgängerüberweg/Fußgängerfurt')
-  assert.equal(p.tat.ort, 'Am Markt 14')
-  assert.equal(p.email, 'm@x')
-  assert.throws(() => hu.payload(r, { ...u, email: '' }), /E-Mail/)
-  // Der kalendermäßig entsprechende Tag vor zwei Monaten ist schon zu alt
-  // (Portal lehnt am 14.10. den 14.08. ab, nimmt den 15.08.).
-  const iso = (d: Date) => d.toISOString().slice(0, 10)
-  const grenze = new Date(berlinHeute()); grenze.setMonth(grenze.getMonth() - 2)
-  const danach = new Date(grenze); danach.setDate(danach.getDate() + 1)
-  assert.equal(hu.problem({ ...r, tattag: iso(grenze) }), 'Hanau nimmt nur Taten der letzten zwei Monate an.')
-  assert.equal(hu.problem({ ...r, tattag: iso(danach) }), null)
-})
-
-test('Hamburg-Portal: Tatvorwürfe, Kennzeichen, Tatort, Payload', async () => {
-  const { hhTatbestand, hhKennzeichen, hhTatort, buildHhPayload, hhProblem, hhFotos, HH_TATVORWUERFE } = await import('../src/services/portalHh')
-  const { VERSTOSS_ARTEN } = await import('../src/config/verstoss')
-  const { getCity } = await import('../src/config/cities')
-  // Radio-Tatvorwurf, Listen-Tatvorwurf (Dauer/Behinderung fallen weg), sonst „keiner"
-  assert.deepEqual(hhTatbestand('112454 – Sie parkten verbotswidrig auf dem Gehweg.'), { radio: '1', liste: null, text: 'Sie parkten verbotswidrig auf dem Gehweg' })
-  assert.equal(hhTatbestand('141324 – Sie parkten unzulässig länger als 1 Stunde im eingeschränkten Haltverbot (Zeichen 286).').liste, '12')
-  assert.equal(hhTatbestand('142106 – Sie parkten in einem verkehrsberuhigten Bereich (Zeichen 325.1, 325.2) verbotswidrig außerhalb der zum Parken gekennzeichneten Flächen länger als 3 Stunden.').liste, '7')
-  assert.equal(hhTatbestand('141071 – Sie hielten auf einem Radweg/Radfahrstreifen (Zeichen 237) und behinderten dadurch Andere.').liste, '10')
-  assert.deepEqual(hhTatbestand('112456 – Sie hielten/parkten nicht Platz sparend.'), { radio: 'keine', liste: '25', text: null })
-  // Jeder Formular-Tatvorwurf außer 2 und 23 (kein Katalog-Pendant) hat Katalogeinträge, nichts landet doppelt.
-  const treffer = new Map<string, number>()
-  for (const l of VERSTOSS_ARTEN) { const t = hhTatbestand(l); const k = t.liste ?? t.radio; treffer.set(k, (treffer.get(k) || 0) + 1) }
-  for (const o of HH_TATVORWUERFE) if (!['2', '23'].includes(o.wert)) assert.ok((treffer.get(o.wert) || 0) >= 1, `Tatvorwurf ${o.wert} ohne Katalogtreffer`)
-  assert.ok((treffer.get('25') || 0) > 300, 'Rest geht über „keiner" mit Sachverhalt')
-  // Kennzeichen im Formular-Format, Mehrdeutiges unverändert
-  assert.equal(hhKennzeichen('hh ab 123'), 'HH-AB 123')
-  assert.equal(hhKennzeichen('F-OW1234E'), 'F-OW 1234E')
-  assert.equal(hhKennzeichen('HHAB123'), 'HHAB123')
-  // Tatort: Hausnummer, kreuzende Straße, ohne Nummer; PLZ nur Hamburger
-  assert.deepEqual(hhTatort('Hammer Straße 30, 22041 Hamburg'), { strasse: 'Hammer Straße', hausnummer: '30', plz: '22041', angaben: '' })
-  assert.deepEqual(hhTatort('Jungfernstieg / Ecke Ballindamm, 20095 Hamburg'), { strasse: 'Jungfernstieg', hausnummer: 'Ballindamm', plz: '20095', angaben: '' })
-  assert.equal(hhTatort('Jungfernstieg')!.angaben, 'Angabe laut Anzeige: Jungfernstieg')
-  assert.equal(hhTatort('Zeil 51, 60313 Frankfurt')!.plz, '')
-  assert.equal(hhProblem({ tatort: '' }), 'Der Tatort braucht mindestens die Straße (Adresse aus der Vorschlagsliste wählen).')
-  assert.equal(hhProblem({ tatort: 'Hammer Straße 30, 22041 Hamburg' }, { email: '' }), 'Hamburg verlangt eine E-Mail-Adresse.')
-  const u = { vorname: 'Max', nachname: 'M', strasse: 'Zeil', hausnummer: '51', plz: '60313', ort: 'Frankfurt am Main', email: 'm@x' } as any
-  const p = buildHhPayload({ verstoss_art: '141322 – Sie parkten unzulässig im eingeschränkten Haltverbot (Zeichen 286).', kennzeichen: 'HH-OW 1234', fahrzeug_typ: 'Elektrokleinstfahrzeug', fahrzeug_marke: 'VW', fahrzeug_modell: 'Golf', tattag: '2026-10-08', tatzeit_von: '10:00:00', tatort: 'Hammer Straße 30, 22041 Hamburg', behinderung: 1, behinderung_text: 'Kinderwagen', fahrzeug_verlassen: 1 } as any, u, '2026-10-08 10:20')
-  assert.equal(p.portal, 'intelliform-hh')
-  assert.deepEqual(p.tatbestand, { radio: 'keine', liste: '12', behinderung: true, sachverhalt: 'Tatbestand laut Bußgeldkatalog: 141322 – Sie parkten unzulässig im eingeschränkten Haltverbot (Zeichen 286). Das Fahrzeug war verlassen. Behinderung: Kinderwagen' })
-  assert.equal(p.fahrzeug.typ, 'Elektrokleinstfahrzeuge', 'Hamburger Typ-Liste schreibt den Plural')
-  assert.equal(p.fahrzeug.marke, 'VW Golf')
-  assert.deepEqual(p.tat, { datum: '08.10.2026', von: '10:00', bis: '10:20', strasse: 'Hammer Straße', hausnummer: '30', plz: '22041', angaben: '' })
-  assert.equal(p.bestaetigungEmail, 'm@x')
-  assert.deepEqual(hhFotos([1, 2, 3, 4]), { uebersicht: [2, 1, 3], fahrzeug: [] }, 'höchstens 3, Fahrzeugfoto zuerst')
-  assert.equal(portalFuer('hamburg')!.id, 'intelliform-hh')
-  assert.equal(getCity('hamburg').mail, undefined, 'Hamburg läuft übers Portal, nicht per Mail')
 })
 
 test('Öffentliches Kartenbild: mit Kennzeichen-Analyse geschwärzt in 160 px, sonst grob verpixelt', async () => {

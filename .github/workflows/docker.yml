@@ -1,0 +1,37 @@
+name: Docker-Images
+
+# Baut die Dienst-Images, wenn sich ihr Verzeichnis ändert. Kein Push in eine
+# Registry: gebaut und deployt wird auf dem Server (deploy.sh) – hier zählt
+# nur, dass Dockerfile, Lockfile und Pins zusammenpassen.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker/portal/**'
+      - 'docker/alpr/**'
+      - '.github/workflows/docker.yml'
+  pull_request:
+    paths:
+      - 'docker/portal/**'
+      - 'docker/alpr/**'
+      - '.github/workflows/docker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        dienst: [portal, alpr]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build docker/${{ matrix.dienst }}

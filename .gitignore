@@ -4,7 +4,11 @@ data/pdfs/
 data/uploads/
 data/photon/
 .env
+.env.*
+!.env.example
 dist/
+coverage/
+*.log
 # Erzeugte PDFs ignorieren – aber die amtlichen Formulare in resources/ müssen
 # versioniert sein (der Deploy synct nur den Git-Stand; ohne sie schlägt die
 # PDF-Erzeugung in Produktion fehl).
@@ -14,5 +18,6 @@ dist/
 # macos
 .DS_Store
 
-# Claude Code (lokale Session-Einstellungen)
+# Claude Code (lokale Session-Einstellungen, Agent-Worktrees)
 .claude/settings.local.json
+.claude/worktrees/

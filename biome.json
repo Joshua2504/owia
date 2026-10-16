@@ -1,0 +1,59 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "src/**/*.ts",
+      "src/**/*.mjs",
+      "tests/**/*.ts",
+      "scripts/**/*.cjs",
+      "public/js/**/*.js",
+      "public/sw.js",
+      "docker/portal/*.mjs",
+      "!src/vendor",
+      "!public/vendor"
+    ]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "assist": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": "off",
+      "complexity": "off",
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noAssignInExpressions": "off",
+        "useIterableCallbackReturn": "off",
+        "noGlobalIsNan": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "public/js/**/*.js",
+        "public/sw.js"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noInnerDeclarations": "off"
+          },
+          "suspicious": {
+            "noRedundantUseStrict": "off"
+          }
+        }
+      }
+    }
+  ]
+}

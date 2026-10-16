@@ -472,6 +472,7 @@ async function execute(run) {
     // Abbruch (Knopf oder Leerlauf) nur dann als „nichts abgesendet" melden,
     // wenn die Seite nicht inzwischen hinter der Zusammenfassung steht.
     if (err instanceof Cancelled && (run.state === 'needs_input' || run.state === 'ready') && (await abgesendetFeststellen(run))) {
+      // biome-ignore lint/suspicious/noCatchAssign: ab hier gilt der Abbruch als manuell abgesendet.
       err = new ManuellAbgesendet(run.manuell)
     }
     if (err instanceof Cancelled) {

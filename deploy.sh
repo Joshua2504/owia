@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Lokales Deploy: synct diese Arbeitskopie nach $DEPLOY_TARGET und startet
-# den Prod-Stack neu. Ersetzt den früheren GitHub-Actions-Auto-Deploy
-# (der Workflow existiert nur noch als manueller Fallback).
+# Lokales Deploy: überträgt den COMMITTETEN Stand (git archive HEAD) dieser
+# Arbeitskopie nach $DEPLOY_TARGET und startet den Prod-Stack neu. Ersetzt den
+# früheren GitHub-Actions-Auto-Deploy (der Workflow existiert nur noch als
+# manueller Fallback).
 #
-# .env und data/ im Ziel werden nie angefasst. Ungeachtet dessen gilt:
-# nur committete Stände deployen (git status vorher prüfen)!
+# Uncommittete Änderungen (auch WIP paralleler Sitzungen) gelangen so nie nach
+# Prod. .env, .env.* (Backups) und data/ im Ziel werden nie angefasst; Dateien,
+# die es im Commit nicht mehr gibt, werden im Ziel gelöscht (rsync --delete).
+#
+#   ./deploy.sh              Prüfen (npm run check), übertragen, neu starten
+#   SKIP_CHECK=1 ./deploy.sh ohne npm run check (z. B. Notfall-Rollback)
+#   PULL=1 ./deploy.sh       zusätzlich gepinnte Images neu ziehen
 set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
@@ -16,25 +22,37 @@ if [ "$SRC" = "$DEPLOY_TARGET" ]; then
   exit 1
 fi
 
-if [ -n "$(git -C "$SRC" status --porcelain)" ]; then
-  echo "Warnung: Arbeitskopie hat uncommittete Änderungen:" >&2
-  git -C "$SRC" status --short >&2
-  read -r -p "Trotzdem deployen? [y/N] " answer
-  [ "$answer" = "y" ] || exit 1
+REVISION="$(git -C "$SRC" rev-parse --short HEAD)"
+if [ -n "$(git -C "$SRC" status --porcelain --untracked-files=no)" ]; then
+  echo "Hinweis: uncommittete Änderungen werden NICHT deployt (nur $REVISION):" >&2
+  git -C "$SRC" status --short --untracked-files=no >&2
 fi
 
-echo "==> Sync $SRC -> $DEPLOY_TARGET"
+if [ "${SKIP_CHECK:-0}" != "1" ]; then
+  echo "==> npm run check"
+  (cd "$SRC" && npm run --silent check)
+fi
+
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+git -C "$SRC" archive HEAD | tar -x -C "$STAGE"
+echo "$REVISION" > "$STAGE/REVISION"
+
+echo "==> Sync $REVISION -> $DEPLOY_TARGET"
 mkdir -p "$DEPLOY_TARGET"
-rsync -az --delete \
+# --checksum: git archive setzt alle mtimes auf die Commit-Zeit, ohne Prüfsumme
+# würden geänderte Dateien gleicher Größe übersehen.
+rsync -a --checksum --delete \
   --exclude='.git/' \
   --exclude='.github/' \
   --exclude='.claude/' \
   --exclude='.DS_Store' \
   --exclude='.env' \
+  --filter='protect .env.*' \
   --exclude='data/' \
   --exclude='node_modules/' \
   --exclude='mobile/' \
-  "$SRC"/ "$DEPLOY_TARGET"/
+  "$STAGE"/ "$DEPLOY_TARGET"/
 
 echo "==> Stack neu starten"
 cd "$DEPLOY_TARGET"

@@ -1,0 +1,48 @@
+# Abhängigkeits-Updates als wöchentliche Sammel-PRs. Major-Versionen kommen
+# einzeln (eigener PR je Paket), damit sie gezielt getestet werden können.
+# Hinweis Portal: Image-Tag (docker/portal/Dockerfile) und npm-Version von
+# playwright (docker/portal/package.json) müssen exakt gleich sein – beide
+# PRs zusammen mergen.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 10
+    groups:
+      minor-und-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Node 22 im Image/CI: Typen nicht über die Laufzeit hinaus heben.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: npm
+    directory: /docker/portal
+    schedule: { interval: weekly, day: monday }
+
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule: { interval: weekly, day: monday }
+    groups:
+      capacitor:
+        patterns: ['@capacitor/*']
+
+  - package-ecosystem: pip
+    directory: /docker/alpr
+    schedule: { interval: weekly, day: monday }
+
+  - package-ecosystem: docker
+    directories: [/docker/node, /docker/portal, /docker/alpr]
+    schedule: { interval: weekly, day: monday }
+
+  - package-ecosystem: docker-compose
+    directories: [/]
+    schedule: { interval: weekly, day: monday }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      actions:
+        patterns: ['*']

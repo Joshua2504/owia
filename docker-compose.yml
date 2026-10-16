@@ -111,7 +111,7 @@ services:
     image: mariadb:11.8.9
     volumes:
       - ./data/mysql:/var/lib/mysql
-      - ./src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     environment:
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MARIADB_DATABASE: ${DB_NAME}

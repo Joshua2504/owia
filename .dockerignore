@@ -1,7 +1,16 @@
+# Das App-Image kopiert nur package*.json (Code kommt per Bind-Mount) – alles
+# andere hier hält nur den Build-Kontext klein und Geheimnisse draußen.
 node_modules/
 data/
 dist/
+coverage/
 .env
+.env.*
 *.pdf
+*.log
 .git/
+.github/
+.claude/
 mobile/
+docs/
+tests/
