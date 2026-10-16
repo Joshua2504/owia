@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 30
   mail:
-    image: axllent/mailpit:v1.31.4 # wie docker-compose.yml
+    image: axllent/mailpit:v1.31.5 # wie docker-compose.yml
   tests:
     image: node:22-alpine
     working_dir: /app
