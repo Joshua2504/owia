@@ -361,6 +361,7 @@ export function normalizeAttachmentType(contentType: string | null | undefined):
  *  Anführungszeichen (ohne " \ und Steuerzeichen – sonst Header-Injection bzw.
  *  kaputter Header) plus RFC 5987 filename* für Umlaute. */
 function contentDisposition(kind: 'inline' | 'attachment', name: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: Steuerzeichen sollen gerade entfernt werden.
   const clean = name.replace(/[\u0000-\u001f\u007f"\\/]/g, '').trim().slice(0, 200) || 'anhang'
   const ascii = clean.replace(/[^\x20-\x7e]/g, '_')
   const encoded = encodeURIComponent(clean).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)

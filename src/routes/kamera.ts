@@ -93,7 +93,7 @@ export default async function kameraRoutes(app: FastifyInstance) {
     const existing = await findExistingPhoto(userId, sha256)
     if (existing) return doppelt(existing)
 
-    let row
+    let row: Awaited<ReturnType<typeof saveImageToReport>>
     try {
       row = await saveImageToReport(userId, report.id, upload, sha256)
     } catch {

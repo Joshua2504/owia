@@ -65,7 +65,7 @@ export function recognizeQueued(filePath: string, mimetype: string): Promise<Rec
 /** Nur die Datenschutz-Analyse (analyse_json) eines ersetzten Fotos erneuern –
  *  das erkannte Kennzeichen bleibt (nach dem Schwärzen ist es oft unleserlich,
  *  siehe PUT /anzeige/:az/images/:imageId). */
-export function queueAnalyseOnly(userId: number, reportId: number, imageId: number, filename: string, mimetype: string): void {
+export function queueAnalyseOnly(userId: number, _reportId: number, imageId: number, _filename: string, mimetype: string): void {
   if (!alprEnabled()) return
   // Während der Neu-Analyse 'pending' zeigen: drittProblem (submit.ts) sperrt
   // das Einreichen nur, solange es eine laufende Analyse erkennen kann – sonst

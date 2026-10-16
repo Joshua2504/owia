@@ -1,7 +1,7 @@
 // Einreichen einer Anzeige: PDF-Download, Einreichen-Vorschau, Submit und
 // Zurückziehen sowie die gemeinsame Prüfliste (submitProblems, auch vom
 // Prüf-Modus und vom Portal-Versand genutzt).
-import { isVerjaehrt, verjaehrung } from '../../services/verjaehrung'
+import { verjaehrung } from '../../services/verjaehrung'
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import fs from 'fs/promises'

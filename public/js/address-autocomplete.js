@@ -96,22 +96,15 @@
         close()
         return
       }
-      try {
-        let endpoint = '/api/geo/search?q=' + encodeURIComponent(q)
-        if (input.dataset.geoScope) {
-          endpoint += '&scope=' + encodeURIComponent(input.dataset.geoScope)
-        }
-        const res = await fetch(endpoint, {
-          headers: { Accept: 'application/json' },
-        })
-        if (!res.ok) return close()
-        const data = await res.json()
-        items = data.results || []
-        active = -1
-        render()
-      } catch (_) {
-        close()
+      let endpoint = '/api/geo/search?q=' + encodeURIComponent(q)
+      if (input.dataset.geoScope) {
+        endpoint += '&scope=' + encodeURIComponent(input.dataset.geoScope)
       }
+      const data = await window.OWIA.tryJson(endpoint)
+      if (!data) return close()
+      items = data.results || []
+      active = -1
+      render()
     }, DEBOUNCE_MS)
 
     // Nur bei echter Tastatureingabe suchen. Programmatisch gesetzte Werte (Marker

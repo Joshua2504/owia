@@ -457,7 +457,7 @@
       var land = dlg.querySelector('#pe-land')
       var laender = c.laender || { D: 'Deutschland' }
       // D zuerst, dann nach Ländername (wie geliefert); data-name für die
-      // ausgeklappte Ansicht „PL – Polen" (landLang).
+      // ausgeklappte Ansicht „PL – Polen" (landCombo).
       land.innerHTML = Object.keys(laender).map(function (k) { return '<option value="' + k + '" title="' + laender[k] + '" data-name="' + laender[k] + '">' + k + '</option>' }).join('')
       landCombo(land)
       landCombosSync()
@@ -1106,10 +1106,7 @@
     row.hidden = v('tattag') === t.vonTag && v('tatzeit_von') === t.von &&
       v('tatzeit_bis') === (zeitraum(t) ? t.bis : '')
   }
-  function fmtDay(iso) {
-    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '')
-    return m ? m[3] + '.' + m[2] + '.' + m[1] : iso
-  }
+  function fmtDay(iso) { return window.OWIA.dateDe(iso) || iso }
   function photoSpan(t) {
     if (t.vonTag !== t.bisTag) return fmtDay(t.vonTag) + ' ' + t.von + ' – ' + fmtDay(t.bisTag) + ' ' + t.bis
     return fmtDay(t.vonTag) + ', ' + t.von + (zeitraum(t) ? ' – ' + t.bis : '') + ' Uhr'
@@ -1654,23 +1651,6 @@
   }
   function landCombosSync() {
     landCombos.forEach(function (c) { c.sync() })
-  }
-  // Land-Auswahl: zugeklappt nur das Kürzel (schmales Feld), aufgeklappt
-  // „PL – Polen" – sonst findet man das Land in der Liste nicht.
-  function landLang(sel) {
-    if (sel._landLang) return
-    sel._landLang = true
-    var lang = function () {
-      ;[].forEach.call(sel.options, function (o) { if (o.dataset.name) o.textContent = o.value + ' – ' + o.dataset.name })
-    }
-    var kurz = function () {
-      ;[].forEach.call(sel.options, function (o) { o.textContent = o.value })
-    }
-    sel.addEventListener('mousedown', lang)
-    sel.addEventListener('focus', lang)
-    sel.addEventListener('keydown', lang)
-    sel.addEventListener('change', kurz)
-    sel.addEventListener('blur', kurz)
   }
   function kzLandSync() {
     var src = landSel()

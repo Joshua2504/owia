@@ -16,7 +16,7 @@ const WIDTH = 640
 const HEIGHT = 440
 
 // Leaflet-Standardmarker (lokal vendored). Spitze unten-mittig => Anchor (12,41).
-const MARKER_PATH = path.join(process.cwd(), 'public', 'vendor', 'leaflet', 'images', 'marker-icon.png')
+const MARKER_PATH = path.join(process.cwd(), 'public', 'vendor', 'images', 'marker-icon.png')
 const MARKER_ANCHOR_X = 12
 const MARKER_ANCHOR_Y = 41
 

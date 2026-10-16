@@ -14,16 +14,14 @@
   var TILE_URL = '/tiles/{z}/{x}/{y}.png' // same-origin, Proxy auf basemap.de (src/routes/tiles.ts)
   var ATTRIBUTION = '<a href="https://basemap.de" target="_blank" rel="noopener">© basemap.de / BKG</a>'
 
-  // Standard-Marker-Icons auf die lokal mitgelieferten Bilder setzen – sonst
-  // sucht Leaflet sie relativ zum eigenen Pfad und liefert 404 (graues Icon).
+  // Verzeichnis der Standard-Marker-Icons fest setzen. Leaflet stellt
+  // imagePath IMMER vor iconUrl – absolute iconUrls per mergeOptions ergaben
+  // deshalb „…/vendor/images//public/…“ (404). Ohne festen Pfad rät Leaflet
+  // aus leaflet.css, was beim Nachladen (loadLeaflet) zu früh passieren kann.
+  // Die Bilder liegen neben leaflet.css (gleicher Ordner wie dessen url(images/…)).
   function fixDefaultIcon() {
     if (!(window.L && L.Icon && L.Icon.Default)) return
-    var base = '/public/vendor/leaflet/images/'
-    L.Icon.Default.mergeOptions({
-      iconRetinaUrl: base + 'marker-icon-2x.png',
-      iconUrl: base + 'marker-icon.png',
-      shadowUrl: base + 'marker-shadow.png',
-    })
+    L.Icon.Default.imagePath = '/public/vendor/images/'
   }
 
   // Koordinate aus data-*/JSON → Zahl oder null. `Number('')` und

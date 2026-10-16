@@ -181,14 +181,6 @@
   // Löschen per fetch statt Seitenwechsel: Einzel-Löschen (🗑 in der Zeile)
   // und Sammel-Löschen.
   // ---------------------------------------------------------------------------
-  function rowSummary(row) {
-    var val = function (sel) { var el = row.querySelector(sel); return el ? (el.value || el.textContent || '').trim() : '' }
-    var parts = [val('[data-inline-field="kennzeichen"]'), val('[data-inline-field="tatort"]')].filter(Boolean)
-    var photos = row.querySelectorAll('.report-thumb').length
-    if (photos) parts.push(photos === 1 ? '1 Foto' : photos + ' Fotos')
-    return parts.join(' · ')
-  }
-
   // Löschen verschiebt in den Papierkorb (wiederherstellbar) – daher ohne
   // Rückfrage; nur bei Fehlern erscheint der Dialog.
   async function confirmDelete(azList) {

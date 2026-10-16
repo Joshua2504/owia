@@ -19,9 +19,9 @@
 
   // Optionen merken (nur Komfort, darf fehlen).
   ;[[optAuto, 'versand-auto'], [optNext, 'versand-next']].forEach(function (p) {
-    try { p[0].checked = localStorage.getItem(p[1]) === '1' } catch (e) { /* egal */ }
+    try { p[0].checked = localStorage.getItem(p[1]) === '1' } catch (_) { /* egal */ }
     p[0].addEventListener('change', function () {
-      try { localStorage.setItem(p[1], p[0].checked ? '1' : '0') } catch (e) { /* egal */ }
+      try { localStorage.setItem(p[1], p[0].checked ? '1' : '0') } catch (_) { /* egal */ }
     })
   })
 
@@ -332,13 +332,13 @@
     ms.addEventListener('sourceopen', function () {
       if (!alive()) return
       var sb
-      try { sb = ms.addSourceBuffer(VIDEO_TYPE) } catch (e) { videoOk = false; return fail() }
+      try { sb = ms.addSourceBuffer(VIDEO_TYPE) } catch (_) { videoOk = false; return fail() }
       var queue = []
       var pump = function () {
         if (!alive() || sb.updating || !queue.length) return
         var buf = queue.length === 1 ? queue[0] : concat(queue)
         queue = []
-        try { sb.appendBuffer(buf) } catch (e) { fail() }
+        try { sb.appendBuffer(buf) } catch (_) { fail() }
       }
       sb.addEventListener('updateend', function () {
         if (!alive()) return
@@ -347,7 +347,7 @@
           var end = b.end(b.length - 1)
           if (end - v.currentTime > 0.5 || v.currentTime < b.start(0)) v.currentTime = Math.max(b.start(0), end - 0.1)
           if (v.paused) v.play().catch(function () {})
-          if (!sb.updating && v.currentTime - b.start(0) > 30) { try { sb.remove(0, v.currentTime - 10); return } catch (e) { /* egal */ } }
+          if (!sb.updating && v.currentTime - b.start(0) > 30) { try { sb.remove(0, v.currentTime - 10); return } catch (_) { /* egal */ } }
         }
         pump()
       })

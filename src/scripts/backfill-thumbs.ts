@@ -13,7 +13,7 @@ const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads')
 const IMAGE_NAME = /^bild-[0-9a-f]{12}\.(jpg|png)$/
 
 async function walk(dir: string, out: string[] = []): Promise<string[]> {
-  let entries
+  let entries: import('fs').Dirent[]
   try {
     entries = await fs.readdir(dir, { withFileTypes: true })
   } catch {

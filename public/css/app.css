@@ -1648,7 +1648,6 @@ body.is-bare { overflow: hidden; overscroll-behavior: none; background: #000; }
   }
   .report-table .report-thumb { width: 56px; height: 42px; }
   .report-table .report-photos-more { height: 42px; }
-  .report-table .inline-vehicle { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 0; }
   .report-table .inline-input { padding-top: 0.1rem; padding-bottom: 0.1rem; }
   .report-table .inline-times { margin-top: 0; }
   .report-table textarea.inline-input { min-height: 0; max-height: calc(2.6em + 0.2rem + 2px); }
@@ -1668,7 +1667,7 @@ body.is-bare { overflow: hidden; overscroll-behavior: none; background: #000; }
   .report-table th:nth-child(9), .report-table td:nth-child(9) { width: 9.25rem; }
   .report-table .cell-actions .btn { white-space: nowrap; }
   .report-table .cell-actions .badge { font-size: 0.7em; }
-  .report-table .inline-vehicle { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 3.4rem minmax(0, 1fr); }
+  .report-table .inline-vehicle { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 3.4rem minmax(0, 1fr); margin-top: 0; }
 }
 
 /* Handy: eingereichte/versendete Anzeigen als kompakte Karte (Grid):

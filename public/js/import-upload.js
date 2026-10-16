@@ -118,7 +118,7 @@
     return Math.max(1, Math.round(b / 1024)) + ' KB'
   }
   function fmtEta(seconds) {
-    if (!isFinite(seconds) || seconds < 0) return ''
+    if (!Number.isFinite(seconds) || seconds < 0) return ''
     if (seconds < 60) return '~' + Math.max(1, Math.round(seconds)) + ' s'
     return '~' + OWIA.mmss(Math.round(seconds)) + ' min'
   }

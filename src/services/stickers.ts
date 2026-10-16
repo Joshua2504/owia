@@ -226,6 +226,7 @@ export function winAnsiZeichen(s: string, ersatz = '?'): string {
     else {
       const d = TRANSLIT[c] ?? c.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       if (d !== c && d.length > 0 && [...d].every((x) => WINANSI_OK.test(x))) out += d
+      // biome-ignore lint/suspicious/noMisleadingCharacterClass: c ist genau ein Codepoint; unsichtbare/kombinierende Zeichen fallen weg.
       else if (/^[\u200b-\u200f\u2060\ufe00-\ufe0f\ufeff\u0300-\u036f]$/.test(c)) continue
       else out += ersatz
     }

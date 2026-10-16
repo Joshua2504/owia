@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify'
 import mysql from 'mysql2/promise'
 import crypto from 'crypto'
-import fs from 'fs/promises'
 import { pool } from '../db/connection'
 import { viewData, setFlash, flashRedirect } from '../middleware/auth'
 import { loadPixelated } from '../services/intakeImageProcessing'
