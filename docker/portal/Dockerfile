@@ -2,7 +2,7 @@
 # und RLP, IntelliForm in Hamburg).
 # Das offizielle Playwright-Image bringt Chromium samt Systembibliotheken mit;
 # die npm-Version muss exakt zur Image-Version passen.
-FROM mcr.microsoft.com/playwright:v1.62.1-noble
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 # pdftotext: die Vorgangs-ID steht nur in der PDF-Zusammenfassung (Fußzeile
 # „Vorgang: Anzeige einer Ordnungswidrigkeit / 26.111745"), nicht auf der Seite.
