@@ -1,6 +1,7 @@
 # Versandbetrieb und Wiederaufnahme
 
-Stand: 06.10.2026. Gilt ab Migration `0032_report_dispatch.sql`.
+Mail-Sperre seit Migration `0032_report_dispatch.sql` (06.10.2026), Portal-Versand
+und Versand-Takt Stand 16.10.2026.
 
 ## Zustände
 
@@ -46,6 +47,10 @@ Manuelle Klärung durch den Betreiber:
    alle Sperren löschen. SQL-Änderungen mit konkreter ID und erwarteter alter
    Zustandsbedingung ausführen und protokollieren.
 
+**Rollback:** Älterer Code (vor 0032) kennt `versand_status` nicht. Vor einem
+Code-Rollback offene Sperren prüfen – gesperrte Vorgänge dürfen nicht von altem
+Code bearbeitet werden.
+
 Kein automatisches „exactly once“ gegenüber einem externen SMTP-Server wird
 versprochen. Die Strategie verhindert blinde Wiederholungen und macht unklare
 Ergebnisse sichtbar. Benutzer-Nachrichten im bereits vorhandenen Mailverlauf
@@ -58,17 +63,20 @@ Besonderheiten je Stadt (Adapter in `src/services/portale.ts`):
 
 | Stadt | Formular | Fristen | Besonderes |
 |---|---|---|---|
-| Frankfurt | ekom21 (`oe=…FFOrdA`) | nur Taten vor heute | Tatbestand-Baum, Variante Pflicht, unbekannte Tatbestände nicht versendbar |
+| Frankfurt | ekom21 (`oe=…FFOrdA`) | max. 2 Monate, heute erlaubt | Tatbestand-Baum, Variante Pflicht, unbekannte Tatbestände nicht versendbar |
 | Wiesbaden | ekom21 (`oe=…WIOrdA`) | max. 2 Monate | eine Ebene, sonst „Sonstiges" + Beschreibung; E-Mail Pflicht; Feld „Ergänzende Angaben" |
+| Hanau | ekom21 (wie Frankfurt) | max. 2 Monate, heute erlaubt | gleicher Tatbestand-Baum wie Frankfurt; E-Mail Pflicht |
 | Mainz | civento RLP | – | Art × 11 Rubriken + Freitext, Telefon Pflicht, max. 3 Fotos, Tatort in Feldern |
+| Hamburg | Serviceportal (IntelliForm) | – | 24 Tatvorwürfe + „keiner“ mit Sachverhalt, max. 3 Fotos, eigener Ablauf in `docker/portal/hamburg.mjs` |
 
 ### Frankfurt (ekom21)
 
 Frankfurt nimmt Anzeigen seit 10/2026 nur noch über das Online-Formular
 `portal-civ.ekom21.de` an. Tatbestände, die das Portal nicht anbietet, sind
-bewusst nicht versendbar (kein Ausweichen auf Mail). Das Portal nimmt nur Taten
-**vor dem heutigen Tag** an – Anzeigen von heute erst ab morgen.
-Ablauf unter `/versand` (nur Admins, zwei Läufe parallel):
+bewusst nicht versendbar (kein Ausweichen auf Mail). Taten von heute gehen
+(Trockenlauf 14.10.2026), die Grenze ist die 2-Monats-Frist.
+Ablauf unter `/versand` (nur Admins, immer nur ein Lauf gleichzeitig –
+`MAX_ACTIVE` in `docker/portal/server.mjs`):
 
 1. „▶ Senden" sperrt die Anzeige (`versand_status='vorbereitung'`,
    `versand_ergebnis` = `{"portal":{"runId":…}}`) und startet im Container
@@ -133,7 +141,7 @@ Keine Tests gegen die laufende Dev-/Produktionsdatenbank ausführen.
 
 ## Versand-Takt
 
-Der Portal-Versand (ekom21-Formulare, `portal.start`) startet höchstens **eine
+Der Portal-Versand (alle Portale, `portal.start`) startet höchstens **eine
 Anzeige pro Minute** (`services/versandTakt.ts`, Tabelle `versand_takt`).
 Der Mail-Versand (`report.dispatch`) ist nicht getaktet. Wartende Jobs stehen mit
 „Versand-Takt: nächster Versand frühestens in … min" in `jobs.error` und laufen
@@ -144,4 +152,5 @@ Neustarts eines verlorenen Portal-Laufs sind ausgenommen.
 Vor jedem Lauf prüft der Portal-Dienst, ob das Online-Portal der Stadt antwortet
 (Startseite, 15 s). Antwortet es nicht, startet kein Lauf (HTTP 503): der Job
 versucht es nach 60 s erneut, „nacheinander senden" ebenso.
-Abstand per `VERSAND_ABSTAND_SEK` (Default 60) änderbar.
+Der Abstand wird auf `/versand` eingestellt (`versand_takt.abstand_sek`,
+Migration 0046); ohne Eintrag gilt 60 s.

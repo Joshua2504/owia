@@ -1,15 +1,16 @@
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 
-// Portal-Versand drosseln: höchstens ein Portal-Start ('portal.start', ekom21-
-// Formulare) je VERSAND_ABSTAND, damit die Portale nicht in kurzer Zeit viele
+// Portal-Versand drosseln: höchstens ein Portal-Start ('portal.start', alle
+// Portale) je VERSAND_ABSTAND, damit die Portale nicht in kurzer Zeit viele
 // Anzeigen auf einmal bekommen. Der Mail-Versand ist nicht getaktet.
 // Manuelle Starts auf /versand zählen mit, werden aber nicht aufgehalten –
 // außer beim „nacheinander senden" (takt: true, routes/portal.ts).
 // Tabelle: migrations/0044_versand_takt.sql.
 
 // Abstand ist auf /versand einstellbar (versand_takt.abstand_sek, Migration
-// 0046); ohne Eintrag gilt VERSAND_ABSTAND_SEK.
+// 0046); ohne Eintrag gilt VERSAND_ABSTAND_SEK (Env nur wirksam, wenn sie in
+// docker-compose.yml unter app.environment ergänzt wird – Default 60 s).
 export const VERSAND_ABSTAND_SEK = Number(process.env.VERSAND_ABSTAND_SEK || 60)
 export const ABSTAND_MIN_SEK = 0
 export const ABSTAND_MAX_SEK = 24 * 3600

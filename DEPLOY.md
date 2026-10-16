@@ -4,12 +4,27 @@ Entwickelt und deployt wird direkt auf dem Server: Die Dev-Arbeitskopie liegt in
 `/root/owia/owia-codebase` (eigener Compose-Stack, erreichbar
 über `dev.<domain>` / `dev-mail.<domain>` am Prod-Caddy, Basic Auth: Benutzer
 `dev`, Passwort in `/root/.owia-dev-basicauth`). Deploy nach Prod
-(`/root/owia/owia`) per **`./deploy.sh`** in der Arbeitskopie: rsync + 
-`docker compose up -d --build --force-recreate --remove-orphans` + Health-Check.
-`data/` und `.env` in Prod werden nie überschrieben. Der frühere
-GitHub-Actions-Auto-Deploy bei Push ist deaktiviert (nur noch manuell per
-`workflow_dispatch` als Fallback); nach GitHub gepusht wird trotzdem — als
-Backup und Referenzstand.
+(`/root/owia/owia`) per **`./deploy.sh`** in der Arbeitskopie:
+
+1. `npm run check` (Typecheck, Syntax, Lint, Unit-Tests; `SKIP_CHECK=1` überspringt).
+2. Überträgt den **committeten Stand** (`git archive HEAD`, nie den Working
+   Tree) per `rsync --checksum --delete` und schreibt die Commit-ID nach
+   `REVISION`. `data/`, `.env` und `.env.*` (Backups) im Ziel bleiben unberührt.
+3. `chown 1000:1000` für `data/pdfs` + `data/uploads`, Netz `owia-proxy` anlegen.
+4. `docker compose up -d --build --force-recreate --remove-orphans` – den
+   Dienst `portal` aber **nicht**, solange dort ein Versand läuft (`GET /busy`).
+   Images werden nur mit `PULL=1` neu gezogen (alle Tags sind gepinnt).
+5. Health-Check auf `127.0.0.1:3000/health`.
+
+Kleiner Weg ohne Rebuild (nur `src/`, `public/`, `resources/`, `migrations/`
+geändert): `git archive HEAD | tar -x -C <tmp>`, von dort `rsync -a --checksum`
+nach Prod, dann `docker compose restart app` – Migrationen laufen beim Boot.
+Ein Voll-Rebuild (Änderungen an `package*.json`, `docker/`, Compose) dauert
+über 7 Minuten; als Hintergrundprozess starten.
+
+Der frühere GitHub-Actions-Auto-Deploy bei Push ist deaktiviert
+(`deploy.yml`, nur noch manuell per `workflow_dispatch`); nach GitHub gepusht
+wird trotzdem — als Backup und Referenzstand, die CI prüft jeden Push.
 
 ## Prod-`.env` — Pflichtwerte (vor dem ersten Go-Live prüfen!)
 
@@ -33,7 +48,7 @@ MAIL_USER= / MAIL_PASS=
 MAIL_FROM=owia@treudler.net    # Absender = Antwort-Postfach
 
 IMAP_HOST= / IMAP_USER=owia@treudler.net / IMAP_PASS=   # leer = keine Amts-Antworten in der App
-REPLY_TRUSTED_DOMAINS=stadt-frankfurt.de
+# REPLY_TRUSTED_DOMAINS nicht setzen: Default = alle freigeschalteten Städte
 
 ADMIN_EMAILS=<admin@...>       # leer = NIEMAND kann Anzeigen freigeben!
 ```
@@ -41,9 +56,10 @@ ADMIN_EMAILS=<admin@...>       # leer = NIEMAND kann Anzeigen freigeben!
 Die Amts-Empfänger kommen aus `resources/districts.csv` über
 `src/services/districts.ts`; `MAIL_TO_FRANKFURT` wird vom aktuellen Code nicht
 ausgewertet. Empfänger für jede freigeschaltete Stadt vor Versand prüfen.
-`REPLY_TRUSTED_DOMAINS` muss die gewünschten Amts-Domains abdecken, wenn
-Antworten ohne Message-ID-Bezug automatisch per Aktenzeichen zugeordnet werden
-sollen. Der obige Frankfurt-Wert ist nur ein Beispiel.
+`REPLY_TRUSTED_DOMAINS` (leer = Default aller freigeschalteten Städte in
+`services/mailInbox.ts`) muss die Amts-Domains abdecken, wenn Antworten ohne
+Message-ID-Bezug automatisch per Aktenzeichen zugeordnet werden sollen – ein
+gesetzter Wert ersetzt die Liste.
 Zusätzlich muss der eigene Mailserver die Mail positiv authentifiziert haben:
 Ausgewertet wird nur der OBERSTE `Authentication-Results`-Header, und nur wenn
 er die authserv-id `MAIL_AUTHSERV_ID` trägt (leer = `IMAP_HOST`; Prod/Mailcow:
@@ -53,11 +69,7 @@ Admin (`services/mailInbox.ts`, `senderAuthenticated`).
 
 ## Einmalig auf dem Server einrichten
 
-1. **Backups**: Der Nutzer hat am 06.10.2026 bestätigt, dass die gesamte VM
-   regelmäßig gesichert wird. Ein Restore wurde durch Codex nicht getestet. Wichtig: `data/mysql`,
-   `data/uploads` und `data/pdfs` müssen abgedeckt sein — für einen konsistenten
-   DB-Stand idealerweise per `mariadb-dump` statt Datei-Kopie des laufenden
-   `data/mysql`.
+1. **Backups**: siehe [Betriebsentscheidungen](#betriebsentscheidungen).
 2. **Firewall**: nur 80/443 öffentlich; 3000/8025 sind mit den Bindings oben
    ohnehin nur noch lokal erreichbar.
 3. **Shared-Proxy-Netz**: `docker network create owia-proxy` (macht `deploy.sh`
@@ -81,10 +93,12 @@ Admin (`services/mailInbox.ts`, `senderAuthenticated`).
 3. Login per Magic-Link funktioniert (Mail kommt an!)
 4. Eine Test-Anzeige einreichen → Admin-Mail kommt, unter `/admin/anzeigen` sichtbar
 5. Freigabe ausschließlich mit kontrolliertem Testempfänger bzw. in Dev/Mailpit
-   prüfen; keinen Test an ein echtes Ordnungsamt schicken. Frankfurt läuft
-   über `/versand` (Portal): dort nur bis zur Zusammenfassung testen und
-   abbrechen. Bad Soden-Salmünster erhält nur Beweisfotos (ohne Karte).
-6. `docker compose ps portal` → healthy (Browser-Container für das Frankfurter Portal).
+   prüfen; keinen Test an ein echtes Ordnungsamt schicken. Portal-Städte
+   (Frankfurt, Wiesbaden, Hanau, Mainz, Hamburg) laufen über `/versand`: dort
+   nur bis zur Zusammenfassung testen und abbrechen. Bad Soden-Salmünster
+   erhält nur Beweisfotos (ohne Karte, Anschrift im Mailtext).
+6. `docker compose ps portal` → healthy (Browser-Container für alle Portal-Städte).
+7. `cat REVISION` im Prod-Verzeichnis = erwarteter Commit.
 
 `/health` prüft App und DB-Verbindung, aber weder SMTP/IMAP noch Geocoding,
 Karten oder die fachliche Richtigkeit eines Versands. Der manuelle
@@ -93,43 +107,25 @@ GitHub-Actions-Fallback enthält derzeit keinen entsprechenden Healthcheck.
 ## Bewusst offene Punkte (nachrangig)
 
 - Admin kann Anzeigen nur freigeben/ablehnen, nicht selbst korrigieren
-- jpeg-Dekodierung läuft synchron im Node-Prozess (sehr große Bilder blockieren kurz)
 - Migrationen laufen ohne Transaktion; Fehler beim Boot → Container-Restart-Loop
   (bewusst laut); vor Migrations-Deploys Backup prüfen
 - Verwaiste offene Foto-Import-Batches werden nicht automatisch aufgeräumt
-- Dockerfile läuft als root und installiert devDependencies mit
+- Das App-Image installiert devDependencies mit (tsx wird zur Laufzeit gebraucht)
+- Code kommt per Bind-Mount, nicht im Image – es gibt kein unveränderliches
+  Release-Artefakt; Rollback = älteren Commit deployen (`git checkout <rev>` in
+  einem Worktree, dort `./deploy.sh`). Vor einem Rollback hinter Migration 0032
+  offene Versandsperren prüfen ([docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md)).
 
+## Betriebsentscheidungen
 
-## Vor Deployment der Fehlerbehebung vom 06.10.2026
-
-- `npm run check` und `npm test` ausführen; Tests verwenden ihre eigene Compose-Datei.
-- Migration `0032_report_dispatch.sql` ist additiv (zwei neue Spalten in `reports`).
-  Sie wurde am 06.10.2026 auch in Produktion erfolgreich angewandt.
-- Datenbanksicherung und Sicherung der zugehörigen Upload-/PDF-Dateien verifizieren.
-  Ein tatsächlicher Restore wurde in dieser Aufgabe nicht durchgeführt.
-- Produktionskonfiguration benötigt `MAIL_DRIVER=smtp`, `MAIL_HOST`, `MAIL_FROM`.
-- Änderungen committen und erst im Rahmen eines Deployment-Auftrags nach Prod übernehmen.
-- Bei einem späteren Code-Rollback dürfen gesperrte Versandvorgänge nicht durch alten
-  Code bearbeitet werden: der alte Code kennt `versand_status` nicht.
-
-Zustände und Wiederaufnahme: [docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md).
-
-## Härtung vom 08.10.2026 – was beim nächsten Deploy zu beachten ist
-
-- **Voll-Rebuild nötig** (`docker compose up -d --build`, >7 min, als
-  Hintergrund-Task): `package.json` (Fastify 5, Plugins, nodemailer 10 –
-  `npm audit`: 0 Lücken), `docker/node/Dockerfile` (läuft als `node`),
-  `docker/portal/server.mjs` (idempotente Lauf-IDs), `docker-compose.yml`.
-- **Rechte:** `chown -R 1000:1000 data/pdfs data/uploads` im Deploy-Ziel –
-  `deploy.sh` macht das jetzt selbst. Ohne chown meldet der Start
-  „Datenverzeichnis nicht beschreibbar“ und Uploads/PDFs scheitern.
-- **Env:** Der App-Container bekommt nur noch die in `docker-compose.yml`
-  gelisteten Variablen (kein `env_file`). Alle bisherigen Prod-Werte sind
-  abgedeckt; `DB_ROOT_PASSWORD`/`ACME_EMAIL` sieht die App nicht mehr.
-  `REPLY_TRUSTED_DOMAINS` hat jetzt alle fünf Städte als Default.
-- **Speichergrenzen:** app 2 GB, db 1,5 GB, photon 1,5 GB
-  (alpr 2 GB, portal 1,5 GB wie bisher). Summe liegt unter den 8 GB des Hosts.
-- **Verhalten:** Abmelden ist POST; Magic-Link zeigt erst eine
-  Bestätigungsseite; Cross-Site-POSTs werden mit 403 abgewiesen; CSP ohne
-  `unsafe-inline` für Scripts; öffentliche Karten-Koordinaten auf 3
-  Nachkommastellen gerundet; Sticker-Scans zählen keine Bots/Link-Vorschauen.
+- **Backups:** Laut Nutzer (06.10.2026) wird die gesamte VM regelmäßig
+  gesichert; ein Restore wurde nicht getestet. `data/mysql`, `data/uploads`
+  und `data/pdfs` müssen abgedeckt sein (konsistent idealerweise per `mariadb-dump`).
+- **Aufbewahrung:** Nach Kontoschließung bleiben Anzeigen, Originalfotos und
+  Importdaten erhalten (keine Volllöschung ohne neuen Auftrag).
+- **Speichergrenzen** (Host 8 GB): app 2 GB, db 1,5 GB, photon 1,5 GB, alpr 2 GB,
+  portal 1,5 GB (`mem_limit` in `docker-compose.yml`).
+- **Env:** Der App-Container bekommt nur die in `docker-compose.yml` unter
+  `environment:` gelisteten Variablen (kein `env_file`). Änderungen an der
+  Prod-`.env` brauchen `docker compose up -d --no-build app` (ein `restart`
+  liest die `.env` nicht neu).

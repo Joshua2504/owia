@@ -25,21 +25,30 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
   erfassen.
 - **Automatische Kennzeichenerkennung** (ALPR, YOLOv9 + fast-plate-ocr über ONNX) – befüllt
   das Kennzeichen-Feld aus dem Beweisfoto vor. Läuft lokal, die Fotos verlassen
-  den Host nie.
+  den Host nie. Im selben Container: **Fahrzeug-Erkennung** (Marke/Farbe/Modell
+  per SigLIP2) und Erkennung fremder Kennzeichen/Gesichter.
+- **Datenschutz-Prüfung** – Fotos mit erkannten Dritten blockieren Einreichen und
+  Versand, bis sie im Foto-Dialog geschwärzt oder bestätigt sind.
 - **EXIF-/GPS-Auswertung** – Aufnahmezeitpunkt und Position aus den Fotos.
 - **Foto-Import in Serie** – viele Fotos auf einmal hochladen und gruppiert zu
-  mehreren Anzeigen verarbeiten (Bulk-Intake).
+  mehreren Anzeigen verarbeiten (nach Ort/Zeit, dann je Fahrzeug nach Kennzeichen).
+- **Kamera-Modus & PWA** – `/kamera` ist der Start der installierbaren Web-App;
+  native Hüllen für Android/iOS unter `mobile/` ([docs/MOBILE-APPS.md](docs/MOBILE-APPS.md)).
 - **Karten** – Adresssuche (Photon), Reverse-Geocoding und Kacheln von
   basemap.de (BKG) über einen eigenen Proxy – der Browser lädt alles same-origin.
 - **Prüf-Workflow** – eingereichte Anzeigen landen bei Admins, die sie freigeben
-  (Versand ans Ordnungsamt) oder ablehnen.
+  (Versand ans Ordnungsamt) oder ablehnen; Portal-Versand live unter `/versand`
+  mit Versand-Takt.
 - **Amts-Antworten in der App** – Antworten des Ordnungsamts werden per IMAP
   abgeholt und der passenden Anzeige zugeordnet (über Aktenzeichen / Message-ID).
-- **PDF-Generierung** – amtliches Frankfurter Formular wird per `pdf-lib` befüllt.
+- **PDF-Generierung** – amtliche AcroForm-Formulare per `pdf-lib` für Städte mit
+  `pdfForm` (derzeit keine aktiv: alle Formular-Städte laufen über ihr Portal).
 - **QR-Sticker** – Nutzer drucken Etikettenbögen mit Einmal-Codes selbst
-  (`/sticker`, max. 20 Bögen, neue erst ohne offene Codes), verknüpfen einen
+  (`/sticker`, Textvorlagen je Verstoß, Kontingent `STICKER_MAX_SEITEN`), verknüpfen einen
   Code per Scanner oder Handy-Kamera mit der Anzeige; `/S/<code>` zeigt nur
   die öffentlichen Angaben (`services/stickers.ts`, `routes/sticker.ts`).
+- **Öffentliche Statistik & Analyse** – `/statistik`, `/analyse` (pseudonymisiert),
+  Übersichtskarte; Ratgeber-/Stadt-Landingpages für SEO.
 - **Newsletter** mit Double-Opt-In und optionaler PLZ (Bedarfsanzeige im Admin).
 - **DSGVO** – Daten-Export und Konto-Löschung/Anonymisierung durch Nutzer selbst;
   nur technisch notwendige Cookies.
@@ -71,7 +80,8 @@ zentrale Registry ergänzen (siehe [Neue Stadt freischalten](#neue-stadt-freisch
 - **mail** – Mailpit (Dev-Mailserver mit Web-UI auf Port 8025)
 - **photon** – OSM-Geocoder für die Adresssuche (lädt beim ersten Start den
   Deutschland-Index, mehrere GB)
-- **alpr** – Kennzeichenerkennung (Produktion automatisch, Dev opt-in)
+- **alpr** – Kennzeichen-, Fahrzeug- und Dritten-Erkennung (Python, Produktion automatisch, Dev opt-in)
+- **portal** – Playwright-Browser, füllt die Online-Formulare der Portal-Städte aus
 - **caddy** – Reverse-Proxy mit HTTPS (nur Produktions-Profil)
 
 ---
@@ -83,8 +93,7 @@ Voraussetzung: Docker + Docker Compose.
 Auf diesem Server ist `/root/owia/owia-codebase` die Entwicklungsbasis und
 `/root/owia/owia` das Produktionsziel. Die folgenden Schritte beschreiben eine
 neue Entwicklungsinstallation; vorhandene `.env`-Dateien nicht überschreiben.
-Den geprüften Stand und die nächsten Aufgaben enthält [docs/PROJEKTSTATUS.md](docs/PROJEKTSTATUS.md).
-Codex liest die Arbeitsregeln in [AGENTS.md](AGENTS.md).
+Arbeitsregeln für Coding-Agenten (Claude Code, Codex): [CLAUDE.md](CLAUDE.md).
 
 ```bash
 # 1. Konfiguration anlegen
@@ -167,7 +176,7 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
   dort wird als „noch nicht freigeschaltet" abgewiesen.
 - Städte **mit** `portal` (Frankfurt, Wiesbaden, Hanau, Mainz, Hamburg) werden über das Online-Formular der Stadt
   versendet: der Container `portal` (`docker/portal/`, Playwright) füllt es aus,
-  der Admin sieht unter `/versand` live zu (zwei Läufe parallel), greift bei
+  der Admin sieht unter `/versand` live zu (ein Lauf gleichzeitig), greift bei
   Bedarf per Klick ins Live-Bild ein und sendet ab; nächtlicher Selbsttest. Je Stadt
   ein Adapter (`src/services/portale.ts` → `portalFfm.ts`, `portalWi.ts`,
   `portalMz.ts`, `portalHh.ts`) und ein Formular-Profil im Dienst (`docker/portal/ekom21.mjs`,
@@ -177,7 +186,9 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
   [docs/FRANKFURT-NOTIZEN.md](docs/FRANKFURT-NOTIZEN.md).
 - Städte **ohne** `portal` und **mit** `pdfForm` bekommen das amtliche Formular
   als PDF-Anhang, Städte **ohne** beides eine strukturierte E-Mail mit
-  Beweisfotos + Tatort-Karte.
+  Beweisfotos (+ Tatort-Karte, sofern die `mail`-Regeln der Stadt in
+  `cities.ts` sie nicht ausschließen – z. B. Bad Soden-Salmünster: ohne Karte,
+  Anschrift im Mailtext).
 
 ### Neue Stadt freischalten
 
@@ -210,16 +221,21 @@ Die Go-Live-Checkliste, Pflichtwerte und der Smoke-Test stehen in
 ```
 src/
   server.ts          Einstieg: Fastify-Setup, Sicherheits-Header, Hooks, Routen
-  config/            Städte-Registry, Verstoß-Katalog, Admin-Konfiguration
+  config/            Städte-Registry, Verstoß-Katalog, Ratgeber/Stadtseiten, Admin
   db/                Verbindung, Schema, Migrations-Runner, Session-Store
   middleware/        Authentifizierung, View-Daten
-  routes/            HTTP-Routen (auth, reports, intake, admin, geo, tiles, …)
-  services/          Fachlogik (ALPR, PDF, Mail, Geocoding, Bilder, EXIF, …)
+  routes/            HTTP-Routen (auth, reports/*, intake, admin, portal, …)
+  services/          Fachlogik (Jobs, Versand, Portale, ALPR, Bilder, Mail, …)
+  scripts/           Einmal-Skripte (Backfills, Aufräumen) – `npx tsx src/scripts/…`
   views/             EJS-Templates
 migrations/          Nummerierte SQL-Migrationen
-resources/           districts.csv, PDF-Formular, GeoJSON-Grenzen
-public/              Statische Assets (CSS, JS, selbst gehostete Vendor-Libs)
-docker/              Dockerfiles (node, alpr) und Caddyfile
+resources/           districts.csv, Bußgeldkatalog, GeoJSON-Grenzen
+public/              Statische Assets (CSS, buildloses JS, gevendorte Libs)
+tests/               Regressionstests (node:test, laufen in compose.test.yml)
+scripts/             Test- und Prüf-Skripte (test-integration.sh, check-syntax.cjs)
+docker/              Dienste: node (App), alpr (Python), portal (Playwright), caddy
+mobile/              Capacitor-Hülle für Android/iOS (eigenes package.json, nicht in Prod)
+docs/                Betriebsdoku; abgeschlossene Pläne unter docs/archiv/
 data/                Persistente Volumes (mysql, uploads, pdfs, photon)  – nicht im Repo
 ```
 
@@ -228,8 +244,9 @@ data/                Persistente Volumes (mysql, uploads, pdfs, photon)  – nic
 ## Deployment
 
 Deploy läuft direkt auf dem Server: In der Dev-Arbeitskopie **`./deploy.sh`**
-ausführen — das rsynct den Stand ins Prod-Verzeichnis, führt
-`docker compose up -d --build --force-recreate` aus und macht einen Health-Check.
+ausführen — das überträgt den Stand ins Prod-Verzeichnis, baut/erstellt die
+Container neu (den Portal-Dienst nicht während eines laufenden Versands) und
+macht einen Health-Check.
 `data/` und `.env` in Prod bleiben unberührt. Der GitHub-Actions-Workflow
 ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) ist nur noch
 ein manueller Fallback (`workflow_dispatch`); gepusht wird trotzdem — als
@@ -243,14 +260,13 @@ Healthcheck für Monitoring: `GET /health` → `{"ok":true}`.
 ## Qualitätsprüfungen
 
 ```bash
-npm run check   # TypeScript inkl. Tests, Browser-JS und EJS-Syntax
+npm run check   # TypeScript, Syntax (Browser-JS, Portal, EJS), Biome-Lint, Unit-Tests
 npm test        # Regressionstests mit eigener MariaDB und Mailpit (Docker nötig)
 ```
 
 Die Testumgebung ist flüchtig, verwendet keine vorhandenen Daten oder `.env` und
 hat keinen Internetzugang für Mailversand. Die CI unter
 `.github/workflows/check.yml` führt dieselben Prüfungen aus.
-Die Entwicklungs-App mit DB/Mailpit läuft wieder; Kartendienste/ALPR sind separat zu starten.
 
 Versandfehler und Wiederaufnahme: [docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md).
-Umsetzungsstand: [docs/FEHLERBEHEBUNG-2026-10-06.md](docs/FEHLERBEHEBUNG-2026-10-06.md).
+Abgeschlossene Pläne und Protokolle: [docs/archiv/](docs/archiv/README.md).

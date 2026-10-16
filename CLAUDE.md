@@ -3,8 +3,11 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Projekt-Doku: [README.md](README.md) (Funktionsumfang, Stack, Städte-Registry),
-[DEPLOY.md](DEPLOY.md) (Go-Live-Checkliste, Prod-Pflichtwerte). Hier steht nur,
-was dort nicht steht: Server-Setup, Befehle, Architektur-Zusammenhänge, Konventionen.
+[DEPLOY.md](DEPLOY.md) (Go-Live-Checkliste, Prod-Pflichtwerte),
+[docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md) (Versand, Sperren, Portale).
+Hier steht nur, was dort nicht steht: Server-Setup, Befehle,
+Architektur-Zusammenhänge, Konventionen, Arbeitsregeln. Gilt für alle
+Coding-Agenten ([AGENTS.md](AGENTS.md) verweist hierher).
 
 ## Setup auf diesem Server
 
@@ -27,9 +30,10 @@ Es gibt zwei Instanzen, beide als Docker-Compose-Stacks auf derselben Maschine:
   chown; in Dev einmalig von Hand). Der App-Container bekommt **nicht** die
   ganze `.env`, sondern nur die in `docker-compose.yml` unter `environment:`
   gelisteten Variablen – neue `process.env.X` dort eintragen.
-- **Deploy nach Prod:** `./deploy.sh` (rsync + force-recreate + Health-Check).
-  Vorher committen. `git push` deployt NICHT mehr — GitHub ist nur Backup
-  (Remote-Redirect: Repo heißt dort inzwischen `Joshua2504/owia`).
+- **Deploy nach Prod:** `./deploy.sh` (Details: [DEPLOY.md](DEPLOY.md)).
+  Nur committeten Stand deployen – parallele Sitzungen hinterlassen hier
+  gelegentlich uncommittete Änderungen. `git push` deployt NICHT — GitHub ist
+  nur Backup (Repo heißt dort `Joshua2504/owia`).
 - Der Prod-Caddy proxyt die Dev-Subdomains über das Shared-Netz `owia-proxy`
   per Containernamen (`ffm-owianzeiger-app-1` usw.) — deshalb ist der
   Projektname gepinnt; Caddyfile-Änderungen greifen erst nach Prod-Deploy.
@@ -37,8 +41,12 @@ Es gibt zwei Instanzen, beide als Docker-Compose-Stacks auf derselben Maschine:
 ## Befehle
 
 ```bash
-npx tsc --noEmit                      # Typecheck (kein Build, kein Lint, keine Tests)
-node --check public/js/datei.js       # Syntax-Check für Frontend-JS
+npm run check                         # Typecheck + Syntax (public/js, docker/portal, EJS) + Lint + Unit-Tests
+npm run test:unit                     # nur tests/unit (ohne DB/Docker, ~1 s)
+npm run lint                          # Biome (biome.json; Formatter bewusst aus)
+npm test                              # Regressionstests in Wegwerf-Docker-Umgebung (compose.test.yml)
+node --check public/js/datei.js       # Syntax-Check einzelner Frontend-Dateien
+bash -n deploy.sh                     # nach Änderungen am Deploy-Skript
 docker compose logs app -f --tail 50  # App-Logs (im jeweiligen Verzeichnis)
 docker compose up -d --build          # nach Compose-/Docker-/Dependency-Änderungen
 npx tsx src/scripts/foo.ts            # Einmal-Scripts (Muster: backfill-thumbs.ts)
@@ -98,7 +106,8 @@ in Requests: `registerJob` + `enqueueJob` statt `await`.
 **DB/Migrationen:** `src/db/schema.sql` gilt nur für frische Volumes. Jede
 Schemaänderung ist eine neue Datei `migrations/NNNN_snake_case.sql`
 (fortlaufend; höchste vorhandene Nummer vor jeder Änderung prüfen –
-`ls migrations | tail -1`; Stand 08.10.2026: 0041, nächste freie Nummer 0042), idempotent formulieren
+`ls migrations | tail -1`; der Regressionstest prüft letzte Nummer + Anzahl
+und muss mitgezogen werden), idempotent formulieren
 (`IF [NOT] EXISTS`) — der Runner (`src/db/migrate.ts`) hat KEINE Transaktion,
 ein Fehler beim Boot ist eine bewusste Container-Restart-Schleife. Nichts mehr
 in `src/db/init.ts` ergänzen (Legacy).
@@ -164,16 +173,26 @@ Request. Dateien werden beim Verschieben kopiert → DB → Quelle gelöscht.
   Bilder (erkannte Kennzeichen/Gesichter geschwärzt + 160 px, ohne Analyse
   32 px verpixelt; `services/pixelate.ts`) und Aggregate.
 
-## Geprüfter Projektstand
+## Arbeitsregeln
 
-Die Bestandsaufnahme vom 06.10.2026 steht in [docs/PROJEKTSTATUS.md](docs/PROJEKTSTATUS.md).
-Für Codex dient [AGENTS.md](AGENTS.md) als Einstieg; diese Datei bleibt gemeinsame
-Referenz für Architektur und Konventionen. Betriebsangaben sind Soll-Konfiguration:
-Bei der ersten Bestandsaufnahme lief nur der Produktionsstack. Inzwischen laufen
-Dev-App, DB und Mailpit wieder. Details und offene Punkte:
-[docs/FEHLERBEHEBUNG-2026-10-06.md](docs/FEHLERBEHEBUNG-2026-10-06.md).
-
-Versand erfolgt über `services/reportDispatch.ts`: persistenter Claim vor SMTP,
-unklares Ergebnis bleibt gesperrt, bestätigter Versandabschluss ist ohne neue Mail
-wiederholbar. Anleitung: [docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md).
-Tests: `npm run check` und `npm test` (isolierte Docker-Testumgebung).
+- Vor einer Aufgabe `git status` prüfen; fremde (uncommittete) Änderungen
+  erhalten und nur eigene Hunks committen.
+- `.env`, `data/` und Docker-Volumes gehören zur jeweiligen Umgebung. Keine
+  Produktionsdaten in Tests, keine Geheimnisse, `.env`-Inhalte, Login-Links
+  oder personenbezogenen Nutzdaten in Doku, Chat oder Git.
+- Produktion nie für schreibende Tests, Probeversand oder Backfill-Skripte
+  verwenden – ein App-Start führt Migrationen und Hintergrundjobs aus.
+- Tests: reine Logik ohne DB als Unit-Test in `tests/unit/` (node:test,
+  läuft in `npm run check`); alles mit DB/HTTP in `tests/regressions.test.ts`
+  über `npm test` (isolierte DB + Mailpit ohne Internet), nie gegen
+  Dev-/Prod-Datenbanken. Fachliche Änderungen bekommen gezielte Tests. CI:
+  `.github/workflows/check.yml` (check, test, ruff für `docker/alpr`,
+  App-Image-Build), `docker.yml` (Portal-/ALPR-Image bei Änderungen).
+- Versand: `services/reportDispatch.ts` setzt einen persistenten Claim vor
+  SMTP; unklares Ergebnis bleibt gesperrt (`reports.versand_status`), auch
+  gegen Rücknahme, Ablehnung und Kontoschließung. Neue Statuswechsel müssen
+  diese Sperre respektieren; nie eine Sperre automatisch nach Timeout lösen
+  ([docs/VERSANDBETRIEB.md](docs/VERSANDBETRIEB.md)).
+- Bestätigte Nutzerentscheidungen (06.10.2026): Aufbewahrung nach
+  Kontoschließung bleibt (keine Volllöschung ohne neuen Auftrag); die VM wird
+  regelmäßig gesichert (kein Restore-Test durch Agenten erfolgt).
