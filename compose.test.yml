@@ -2,7 +2,7 @@
 # oder .env-Dateien; das interne Netz hat keinen Internetzugang für Mailversand.
 services:
   db:
-    image: mariadb:11.8.9 # wie docker-compose.yml
+    image: mariadb:12.3.2 # wie docker-compose.yml
     environment:
       MARIADB_ROOT_PASSWORD: test-root-only
       MARIADB_DATABASE: owia_test
