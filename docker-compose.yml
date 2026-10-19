@@ -127,7 +127,7 @@ services:
     logging: *default-logging
 
   mail:
-    image: axllent/mailpit:v1.31.4
+    image: axllent/mailpit:v1.31.6
     ports:
       # Default nur Loopback (UI nicht öffentlich; wird bei MAIL_DRIVER=smtp
       # ohnehin nicht genutzt). Dev/Prod setzen MAILPIT_BIND in der .env.
