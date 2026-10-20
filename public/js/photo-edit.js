@@ -587,6 +587,8 @@
     var wrap = dlg.querySelector('.photo-edit-canvas')
     wrap.addEventListener('wheel', function (e) {
       if (!state || !state.base) return
+      // Kennzeichen-Box im Foto (Verstoß-Liste usw.) scrollt selbst, zoomt nicht.
+      if (e.target.closest && e.target.closest('.pe-kz-box')) return
       e.preventDefault()
       var z = Math.max(1, Math.min(10, zoom.z * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015))))
       if (z === 1) return resetZoom()
