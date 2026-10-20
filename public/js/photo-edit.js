@@ -562,8 +562,8 @@
     attachZoom()
   }
 
-  // ---- Zoom: Mausrad zoomt zum Mauszeiger, mittlere Maustaste (oder Alt +
-  // Ziehen) verschiebt, Doppelklick setzt zurück. Nur CSS-Transform am Canvas –
+  // ---- Zoom: Mausrad zoomt zum Mauszeiger, rechte oder mittlere Maustaste
+  // (oder Alt + Ziehen) verschiebt, Doppelklick setzt zurück. Nur CSS-Transform am Canvas –
   // bildRect() rechnet über getBoundingClientRect, Zeichnen bleibt exakt.
   var zoom = { z: 1, x: 0, y: 0 }
   function applyZoom() {
@@ -590,7 +590,7 @@
     }, { passive: false })
     var pan = null
     wrap.addEventListener('pointerdown', function (e) {
-      if (zoom.z === 1 || !(e.button === 1 || (e.button === 0 && e.altKey))) return
+      if (zoom.z === 1 || !(e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey))) return
       e.preventDefault()
       e.stopPropagation()
       pan = { id: e.pointerId, x: e.clientX - zoom.x, y: e.clientY - zoom.y }
@@ -611,6 +611,11 @@
     wrap.addEventListener('pointerup', stop)
     wrap.addEventListener('pointercancel', stop)
     wrap.addEventListener('auxclick', function (e) { if (e.button === 1) e.preventDefault() })
+    // Kontextmenü käme sonst beim Rechts-Ziehen (Linux/macOS beim Drücken,
+    // Windows beim Loslassen) – im gezoomten Foto daher unterdrücken.
+    wrap.addEventListener('contextmenu', function (e) {
+      if (zoom.z !== 1 && !e.target.closest('input,button,textarea,select')) e.preventDefault()
+    })
     wrap.addEventListener('dblclick', function (e) {
       if (e.target.closest('input,button')) return
       resetZoom()
