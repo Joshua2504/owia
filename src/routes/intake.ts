@@ -15,6 +15,7 @@ import { groupPhotos, IntakePhoto } from '../services/intakeGrouping'
 import { findDuplicateGroups } from '../services/duplicates'
 import { createDraft, DraftLimitError, deleteDraft, reportDir, intakeDir, insertImageRow, imageCount, nextSortOrder } from '../services/drafts'
 import { queuePlateAnalysis, recognizeQueued, storeRecognition, prefillReportPlate, prefillReportFahrzeug } from '../services/plateAnalysis'
+import { queueAutoSchwaerzen } from '../services/dritteSchwaerzen'
 import { alprEnabled, ALPR_MIN_CONFIDENCE, type RecognizeResult } from '../services/alpr'
 import { reverseGeocode } from '../services/geocode'
 import { queueTatortFill } from '../services/tatortFill'
@@ -317,6 +318,7 @@ async function groupIntakeBatch(payload: { batchId: number; userId: number }, lo
           // nichts, solange nachgeholte Analysen laufen – die befüllen selbst).
           await prefillReportPlate(userId, draft.id).catch(() => {})
           await prefillReportFahrzeug(userId, draft.id).catch(() => {})
+          queueAutoSchwaerzen(draft.id)
           // Photon hat oben nicht geantwortet: Adresse im Hintergrund nachholen.
           if (!address?.label) queueTatortFill(draft.id)
         }

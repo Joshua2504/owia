@@ -86,8 +86,8 @@ after(async () => { await pool.end() })
 
 test('Migrationen sind vollständig und wiederholbar', async () => {
   const rows = await query('SELECT filename FROM schema_migrations ORDER BY filename')
-  assert.equal(rows.at(-1)?.filename, '0050_freigabe_token.sql')
-  assert.equal(rows.length, 50)
+  assert.equal(rows.at(-1)?.filename, '0051_auto_schwaerzen.sql')
+  assert.equal(rows.length, 51)
 })
 
 test('Versand-Takt: höchstens ein Versand je VERSAND_ABSTAND_SEK, Freigabe gibt den Platz zurück', async () => {
@@ -1139,6 +1139,56 @@ test('Original wiederherstellen verwirft die bearbeitete Fassung, nur bei Entwü
     const gesperrt = await app.inject({ method: 'POST', url: `/anzeige/${az}/images/${ins.insertId}/original` })
     assert.equal(gesperrt.statusCode, 409)
   } finally { await app.close() }
+})
+
+test('Automatisches Schwärzen: Entwurf wird geschwärzt, „Schwärzung aufheben" stellt das Original her und sperrt weitere', async () => {
+  const fsp = await import('node:fs/promises')
+  const jpeg = (await import('jpeg-js')).default
+  const { reportDir } = await import('../src/services/drafts')
+  const { schwaerzeAnzeige, schwaerzenNachholen } = await import('../src/services/dritteSchwaerzen')
+  const id = await report()
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  await pool.execute("UPDATE reports SET status='entwurf', kennzeichen='F-AB 123', versand_status=NULL WHERE id=?", [id])
+  const dir = reportDir(userId, id)
+  await fsp.mkdir(dir, { recursive: true })
+  await fsp.writeFile(path.join(dir, 'auto.jpg'), jpeg.encode({ data: Buffer.alloc(400 * 300 * 4, 255), width: 400, height: 300 }, 90).data)
+  const analyse = JSON.stringify({ w: 200, h: 150, faces: [], plates: [
+    { text: 'F AB 123', confidence: 0.9, bbox: [10, 100, 60, 120] },
+    { text: 'F XY 999', confidence: 0.9, bbox: [50, 50, 100, 75] },
+  ] })
+  const [ins] = await pool.execute<mysql.ResultSetHeader>(
+    `INSERT INTO report_images (report_id, filename, mimetype, original_filename, original_mimetype, sort_order, analyse_json, analysis_status)
+     VALUES (?, 'auto.jpg', 'image/jpeg', 'auto.jpg', 'image/jpeg', 1, ?, 'done')`, [id, analyse])
+  assert.ok((await schwaerzenNachholen()) >= 1, 'Bestand wird erkannt')
+  assert.equal(await schwaerzeAnzeige(id), 1)
+  let row = (await query('SELECT * FROM report_images WHERE id=?', [ins.insertId]))[0]
+  assert.notEqual(row.filename, 'auto.jpg')
+  assert.equal(row.original_filename, 'auto.jpg')
+  assert.equal(row.auto_geschwaerzt, 1)
+  const out = jpeg.decode(await fsp.readFile(path.join(dir, row.filename)))
+  assert.ok(out.data[(125 * 400 + 150) * 4] < 30, 'fremdes Kennzeichen schwarz')
+  assert.ok(out.data[(220 * 400 + 70) * 4] > 225, 'eigenes Kennzeichen lesbar')
+  // Je Fassung nur einmal – auch wenn die Analyse (hier: ALPR aus) noch Funde hätte.
+  await pool.execute('UPDATE report_images SET analyse_json=? WHERE id=?', [analyse, ins.insertId])
+  assert.equal(await schwaerzeAnzeige(id), 0)
+
+  const app = Fastify()
+  app.addHook('preHandler', async request => {
+    request.session = { userId, userEmail: 'auto@example.invalid' } as typeof request.session
+  })
+  await app.register(reportsRoutes)
+  try {
+    const res = await app.inject({ method: 'POST', url: `/anzeige/${az}/images/${ins.insertId}/original` })
+    assert.equal(res.statusCode, 200, res.body)
+  } finally { await app.close() }
+  row = (await query('SELECT * FROM report_images WHERE id=?', [ins.insertId]))[0]
+  assert.equal(row.filename, 'auto.jpg')
+  assert.equal(row.auto_geschwaerzt, 0)
+  assert.equal(row.auto_schwaerzen_aus, 1)
+  // Nutzer hat aufgehoben: kein erneutes automatisches Schwärzen.
+  await pool.execute('UPDATE report_images SET analyse_json=? WHERE id=?', [analyse, ins.insertId])
+  assert.equal(await schwaerzeAnzeige(id), 0)
+  assert.equal((await query('SELECT filename FROM report_images WHERE id=?', [ins.insertId]))[0].filename, 'auto.jpg')
 })
 
 test('Aufrufe: nur Navigationen, Routen-Muster statt URL, Herkunft ohne Personenbezug', async () => {

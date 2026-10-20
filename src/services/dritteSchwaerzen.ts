@@ -3,6 +3,15 @@
 // übernehmen" im Foto-Dialog (public/js/photo-edit.js). Grundlage ist die
 // gespeicherte Bildanalyse (report_images.analyse_json, services/dritte.ts).
 //
+// Läuft von selbst (Nutzervorgabe 20.10.2026): als Job `fotos.schwaerzen` nach
+// jeder Kennzeichen-Analyse (plateAnalysis.ts, Import, Verschieben) und alle
+// 15 Minuten über alle offenen Anzeigen (server.ts – Bestand, nachträglich
+// eingetragene Kennzeichen). Der Nutzer kann im Foto-Dialog „Schwärzung
+// aufheben" (POST …/original); danach (und nach jeder eigenen Fassung, PUT)
+// gilt report_images.auto_schwaerzen_aus und der Server lässt das Foto in Ruhe.
+// Je Fassung wird höchstens einmal geschwärzt (auto_geschwaerzt) – was die
+// Neu-Analyse danach noch findet, bleibt für den Foto-Dialog.
+//
 // Ohne Sichtprüfung wird bewusst vorsichtig geschwärzt:
 // - Gesichter immer.
 // - Fremde Kennzeichen nur, wenn das angezeigte Kennzeichen auf demselben Foto
@@ -18,11 +27,11 @@ import jpeg from 'jpeg-js'
 import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import type { BildAnalyse } from './alpr'
-import { recognizePlate } from './alpr'
 import { dritteFunde, istAngezeigtesKennzeichen, parseAnalyse, type DritteFund } from './dritte'
 import { prepareImage, writeReplacementImage, removeDerivedFiles } from './images'
 import { processReportImageDerivatives } from './intakeImageProcessing'
-import { plateCropName } from './plateAnalysis'
+import { plateCropName, recognizeQueued } from './plateAnalysis'
+import { enqueueJob, registerJob } from './jobs'
 import { applyOrientation, decode, readOrientation } from './pixelate'
 import { reportDir } from './drafts'
 
@@ -80,6 +89,9 @@ export type FotoZeile = {
   detected_plate: string | null
   analyse_json: unknown
   dritte_ok: number
+  auto_schwaerzen_aus?: number
+  auto_geschwaerzt?: number
+  analysis_status?: string | null
   kennzeichen: string | null
 }
 
@@ -91,7 +103,7 @@ export type SchwaerzErgebnis =
 
 /** Ein Foto automatisch schwärzen (trocken = nur planen, nichts ändern). */
 export async function schwaerzeFoto(img: FotoZeile, opts: { trocken?: boolean } = {}): Promise<SchwaerzErgebnis> {
-  if (img.dritte_ok) return { stand: 'nichts' }
+  if (img.dritte_ok || img.auto_schwaerzen_aus || img.auto_geschwaerzt) return { stand: 'nichts' }
   const plan = schwaerzPlan(img.analyse_json, img.kennzeichen)
   if (!plan.boxen.length) return plan.offen.length ? { stand: 'offen', offen: plan.offen } : { stand: 'nichts' }
   if (opts.trocken) return { stand: 'geschwaerzt', boxen: plan.boxen.length, offen: plan.offen, filename: img.filename }
@@ -108,9 +120,12 @@ export async function schwaerzeFoto(img: FotoZeile, opts: { trocken?: boolean } 
 
   const prepared = await prepareImage(neu, 'geschwaerzt.jpg', 'image/jpeg')
   const filename = await writeReplacementImage(dir, prepared)
-  // Nur ersetzen, wenn das Foto inzwischen nicht anderweitig geändert wurde.
+  // Nur ersetzen, wenn das Foto inzwischen nicht anderweitig geändert, vom
+  // Nutzer übernommen oder freigegeben wurde. Während der Neu-Analyse 'pending':
+  // drittProblem (submit.ts) sperrt das Einreichen so lange.
   const [res] = await pool.execute<mysql.ResultSetHeader>(
-    'UPDATE report_images SET filename=?, mimetype=?, analyse_json=NULL, dritte_ok=0 WHERE id=? AND filename=?',
+    `UPDATE report_images SET filename=?, mimetype=?, analyse_json=NULL, dritte_ok=0, auto_geschwaerzt=1, analysis_status='pending'
+      WHERE id=? AND filename=? AND auto_schwaerzen_aus=0 AND dritte_ok=0`,
     [filename, prepared.mimetype, img.id, img.filename]
   )
   if (!res.affectedRows) {
@@ -127,26 +142,84 @@ export async function schwaerzeFoto(img: FotoZeile, opts: { trocken?: boolean } 
 
   // Analyse für die neue Fassung: weitere (nicht automatisch geschwärzte) Funde
   // bleiben so im Foto-Dialog sichtbar und sperren das Einreichen weiterhin.
+  // Über die serielle ALPR-Kette (plateAnalysis.ts), nicht an ihr vorbei.
   let offen = plan.offen
-  const result = await recognizePlate(path.join(dir, filename), prepared.mimetype)
+  const result = await recognizeQueued(path.join(dir, filename), prepared.mimetype)
   if (result?.analyse) {
-    await pool.execute('UPDATE report_images SET analyse_json=? WHERE id=? AND filename=?', [JSON.stringify(result.analyse), img.id, filename])
+    await pool.execute("UPDATE report_images SET analyse_json=?, analysis_status='done' WHERE id=? AND filename=?", [JSON.stringify(result.analyse), img.id, filename])
     offen = dritteFunde(result.analyse, img.kennzeichen)
+  } else {
+    // Dienst weg: Foto ohne Analyse – drittProblem verlangt dann die Sichtprüfung.
+    const alt = img.analysis_status && img.analysis_status !== 'pending' ? img.analysis_status : 'failed'
+    await pool.execute("UPDATE report_images SET analysis_status=? WHERE id=? AND filename=? AND analysis_status='pending'", [alt, img.id, filename])
   }
   return { stand: 'geschwaerzt', boxen: plan.boxen.length, offen, filename }
 }
 
-/** Fotos offener Anzeigen (Entwurf/eingereicht) mit Analyse, die noch nicht als
- *  unbedenklich bestätigt sind. */
+const FOTO_SPALTEN = `ri.id, ri.report_id, r.user_id, ri.filename, ri.original_filename, ri.mimetype, ri.detected_plate,
+            ri.analyse_json, ri.dritte_ok, ri.auto_schwaerzen_aus, ri.auto_geschwaerzt, ri.analysis_status,
+            r.kennzeichen, r.aktenzeichen`
+/** Offene Anzeige: Entwurf oder eingereicht, aber nicht im (unklaren) Versand. */
+const OFFEN = "r.status IN ('entwurf','eingereicht') AND r.versand_status IS NULL"
+/** Kandidaten: analysiert, nicht freigegeben, nicht vom Nutzer übernommen, diese
+ *  Fassung noch nicht automatisch geschwärzt. */
+const KANDIDAT = `ri.analyse_json IS NOT NULL AND ri.dritte_ok = 0 AND ri.auto_schwaerzen_aus = 0
+        AND ri.auto_geschwaerzt = 0 AND COALESCE(ri.analysis_status, '') <> 'pending'`
+
+/** Fotos offener Anzeigen, die das automatische Schwärzen noch angehen kann. */
 export async function offeneFotos(aktenzeichen?: string): Promise<FotoZeile[]> {
   const [rows] = await pool.execute<mysql.RowDataPacket[]>(
-    `SELECT ri.id, ri.report_id, r.user_id, ri.filename, ri.original_filename, ri.mimetype, ri.detected_plate,
-            ri.analyse_json, ri.dritte_ok, r.kennzeichen, r.aktenzeichen
+    `SELECT ${FOTO_SPALTEN}
        FROM report_images ri JOIN reports r ON r.id = ri.report_id
-      WHERE r.status IN ('entwurf','eingereicht') AND ri.analyse_json IS NOT NULL AND ri.dritte_ok = 0
+      WHERE ${OFFEN} AND ${KANDIDAT}
         ${aktenzeichen ? 'AND r.aktenzeichen = ?' : ''}
       ORDER BY r.id, ri.sort_order, ri.id`,
     aktenzeichen ? [aktenzeichen] : []
   )
   return rows as FotoZeile[]
 }
+
+/** Alle schwärzbaren Fotos einer Anzeige schwärzen. Läuft noch eine Analyse
+ *  dieser Anzeige, wartet es auf sie – deren Ende reiht den Job neu ein. */
+export async function schwaerzeAnzeige(reportId: number): Promise<number> {
+  const [pending] = await pool.execute<mysql.RowDataPacket[]>(
+    "SELECT 1 FROM report_images WHERE report_id=? AND analysis_status='pending' LIMIT 1",
+    [reportId]
+  )
+  if (pending.length) return 0
+  const [rows] = await pool.execute<mysql.RowDataPacket[]>(
+    `SELECT ${FOTO_SPALTEN}
+       FROM report_images ri JOIN reports r ON r.id = ri.report_id
+      WHERE r.id = ? AND ${OFFEN} AND ${KANDIDAT}
+      ORDER BY ri.sort_order, ri.id`,
+    [reportId]
+  )
+  let n = 0
+  for (const f of rows as FotoZeile[]) {
+    const r = await schwaerzeFoto(f)
+    if (r.stand === 'geschwaerzt') n++
+  }
+  return n
+}
+
+/** Automatisches Schwärzen einer Anzeige im Hintergrund anstoßen (nach einer
+ *  Analyse). Ein wartender Job je Anzeige genügt. */
+export function queueAutoSchwaerzen(reportId: number): void {
+  void enqueueJob('fotos.schwaerzen', { reportId }, { key: `schwaerzen:${reportId}` }).catch(() => {})
+}
+
+/** Durchlauf über alle offenen Anzeigen (server.ts, alle 15 min): Bestand und
+ *  Fotos, deren Anzeige erst später ein Kennzeichen bekam. Reiht nur Jobs für
+ *  Anzeigen ein, auf denen es tatsächlich etwas zu schwärzen gibt. */
+export async function schwaerzenNachholen(): Promise<number> {
+  const fotos = await offeneFotos()
+  const ids = new Set<number>()
+  for (const f of fotos) if (schwaerzPlan(f.analyse_json, f.kennzeichen).boxen.length) ids.add(Number(f.report_id))
+  for (const id of ids) queueAutoSchwaerzen(id)
+  return ids.size
+}
+
+registerJob('fotos.schwaerzen', async ({ reportId }, log) => {
+  const n = await schwaerzeAnzeige(Number(reportId))
+  if (n) log.info({ reportId, fotos: n }, 'Daten Dritter automatisch geschwärzt')
+})

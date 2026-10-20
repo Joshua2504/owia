@@ -16,6 +16,7 @@ import { alprEnabled, recognizePlate } from '../../services/alpr'
 import { queuePlateAnalysis, queueAnalyseOnly, plateCropName, bestPlateForReport, prefillReportPlate, bestFahrzeugForReport, prefillReportFahrzeug } from '../../services/plateAnalysis'
 import { photoSha256, findExistingPhoto } from '../../services/photoDedup'
 import { parseKennzeichenBox } from '../../services/dritte'
+import { queueAutoSchwaerzen } from '../../services/dritteSchwaerzen'
 import { MAX_IMAGES, loadReportByAktenzeichen, loadOwnedImage, enqueuePdf } from './shared'
 
 /** Abgeleitete Dateien (Vorschaubild, Versandfassung) im Worker-Thread
@@ -228,7 +229,8 @@ export default async function imageRoutes(app: FastifyInstance) {
     // Dritte-Freigabe, Kennzeichen-Markierung und „geprüft“ gelten nur für die
     // alte Fassung (wie bei „⟲ Original“). Ohne geprueft_at=NULL ließ sich ein
     // bestätigtes Foto nachträglich durch ein beliebiges ungeprüftes ersetzen.
-    // photo-edit.js setzt Box und „geprüft“ nach dem PUT neu.
+    // photo-edit.js setzt Box und „geprüft“ nach dem PUT neu. Die eigene Fassung
+    // gehört dem Nutzer: kein automatisches Schwärzen mehr (auto_schwaerzen_aus).
     // Guard auf die bisherige Fassung (filename) und den Entwurfsstatus: Bei
     // zwei parallelen PUTs (oder Verschieben/Auto-Schwärzen dazwischen) gewinnt
     // genau einer; der Verlierer räumt seine Datei weg, statt eine Fassung zu
@@ -236,7 +238,8 @@ export default async function imageRoutes(app: FastifyInstance) {
     const [upd] = await pool.execute<mysql.ResultSetHeader>(
       `UPDATE report_images ri JOIN reports r ON r.id = ri.report_id
           SET ri.filename=?, ri.mimetype=?, ri.analyse_json=NULL, ri.dritte_ok=0,
-              ri.kennzeichen_box=NULL, ri.kennzeichen_keins=0, ri.geprueft_at=NULL
+              ri.kennzeichen_box=NULL, ri.kennzeichen_keins=0, ri.geprueft_at=NULL,
+              ri.auto_schwaerzen_aus=1
         WHERE ri.id=? AND ri.report_id=? AND ri.filename=? AND r.status='entwurf'`,
       [filename, mimetype, Number(imageId), old.report_id, old.filename]
     )
@@ -289,9 +292,11 @@ export default async function imageRoutes(app: FastifyInstance) {
   // Original wiederherstellen (Foto-Dialog „⟲ Original"): verwirft alle
   // eingebackenen Bearbeitungen – Schwärzungen (auch die automatischen aus
   // services/dritteSchwaerzen.ts), Zuschnitt, Drehen –, damit sich eine falsche
-  // Schwärzung korrigieren lässt. Danach ist das Foto wieder ungeprüft und die
-  // Datenschutz-Analyse frisch: Fremde Funde sperren das Einreichen wie beim
-  // Erst-Upload, bis sie im Dialog geschwärzt oder freigegeben sind.
+  // Schwärzung korrigieren lässt („Schwärzung aufheben"). Danach ist das Foto
+  // wieder ungeprüft und die Datenschutz-Analyse frisch: Fremde Funde sperren
+  // das Einreichen wie beim Erst-Upload, bis sie im Dialog geschwärzt oder
+  // freigegeben sind – automatisch geschwärzt wird dieses Foto nicht mehr
+  // (auto_schwaerzen_aus, ebenso nach jeder eigenen Fassung per PUT).
   app.post('/anzeige/:az/images/:imageId/original', { preHandler: requireAuth }, async (request, reply) => {
     const { az, imageId } = request.params as { az: string; imageId: string }
     const userId = request.session.userId as number
@@ -323,7 +328,8 @@ export default async function imageRoutes(app: FastifyInstance) {
 
     const [res] = await pool.execute<mysql.ResultSetHeader>(
       `UPDATE report_images SET filename=?, mimetype=?, analyse_json=NULL, dritte_ok=0,
-              kennzeichen_box=NULL, kennzeichen_keins=0, geprueft_at=NULL
+              kennzeichen_box=NULL, kennzeichen_keins=0, geprueft_at=NULL,
+              auto_geschwaerzt=0, auto_schwaerzen_aus=1
         WHERE id=? AND filename=?`,
       [filename, mimetype, Number(imageId), old.filename]
     )
@@ -777,6 +783,8 @@ export async function moveImages(
   // der neuen Anzeige nach (runAnalysis) und befüllen danach.
   await prefillReportPlate(userId, targetId).catch(() => {})
   await prefillReportFahrzeug(userId, targetId).catch(() => {})
+  // Ziel hat evtl. ein anderes Kennzeichen – „fremd" neu bewerten.
+  queueAutoSchwaerzen(targetId)
 
   // PDFs im Hintergrund nachziehen: Beide sind Entwürfe, „Speichern" und
   // „Einreichen" erzeugen das PDF ohnehin neu – der Nutzer soll nach dem

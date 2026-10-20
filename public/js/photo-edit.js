@@ -145,6 +145,13 @@
       '<div class="pe-field" data-dritte-row hidden>' +
       '<div class="alert alert-warning py-1 px-2 small mb-0" data-dritte-text></div>' +
       '</div>' +
+      // Vom Server automatisch geschwärzt (services/dritteSchwaerzen.ts) –
+      // „Schwärzung aufheben" = POST …/original, danach schwärzt er nicht mehr.
+      '<div class="pe-field" data-auto-row hidden>' +
+      '<div class="alert alert-info py-1 px-2 small mb-0 d-flex flex-wrap align-items-center gap-2">' +
+      '<span class="flex-grow-1">⬛ Fremde Kennzeichen/Gesichter wurden automatisch geschwärzt.</span>' +
+      '<button type="button" class="btn btn-sm btn-outline-secondary py-0" data-act="auto-aufheben" title="Unbearbeitetes Original wiederherstellen">Schwärzung aufheben</button>' +
+      '</div></div>' +
       // Portal-Städte: die Reihenfolge entscheidet über die Rolle
       // (services/portalFfm.ts photoRoles) – Foto 1 Übersicht, Rest Fahrzeug.
       '<div class="pe-field small text-muted" data-rolle-row hidden><span data-rolle-info></span> ' +
@@ -276,6 +283,7 @@
     dlg.querySelector('[data-act=dunkler]').addEventListener('click', function () { helligkeit(1 / 0.75) })
     dlg.querySelector('[data-act=undo]').addEventListener('click', undo)
     dlg.querySelector('[data-act=original]').addEventListener('click', function () { restoreOriginal() })
+    dlg.querySelector('[data-act=auto-aufheben]').addEventListener('click', function () { restoreOriginal(false, true) })
     dlg.querySelector('[data-act=cancel]').addEventListener('click', cancel)
     dlg.querySelector('[data-act=save]').addEventListener('click', save)
     dlg.querySelector('[data-act=delete]').addEventListener('click', function () { remove() })
@@ -1300,6 +1308,7 @@
   }
   // Datenschutz-Hinweis zum aktuellen Foto.
   function renderDritte(s, info) {
+    dlg.querySelector('[data-auto-row]').hidden = !(info && info.autoGeschwaerzt) || !s || s.plate == null
     var row = dlg.querySelector('[data-dritte-row]')
     var funde = (info && info.dritte) || []
     row.hidden = !funde.length
@@ -2194,11 +2203,14 @@
     b.hidden = state.plate == null || !(state.gespeichert || (info && info.bearbeitet))
     b.disabled = !!state.busy
   }
-  function restoreOriginal(bestaetigt) {
+  function restoreOriginal(bestaetigt, auto) {
     var s = state
     if (!s || s.busy) return
     if (!bestaetigt) {
-      return OWIA.ask('Alle gespeicherten Bearbeitungen dieses Fotos verwerfen – Schwärzungen (auch automatische), Zuschnitt, Drehen – und das unbearbeitete Original wiederherstellen?\n\nDanach bitte neu schwärzen und das Foto erneut bestätigen.', { danger: true, ok: 'Original wiederherstellen' })
+      var frage = auto
+        ? 'Automatische Schwärzung aufheben und das unbearbeitete Original wiederherstellen?\n\nErkannte fremde Kennzeichen danach selbst schwärzen oder ✓ freigeben – automatisch geschwärzt wird dieses Foto nicht mehr.'
+        : 'Alle gespeicherten Bearbeitungen dieses Fotos verwerfen – Schwärzungen (auch automatische), Zuschnitt, Drehen – und das unbearbeitete Original wiederherstellen?\n\nDanach bitte neu schwärzen und das Foto erneut bestätigen.'
+      return OWIA.ask(frage, { danger: !auto, ok: auto ? 'Schwärzung aufheben' : 'Original wiederherstellen' })
         .then(function (ok) { if (ok && state === s) restoreOriginal(true) })
     }
     // Ausstehendes Auto-Speichern verwerfen – es würde die alte Fassung zurückschreiben.

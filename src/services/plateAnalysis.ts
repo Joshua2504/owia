@@ -15,6 +15,7 @@ import mysql from 'mysql2/promise'
 import { pool } from '../db/connection'
 import { alprEnabled, recognizePlate, ALPR_MIN_CONFIDENCE, type RecognizeResult } from './alpr'
 import { reportDir } from './drafts'
+import { queueAutoSchwaerzen } from './dritteSchwaerzen'
 
 /** Dateiname des gespeicherten Kennzeichen-Ausschnitts eines Fotos
  *  (Ablage neben dem Foto, Konvention wie `.thumb.jpg`/`.pixel.jpg`). */
@@ -162,6 +163,9 @@ async function runAnalysis(
     await storeRecognition(userId, reportId, imageId, filename, result)
     await prefillReportPlate(userId, reportId)
     await prefillReportFahrzeug(userId, reportId)
+    // Fremde Kennzeichen/Gesichter schwärzen, sobald alle Fotos analysiert sind
+    // (der Job wartet selbst auf noch laufende Analysen).
+    queueAutoSchwaerzen(reportId)
   } catch (err) {
     logger.error({ err, imageId, reportId }, 'Kennzeichen-Analyse fehlgeschlagen')
     await setStatus(imageId, 'failed')

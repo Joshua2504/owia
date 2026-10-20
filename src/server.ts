@@ -50,6 +50,7 @@ import { MySQLSessionStore } from './db/session-store'
 import { pool } from './db/connection'
 import { purgeTrash, PDF_DIR, UPLOAD_DIR } from './services/drafts'
 import { fillMissingTatorte } from './services/tatortFill'
+import { schwaerzenNachholen } from './services/dritteSchwaerzen'
 import { verstossGesperrt } from './services/portale'
 import { zaehleAufruf } from './services/aufrufe'
 import aufrufeRoutes from './routes/aufrufe'
@@ -319,6 +320,20 @@ async function main() {
   }
   setTimeout(fillTatorte, 30 * 1000)
   setInterval(fillTatorte, 15 * 60 * 1000)
+
+  // Fremde Kennzeichen/Gesichter automatisch schwärzen (services/dritteSchwaerzen.ts):
+  // Bestand offener Anzeigen und Fotos, deren Anzeige erst später ein
+  // Kennzeichen bekam. Neue Analysen reihen den Job selbst ein.
+  const schwaerzen = async () => {
+    try {
+      const n = await schwaerzenNachholen()
+      if (n) app.log.info({ anzeigen: n }, 'Automatisches Schwärzen eingereiht')
+    } catch (err) {
+      app.log.warn({ err }, 'Automatisches Schwärzen fehlgeschlagen')
+    }
+  }
+  setTimeout(schwaerzen, 60 * 1000)
+  setInterval(schwaerzen, 15 * 60 * 1000)
 
   // Hintergrund-Jobs (services/jobs.ts): Import-Gruppierung, PDFs, Mails, Versand.
   await startJobRunner(app.log)
