@@ -13,6 +13,7 @@ import { submitProblems, kennzeichenBestaetigt } from './reports'
 import { fillTatortFromPhotos } from '../services/tatortFill'
 import { bestFahrzeugForReport } from '../services/plateAnalysis'
 import { isEditableDraft } from '../services/drafts'
+import { verstossVorschlaege } from '../services/verstossVorschlag'
 
 // JSON-Endpunkte des Foto-Prüfdialogs (public/js/photo-edit.js). Der frühere
 // Prüf-Modus /pruefen (eine Karte pro Entwurf) ist entfernt – alte Links und
@@ -113,6 +114,8 @@ export default async function reviewRoutes(app: FastifyInstance) {
       az,
       bereit: !!report.bereit_at,
       modellVorschlag: fz?.modell?.wert ?? null,
+      // Verstoß-Vorschlag nach Ort (verstoss-select.js, Gruppe oben in der Auswahl).
+      verstossVorschlag: await verstossVorschlaege(userId, report.tatort_lat, report.tatort_lon, report.id),
       canSubmit: problems.length === 0,
       problems,
       fields: {

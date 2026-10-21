@@ -10,6 +10,11 @@
 //     <script type="application/json" data-verstoss-data>{ haeufig:[], alle:[] }</script>
 //   </div>
 //
+// Vorschlag nach Ort (services/verstossVorschlag.ts): data.vorschlag bzw.
+// später verstossSelect.setVorschlag(root, liste) – je Feld, weil jede Anzeige
+// einen anderen Tatort hat. Einträge { text, anzahl } stehen als eigene Gruppe
+// ganz oben (Enter ohne Auswahl nimmt also den besten), nie vorbefüllt.
+//
 // Gesperrte Tatbestände: data.gesperrt = { <cityId>: { name, idx: [Index in alle] } }
 // listet je Stadt mit Online-Portal, was dieses Portal nicht kennt (Frankfurt,
 // services/portale.ts). Welche Stadt gilt, steht in data-city am Wurzelelement
@@ -92,7 +97,7 @@
       for (const [city, g] of Object.entries(data.gesperrt || {})) {
         gesperrt[city] = { name: g.name, set: new Set((g.idx || []).map((i) => alle[i]).filter(Boolean)) }
       }
-      p = { alle, haeufig, haeufigSet: new Set(haeufig), normAlle: alle.map((t) => ({ text: t, n: norm(t) })), gesperrt }
+      p = { alle, alleSet: new Set(alle), haeufig, haeufigSet: new Set(haeufig), normAlle: alle.map((t) => ({ text: t, n: norm(t) })), gesperrt }
       prepared.set(data, p)
     }
     return p
@@ -114,7 +119,15 @@
       }
     }
     root.dataset.verstossReady = '1'
-    const { alle, haeufig, haeufigSet, normAlle, gesperrt } = prepare(data)
+    const { alle, alleSet, haeufig, haeufigSet, normAlle, gesperrt } = prepare(data)
+    if (!root.verstossVorschlag && Array.isArray(data.vorschlag)) root.verstossVorschlag = data.vorschlag
+
+    // Ortsvorschlag dieses Felds (nur Katalogeinträge); anzahl je Text für den Hinweis.
+    function vorschlag() {
+      const v = (Array.isArray(root.verstossVorschlag) ? root.verstossVorschlag : []).filter((x) => x && alleSet.has(x.text))
+      return { liste: v.map((x) => x.text), anzahl: new Map(v.map((x) => [x.text, x.anzahl])) }
+    }
+    let vAnzahl = new Map()
 
     // Sperrliste der aktuell gewählten Stadt (null = alles wählbar).
     function sperre() {
@@ -232,6 +245,15 @@
       btn.className = 'list-group-item list-group-item-action small py-2' + (isSel ? ' active' : '')
       btn.dataset.text = text
       fillItem(btn, text)
+      const n = vAnzahl.get(text)
+      if (n) {
+        const b = document.createElement('span')
+        b.className = 'badge rounded-pill bg-body-tertiary text-body-secondary border ms-1 fw-normal'
+        b.textContent = 'hier ' + n + '×'
+        b.title = 'So oft haben Sie an diesem Ort (bis 100 m) schon diesen Verstoß angezeigt.'
+        // Bei Einträgen mit Verkehrszeichen (Flex-Zeile) hinter den Text, nicht als eigene Spalte.
+        ;(btn.classList.contains('verstoss-item') ? btn.lastElementChild : btn).appendChild(b)
+      }
       btn.addEventListener('mousedown', (e) => {
         e.preventDefault() // vor dem blur wählen
         choose(text)
@@ -253,20 +275,29 @@
       active = -1
       browseRest = []
       const q = effectiveQuery()
+      const vs = vorschlag()
+      vAnzahl = vs.anzahl
+      const vSet = new Set(vs.liste)
+      const ohneV = (list) => list.filter((t) => !vSet.has(t))
 
       if (!q) {
         // Ohne Suche: Häufige oben als Schnellzugriff, darunter der komplette
         // Katalog zum Durchscrollen. Große Liste inkrementell rendern (erste
         // Charge jetzt, Rest beim Scrollen) – sonst ruckelt das Öffnen kurz.
-        const h = teile(haeufig)
+        const v = teile(vs.liste)
+        if (v.ok.length) {
+          addHeader('Vorschlag für diesen Ort')
+          v.ok.forEach((t) => addItem(t))
+        }
+        const h = teile(ohneV(haeufig))
         if (h.ok.length) {
           addHeader('Häufig verwendet')
-          h.ok.forEach(addItem)
+          h.ok.forEach((t) => addItem(t))
         }
         addHeader('Alle Tatbestände')
-        const rest = teile(alle.filter((t) => !haeufigSet.has(t)))
+        const rest = teile(ohneV(alle.filter((t) => !haeufigSet.has(t))))
         browseRest = rest.ok.slice()
-        const nein = h.nein.concat(rest.nein)
+        const nein = v.nein.concat(h.nein, rest.nein)
         if (nein.length) browseRest.push({ header: gesperrtHeader() }, ...nein)
         appendBrowseBatch()
       } else {
@@ -274,12 +305,13 @@
         const matches = (n) => tokens.every((t) => n.indexOf(t) !== -1)
         // Auch beim Suchen stehen die häufig genutzten Treffer oben (in ihrer
         // Häufigkeits-Reihenfolge), darunter die übrigen aus dem Katalog.
-        const top0 = teile(haeufig.filter((t) => matches(norm(t))))
+        const v0 = teile(vs.liste.filter((t) => matches(norm(t))))
+        const top0 = teile(ohneV(haeufig).filter((t) => matches(norm(t))))
         const top = top0.ok
         const hits0 = []
         let capped = false
         for (const item of normAlle) {
-          if (haeufigSet.has(item.text) || !matches(item.n)) continue
+          if (haeufigSet.has(item.text) || vSet.has(item.text) || !matches(item.n)) continue
           if (hits0.length >= MAX_RESULTS) {
             capped = true
             break
@@ -288,19 +320,23 @@
         }
         const t1 = teile(hits0)
         const hits = t1.ok
-        const nein = top0.nein.concat(t1.nein)
-        if (!top.length && !hits.length && !nein.length) {
+        const nein = v0.nein.concat(top0.nein, t1.nein)
+        if (!v0.ok.length && !top.length && !hits.length && !nein.length) {
           const none = document.createElement('div')
           none.className = 'list-group-item disabled py-2 small text-muted'
           none.textContent = 'Keine Treffer für „' + q + '"'
           menu.appendChild(none)
         } else {
+          if (v0.ok.length) {
+            addHeader('Vorschlag für diesen Ort')
+            v0.ok.forEach((t) => addItem(t))
+          }
           if (top.length) {
             addHeader('Häufig verwendet')
             top.forEach(addItem)
           }
           if (hits.length) {
-            addHeader((top.length ? 'Weitere Treffer' : 'Treffer') + (capped ? ' (Top ' + MAX_RESULTS + ' – bitte eingrenzen)' : ''))
+            addHeader((top.length || v0.ok.length ? 'Weitere Treffer' : 'Treffer') + (capped ? ' (Top ' + MAX_RESULTS + ' – bitte eingrenzen)' : ''))
             hits.forEach(addItem)
           }
           if (nein.length) {
@@ -387,7 +423,18 @@
       if (menu.style.display !== 'none') render()
     }).observe(root, { attributes: true, attributeFilter: ['data-city'] })
     root.verstossMark = mark
+    // Neuer Ortsvorschlag bei offenem Menü sofort zeigen.
+    root.verstossRender = () => {
+      if (menu.style.display !== 'none') render()
+    }
     mark()
+  }
+
+  /** Ortsvorschlag eines Felds setzen (auch vor init: wird dann übernommen). */
+  function setVorschlag(root, liste) {
+    if (!root) return
+    root.verstossVorschlag = Array.isArray(liste) ? liste : []
+    if (root.verstossRender) root.verstossRender()
   }
 
   /** Nach programmatischem Setzen des Werts (hidden.value = …) neu prüfen. */
@@ -400,5 +447,5 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAll)
   else initAll()
-  window.verstossSelect = { init: initOne, check: check }
+  window.verstossSelect = { init: initOne, check: check, setVorschlag: setVorschlag }
 })()

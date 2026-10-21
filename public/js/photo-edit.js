@@ -1265,6 +1265,12 @@
         renderVerstossExtras(s)
         renderRolle(s)
         kzInit(s)
+        // Ortsvorschlag für beide Verstoß-Felder (Seitenleiste + Kennzeichen-Box);
+        // vor dem lazy init gesetzt, übernimmt verstoss-select.js ihn beim Öffnen.
+        if (window.verstossSelect) {
+          window.verstossSelect.setVorschlag(verstossHidden().parentNode, d.verstossVorschlag)
+          if (kzVerstossEl) window.verstossSelect.setVorschlag(kzVerstossEl, d.verstossVorschlag)
+        }
         syncMap(s)
         syncOriginal()
         updateRun()
@@ -1752,6 +1758,8 @@
     var vInput = kzVerstossEl.querySelector('[data-verstoss-input]')
     vInput.addEventListener('focus', function () {
       kzVerstossEl.dataset.city = verstossHidden().parentNode.dataset.city || ''
+      // Die Box entsteht evtl. erst nach loadStatus – Ortsvorschlag hier nachziehen.
+      if (window.verstossSelect && state && state.report) window.verstossSelect.setVorschlag(kzVerstossEl, state.report.verstossVorschlag)
       if (kzVerstossEl.dataset.verstossReady || !window.verstossSelect) return fitVerstossMenu()
       loadCatalog().then(function (data) {
         if (kzVerstossEl.dataset.verstossReady) return

@@ -22,6 +22,7 @@ import { createDraft, isEditableDraft, trashDrafts } from '../../services/drafts
 import { replyAttachmentPath, sendReplyAttachment } from '../../services/mailInbox'
 import { MailService } from '../../services/mail'
 import { verstossGesperrt } from '../../services/portale'
+import { verstossVorschlaege } from '../../services/verstossVorschlag'
 import { loadReportByAktenzeichen, loadQueueContext, FORMULAR_HILFEN, VERSTOSS_SPERREN, strukturFelder, persistFields, normalizePlate, isComplete, mostUsedVerstoesse, isProfileComplete, enqueuePdf, istDatum, istUhrzeit, stripImage } from './shared'
 import { viewHelpers } from '../../views/helpers'
 import { loadUser } from '../../services/users'
@@ -117,6 +118,7 @@ export default async function editorRoutes(app: FastifyInstance) {
       embed: (request.query as { embed?: string }).embed === '1',
       verstossAlle: VERSTOSS_ARTEN,
       verstossHaeufig: await mostUsedVerstoesse(),
+      verstossVorschlag: await verstossVorschlaege(userId, report.tatort_lat, report.tatort_lon, report.id),
       verstossSperren: VERSTOSS_SPERREN,
       formularHilfen: FORMULAR_HILFEN,
       fahrzeugTypen: FAHRZEUG_TYPEN,
@@ -419,6 +421,21 @@ export default async function editorRoutes(app: FastifyInstance) {
     await pool.execute('UPDATE reports SET bereit_at = ? WHERE id = ?', [bereit ? new Date() : null, report.id])
     if (wantsJson(request)) return { ok: true, bereit }
     return reply.redirect('/anzeigen')
+  })
+
+  // Verstoß-Vorschlag nach Ort (services/verstossVorschlag.ts) neu holen, wenn
+  // im Editor der Tatort wechselt. lat/lon aus der Anfrage (noch ungespeicherte
+  // Karte), sonst der gespeicherte Tatort; gesucht wird nur in eigenen Anzeigen.
+  app.get('/anzeige/:az/verstoss-vorschlag', { preHandler: requireAuth }, async (request, reply) => {
+    const { az } = request.params as { az: string }
+    const userId = request.session.userId as number
+    const report = await loadReportByAktenzeichen(az, userId)
+    if (!report) return reply.status(404).send({ error: 'not found' })
+    const q = request.query as { lat?: string; lon?: string }
+    const hatQuery = q.lat !== undefined && q.lon !== undefined && q.lat !== '' && q.lon !== ''
+    const lat = hatQuery ? q.lat : report.tatort_lat
+    const lon = hatQuery ? q.lon : report.tatort_lon
+    return { vorschlag: await verstossVorschlaege(userId, lat, lon, report.id) }
   })
 
   // Einzelne Zeile der Anzeigen-Tabelle als HTML-Fragment (ohne Layout, daher

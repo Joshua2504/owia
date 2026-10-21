@@ -1554,6 +1554,26 @@
     tick()
   }
 
+  // Verstoß-Vorschlag nach Ort: kommt beim Laden eingebettet mit
+  // (data-verstoss-data), hier nur neu holen, wenn sich der Tatort ändert.
+  function initVerstossVorschlag(form) {
+    const root = document.querySelector('[data-verstoss-select]')
+    const lat = form.elements['tatort_lat']
+    const lon = form.elements['tatort_lon']
+    if (!root || !lat || !lon || !window.verstossSelect) return
+    let zuletzt = lat.value + ',' + lon.value
+    const holen = debounce(async () => {
+      const key = lat.value + ',' + lon.value
+      if (key === zuletzt) return
+      zuletzt = key
+      const d = await OWIA.tryJson(
+        '/anzeige/' + reportId + '/verstoss-vorschlag?lat=' + encodeURIComponent(lat.value) + '&lon=' + encodeURIComponent(lon.value)
+      )
+      if (d && key === zuletzt) window.verstossSelect.setVorschlag(root, d.vorschlag)
+    }, 600)
+    ;[lat, lon].forEach((el) => el.addEventListener('change', holen))
+  }
+
   // ---------------------------------------------------------------------------
   // 4. Autosave der Textfelder
   // ---------------------------------------------------------------------------
@@ -2007,6 +2027,7 @@
     initPlateTouchTracking(form)
     initFahrzeugTouchTracking(form)
     initModellVorschlag(form)
+    initVerstossVorschlag(form)
     initCity()
     // Beim Laden einmal pollen: Ergebnisse können seit dem letzten Besuch fertig
     // sein, oder ein gerade hochgeladenes Bild wird noch analysiert.

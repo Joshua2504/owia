@@ -608,6 +608,34 @@ test('Inline-Bearbeitung ändert nur übergebene Felder, nur Katalog-Verstöße 
   } finally { await app.close() }
 })
 
+test('Verstoß-Vorschlag nach Ort: nur eigene Anzeigen im Umkreis, ohne Papierkorb und ohne die Anzeige selbst', async () => {
+  const gehweg = '112454 – Sie parkten verbotswidrig auf dem Gehweg.'
+  const sperr = '141245 – Sie benutzten die Sperrfläche (Zeichen 298) zum Parken.'
+  const [fremd] = await pool.execute<mysql.ResultSetHeader>("INSERT INTO users(email) VALUES ('vorschlag-fremd@example.invalid')")
+  const setze = async (id: number, lat: number, lon: number, v: string, status = 'versendet') =>
+    pool.execute('UPDATE reports SET tatort_lat=?, tatort_lon=?, verstoss_art=?, status=? WHERE id=?', [lat, lon, v, status, id])
+  const id = await report()
+  await setze(id, 50.11, 8.68, sperr, 'entwurf') // die Anzeige selbst zählt nicht
+  await setze(await report(), 50.11001, 8.68, gehweg) // ~1 m
+  await setze(await report(), 50.1102, 8.68, gehweg) // ~22 m
+  await setze(await report(), 50.1105, 8.68, sperr) // ~56 m
+  await setze(await report(), 50.11, 8.68, sperr, 'papierkorb')
+  await setze(await report(), 50.112, 8.68, sperr) // ~220 m, außerhalb
+  await setze(await report(fremd.insertId), 50.11, 8.68, sperr) // fremder Nutzer
+  const az = (await query('SELECT aktenzeichen FROM reports WHERE id=?', [id]))[0].aktenzeichen
+  const app = Fastify()
+  app.addHook('preHandler', async request => { request.session = { userId } as typeof request.session })
+  await app.register(reportsRoutes)
+  try {
+    const res = await app.inject({ method: 'GET', url: `/anzeige/${az}/verstoss-vorschlag` })
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(res.json().vorschlag, [{ text: gehweg, anzahl: 2 }, { text: sperr, anzahl: 1 }])
+    // Ungespeicherte Karte: Koordinaten aus der Anfrage; weit weg ⇒ leer.
+    const weg = await app.inject({ method: 'GET', url: `/anzeige/${az}/verstoss-vorschlag?lat=50.2&lon=8.7` })
+    assert.deepEqual(weg.json().vorschlag, [])
+  } finally { await app.close() }
+})
+
 test('Einzelne Listenzeile lässt sich nachladen (Helfer wie verjaehrung stehen bereit)', async () => {
   const id = await report()
   await pool.execute("UPDATE reports SET status='entwurf', tattag=CURDATE() WHERE id=?", [id])
