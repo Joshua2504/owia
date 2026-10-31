@@ -330,9 +330,12 @@ async function submitHamburg(run) {
   }
   await sleep(1500)
   text = await page.evaluate(() => (document.querySelector('main') || document.body).innerText || '')
-  const m =
-    text.match(/(?:OD-)?(?:Vorgangs|Eingangs|Antrags|Transaktions|Referenz)-?\s?(?:ID|nummer|kennung|kennzeichen|nr\.?)\s*(?:lautet)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-_./]{3,})/i) ||
-    text.match(/\b(\d{4,}[-/][A-Za-z0-9-/]{3,})\b/)
+  // Nur eine ausdrücklich benannte Nummer zählt. Ein loses „Ziffern-Text"-Muster
+  // traf auf der Abschlussseite den Namen des hochgeladenen Fotos
+  // („834748-uebersicht-1095") – dann lieber die OD-Vorgangsnummer aus dem Amts-PDF.
+  const m = text.match(
+    /(?:OD-)?(?:Vorgangs|Eingangs|Antrags|Transaktions|Referenz)-?\s?(?:ID|nummer|kennung|kennzeichen|nr\.?)\s*(?:lautet)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-_./]{3,})/i,
+  )
   const vorgangsId = (m ? m[1].replace(/[.,;]$/, '') : null) || pdfVorgang
   run.log(vorgangsId ? `Vorgangs-ID: ${vorgangsId}${m ? '' : ' (aus dem Amts-PDF)'}` : 'Keine Vorgangs-ID auf der Abschlussseite erkannt.')
   // Bietet die Abschlussseite ein eigenes PDF (Eingangsbestätigung), ist das der bessere Beleg.
