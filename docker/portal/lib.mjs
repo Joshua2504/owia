@@ -169,6 +169,14 @@ export async function select2(page, label, option) {
     throw new Error(`Auswahl „${option}" bei „${label}" nicht gefunden.`)
   }
   await sleep(400)
+  // Manche Listen (Frankfurter „Marke des Fahrzeuges" bei „Sonstiges") bleiben
+  // nach dem Klick offen; GWT übernimmt die Auswahl erst beim Schließen. Escape
+  // greift dann nicht (Fokus liegt nicht mehr im Suchfeld) – ein Klick auf den
+  // leeren linken Seitenrand schließt die Liste und übernimmt die Auswahl.
+  if (await page.locator('.select2-container--open').count()) {
+    await page.mouse.click(5, 5).catch(() => {})
+    await sleep(800)
+  }
 }
 
 /** Sichtbare Radio-Buttons in DOM-Reihenfolge (Gruppe = name-Attribut). */

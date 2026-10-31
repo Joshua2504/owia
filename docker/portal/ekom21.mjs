@@ -48,8 +48,17 @@ async function fahrzeug(run, page, f) {
     try {
       await select2(page, 'Marke des Fahrzeuges', f.marke)
     } catch {
-      await select2(page, 'Marke des Fahrzeuges', 'Sonstiges').catch(() => {})
-      modell = [f.marke, f.modell].filter(Boolean).join(' ')
+      // Marke fehlt in der Liste (z. B. Mini): „Sonstiges" blendet in Frankfurt/
+      // Hanau das Pflichtfeld „Bitte tragen sie die Marke des Fahrzeuges ein." ein –
+      // dort gehört die Marke hin, nicht ins Modell. Ohne dieses Feld bleibt die
+      // Marke wie früher vor dem Modell stehen.
+      await select2(page, 'Marke des Fahrzeuges', 'Sonstiges')
+      await sleep(800)
+      const label = ['Bitte tragen sie die Marke', 'Bitte tragen Sie die Marke'][
+        (await fieldId(page, 'Bitte tragen sie die Marke', true)) ? 0 : 1
+      ]
+      if (await fieldId(page, label, true)) await fillText(page, label, f.marke, { prefix: true })
+      else modell = [f.marke, f.modell].filter(Boolean).join(' ')
     }
   }
   await fillText(page, 'Fahrzeugmodell', modell, { optional: true })
