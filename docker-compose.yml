@@ -142,7 +142,7 @@ services:
   # einige Minuten; solange liefert /api/geo/search einfach keine Treffer.
   # REGION akzeptiert "germany"/"de" oder z.B. "planet" bzw. mehrere Länder.
   photon:
-    image: rtuszik/photon-docker:2.4.0
+    image: rtuszik/photon-docker:2.5.0
     environment:
       - REGION=germany
       - UPDATE_STRATEGY=PARALLEL
