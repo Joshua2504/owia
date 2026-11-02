@@ -12,15 +12,15 @@
     "ios:open": "npm run sync -- ios && cap open ios"
   },
   "dependencies": {
-    "@capacitor/android": "8.5.3",
+    "@capacitor/android": "8.6.0",
     "@capacitor/app": "8.1.2",
-    "@capacitor/core": "8.5.3",
-    "@capacitor/ios": "8.5.3",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/ios": "8.6.0",
     "@capacitor/splash-screen": "8.0.2"
   },
   "devDependencies": {
-    "@capacitor/assets": "3.0.5",
-    "@capacitor/cli": "8.5.3",
+    "@capacitor/assets": "4.0.0",
+    "@capacitor/cli": "8.6.0",
     "typescript": "5.9.3"
   }
 }
