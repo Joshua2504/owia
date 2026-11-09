@@ -15,7 +15,7 @@ services:
   caddy:
     # Versionen gepinnt auf den Stand von Prod (11.10.2026), damit ein Deploy keine
     # ungetesteten Upstream-Updates mitzieht; Update bewusst per Tag-Änderung.
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.9-alpine
     profiles: [production]
     ports:
       - "80:80"
